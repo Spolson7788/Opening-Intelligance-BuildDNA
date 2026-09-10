@@ -1,0 +1,48 @@
+name: OI Orchestrator Dry Run
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/orchestrator/**"
+      - "oi-orchestration/**"
+      - "package.json"
+      - "vitest.orchestrator.config.ts"
+      - ".github/workflows/orchestrator-dry-run.yml"
+      - ".github/workflows/oi-unattended-worker.yml"
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Type-check orchestrator
+        run: npx tsc --noEmit
+
+      - name: Run orchestrator tests
+        run: npx vitest run --config vitest.orchestrator.config.ts
+
+      - name: Run simulated platform-limit resume
+        run: npm run orchestrator:dry-run
+        env:
+          OI_EXECUTOR_ID: github-actions-dry-run
+          OI_EXECUTOR_SCOPE: HAGER
+
+      - name: Fetch governed lane branches
+        run: git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Validate live unattended lane discovery
+        run: npm run orchestrator:discover -- oi-orchestration/UNATTENDED_LANES.json

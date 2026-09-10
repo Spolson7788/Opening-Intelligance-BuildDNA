@@ -1,0 +1,324 @@
+name: OI Unattended Manufacturer Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "oi-orchestration/**"
+      - "src/orchestrator/**"
+      - ".github/workflows/oi-unattended-worker.yml"
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "Optional lane_id to run (for example HAGER or SARGENT). Leave blank for automatic discovery."
+        required: false
+        default: ""
+
+concurrency:
+  group: oi-unattended-worker
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  OI_UNATTENDED_IMAGE_GENERATION_ENABLED: "false"
+  OI_MAX_LANES_PER_CYCLE: "2"
+  OI_EXECUTION_SLICE_MINUTES: "10"
+  OI_MODEL_STAGGER_SECONDS: "90"
+  OI_TRANSIENT_MODEL_BACKOFF_SECONDS: "90"
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      active_lane_count: ${{ steps.discover.outputs.active_lane_count }}
+      total_active_lane_count: ${{ steps.discover.outputs.total_active_lane_count }}
+      selected_lane_ids: ${{ steps.discover.outputs.selected_lane_ids }}
+      scheduler_cycle: ${{ steps.discover.outputs.scheduler_cycle }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: true
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch governed lane branches
+        run: git fetch --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Discover executable lanes
+        id: discover
+        env:
+          OI_FORCE_LANE: ${{ github.event.inputs.lane || '' }}
+          OI_SCHEDULER_CYCLE: ${{ github.run_number }}
+          OI_MAX_LANES_PER_CYCLE: ${{ env.OI_MAX_LANES_PER_CYCLE }}
+        run: npm run orchestrator:discover -- oi-orchestration/UNATTENDED_LANES.json
+
+      - name: Discovery summary
+        run: |
+          echo "### Opening Intelligence unattended discovery" >> "$GITHUB_STEP_SUMMARY"
+          echo "Total executable lanes: ${{ steps.discover.outputs.total_active_lane_count }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Selected this cycle: ${{ steps.discover.outputs.active_lane_count }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Selected lane IDs: ${{ steps.discover.outputs.selected_lane_ids }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Scheduler cycle: ${{ steps.discover.outputs.scheduler_cycle }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Model parallelism cap: ${{ env.OI_MAX_LANES_PER_CYCLE }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Model start stagger: ${{ env.OI_MODEL_STAGGER_SECONDS }} seconds per slot" >> "$GITHUB_STEP_SUMMARY"
+          echo "Transient model failure backoff: ${{ env.OI_TRANSIENT_MODEL_BACKOFF_SECONDS }} seconds" >> "$GITHUB_STEP_SUMMARY"
+          echo "Model slice target: ${{ env.OI_EXECUTION_SLICE_MINUTES }} minutes" >> "$GITHUB_STEP_SUMMARY"
+          echo "Unattended image generation: DISABLED BY USER DIRECTIVE" >> "$GITHUB_STEP_SUMMARY"
+
+  execute:
+    needs: discover
+    if: needs.discover.outputs.active_lane_count != '0'
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact lane checkpoint without persistent GitHub credentials
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ matrix.checkpoint_commit }}
+          path: lane
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout orchestration controls
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          path: control
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: control/package-lock.json
+
+      - name: Install orchestration dependencies
+        working-directory: control
+        run: npm ci
+
+      - name: Prepare deterministic lane prompt
+        working-directory: control
+        env:
+          OI_EXECUTION_SLICE_MINUTES: ${{ env.OI_EXECUTION_SLICE_MINUTES }}
+        run: |
+          npm run orchestrator:prepare-prompt -- \
+            "$GITHUB_WORKSPACE/lane/${{ matrix.checkpoint_path }}" \
+            "$RUNNER_TEMP/oi-unattended-prompt.md" \
+            "${{ matrix.lane_id }}" \
+            "${{ matrix.authorized_manufacturer_group }}" \
+            "${{ matrix.execution_owner }}" \
+            "${{ matrix.allowed_write_root }}" \
+            "${{ matrix.branch }}"
+
+      - name: Check model credential readiness
+        id: credential
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "OPENAI_API_KEY is not configured; lane execution is safely skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Stagger model request start
+        if: steps.credential.outputs.available == 'true'
+        env:
+          OI_LANE_SLOT: ${{ strategy.job-index }}
+        run: |
+          set -euo pipefail
+          delay=$(( OI_LANE_SLOT * OI_MODEL_STAGGER_SECONDS ))
+          echo "Scheduler model slot: $OI_LANE_SLOT; start delay: ${delay}s" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$delay" -gt 0 ]; then
+            sleep "$delay"
+          fi
+
+      - name: Execute governed manufacturer lane
+        id: codex
+        if: steps.credential.outputs.available == 'true'
+        uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          working-directory: ${{ github.workspace }}/lane
+          codex-home: ${{ github.workspace }}/control/oi-orchestration/codex-home
+          permission-profile: oi_unattended_worker
+          safety-strategy: drop-sudo
+          allow-bots: true
+          model: gpt-5.6-terra
+          effort: medium
+          prompt-file: ${{ runner.temp }}/oi-unattended-prompt.md
+          output-file: ${{ runner.temp }}/oi-unattended-final-message.txt
+
+      - name: Validate model-stage write boundary
+        id: validate_model
+        if: always() && steps.credential.outputs.available == 'true'
+        working-directory: control
+        run: npm run orchestrator:validate-diff -- "$GITHUB_WORKSPACE/lane" "${{ matrix.allowed_write_root }}"
+
+      - name: Persist model-stage durable progress
+        id: persist_model
+        if: always() && steps.credential.outputs.available == 'true' && steps.validate_model.outcome == 'success'
+        working-directory: lane
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: ${{ matrix.branch }}
+          BASE_COMMIT: ${{ matrix.checkpoint_commit }}
+          ALLOWED_ROOT: ${{ matrix.allowed_write_root }}
+          LANE_ID: ${{ matrix.lane_id }}
+        run: |
+          set -euo pipefail
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags origin "$TARGET_BRANCH:refs/remotes/origin/$TARGET_BRANCH"
+          latest_remote="$(git rev-parse "origin/$TARGET_BRANCH")"
+          if [ "$latest_remote" != "$BASE_COMMIT" ]; then
+            echo "Lane branch advanced during model execution. Refusing to overwrite newer work." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          git config user.name "opening-intel-unattended[bot]"
+          git config user.email "opening-intel-unattended@users.noreply.github.com"
+          git add -- "$ALLOWED_ROOT"
+          if git diff --cached --quiet; then
+            echo "expected_head=$BASE_COMMIT" >> "$GITHUB_OUTPUT"
+            echo "No model-stage repository changes produced for $LANE_ID." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git commit -m "chore($LANE_ID): persist unattended model stage"
+          new_head="$(git rev-parse HEAD)"
+          git push origin "HEAD:$TARGET_BRANCH"
+          echo "expected_head=$new_head" >> "$GITHUB_OUTPUT"
+          echo "Persisted model-stage progress to $TARGET_BRANCH at $new_head." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply transient model failure backoff
+        if: always() && steps.credential.outputs.available == 'true' && steps.codex.outcome == 'failure'
+        run: |
+          echo "Model execution failed. Holding the unattended concurrency group for ${OI_TRANSIENT_MODEL_BACKOFF_SECONDS}s before release; this provides cooldown for TPM/429 pressure and other transient model failures." >> "$GITHUB_STEP_SUMMARY"
+          sleep "$OI_TRANSIENT_MODEL_BACKOFF_SECONDS"
+
+      - name: Generate governed imagery candidates
+        if: env.OI_UNATTENDED_IMAGE_GENERATION_ENABLED == 'true' && steps.credential.outputs.available == 'true'
+        working-directory: control
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OI_IMAGE_MODEL: gpt-image-2-2026-04-21
+          OI_MAX_IMAGES_PER_LANE_CYCLE: "2"
+        run: npm run orchestrator:image-generate -- "$GITHUB_WORKSPACE/lane" "${{ matrix.allowed_write_root }}" "${{ matrix.authorized_manufacturer_group }}"
+
+      - name: Validate image-stage write boundary
+        id: validate_image
+        if: env.OI_UNATTENDED_IMAGE_GENERATION_ENABLED == 'true' && steps.credential.outputs.available == 'true'
+        working-directory: control
+        run: npm run orchestrator:validate-diff -- "$GITHUB_WORKSPACE/lane" "${{ matrix.allowed_write_root }}"
+
+      - name: Persist image-stage durable progress
+        id: persist_image
+        if: env.OI_UNATTENDED_IMAGE_GENERATION_ENABLED == 'true' && steps.credential.outputs.available == 'true' && steps.validate_image.outcome == 'success'
+        working-directory: lane
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: ${{ matrix.branch }}
+          BASE_COMMIT: ${{ steps.persist_model.outputs.expected_head }}
+          ALLOWED_ROOT: ${{ matrix.allowed_write_root }}
+          LANE_ID: ${{ matrix.lane_id }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$TARGET_BRANCH:refs/remotes/origin/$TARGET_BRANCH"
+          latest_remote="$(git rev-parse "origin/$TARGET_BRANCH")"
+          if [ "$latest_remote" != "$BASE_COMMIT" ]; then
+            echo "Lane branch advanced during image generation. Refusing to overwrite newer work." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          git add -- "$ALLOWED_ROOT"
+          if git diff --cached --quiet; then
+            echo "expected_head=$BASE_COMMIT" >> "$GITHUB_OUTPUT"
+            echo "No image-stage repository changes produced for $LANE_ID." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git commit -m "chore($LANE_ID): persist unattended image stage"
+          new_head="$(git rev-parse HEAD)"
+          git push origin "HEAD:$TARGET_BRANCH"
+          echo "expected_head=$new_head" >> "$GITHUB_OUTPUT"
+          echo "Persisted image-stage progress to $TARGET_BRANCH at $new_head." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Visual and source-fidelity QA generated candidates
+        if: env.OI_UNATTENDED_IMAGE_GENERATION_ENABLED == 'true' && steps.credential.outputs.available == 'true'
+        working-directory: control
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OI_IMAGE_QA_MODEL: gpt-5.6-sol
+          OI_MAX_IMAGE_QA_PER_LANE_CYCLE: "2"
+        run: npm run orchestrator:image-qa -- "$GITHUB_WORKSPACE/lane" "${{ matrix.allowed_write_root }}" "${{ matrix.authorized_manufacturer_group }}"
+
+      - name: Validate QA-stage write boundary
+        id: validate_qa
+        if: env.OI_UNATTENDED_IMAGE_GENERATION_ENABLED == 'true' && steps.credential.outputs.available == 'true'
+        working-directory: control
+        run: npm run orchestrator:validate-diff -- "$GITHUB_WORKSPACE/lane" "${{ matrix.allowed_write_root }}"
+
+      - name: Persist QA-stage durable progress
+        id: persist_qa
+        if: env.OI_UNATTENDED_IMAGE_GENERATION_ENABLED == 'true' && steps.credential.outputs.available == 'true' && steps.validate_qa.outcome == 'success'
+        working-directory: lane
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: ${{ matrix.branch }}
+          BASE_COMMIT: ${{ steps.persist_image.outputs.expected_head }}
+          ALLOWED_ROOT: ${{ matrix.allowed_write_root }}
+          LANE_ID: ${{ matrix.lane_id }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$TARGET_BRANCH:refs/remotes/origin/$TARGET_BRANCH"
+          latest_remote="$(git rev-parse "origin/$TARGET_BRANCH")"
+          if [ "$latest_remote" != "$BASE_COMMIT" ]; then
+            echo "Lane branch advanced during imagery QA. Refusing to overwrite newer work." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          git add -- "$ALLOWED_ROOT"
+          if git diff --cached --quiet; then
+            echo "expected_head=$BASE_COMMIT" >> "$GITHUB_OUTPUT"
+            echo "No QA-stage repository changes produced for $LANE_ID." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git commit -m "chore($LANE_ID): persist unattended QA stage"
+          new_head="$(git rev-parse HEAD)"
+          git push origin "HEAD:$TARGET_BRANCH"
+          echo "expected_head=$new_head" >> "$GITHUB_OUTPUT"
+          echo "Persisted QA-stage progress to $TARGET_BRANCH at $new_head." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Lane summary
+        if: always()
+        run: |
+          echo "### ${{ matrix.lane_id }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Branch: ${{ matrix.branch }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Stage: ${{ matrix.active_stage }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Checkpoint: ${{ matrix.checkpoint_commit }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Scheduler model slot: ${{ strategy.job-index }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Model start stagger: ${{ env.OI_MODEL_STAGGER_SECONDS }} seconds per slot" >> "$GITHUB_STEP_SUMMARY"
+          echo "Transient model failure backoff: ${{ env.OI_TRANSIENT_MODEL_BACKOFF_SECONDS }} seconds" >> "$GITHUB_STEP_SUMMARY"
+          echo "Model slice target: ${{ env.OI_EXECUTION_SLICE_MINUTES }} minutes" >> "$GITHUB_STEP_SUMMARY"
+          echo "Unattended image generation: ${{ env.OI_UNATTENDED_IMAGE_GENERATION_ENABLED }}" >> "$GITHUB_STEP_SUMMARY"
