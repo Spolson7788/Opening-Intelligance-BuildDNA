@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+field-app
+dashboard
+*.md
+.git
