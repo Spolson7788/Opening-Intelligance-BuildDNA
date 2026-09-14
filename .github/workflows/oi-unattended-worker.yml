@@ -1,14 +1,7 @@
 name: OI Unattended Manufacturer Worker
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "oi-orchestration/**"
-      - "src/orchestrator/**"
-      - ".github/workflows/oi-unattended-worker.yml"
-  schedule:
-    - cron: "*/15 * * * *"
+  # Paused by user directive on 2026-09-14. Automatic triggers removed.
   workflow_dispatch:
     inputs:
       lane:
@@ -32,6 +25,8 @@ env:
 
 jobs:
   discover:
+    # Keep manual dispatch inert until the user explicitly authorizes resuming.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.discover.outputs.matrix }}
@@ -79,7 +74,8 @@ jobs:
 
   execute:
     needs: discover
-    if: needs.discover.outputs.active_lane_count != '0'
+    # Execution remains blocked independently of discovery.
+    if: ${{ false }}
     strategy:
       fail-fast: false
       max-parallel: 2
