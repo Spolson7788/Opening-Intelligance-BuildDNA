@@ -3,7 +3,7 @@
 `.github/workflows/generate-narration.yml`
 
 **Prepared, tested, not installed. No secret was added. The workflow has never
-been dispatched.** 47 tests pass against it (`python
+been dispatched.** 64 tests pass against it (`python
 .github/workflows/test_generate_narration_workflow.py`).
 
 ---
@@ -29,9 +29,9 @@ Nothing is committed.
 | Refuse all held scenes | `generate_scenes.py` skips `narration_provisional` scenes; asking for one by id does not override. `--force-held` is never passed, and a test asserts the string does not appear in the workflow |
 | Report estimated credit use before generating | The dry-run step prints the **character count** — what ElevenLabs actually bills — currently **5,310 characters across 24 requests** |
 | Stop on mismatch, API error, incomplete file, unexpected scene | `--expect` stops the run if the plan is not exactly the approved count; `--fail-fast` stops at the first failure; a clip under 0.5 s or 4 KB is deleted and treated as a failure, not a success |
-| One audio file per permanent scene ID | One request per scene, named `audio/<SCENE_ID>.wav`. Never one long read sliced |
+| One audio file per permanent scene ID | One request per scene, named `audio/<SCENE_ID>.mp3`. Never one long read sliced |
 | Verify duration, format, size, hash | `verify_clips.py` — its own step, so "the API returned 200" and "we have 24 usable clips" are two separate claims. Also fails if a held scene has audio, or an unexpected file is present |
-| Approved master format | **`pcm_44100`, WAV container, 44.1 kHz, mono.** `verify_clips.py` fails anything else — an MP3 is rejected as a master, and so is a clip that is readable and valid but decodes to continuous silence |
+| Approved master format | **`mp3_44100_128`** — a valid 44.1 kHz mono MP3 at about 128 kbps, **lossy, never transcoded to WAV**. `verify_clips.py` fails a wrong container, codec, sample rate, channel count or bit rate, a zero-byte or unreadable file, and a clip that is readable and valid but decodes to continuous silence. `pcm_44100` was abandoned after HTTP 403 `output_format_not_allowed` (Pro tier only) on the first paid run |
 | Partial batch survives a failure | Verification and upload run under `!cancelled()`, so clips that landed before a failure are still verified and still downloadable. The job still fails |
 | Never re-spend on a good clip | `--regenerate` is never passed, so an existing clip is skipped. Re-dispatching after a partial run charges only the missing scenes |
 | Preflight | `.github/workflows/preflight.py` runs before any gate that can spend, and fails if any required file is absent, empty, or incoherent with the lock |
@@ -55,12 +55,12 @@ Two things, neither of which I have done or can do:
 3. Nothing else. Speaker boost — previously the one inferred value — is now a
    user-approved production setting and needs no further confirmation.
 
-Recommended but not required: add `elevenlabs/audio/*.wav`,
+Recommended but not required: add `elevenlabs/audio/*.mp3`,
 `elevenlabs/generation_log.json` and `validation_report.md` to `.gitignore`, so
 a master cannot be committed by hand either. I have not changed `.gitignore`.
 
 **`elevenlabs/WORKFLOW_DEPLOYMENT.md` has the file-by-file install, the exact
-repository paths, the dispatch steps, and how to put verified WAV masters back
+repository paths, the dispatch steps, and how to put verified MP3 masters back
 into `elevenlabs/audio/`.**
 
 ## First run

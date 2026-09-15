@@ -38,21 +38,21 @@
   },
   "output_format": {
     "preferred": {
+      "api_value": "mp3_44100_128",
+      "container": "mp3",
+      "sample_rate": 44100,
+      "bit_rate_kbps": 128,
+      "channels": 1,
+      "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+      "lossy": true,
+      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+    },
+    "superseded": {
       "api_value": "pcm_44100",
       "container": "wav",
-      "sample_rate": 44100,
-      "bit_depth": 16,
-      "channels": 1,
-      "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+      "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
     },
-    "accepted": {
-      "container": "mp3",
-      "bit_rate": "192 kbps",
-      "sample_rate": 44100,
-      "channels": 1,
-      "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-      "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-    }
+    "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
   },
   "loudness": {
     "rule": "Normalise at final assembly, never by changing voice settings.",

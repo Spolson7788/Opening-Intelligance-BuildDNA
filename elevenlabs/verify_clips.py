@@ -3,6 +3,9 @@
 Verify generated narration clips: duration, format, size, hash, and that the set
 on disk is exactly the set that was supposed to be generated.
 
+Approved master format: mp3_44100_128 — a valid 44.1 kHz mono MP3 at about
+128 kbps. Lossy by design; these files are never transcoded into WAV.
+
     python elevenlabs/verify_clips.py --expect-set ready
     python elevenlabs/verify_clips.py --expect-set ready --report validation_report.md
 
@@ -28,15 +31,18 @@ LOG = ROOT / "elevenlabs" / "generation_log.json"
 
 MIN_SECONDS = 1.0
 MIN_BYTES = 8192
-# The approved narration-master format: pcm_44100 delivered as a WAV container.
-# An MP3 is NOT a valid master — it is one lossy generation before the build has
-# done anything, and the delivery MP4 is meant to be encoded to AAC exactly once,
-# at assembly. A clip that arrives as MP3 is reported as a failure, not accepted.
-MASTER_CODEC = "pcm_s16le"
-MASTER_SUFFIX = ".wav"
+# The approved narration-master format, from 2026-09-15: mp3_44100_128.
+# pcm_44100 was the earlier choice and is unavailable on this subscription — the
+# API answered HTTP 403 output_format_not_allowed (Pro tier and above). These
+# masters are LOSSY: one encode here, one AAC encode at assembly. They are never
+# transcoded into WAV, which would recover nothing and misrepresent them.
+MASTER_CODEC = "mp3"
+MASTER_SUFFIX = ".mp3"
 MASTER_RATE = 44100
 MASTER_CHANNELS = 1
-AUDIO_SUFFIXES = (".wav", ".mp3")      # what we look at; only .wav passes
+MASTER_BITRATE_KBPS = 128
+BITRATE_TOLERANCE = 0.25               # VBR-ish headroom; a 64k clip still fails
+AUDIO_SUFFIXES = (".mp3", ".wav")      # what we look at; only .mp3 passes
 # A clip more than this far from its estimate is not necessarily wrong, but it
 # is worth a human looking at it before the picture is cut to it.
 DRIFT_NOTE = 0.30          # 30% either way
@@ -45,17 +51,19 @@ DRIFT_NOTE = 0.30          # 30% either way
 def probe(p):
     r = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries",
-         "format=duration,size:stream=codec_name,sample_rate,channels",
+         "format=duration,size,bit_rate:stream=codec_name,sample_rate,channels",
          "-of", "json", str(p)], capture_output=True, text=True)
     if r.returncode != 0:
         return None
     d = json.loads(r.stdout)
     st = (d.get("streams") or [{}])[0]
+    br = d["format"].get("bit_rate")
     return {"seconds": round(float(d["format"]["duration"]), 3),
             "bytes": int(d["format"]["size"]),
             "codec": st.get("codec_name"),
             "sample_rate": int(st["sample_rate"]) if st.get("sample_rate") else None,
-            "channels": st.get("channels")}
+            "channels": st.get("channels"),
+            "bitrate_kbps": round(int(br) / 1000) if br else None}
 
 
 def audible(p):
@@ -128,9 +136,13 @@ def main():
             bad.append(f"only {info['bytes']} bytes")
         if p.suffix != MASTER_SUFFIX:
             bad.append(f"{p.suffix} file — the approved master format is "
-                       f"pcm_44100 in a {MASTER_SUFFIX} container")
+                       f"mp3_44100_128 in a {MASTER_SUFFIX} container")
         if info["codec"] != MASTER_CODEC:
-            bad.append(f"codec {info['codec']}, expected {MASTER_CODEC} (pcm_44100)")
+            bad.append(f"codec {info['codec']}, expected {MASTER_CODEC} (mp3_44100_128)")
+        br = info.get("bitrate_kbps")
+        if br is not None and abs(br - MASTER_BITRATE_KBPS) > \
+                MASTER_BITRATE_KBPS * BITRATE_TOLERANCE:
+            bad.append(f"{br} kbps, expected about {MASTER_BITRATE_KBPS}")
         if info["sample_rate"] != MASTER_RATE:
             bad.append(f"{info['sample_rate']} Hz, expected {MASTER_RATE}")
         if info["channels"] != MASTER_CHANNELS:
@@ -150,6 +162,7 @@ def main():
             problems.append(f"{sid}: " + "; ".join(bad))
         rows.append((sid, f"{info['seconds']:.2f}s", f"{info['bytes']:,}",
                      f"{info['codec']} {info['sample_rate']}Hz "
+                     f"{info.get('bitrate_kbps') or '?'}k "
                      f"{'mono' if info['channels'] == 1 else info['channels']}",
                      digest[:16], note))
 
@@ -187,7 +200,8 @@ def main():
     if a.report:
         out = [f"# Narration clip validation",
                "",
-               "Approved master format: **pcm_44100, WAV container, 44.1 kHz, mono**.",
+               "Approved master format: **mp3_44100_128, MP3 container, 44.1 kHz, "
+               "mono, ~128 kbps** — lossy, not lossless.",
                "",
                f"- voice `{voice['voice_id']}` · `{voice['model_id']}`",
                f"- settings {voice['settings']}",

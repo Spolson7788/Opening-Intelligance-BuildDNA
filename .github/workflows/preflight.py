@@ -37,6 +37,8 @@ EXPECTED_MODEL = "eleven_multilingual_v2"
 EXPECTED_SETTINGS = {"speed": 0.72, "stability": 0.60, "similarity_boost": 0.75,
                      "style": 0.0, "use_speaker_boost": True}
 EXPECTED_READY = 24
+APPROVED_FORMAT = "mp3_44100_128"
+MASTER_CONTAINER = "mp3"
 HELD = {"S130", "S130A", "S140", "S180", "S190A", "S210", "S220"}
 
 
@@ -89,11 +91,17 @@ def main():
 
     # --- 4. the output format is the approved master format ---------------
     pref = v.get("output_format", {}).get("preferred", {})
-    if pref.get("api_value") != "pcm_44100":
+    if pref.get("api_value") != APPROVED_FORMAT:
         problems.append(f"preferred output format is {pref.get('api_value')!r}, "
-                        "expected 'pcm_44100' — the approved narration-master format")
+                        f"expected {APPROVED_FORMAT!r} — the approved narration-master "
+                        "format. pcm_44100 is Pro-tier only and returns HTTP 403 on this "
+                        "subscription.")
+    elif pref.get("container") != MASTER_CONTAINER:
+        problems.append(f"container is {pref.get('container')!r}, expected "
+                        f"{MASTER_CONTAINER!r}")
     else:
-        notes.append("ok  output format pcm_44100 -> .wav (approved master format)")
+        notes.append(f"ok  output format {APPROVED_FORMAT} -> .{MASTER_CONTAINER} "
+                     "(approved master format, lossy)")
 
     # --- 5. the manifest --------------------------------------------------
     man = json.loads((ROOT / "elevenlabs" / "generation_manifest.json").read_text(encoding="utf-8"))
@@ -124,9 +132,9 @@ def main():
         if not text:
             empty_scripts.append(c["scene_id"])
         chars += len(text)
-        if c["audio"] != f"elevenlabs/audio/{c['scene_id']}.wav":
+        if c["audio"] != f"elevenlabs/audio/{c['scene_id']}.{MASTER_CONTAINER}":
             problems.append(f"{c['scene_id']}: audio target is {c['audio']}, expected "
-                            f"elevenlabs/audio/{c['scene_id']}.wav")
+                            f"elevenlabs/audio/{c['scene_id']}.{MASTER_CONTAINER}")
     if missing_scripts:
         problems.append(f"missing narration script(s): {' '.join(missing_scripts)}")
     if empty_scripts:
@@ -136,7 +144,8 @@ def main():
 
     # --- 7. held scenes must have no audio, ready scenes may ---------------
     audio_dir = ROOT / "elevenlabs" / "audio"
-    present = sorted(p.stem for p in audio_dir.glob("*.wav")) if audio_dir.exists() else []
+    present = (sorted(p.stem for p in audio_dir.glob(f"*.{MASTER_CONTAINER}"))
+               if audio_dir.exists() else [])
     stray = sorted(set(present) & HELD)
     if stray:
         problems.append(f"HELD scene(s) already have audio: {' '.join(stray)} — "

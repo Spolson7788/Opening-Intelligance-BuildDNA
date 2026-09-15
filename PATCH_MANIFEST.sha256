@@ -1,0 +1,56 @@
+# OI narration — MP3 master-format patch
+
+Built 2026-09-15 · repository-relative paths.
+
+WHY: the first paid run failed on S010 with HTTP 403
+  output_format_not_allowed: Output format 'pcm_44100' is only available on the
+  Pro tier and above.
+Zero clips were generated; fail-fast stopped the other 23 requests.
+
+CHANGE: narration masters are now mp3_44100_128 — 44.1 kHz mono MP3, ~128 kbps.
+  Lossy, not lossless. Never transcoded into WAV.
+
+UNCHANGED: voice_id OZxMHsGaBmV5pjMIDIn0 · model eleven_multilingual_v2 ·
+  speed 0.72 · stability 0.60 · similarity 0.75 · style 0.0 · speaker boost on ·
+  lock 6de1f549a5cca453b174c9d6a5527a723e5e64185ed175ba17d111952b44ecb2
+  Output format sits OUTSIDE the voice lock. Narration text, the 24-scene list
+  and the 7 held scenes (S130 S130A S140 S180 S190A S210 S220) are untouched.
+
+APPLY: copy this directory's contents onto the repository root, overwriting.
+  Then:  python .github/workflows/preflight.py                        -> exit 0
+         python .github/workflows/test_generate_narration_workflow.py -> 64 OK
+         python elevenlabs/test_generate_scenes.py                    -> 31 OK
+  Commit, push, then dispatch with dry_run checked before the paid run.
+
+NOTE: if .gitignore carries 'elevenlabs/audio/*.wav', change it to '*.mp3'.
+  No .gitignore is included in this patch.
+
+## Changed files
+
+ba408aac30b9ed645567440cc035e67abd7593c6b1d33b31c5950e8b81ae18aa    14398  .github/workflows/generate-narration.yml
+                                                                          verify / upload / summary steps now say MP3
+83e7258261e7334fbb88a0067ae765faddae0adaa67cc9711b169da12c92dffe     7701  .github/workflows/preflight.py
+                                                                          expects mp3_44100_128 and .mp3 audio targets
+8c274e13d549ccbf1b2d54d9e7fa7d0d4f4bdc69d6ba33aa6a4631ada5df80d6    21813  .github/workflows/test_generate_narration_workflow.py
+                                                                          64 tests; master-format and no-transcode assertions
+560e8dc0b3662db23e1a9c32034dcb2eb39202af00381d7d8664c543184d6fd1    14967  elevenlabs/generate_scenes.py
+                                                                          sends mp3_44100_128; WAV wrapper removed; bytes written unchanged
+7b390167e11520af50d05ddc9e7d73add5a219851b2fc86b1ccaef317ed2b73e    10006  elevenlabs/verify_clips.py
+                                                                          requires a valid 44.1 kHz mono MP3 ~128 kbps; silence / rate / size / hash checks kept
+c3559d640590444310e865ef61ca2b29ef964ab44d4e2973be180961ae7780fa     7494  elevenlabs/voice_settings.json
+                                                                          output_format -> mp3_44100_128; superseded pcm_44100 recorded with its 403
+c516a1fb49b52692c0904357e757753036a86b51626941b3d5bfbc1076929e1f    89440  elevenlabs/generation_manifest.json
+                                                                          regenerated: 24 audio targets now .mp3
+e71615bb12568441df20986f08d713af54a93ceb963c1aa6975b95272e11c585     8368  elevenlabs/WORKFLOW_DEPLOYMENT.md
+                                                                          MP3 masters, copy-back instructions, .gitignore line
+3ae0ce364bf356a71d9bd53e1bfb2f671ddca1b70d34de5b5c89c72524bd4f25     6663  elevenlabs/WORKFLOW_REVIEW.md
+                                                                          master-format row rewritten
+5e0d4f4b00c00bf17c4bbfa8d6bbaefe84e94c83cff2938fb1e11b4244f38b1a   131149  scenes/scenes.json
+                                                                          41 narration_file paths .wav -> .mp3; nothing else
+f26bd81d2760200e3af165cc24bd4d053b99de76e9b2ee52fd0bbf1145c04b64     8103  system/builder.py
+                                                                          audio_for() follows the registry extension
+
+## New to the repository
+
+21c5c5ceb6bf5c074f305a6431e24e24bd79770e53cd54bafd2b5a40639250d7    16103  elevenlabs/test_generate_scenes.py
+                                                                          31 tests including the controlled 403 reproduction — not previously in the repo

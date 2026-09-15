@@ -44,12 +44,17 @@ def esc(t):
 
 
 def audio_for(scene):
-    """Narration clip: .wav preferred, .mp3 accepted."""
-    wav = ROOT / scene["narration_file"]
-    if wav.exists():
-        return wav
-    mp3 = wav.with_suffix(".mp3")
-    return mp3 if mp3.exists() else wav
+    """The scene's narration clip.
+
+    narration_file carries the approved master extension (.mp3 since
+    2026-09-15). The other container is still accepted if it happens to be on
+    disk, so a clip made before the format change is not silently ignored.
+    """
+    named = ROOT / scene["narration_file"]
+    if named.exists():
+        return named
+    other = named.with_suffix(".wav" if named.suffix == ".mp3" else ".mp3")
+    return other if other.exists() else named
 
 
 def inputs_for(scene):

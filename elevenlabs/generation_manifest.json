@@ -1,6 +1,6 @@
 {
-  "generated": "2026-09-14",
-  "video_version": "0.29.0",
+  "generated": "2026-09-15",
+  "video_version": "0.33.0",
   "voice": {
     "_status": "LOCKED. Validation sample approved by Michelle on 2026-09-14; voice ID and settings locked for the OI Modular Video Production System. Every narration clip in every chapter — Trial 1 and everything after it — is generated at exactly these values. Changing any one of them invalidates every existing clip and requires regenerating all of them in a single session, plus a minor version bump on the video system.",
     "voice_name": "Amy - Natural and Sweet",
@@ -18,7 +18,7 @@
       "source": "the sample filename ElevenLabs_2026-09-14T21_35_46_Amy_-_Natural_and_Sweet_pvc_sp72_s60_sb75_se0_b_m2.mp3, cross-checked against the settings screenshot",
       "sp72_s60_sb75_se0": "speed 0.72 · stability 0.60 · similarity_boost 0.75 · style 0.0 — each written as a percentage in the filename",
       "screenshot_agrees": "Speed near the left of its 0.7-1.2 track, Stability just past the middle, Similarity high, Style Exaggeration at None",
-      "use_speaker_boost": "INFERRED from the `_b_` token in the filename. Confirm it in the UI before the full generation run — it is the one setting not visible in the screenshot.",
+      "use_speaker_boost": "USER-APPROVED PRODUCTION SETTING. Michelle approved speaker boost ON for all Trial 1 narration on 2026-09-14: 'Speaker boost is explicitly approved on for all Trial 1 narration. Treat this as the production setting, not an inference from the reference filename.' It is no longer inferred from the `_b_` token in the reference sample's filename; that token is now corroboration, not the basis. The VALUE is unchanged (true), so the lock fingerprint is unchanged.",
       "m2": "eleven_multilingual_v2"
     },
     "reference_sample": {
@@ -41,21 +41,21 @@
     },
     "output_format": {
       "preferred": {
+        "api_value": "mp3_44100_128",
+        "container": "mp3",
+        "sample_rate": 44100,
+        "bit_rate_kbps": 128,
+        "channels": 1,
+        "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+        "lossy": true,
+        "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+      },
+      "superseded": {
         "api_value": "pcm_44100",
         "container": "wav",
-        "sample_rate": 44100,
-        "bit_depth": 16,
-        "channels": 1,
-        "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
       },
-      "accepted": {
-        "container": "mp3",
-        "bit_rate": "192 kbps",
-        "sample_rate": 44100,
-        "channels": 1,
-        "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-        "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-      }
+      "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
     },
     "loudness": {
       "rule": "Normalise at final assembly, never by changing voice settings.",
@@ -80,9 +80,7 @@
       "Model, settings and format are written into elevenlabs/generation_manifest.json on every `scripts` run, so any clip can be reproduced exactly."
     ],
     "_voice_id_provenance": "Supplied by Michelle on 2026-09-14 alongside the voice name, model and the four settings, all of which match what was already recorded from the sample filename and screenshot. Not derived, not guessed.",
-    "_outstanding": [
-      "use_speaker_boost is INFERRED from the `_b_` token in the reference sample's filename. It is the one locked value not visible in the settings screenshot and not in the supplied list. It is locked as true. If the ElevenLabs UI shows it off, say so before the generation run — after the run it means regenerating every clip."
-    ],
+    "_outstanding": [],
     "lock": {
       "state": "LOCKED",
       "locked_on": "2026-09-14",
@@ -101,13 +99,14 @@
         "Re-measure words-per-second from a new validation sample; every scene duration estimate is derived from it.",
         "Regenerate all clips in one session, then rebuild every scene."
       ]
-    }
+    },
+    "_outstanding_note": "Nothing outstanding. Speaker boost was the last inferred value and is now a user-approved production setting."
   },
   "clips": [
     {
       "scene_id": "S010",
       "script": "elevenlabs/scenes/S010.txt",
-      "audio": "elevenlabs/audio/S010.wav",
+      "audio": "elevenlabs/audio/S010.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 26,
@@ -123,21 +122,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -148,7 +147,7 @@
     {
       "scene_id": "S020",
       "script": "elevenlabs/scenes/S020.txt",
-      "audio": "elevenlabs/audio/S020.wav",
+      "audio": "elevenlabs/audio/S020.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 75,
@@ -164,21 +163,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -189,7 +188,7 @@
     {
       "scene_id": "S030",
       "script": "elevenlabs/scenes/S030.txt",
-      "audio": "elevenlabs/audio/S030.wav",
+      "audio": "elevenlabs/audio/S030.mp3",
       "audio_present": false,
       "renarrate_required": false,
       "words": 10,
@@ -205,21 +204,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Ready for review",
       "in_master": true,
@@ -230,7 +229,7 @@
     {
       "scene_id": "S040",
       "script": "elevenlabs/scenes/S040.txt",
-      "audio": "elevenlabs/audio/S040.wav",
+      "audio": "elevenlabs/audio/S040.mp3",
       "audio_present": false,
       "renarrate_required": false,
       "words": 16,
@@ -246,21 +245,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -271,7 +270,7 @@
     {
       "scene_id": "S050",
       "script": "elevenlabs/scenes/S050.txt",
-      "audio": "elevenlabs/audio/S050.wav",
+      "audio": "elevenlabs/audio/S050.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 20,
@@ -287,21 +286,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -312,7 +311,7 @@
     {
       "scene_id": "S060",
       "script": "elevenlabs/scenes/S060.txt",
-      "audio": "elevenlabs/audio/S060.wav",
+      "audio": "elevenlabs/audio/S060.mp3",
       "audio_present": false,
       "renarrate_required": false,
       "words": 7,
@@ -328,21 +327,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -353,7 +352,7 @@
     {
       "scene_id": "S070",
       "script": "elevenlabs/scenes/S070.txt",
-      "audio": "elevenlabs/audio/S070.wav",
+      "audio": "elevenlabs/audio/S070.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 60,
@@ -369,21 +368,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -394,7 +393,7 @@
     {
       "scene_id": "S080",
       "script": "elevenlabs/scenes/S080.txt",
-      "audio": "elevenlabs/audio/S080.wav",
+      "audio": "elevenlabs/audio/S080.mp3",
       "audio_present": false,
       "renarrate_required": false,
       "words": 56,
@@ -410,21 +409,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -435,7 +434,7 @@
     {
       "scene_id": "S090",
       "script": "elevenlabs/scenes/S090.txt",
-      "audio": "elevenlabs/audio/S090.wav",
+      "audio": "elevenlabs/audio/S090.mp3",
       "audio_present": false,
       "renarrate_required": false,
       "words": 5,
@@ -451,21 +450,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -476,7 +475,7 @@
     {
       "scene_id": "S100",
       "script": "elevenlabs/scenes/S100.txt",
-      "audio": "elevenlabs/audio/S100.wav",
+      "audio": "elevenlabs/audio/S100.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 22,
@@ -492,21 +491,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -517,7 +516,7 @@
     {
       "scene_id": "S110",
       "script": "elevenlabs/scenes/S110.txt",
-      "audio": "elevenlabs/audio/S110.wav",
+      "audio": "elevenlabs/audio/S110.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 49,
@@ -533,21 +532,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -558,7 +557,7 @@
     {
       "scene_id": "S120",
       "script": "elevenlabs/scenes/S120.txt",
-      "audio": "elevenlabs/audio/S120.wav",
+      "audio": "elevenlabs/audio/S120.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 8,
@@ -574,21 +573,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -599,7 +598,7 @@
     {
       "scene_id": "S130",
       "script": "elevenlabs/scenes/S130.txt",
-      "audio": "elevenlabs/audio/S130.wav",
+      "audio": "elevenlabs/audio/S130.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 63,
@@ -615,21 +614,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -640,7 +639,7 @@
     {
       "scene_id": "S130A",
       "script": "elevenlabs/scenes/S130A.txt",
-      "audio": "elevenlabs/audio/S130A.wav",
+      "audio": "elevenlabs/audio/S130A.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 32,
@@ -656,21 +655,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -681,7 +680,7 @@
     {
       "scene_id": "S130B",
       "script": "elevenlabs/scenes/S130B.txt",
-      "audio": "elevenlabs/audio/S130B.wav",
+      "audio": "elevenlabs/audio/S130B.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 42,
@@ -697,21 +696,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -722,7 +721,7 @@
     {
       "scene_id": "S130C",
       "script": "elevenlabs/scenes/S130C.txt",
-      "audio": "elevenlabs/audio/S130C.wav",
+      "audio": "elevenlabs/audio/S130C.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 52,
@@ -738,21 +737,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": false,
@@ -763,7 +762,7 @@
     {
       "scene_id": "S140",
       "script": "elevenlabs/scenes/S140.txt",
-      "audio": "elevenlabs/audio/S140.wav",
+      "audio": "elevenlabs/audio/S140.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 70,
@@ -779,21 +778,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -804,7 +803,7 @@
     {
       "scene_id": "S150",
       "script": "elevenlabs/scenes/S150.txt",
-      "audio": "elevenlabs/audio/S150.wav",
+      "audio": "elevenlabs/audio/S150.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 63,
@@ -820,21 +819,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -845,7 +844,7 @@
     {
       "scene_id": "S155",
       "script": "elevenlabs/scenes/S155.txt",
-      "audio": "elevenlabs/audio/S155.wav",
+      "audio": "elevenlabs/audio/S155.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 35,
@@ -861,21 +860,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -886,7 +885,7 @@
     {
       "scene_id": "S160",
       "script": "elevenlabs/scenes/S160.txt",
-      "audio": "elevenlabs/audio/S160.wav",
+      "audio": "elevenlabs/audio/S160.mp3",
       "audio_present": false,
       "renarrate_required": false,
       "words": 9,
@@ -902,21 +901,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -927,7 +926,7 @@
     {
       "scene_id": "S170",
       "script": "elevenlabs/scenes/S170.txt",
-      "audio": "elevenlabs/audio/S170.wav",
+      "audio": "elevenlabs/audio/S170.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 30,
@@ -943,21 +942,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -968,7 +967,7 @@
     {
       "scene_id": "S180",
       "script": "elevenlabs/scenes/S180.txt",
-      "audio": "elevenlabs/audio/S180.wav",
+      "audio": "elevenlabs/audio/S180.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 97,
@@ -984,21 +983,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -1009,7 +1008,7 @@
     {
       "scene_id": "S190",
       "script": "elevenlabs/scenes/S190.txt",
-      "audio": "elevenlabs/audio/S190.wav",
+      "audio": "elevenlabs/audio/S190.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 48,
@@ -1025,21 +1024,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -1050,7 +1049,7 @@
     {
       "scene_id": "S190A",
       "script": "elevenlabs/scenes/S190A.txt",
-      "audio": "elevenlabs/audio/S190A.wav",
+      "audio": "elevenlabs/audio/S190A.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 65,
@@ -1066,21 +1065,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -1091,7 +1090,7 @@
     {
       "scene_id": "S200",
       "script": "elevenlabs/scenes/S200.txt",
-      "audio": "elevenlabs/audio/S200.wav",
+      "audio": "elevenlabs/audio/S200.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 31,
@@ -1107,21 +1106,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -1132,7 +1131,7 @@
     {
       "scene_id": "S210",
       "script": "elevenlabs/scenes/S210.txt",
-      "audio": "elevenlabs/audio/S210.wav",
+      "audio": "elevenlabs/audio/S210.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 67,
@@ -1148,21 +1147,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -1173,7 +1172,7 @@
     {
       "scene_id": "S220",
       "script": "elevenlabs/scenes/S220.txt",
-      "audio": "elevenlabs/audio/S220.wav",
+      "audio": "elevenlabs/audio/S220.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 91,
@@ -1189,21 +1188,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -1214,7 +1213,7 @@
     {
       "scene_id": "S230",
       "script": "elevenlabs/scenes/S230.txt",
-      "audio": "elevenlabs/audio/S230.wav",
+      "audio": "elevenlabs/audio/S230.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 95,
@@ -1230,21 +1229,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -1255,7 +1254,7 @@
     {
       "scene_id": "S240",
       "script": "elevenlabs/scenes/S240.txt",
-      "audio": "elevenlabs/audio/S240.wav",
+      "audio": "elevenlabs/audio/S240.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 36,
@@ -1271,21 +1270,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -1296,7 +1295,7 @@
     {
       "scene_id": "S280",
       "script": "elevenlabs/scenes/S280.txt",
-      "audio": "elevenlabs/audio/S280.wav",
+      "audio": "elevenlabs/audio/S280.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 33,
@@ -1312,21 +1311,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": false,
@@ -1337,7 +1336,7 @@
     {
       "scene_id": "S260",
       "script": "elevenlabs/scenes/S260.txt",
-      "audio": "elevenlabs/audio/S260.wav",
+      "audio": "elevenlabs/audio/S260.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 72,
@@ -1353,21 +1352,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -1378,7 +1377,7 @@
     {
       "scene_id": "S270",
       "script": "elevenlabs/scenes/S270.txt",
-      "audio": "elevenlabs/audio/S270.wav",
+      "audio": "elevenlabs/audio/S270.mp3",
       "audio_present": false,
       "renarrate_required": false,
       "words": 85,
@@ -1394,21 +1393,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Ready for review",
       "in_master": true,
@@ -1419,7 +1418,7 @@
     {
       "scene_id": "S275",
       "script": "elevenlabs/scenes/S275.txt",
-      "audio": "elevenlabs/audio/S275.wav",
+      "audio": "elevenlabs/audio/S275.mp3",
       "audio_present": false,
       "renarrate_required": false,
       "words": 55,
@@ -1435,21 +1434,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": true,
@@ -1460,7 +1459,7 @@
     {
       "scene_id": "R010",
       "script": "elevenlabs/scenes/R010.txt",
-      "audio": "elevenlabs/audio/R010.wav",
+      "audio": "elevenlabs/audio/R010.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 55,
@@ -1476,21 +1475,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": false,
@@ -1501,7 +1500,7 @@
     {
       "scene_id": "R020",
       "script": "elevenlabs/scenes/R020.txt",
-      "audio": "elevenlabs/audio/R020.wav",
+      "audio": "elevenlabs/audio/R020.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 54,
@@ -1517,21 +1516,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": false,
@@ -1542,7 +1541,7 @@
     {
       "scene_id": "R030",
       "script": "elevenlabs/scenes/R030.txt",
-      "audio": "elevenlabs/audio/R030.wav",
+      "audio": "elevenlabs/audio/R030.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 54,
@@ -1558,21 +1557,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": false,
@@ -1583,7 +1582,7 @@
     {
       "scene_id": "R040",
       "script": "elevenlabs/scenes/R040.txt",
-      "audio": "elevenlabs/audio/R040.wav",
+      "audio": "elevenlabs/audio/R040.mp3",
       "audio_present": false,
       "renarrate_required": true,
       "words": 57,
@@ -1599,21 +1598,21 @@
       },
       "output_format": {
         "preferred": {
+          "api_value": "mp3_44100_128",
+          "container": "mp3",
+          "sample_rate": 44100,
+          "bit_rate_kbps": 128,
+          "channels": 1,
+          "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+          "lossy": true,
+          "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+        },
+        "superseded": {
           "api_value": "pcm_44100",
           "container": "wav",
-          "sample_rate": 44100,
-          "bit_depth": 16,
-          "channels": 1,
-          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+          "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
         },
-        "accepted": {
-          "container": "mp3",
-          "bit_rate": "192 kbps",
-          "sample_rate": 44100,
-          "channels": 1,
-          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
-          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
-        }
+        "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
       },
       "status": "Draft",
       "in_master": false,

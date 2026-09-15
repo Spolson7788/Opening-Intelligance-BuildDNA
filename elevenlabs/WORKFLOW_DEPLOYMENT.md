@@ -6,8 +6,16 @@ repository* — so GitHub has never seen any of this. The `elevenlabs-narration`
 environment does not exist and no secret has been added to it. Everything below
 is what *you* would do to change that.
 
-Approved narration-master format: **`pcm_44100`, WAV container, 44.1 kHz,
-mono**, one file per scene.
+Approved narration-master format: **`mp3_44100_128`** — 44.1 kHz mono MP3 at
+about 128 kbps, one file per scene. **Lossy, not lossless**, and never
+transcoded into WAV.
+
+`pcm_44100` was the earlier choice and is gone: the first paid run returned
+**HTTP 403 `output_format_not_allowed` — "Output format 'pcm_44100' is only
+available on the Pro tier and above."** Zero clips were generated and fail-fast
+stopped the other 23 requests, so nothing was charged. Output format sits
+**outside the voice lock**, so this change does not touch the voice, the
+settings or the fingerprint.
 
 ---
 
@@ -66,7 +74,7 @@ defaults to true.
 **Recommended `.gitignore`** — so a master can never be committed by accident:
 
 ```gitignore
-elevenlabs/audio/*.wav
+elevenlabs/audio/*.mp3
 elevenlabs/generation_log.json
 validation_report.md
 ```
@@ -122,7 +130,7 @@ anything (`permissions: contents: read`).
 It contains:
 
 ```
-elevenlabs/audio/S010.wav … S275.wav      the 24 masters
+elevenlabs/audio/S010.mp3 … S275.mp3      the 24 masters
 elevenlabs/generation_manifest.json       what was asked for
 elevenlabs/generation_log.json            settings, lock, per-clip duration + sha256
 validation_report.md                      the verification result
@@ -136,21 +144,26 @@ names what is missing — nothing already paid for is thrown away.
 **Re-dispatching after a partial run is cheap.** `--regenerate` is never passed,
 so a clip already on disk is skipped. Only the missing scenes are charged.
 
-## 6. Putting the verified WAV masters back
+## 6. Putting the verified MP3 masters back
 
 ```bash
 # from the repository root, after downloading and unzipping the artifact
 unzip ~/Downloads/trial1-narration-<run_id>.zip -d /tmp/narration
 
-cp /tmp/narration/elevenlabs/audio/*.wav elevenlabs/audio/
+cp /tmp/narration/elevenlabs/audio/*.mp3 elevenlabs/audio/
 cp /tmp/narration/elevenlabs/generation_log.json elevenlabs/
 
 python elevenlabs/verify_clips.py --expect-set ready   # expect: all checks passed
 python system/oi_video.py voicecheck
 ```
 
-Keep the filenames exactly as they arrive — `elevenlabs/audio/<SCENE_ID>.wav`.
+Keep the filenames exactly as they arrive — `elevenlabs/audio/<SCENE_ID>.mp3`.
 The build looks clips up by that name; a renamed file is a missing clip.
+
+**Do not convert them to WAV.** Re-encoding a lossy file recovers nothing the
+MP3 encoder already discarded, and it would make the masters look lossless when
+they are not. The build reads MP3 directly and the delivery MP4 is encoded to
+AAC once, at assembly.
 
 `voicecheck` then measures each clip against the picture that exists and names
 any scene whose **speech is longer than its picture**. Those need their picture
@@ -169,6 +182,7 @@ out. The artifact is the delivery.
 | Speed · Stability · Similarity · Style | 0.72 · 0.60 · 0.75 · 0.0 |
 | Speaker boost | **on — user-approved production setting**, 2026-09-14 |
 | Lock fingerprint | `6de1f549a5cca453b174c9d6a5527a723e5e64185ed175ba17d111952b44ecb2` |
+| Output format | `mp3_44100_128` — **outside the lock**, changed 2026-09-15 |
 
 Speaker boost was the last value carried on inference. It is now approved for
 all Trial 1 narration, and its provenance says so. The value did not change, so

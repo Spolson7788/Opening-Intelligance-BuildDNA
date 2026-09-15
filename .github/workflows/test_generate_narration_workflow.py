@@ -131,7 +131,7 @@ class TestSecretHandling(unittest.TestCase):
 
     def test_a_redaction_check_runs_before_upload(self):
         red, _ = step_named("Redaction check")
-        up, _ = step_named("Upload the WAV masters")
+        up, _ = step_named("Upload the MP3 masters")
         self.assertLess(red, up)
 
 
@@ -139,13 +139,13 @@ class TestPartialBatchSurvives(unittest.TestCase):
     """A failed scene must not throw away the clips already paid for."""
 
     def test_verify_and_upload_run_even_after_a_failed_generation(self):
-        for name in ("Verify every clip", "Upload the WAV masters",
+        for name in ("Verify every clip", "Upload the MP3 masters",
                      "Confirm the voice held"):
             _, s = step_named(name)
             self.assertIn("!cancelled()", s["if"], name)
 
     def test_upload_is_still_gated_on_not_being_a_dry_run(self):
-        _, s = step_named("Upload the WAV masters")
+        _, s = step_named("Upload the MP3 masters")
         self.assertIn("inputs.dry_run == false", s["if"])
 
     def test_successful_clips_are_never_regenerated(self):
@@ -221,7 +221,7 @@ class TestNoCommitting(unittest.TestCase):
 
 class TestArtifact(unittest.TestCase):
     def test_uploads_only_audio_manifest_log_and_report(self):
-        _, s = step_named("Upload the WAV masters")
+        _, s = step_named("Upload the MP3 masters")
         paths = [p.strip() for p in s["with"]["path"].strip().splitlines()]
         self.assertEqual(sorted(paths), sorted([
             "elevenlabs/audio/",
@@ -230,17 +230,17 @@ class TestArtifact(unittest.TestCase):
             "validation_report.md"]))
 
     def test_never_uploads_voice_settings_or_whole_directories(self):
-        _, s = step_named("Upload the WAV masters")
+        _, s = step_named("Upload the MP3 masters")
         paths = s["with"]["path"]
         for bad in ("scenes/", "recordings/", "audit/", ".git", "prototype/"):
             self.assertNotIn(bad, paths)
 
     def test_empty_upload_is_an_error_not_a_pass(self):
-        _, s = step_named("Upload the WAV masters")
+        _, s = step_named("Upload the MP3 masters")
         self.assertEqual(s["with"]["if-no-files-found"], "error")
 
     def test_artifact_has_a_retention_limit(self):
-        _, s = step_named("Upload the WAV masters")
+        _, s = step_named("Upload the MP3 masters")
         self.assertLessEqual(int(s["with"]["retention-days"]), 30)
 
 
@@ -258,13 +258,84 @@ class TestEmbeddedPython(unittest.TestCase):
                     self.fail(f"step {name!r} has a Python syntax error: {e}")
         self.assertGreaterEqual(found, 3)
 
+    # The cleanliness block calls `git status` and must fail outside a
+    # repository — so it is exercised in its own temporary repo below, not here.
+    NEEDS_A_GIT_REPO = "Nothing was committed"
+
     def test_the_embedded_blocks_actually_run_here(self):
         for name, body in runs():
+            if name == self.NEEDS_A_GIT_REPO:
+                continue
             for block in embedded_python(body):
                 r = subprocess.run([sys.executable, "-c", block],
                                    capture_output=True, text=True, cwd=ROOT)
                 self.assertEqual(r.returncode, 0,
                                  f"step {name!r} failed: {r.stderr[-400:]}")
+
+    def _gate_in_a_repo(self, populate):
+        """Run the cleanliness block in a throwaway repo. Returns (rc, stdout)."""
+        import tempfile
+        d = pathlib.Path(tempfile.mkdtemp())
+        for cmd in (["git", "init", "-q", "."],
+                    ["git", "config", "user.email", "t@t"],
+                    ["git", "config", "user.name", "t"]):
+            subprocess.run(cmd, cwd=d, check=True, capture_output=True)
+        (d / "tracked.txt").write_text("hello\n")
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "init"], cwd=d, check=True,
+                       capture_output=True)
+        populate(d)
+        _, s = step_named(self.NEEDS_A_GIT_REPO)
+        block = embedded_python(s["run"])[0]
+        r = subprocess.run([sys.executable, "-c", block],
+                           capture_output=True, text=True, cwd=d)
+        return r.returncode, r.stdout
+
+    def test_the_gate_passes_on_a_clean_tree(self):
+        rc, out = self._gate_in_a_repo(lambda d: None)
+        self.assertEqual(rc, 0, out)
+
+    def test_the_gate_allows_this_runs_own_outputs(self):
+        def populate(d):
+            (d / "elevenlabs" / "audio").mkdir(parents=True)
+            (d / "elevenlabs" / "audio" / "S010.wav").write_bytes(b"x")
+            (d / "elevenlabs" / "generation_log.json").write_text("{}")
+            (d / "validation_report.md").write_text("#")
+        rc, out = self._gate_in_a_repo(populate)
+        self.assertEqual(rc, 0, out)
+
+    def test_the_gate_refuses_a_stray_file_under_system(self):
+        def populate(d):
+            (d / "system").mkdir()
+            (d / "system" / "stray.py").write_text("x")
+        rc, out = self._gate_in_a_repo(populate)
+        self.assertEqual(rc, 1)
+        self.assertIn("system/stray.py", out)   # named, not collapsed to "system/"
+
+    def test_the_gate_refuses_a_modified_tracked_file(self):
+        rc, out = self._gate_in_a_repo(
+            lambda d: (d / "tracked.txt").write_text("changed\n"))
+        self.assertEqual(rc, 1)
+        self.assertIn("tracked.txt", out)
+
+    def test_the_gate_refuses_a_deleted_tracked_file(self):
+        rc, out = self._gate_in_a_repo(lambda d: (d / "tracked.txt").unlink())
+        self.assertEqual(rc, 1)
+        self.assertIn("tracked.txt", out)
+
+    def test_the_gate_refuses_an_untracked_pycache_when_not_gitignored(self):
+        """Proof the gate is not forgiving caches — the fix is upstream of it."""
+        def populate(d):
+            (d / "system" / "__pycache__").mkdir(parents=True)
+            (d / "system" / "__pycache__" / "builder.cpython-311.pyc").write_bytes(b"x")
+        rc, out = self._gate_in_a_repo(populate)
+        self.assertEqual(rc, 1)
+        self.assertIn("__pycache__", out)
+
+    def test_the_gate_expands_untracked_directories(self):
+        """Without -uall git collapses "?? system/" and hides the real file."""
+        _, s = step_named(self.NEEDS_A_GIT_REPO)
+        self.assertIn("-uall", s["run"])
 
     def test_the_held_scene_block_names_all_seven(self):
         _, s = step_named("permitted and the")
@@ -275,26 +346,107 @@ class TestEmbeddedPython(unittest.TestCase):
         self.assertIn("PERMITTED (24)", r.stdout)
 
 
+class TestPythonCachesCannotDirtyTheTree(unittest.TestCase):
+    """The first installed dry run failed only here: ?? system/__pycache__/"""
+
+    def test_bytecode_is_disabled_at_job_level(self):
+        env = JOB.get("env") or {}
+        self.assertEqual(env.get("PYTHONDONTWRITEBYTECODE"), "1")
+
+    def test_it_is_job_level_not_per_step(self):
+        """Job level so it is set before the FIRST python process, including
+        the heredoc blocks and anything pip runs."""
+        self.assertIn("PYTHONDONTWRITEBYTECODE", json.dumps(JOB.get("env")))
+        for s in STEPS:
+            self.assertNotIn("PYTHONDONTWRITEBYTECODE", json.dumps(s.get("env") or {}),
+                             f"step {s.get('name')!r} sets it per-step instead")
+
+    def test_the_gate_does_not_forgive_caches(self):
+        """The fix is at the cause. The gate must NOT allowlist __pycache__."""
+        _, s = step_named("Nothing was committed")
+        for bad in ("__pycache__", "*.pyc", ".py[cod]"):
+            self.assertNotIn(bad, s["run"], f"gate weakened with {bad}")
+
+    def test_the_gate_allowlists_only_this_runs_own_outputs(self):
+        _, s = step_named("Nothing was committed")
+        block = embedded_python(s["run"])[0]
+        allowed = re.search(r"ALLOWED_UNTRACKED = \((.*?)\)", block, re.S).group(1)
+        paths = re.findall(r'"([^"]+)"', allowed)
+        self.assertEqual(sorted(paths), sorted([
+            "elevenlabs/audio/",
+            "elevenlabs/generation_log.json",
+            "validation_report.md"]))
+
+    def test_the_gate_never_broadly_ignores_a_source_directory(self):
+        _, s = step_named("Nothing was committed")
+        for bad in ('"system/"', '"scenes/"', '".github/"', '"elevenlabs/"'):
+            self.assertNotIn(bad, s["run"], f"gate weakened with {bad}")
+
+    def test_a_modified_or_deleted_tracked_file_still_fails(self):
+        _, s = step_named("Nothing was committed")
+        block = embedded_python(s["run"])[0]
+        # Only the "??" status may ever be allowed through.
+        self.assertIn('code == "??"', block)
+
+    def test_the_gitignore_additions_are_narrow(self):
+        """Delivery aid, not a repo requirement — skip when it was not shipped."""
+        p = ROOT / ".github" / "workflows" / "gitignore-additions.txt"
+        if not p.exists():
+            self.skipTest("gitignore-additions.txt is not part of this checkout")
+        lines = [l.strip() for l in p.read_text().splitlines()
+                 if l.strip() and not l.strip().startswith("#")]
+        self.assertEqual(sorted(lines), ["*.py[cod]", "__pycache__/"])
+
+
 class TestMasterFormat(unittest.TestCase):
-    def test_the_locked_output_format_is_pcm_44100(self):
+    def test_the_output_format_is_mp3_44100_128(self):
         v = json.loads((ROOT / "elevenlabs" / "voice_settings.json").read_text())
         pref = v["output_format"]["preferred"]
-        self.assertEqual(pref["api_value"], "pcm_44100")
-        self.assertEqual(pref["container"], "wav")
+        self.assertEqual(pref["api_value"], "mp3_44100_128")
+        self.assertEqual(pref["container"], "mp3")
         self.assertEqual(pref["sample_rate"], 44100)
+        self.assertEqual(pref["bit_rate_kbps"], 128)
         self.assertEqual(pref["channels"], 1)
 
-    def test_every_manifest_audio_target_is_a_wav_named_for_its_scene(self):
+    def test_the_superseded_pcm_format_is_recorded_with_its_403(self):
+        v = json.loads((ROOT / "elevenlabs" / "voice_settings.json").read_text())
+        sup = v["output_format"]["superseded"]
+        self.assertEqual(sup["api_value"], "pcm_44100")
+        self.assertIn("403", sup["why_abandoned"])
+        self.assertIn("output_format_not_allowed", sup["why_abandoned"])
+
+    def test_the_voice_lock_did_not_move_with_the_format(self):
+        v = json.loads((ROOT / "elevenlabs" / "voice_settings.json").read_text())
+        self.assertEqual(v["lock"]["fingerprint_sha256"],
+                         "6de1f549a5cca453b174c9d6a5527a723e5e64185ed175ba17d111952b44ecb2")
+        self.assertEqual(v["voice_id"], "OZxMHsGaBmV5pjMIDIn0")
+        self.assertEqual(v["settings"], {"speed": 0.72, "stability": 0.60,
+                                         "similarity_boost": 0.75, "style": 0.0,
+                                         "use_speaker_boost": True})
+        self.assertNotIn("output_format", v["lock"]["fingerprint_covers"])
+
+    def test_every_manifest_audio_target_is_an_mp3_named_for_its_scene(self):
         man = json.loads((ROOT / "elevenlabs" / "generation_manifest.json").read_text())
         for c in man["clips"]:
             if c["in_master"] and not c["narration_provisional"]:
-                self.assertEqual(c["audio"], f"elevenlabs/audio/{c['scene_id']}.wav")
+                self.assertEqual(c["audio"], f"elevenlabs/audio/{c['scene_id']}.mp3")
 
-    def test_verification_requires_wav_and_rejects_mp3_as_a_master(self):
+    def test_verification_requires_a_441_khz_mp3(self):
         src = (ROOT / "elevenlabs" / "verify_clips.py").read_text()
-        self.assertIn('MASTER_CODEC = "pcm_s16le"', src)
-        self.assertIn('MASTER_SUFFIX = ".wav"', src)
+        self.assertIn('MASTER_CODEC = "mp3"', src)
+        self.assertIn('MASTER_SUFFIX = ".mp3"', src)
         self.assertIn("MASTER_RATE = 44100", src)
+        self.assertIn("MASTER_BITRATE_KBPS = 128", src)
+
+    def test_nothing_transcodes_the_masters(self):
+        src = (ROOT / "elevenlabs" / "generate_scenes.py").read_text()
+        self.assertNotIn("wrap_pcm_as_wav", src)
+        self.assertNotIn("import wave", src)
+        # "lossless" may appear, but only in a sentence that denies it.
+        for n, line in enumerate(src.splitlines(), 1):
+            if "lossless" in line.lower():
+                self.assertIn("not", line.lower(),
+                              f"line {n} claims the masters are lossless")
 
     def test_verification_rejects_a_silent_clip(self):
         src = (ROOT / "elevenlabs" / "verify_clips.py").read_text()

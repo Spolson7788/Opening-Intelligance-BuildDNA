@@ -12,6 +12,9 @@ a file, and never put in a URL:
     Windows PowerShell   $env:ELEVENLABS_API_KEY = "..."
     macOS / Linux        export ELEVENLABS_API_KEY="..."
 
+Masters are the MP3 bytes the API returns — lossy, not lossless, and never
+transcoded into WAV.
+
 What this refuses to do, deliberately
 -------------------------------------
 * Generate a HELD scene. Seven scenes carry narration that depends on a
@@ -77,26 +80,24 @@ def load_voice():
 
 
 def output_format(v):
-    """The approved master format is pcm_44100, wrapped into a WAV container.
+    """The approved master format, read from voice_settings.json.
 
-    The mp3 branch exists only because voice_settings.json could be pointed at
-    it; it is not the approved master format and verify_clips.py rejects an mp3
-    clip. Changing the output format changes nothing about the voice — the lock
-    covers voice id, model and settings, not delivery container.
+    Currently mp3_44100_128 — chosen after pcm_44100 returned HTTP 403
+    output_format_not_allowed (Pro tier only) on the first paid run. What the
+    API returns is written to disk byte for byte: there is no transcode step,
+    because re-encoding a lossy file into WAV recovers nothing the encoder has
+    already discarded and would make the masters look lossless when they are not.
+
+    Output format is a DELIVERY choice and sits outside the voice lock, which
+    covers voice id, model and the five settings only.
     """
     pref = v["output_format"]["preferred"]
-    if pref.get("api_value") == "pcm_44100":
-        return "pcm_44100", ".wav", True
-    return "mp3_44100_192", ".mp3", False
-
-
-def wrap_pcm_as_wav(raw, path, rate=44100, channels=1, bits=16):
-    import wave
-    with wave.open(str(path), "wb") as w:
-        w.setnchannels(channels)
-        w.setsampwidth(bits // 8)
-        w.setframerate(rate)
-        w.writeframes(raw)
+    api = pref["api_value"]
+    container = pref.get("container", "mp3")
+    if not api.startswith(f"{container}_"):
+        sys.exit(f"voice_settings.json output_format is incoherent: api_value "
+                 f"{api!r} does not match container {container!r}.")
+    return api, f".{container}"
 
 
 # ------------------------------------------------------------------ probing
@@ -187,7 +188,7 @@ def main():
     a = ap.parse_args()
 
     voice = load_voice()
-    fmt, ext, is_pcm = output_format(voice)
+    fmt, ext = output_format(voice)
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     wanted = set(a.scenes or [])
 
@@ -276,10 +277,8 @@ def main():
                 break
             continue
 
-        if is_pcm:
-            wrap_pcm_as_wav(raw, dest)
-        else:
-            dest.write_bytes(raw)
+        # Written exactly as the API returned it. No transcode, no re-container.
+        dest.write_bytes(raw)
 
         p = probe(dest)
         if not p:

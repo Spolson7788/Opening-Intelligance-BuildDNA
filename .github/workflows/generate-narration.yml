@@ -193,7 +193,7 @@ jobs:
         # remade. Re-dispatching after a partial run therefore costs only the
         # scenes that are still missing — it never re-spends on a good clip.
 
-      - name: Verify every clip — WAV, duration, format, size, hash, and the set
+      - name: Verify every clip — MP3, duration, format, size, hash, and the set
         # !cancelled() rather than success(): if generation stopped partway, the
         # clips that DID land still get verified and still get uploaded. The job
         # still fails — this step reports the missing ones — but nothing already
@@ -203,8 +203,9 @@ jobs:
           python elevenlabs/verify_clips.py \
             --expect-set ready \
             --report validation_report.md
-        # Approved master format: pcm_44100 in a WAV container, 44.1 kHz, mono.
-        # A readable file that decodes to silence is a failure, not a pass.
+        # Approved master format: mp3_44100_128 — a valid 44.1 kHz mono MP3 at
+        # about 128 kbps. Lossy, never transcoded to WAV. A readable file that
+        # decodes to continuous silence is a failure, not a pass.
 
       - name: Confirm the voice held across the whole batch
         if: ${{ !cancelled() && inputs.dry_run == false }}
@@ -231,7 +232,7 @@ jobs:
           out = subprocess.run(["git", "status", "--porcelain", "-uall"],
                                capture_output=True, text=True, check=True).stdout
           ALLOWED_UNTRACKED = (
-              "elevenlabs/audio/",              # the WAV masters this run made
+              "elevenlabs/audio/",              # the MP3 masters this run made
               "elevenlabs/generation_log.json", # its log
               "validation_report.md",           # its verification report
           )
@@ -283,10 +284,10 @@ jobs:
 
       # ------------------------------------------------------------- artifact
       # Private to the repository by default — artifacts follow repository
-      # visibility and are not public for a private repo. The WAV masters, the
+      # visibility and are not public for a private repo. The MP3 masters, the
       # manifest, the generation log and the validation report only. No logs
       # that could carry a header, and nothing is committed to the branch.
-      - name: Upload the WAV masters and reports
+      - name: Upload the MP3 masters and reports
         # Runs even when an earlier step failed, so a partial batch is still
         # downloadable. generation_manifest.json is always present, so
         # if-no-files-found: error still means 'the upload itself went wrong'.
@@ -307,6 +308,8 @@ jobs:
         run: |
           {
             echo "## Trial 1 narration"
+            echo ""
+            echo "Master format: mp3_44100_128 — 44.1 kHz mono MP3, ~128 kbps (lossy)."
             echo ""
             if [ -f validation_report.md ]; then
               cat validation_report.md
