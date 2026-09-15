@@ -45,6 +45,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # Job level, so it is set before the first Python process starts and applies
+    # to every one after it — the CLI, the heredoc blocks, and anything pip runs.
+    # Without it, importing system/builder.py writes system/__pycache__/, which
+    # is an untracked directory the cleanliness gate then correctly refuses.
+    # The fix belongs here, at the cause; the gate itself stays strict.
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+
     # The key lives in a PROTECTED GitHub environment, not in repository secrets,
     # so required reviewers / branch restrictions on that environment gate the
     # run before the job can reach the secret at all.
@@ -206,14 +214,43 @@ jobs:
         if: ${{ !cancelled() }}
         # The job has read-only contents permission, so a commit could not
         # succeed. This asserts it anyway, and names anything unexpected.
+        #
+        # Strict by design: ONLY this run's own outputs may be untracked, and
+        # every one is named in full. A modified or deleted tracked file fails.
+        # An untracked file anywhere else fails — including under system/,
+        # .github/ or scenes/. Python caches do not appear here because
+        # PYTHONDONTWRITEBYTECODE stops them being written at all, not because
+        # they are forgiven.
         run: |
-          git status --porcelain > /tmp/dirty.txt
-          if grep -qv '^?? elevenlabs/audio/\|^?? validation_report.md\|^?? elevenlabs/generation_log.json' /tmp/dirty.txt; then
-            echo "::error::Unexpected working-tree changes:"
-            cat /tmp/dirty.txt
-            exit 1
-          fi
-          echo "Working tree carries only untracked generated output. Nothing committed."
+          python - <<'PY'
+          import subprocess, sys
+          # -uall expands untracked DIRECTORIES into their individual files.
+          # Without it git collapses a wholly-untracked directory to one line —
+          # "?? system/" — which both hides which file appeared and breaks
+          # prefix matching against the allowlist below.
+          out = subprocess.run(["git", "status", "--porcelain", "-uall"],
+                               capture_output=True, text=True, check=True).stdout
+          ALLOWED_UNTRACKED = (
+              "elevenlabs/audio/",              # the WAV masters this run made
+              "elevenlabs/generation_log.json", # its log
+              "validation_report.md",           # its verification report
+          )
+          unexpected = []
+          for line in out.splitlines():
+              if not line.strip():
+                  continue
+              code, path = line[:2], line[3:].strip().strip('"')
+              if code == "??" and path.startswith(ALLOWED_UNTRACKED):
+                  continue
+              unexpected.append(line)
+          if unexpected:
+              print("::error::Unexpected working-tree changes:")
+              for line in unexpected:
+                  print(f"  {line}")
+              sys.exit(1)
+          print("Working tree carries only this run's own untracked output. "
+                "Nothing committed, nothing else changed.")
+          PY
 
       - name: Redaction check on everything about to be uploaded
         if: ${{ always() }}
