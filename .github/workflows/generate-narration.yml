@@ -1,0 +1,279 @@
+# PREPARED FOR REVIEW — not installed, never triggered, no secret added.
+#
+# This file is dispatchable only once it sits in .github/workflows/ on the
+# repository's DEFAULT branch. Until then GitHub does not offer it in the
+# Actions tab at all. Installing it costs nothing on its own: it has no
+# schedule and no push trigger, so it runs only when a person dispatches it,
+# and its first defence is the dry_run input, which defaults to true.
+#
+# Before the first real run, see elevenlabs/WORKFLOW_REVIEW.md.
+
+name: Generate Trial 1 narration (manual)
+
+# Manual dispatch only. There is no `schedule:`, no `push:`, no `pull_request:`
+# and no `workflow_call:` — this run spends ElevenLabs credits and writes audio
+# that the whole video is cut against, so it starts only when a person starts it.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type exactly: GENERATE 24 CLIPS'
+        required: true
+        default: ''
+      expected_scene_count:
+        description: 'Number of scenes this run is approved for. Mismatch stops the run.'
+        required: true
+        default: '24'
+      dry_run:
+        description: 'Plan and check only — no API calls, no credits spent'
+        type: boolean
+        required: true
+        default: true
+
+# Read-only. The job never needs to write to the repository: generated audio is
+# uploaded as an artifact and is never committed.
+permissions:
+  contents: read
+
+# Two runs at once would double-spend credits and race on elevenlabs/audio/.
+concurrency:
+  group: elevenlabs-narration
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # The key lives in a PROTECTED GitHub environment, not in repository secrets,
+    # so required reviewers / branch restrictions on that environment gate the
+    # run before the job can reach the secret at all.
+    environment: elevenlabs-narration
+
+    steps:
+      - name: Check out the video system
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: ffmpeg and ffprobe
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffprobe -version | head -1
+
+      - name: Python dependencies (pinned)
+        run: pip install --disable-pip-version-check -r .github/workflows/requirements.txt
+
+      # ---------------------------------------------------------------- gates
+      # Preflight first: a file that did not make it into the repository should
+      # stop the run here, not halfway through a paid batch.
+      - name: Preflight — every required file present and coherent
+        run: python .github/workflows/preflight.py
+
+      # Every ${{ }} expression is passed through `env:` and never interpolated
+      # into a shell body. Interpolating run-time input directly into `run:` is
+      # a script-injection pattern, and the workflow test asserts it never
+      # appears here.
+      - name: Confirmation gate
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          if [ "$DRY" = "true" ]; then
+            echo "Dry run: no credits will be spent. Confirmation not required."
+            exit 0
+          fi
+          if [ "$CONFIRM" != "GENERATE 24 CLIPS" ]; then
+            echo "::error::Confirmation text did not match. Nothing was generated."
+            echo "To spend credits, re-dispatch with dry_run unchecked and the"
+            echo "confirmation typed exactly as: GENERATE 24 CLIPS"
+            exit 1
+          fi
+          echo "Confirmed by dispatcher. Proceeding to spend credits."
+
+      - name: Voice lock — voicecheck before any request
+        run: python system/oi_video.py voicecheck
+
+      - name: Speaker boost provenance
+        # USER-APPROVED PRODUCTION SETTING: speaker boost ON, approved for all
+        # Trial 1 narration on 2026-09-14. It is no longer an inference from the
+        # reference filename. The step still runs — an approved setting that the
+        # sample's own metadata contradicted would be worth stopping for — but a
+        # silent sample no longer leaves anything unresolved.
+        run: |
+          python - <<'PY'
+          import json, pathlib, subprocess, sys
+          v = json.loads(pathlib.Path("elevenlabs/voice_settings.json").read_text())
+          ref = pathlib.Path(v["reference_sample"]["file"])
+          boost = v["settings"]["use_speaker_boost"]
+          print(f"locked use_speaker_boost = {boost}")
+          tags = {}
+          if ref.exists():
+              out = subprocess.run(["ffprobe", "-v", "error", "-show_format",
+                                    "-of", "json", str(ref)],
+                                   capture_output=True, text=True)
+              if out.returncode == 0:
+                  tags = json.loads(out.stdout)["format"].get("tags", {})
+          print(f"reference sample tags: {tags or '(none beyond encoder)'}")
+          blob = json.dumps(tags).lower()
+          # Any tag that mentions boost and denies it, in whatever spelling.
+          contradicts = "boost" in blob and ("false" in blob or "off" in blob
+                                             or "disabled" in blob)
+          if contradicts:
+              print("::error::The reference sample's own metadata contradicts the "
+                    "locked speaker-boost value. Resolve before generating.")
+              sys.exit(1)
+          print("No embedded metadata contradicts it.")
+          print("Speaker boost is a USER-APPROVED PRODUCTION SETTING, approved on")
+          print("2026-09-14 for all Trial 1 narration — not an inference. The '_b_'")
+          print("token in the reference filename corroborates it; it is no longer")
+          print("the basis for it. Nothing outstanding.")
+          PY
+
+      - name: The 24 permitted and the 7 held
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          m = json.loads(pathlib.Path("elevenlabs/generation_manifest.json").read_text())
+          ready = [c["scene_id"] for c in m["clips"]
+                   if c["in_master"] and not c["narration_provisional"]]
+          held = [c for c in m["clips"] if c["narration_provisional"]]
+          print(f"PERMITTED ({len(ready)}):")
+          print("  " + " ".join(ready))
+          print(f"\nHELD — will NOT be generated ({len(held)}):")
+          for c in held:
+              print(f"  {c['scene_id']:<6} {c['provisional_reason']}")
+          PY
+
+      - name: Plan and credit estimate
+        env:
+          EXPECTED: ${{ inputs.expected_scene_count }}
+        run: python elevenlabs/generate_scenes.py --dry-run --expect "$EXPECTED"
+
+      - name: Secret is present
+        # Presence only. The value is never echoed, never written to a file,
+        # never put in an output, and never added to the step summary.
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+        run: |
+          if [ -z "${ELEVENLABS_API_KEY}" ]; then
+            echo "::error::ELEVENLABS_API_KEY is not set in the 'elevenlabs-narration'"
+            echo "environment. Nothing was generated."
+            exit 1
+          fi
+          echo "ELEVENLABS_API_KEY is present (length not reported)."
+
+      # ----------------------------------------------------------- generation
+      - name: Generate the permitted scenes
+        if: ${{ inputs.dry_run == false }}
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          EXPECTED: ${{ inputs.expected_scene_count }}
+        run: |
+          python elevenlabs/generate_scenes.py \
+            --expect "$EXPECTED" \
+            --fail-fast
+        # --fail-fast stops at the first API error, unreadable or incomplete
+        # file. A half-generated batch uploaded as if complete is the failure
+        # this is written to prevent.
+        #
+        # --regenerate is NOT passed, so a clip already on disk is skipped, not
+        # remade. Re-dispatching after a partial run therefore costs only the
+        # scenes that are still missing — it never re-spends on a good clip.
+
+      - name: Verify every clip — WAV, duration, format, size, hash, and the set
+        # !cancelled() rather than success(): if generation stopped partway, the
+        # clips that DID land still get verified and still get uploaded. The job
+        # still fails — this step reports the missing ones — but nothing already
+        # paid for is thrown away.
+        if: ${{ !cancelled() && inputs.dry_run == false }}
+        run: |
+          python elevenlabs/verify_clips.py \
+            --expect-set ready \
+            --report validation_report.md
+        # Approved master format: pcm_44100 in a WAV container, 44.1 kHz, mono.
+        # A readable file that decodes to silence is a failure, not a pass.
+
+      - name: Confirm the voice held across the whole batch
+        if: ${{ !cancelled() && inputs.dry_run == false }}
+        run: python system/oi_video.py voicecheck
+
+      - name: Nothing was committed
+        if: ${{ !cancelled() }}
+        # The job has read-only contents permission, so a commit could not
+        # succeed. This asserts it anyway, and names anything unexpected.
+        run: |
+          git status --porcelain > /tmp/dirty.txt
+          if grep -qv '^?? elevenlabs/audio/\|^?? validation_report.md\|^?? elevenlabs/generation_log.json' /tmp/dirty.txt; then
+            echo "::error::Unexpected working-tree changes:"
+            cat /tmp/dirty.txt
+            exit 1
+          fi
+          echo "Working tree carries only untracked generated output. Nothing committed."
+
+      - name: Redaction check on everything about to be uploaded
+        if: ${{ always() }}
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, sys
+          key = os.environ.get("ELEVENLABS_API_KEY", "")
+          targets = [pathlib.Path("validation_report.md"),
+                     pathlib.Path("elevenlabs/generation_log.json"),
+                     pathlib.Path("elevenlabs/generation_manifest.json"),
+                     pathlib.Path("elevenlabs/voice_settings.json")]
+          bad = []
+          for p in targets:
+              if not p.exists():
+                  continue
+              text = p.read_text(encoding="utf-8", errors="replace")
+              if key and key in text:
+                  bad.append(f"{p}: contains the API key")
+              for token in ("xi-api-key", "Authorization:", "authorization:"):
+                  if token in text:
+                      bad.append(f"{p}: contains {token!r}")
+          if bad:
+              for b in bad:
+                  print(f"::error::{b}")
+              sys.exit(1)
+          print("No key, no authorization header, in any file being uploaded.")
+          PY
+
+      # ------------------------------------------------------------- artifact
+      # Private to the repository by default — artifacts follow repository
+      # visibility and are not public for a private repo. The WAV masters, the
+      # manifest, the generation log and the validation report only. No logs
+      # that could carry a header, and nothing is committed to the branch.
+      - name: Upload the WAV masters and reports
+        # Runs even when an earlier step failed, so a partial batch is still
+        # downloadable. generation_manifest.json is always present, so
+        # if-no-files-found: error still means 'the upload itself went wrong'.
+        if: ${{ !cancelled() && inputs.dry_run == false }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: trial1-narration-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            elevenlabs/audio/
+            elevenlabs/generation_manifest.json
+            elevenlabs/generation_log.json
+            validation_report.md
+
+      - name: Summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## Trial 1 narration"
+            echo ""
+            if [ -f validation_report.md ]; then
+              cat validation_report.md
+            else
+              echo "No clips generated in this run."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

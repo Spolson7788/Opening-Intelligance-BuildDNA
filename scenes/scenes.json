@@ -1,0 +1,2742 @@
+{
+  "project": "Opening Intelligence — Modular Video Production System",
+  "video_version": "0.31.0",
+  "version_policy": "major = workflow or presentation restructuring; minor = new feature or chapter; patch = corrections that do not materially change the presentation",
+  "master_cut": "Trial 1 — introduction and first complete opening through the purchasing handoff",
+  "field_app_version": "FA-v40-drop14",
+  "demo_data_version": "OI-DEMO 1.12.0",
+  "last_modified": "2026-09-14",
+  "statuses": [
+    "Draft",
+    "Ready for review",
+    "Approved",
+    "Superseded",
+    "Blocked"
+  ],
+  "chapters": [
+    {
+      "id": "CH01",
+      "title": "OI introduction and overview",
+      "scope": "What OI is, what the viewer will see, the tagline."
+    },
+    {
+      "id": "CH02",
+      "title": "Facility and opening setup",
+      "scope": "Establishing the facility and a specific opening record."
+    },
+    {
+      "id": "CH03",
+      "title": "Hardware identification",
+      "scope": "Capture, visible attributes, identification, condition, save — per part."
+    },
+    {
+      "id": "CH04",
+      "title": "Manufacturer documentation",
+      "scope": "Opening and reading the manufacturer's own document beside the hardware."
+    },
+    {
+      "id": "CH05",
+      "title": "Door and frame specifications",
+      "scope": "Recording the door and frame against the same opening."
+    },
+    {
+      "id": "CH06",
+      "title": "Finish the Opening",
+      "scope": "Completing the opening and unlocking its QR."
+    },
+    {
+      "id": "CH07",
+      "title": "Purchasing output",
+      "scope": "What purchasing receives, and the Vortex mapping applied to it."
+    },
+    {
+      "id": "CH08",
+      "title": "Additional openings",
+      "scope": "Openings 2 and 3, each complete before its purchasing handoff."
+    },
+    {
+      "id": "CH09",
+      "title": "Service call",
+      "scope": "Returning to an established opening to record a service call."
+    },
+    {
+      "id": "CH10",
+      "title": "Facility-facing results and benefits",
+      "scope": "The same openings from the facility side, and the closing case."
+    },
+    {
+      "id": "MOD1",
+      "title": "Recognition, review and improvement (standalone module)",
+      "scope": "Optional module, not part of the principal walkthrough. Reuses the same registry, narration folder, captions, application environment and build pipeline. Assembled as its own cut; `in_master` is false for every scene in it."
+    }
+  ],
+  "scenes": [
+    {
+      "scene_id": "S010",
+      "chapter": "CH01",
+      "title": "What OI is",
+      "purpose": "Name the product and say what it does.",
+      "audience_benefit": "Viewer knows what OI is before any interface appears.",
+      "narration": "Opening Intelligence, or OI, helps you identify commercial door hardware and organize the information about each opening—from the products installed to the service work performed.",
+      "screen_action": [
+        "Hold on the OI title card (logo + 'Opening Intelligence powered by BuildDNA').",
+        "Cross-dissolve to a still photograph of a commercial door opening; hold to the end of the line."
+      ],
+      "expected_visible_result": "Viewer sees the product name and a real commercial opening before any UI appears.",
+      "on_screen_values": [],
+      "required_source_assets": [
+        "assets/photo_commercial_opening.jpg (632x719, presentation only)",
+        "assets/title_card.png"
+      ],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S010.webm",
+      "narration_file": "elevenlabs/audio/S010.wav",
+      "narration_script": "elevenlabs/scenes/S010.txt",
+      "caption": null,
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "assets/title_card.png",
+        "ASSET: photo_commercial_opening.jpg"
+      ],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": "photo_commercial_opening.jpg",
+      "overlay_card": null,
+      "est_seconds": 11,
+      "change_note": "Asset intake 4: provisional 252x428 image replaced by the supplied 632x719 paired-door image. Rendered at 856 px tall (1.19x native), inspected at final display size and accepted as the final S010 introductory asset. Narration unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S010"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "opening-shot asset supplied; scene unblocked",
+          "amendment": "Asset intake 3"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "introductory asset replaced and accepted",
+          "amendment": "Asset intake 4 — S010 image replaced and accepted; ESC excerpt registered"
+        }
+      ],
+      "still_max_height": 856,
+      "acceptance_criteria": [
+        "The commercial-opening image is presentation only. It is never used for image recognition and never cited as hardware evidence.",
+        "It is not treated as one of the configured demonstration openings.",
+        "No manufacturer, model, fire rating, compliance or opening condition is inferred from it or stated over it.",
+        "No tight crop and no zoom into it.",
+        "It is shown at 1.19x native and is never described as gaining detail from scaling."
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S020",
+      "chapter": "CH01",
+      "title": "Preview the walkthrough",
+      "purpose": "Promise the walkthrough, showing the actual screens named.",
+      "audience_benefit": "Viewer knows the scope and can decide to keep watching.",
+      "narration": "Let me show you how it works. We'll walk through three different openings, photograph the hardware and see what OI can support from those photographs, review the manufacturer's documentation, and save each part. We'll also record the door and frame details for those same openings. For each opening, we'll finish the opening before looking at what purchasing receives. After all three, we'll log a service call and see how the information helps the facility team.",
+      "screen_action": [
+        "Three short readable previews, ~4s each, of screens named in the line: (1) the identification result card, (2) the Cal-Royal CR441 cut sheet, (3) the Door & frame spec panel.",
+        "No SKU card and no purchasing screen in this preview (reserved for CH8)."
+      ],
+      "expected_visible_result": "Viewer sees the actual screens promised, at readable size.",
+      "on_screen_values": [],
+      "required_source_assets": [
+        "prototype/build/index.html (the controlled demonstration build — recorded live, no external asset)"
+      ],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S020.webm",
+      "narration_file": "elevenlabs/audio/S020.wav",
+      "narration_script": "elevenlabs/scenes/S020.txt",
+      "caption": null,
+      "status": "Draft",
+      "blocked_reason": "Needs in-app previews of the cut sheet and the door & frame panel — so it follows the local demonstration mode and PC-3, not a credentials question.",
+      "last_modified": "2026-09-13",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 33,
+      "change_note": "v1.1: the preview now promises what OI can support from the photographs rather than a flat 'identify the hardware', so the introduction cannot over-promise a model-level result.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S020"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "amended",
+          "amendment": "Master Directive v1.1 — conservative image-recognition standard"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "asset requirement restated as the demonstration build",
+          "note": "Inventory record only. Narration, scene structure and evidence classification unchanged."
+        }
+      ],
+      "narration_provisional": false,
+      "asset_note": "S020 previews three screens of the demonstration build itself. It needs no photograph, document or still — only a recording pass. The previous entry was a working note rather than an asset path, which an automated inventory could not distinguish from a missing file.",
+      "superseded_asset_requirement": [
+        "capture clips or stills from the v40 prototype"
+      ]
+    },
+    {
+      "scene_id": "S030",
+      "chapter": "CH01",
+      "title": "Tagline",
+      "purpose": "Deliver the tagline.",
+      "audience_benefit": "Positions OI as identification at the opening itself.",
+      "narration": "Opening Intelligence—commercial door hardware identified right at the opening.",
+      "screen_action": [
+        "OI wordmark on the dark brand background. Natural pause after the company name (~0.5s)."
+      ],
+      "expected_visible_result": "Clean brand beat before the demonstration begins.",
+      "on_screen_values": [],
+      "required_source_assets": [
+        "title_card.png"
+      ],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S030.webm",
+      "narration_file": "elevenlabs/audio/S030.wav",
+      "narration_script": "elevenlabs/scenes/S030.txt",
+      "caption": null,
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-13",
+      "dependencies": [
+        "assets/title_card.png"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": false,
+      "in_master": true,
+      "still": "title_card.png",
+      "overlay_card": null,
+      "est_seconds": 4,
+      "change_note": "Carried over from the trial package unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S030"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "Ready for review → Approved",
+          "note": "proof of status transition only — reverted below"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "Approved → Ready for review",
+          "note": "reverted: no clip approved yet"
+        }
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S040",
+      "chapter": "CH01",
+      "title": "Into the demonstration",
+      "purpose": "Hand off from brand to demonstration.",
+      "audience_benefit": "Signals the real work is starting.",
+      "narration": "Let's start with this door. I'll choose the facility, then enter its location and opening number.",
+      "screen_action": [
+        "Cut to the app, scrolled to the top: header, 'How to use — tap to expand', signed-in line, FACILITY row, OPENING DETAILS."
+      ],
+      "expected_visible_result": "Full screen context visible before any close-up.",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S040.webm",
+      "narration_file": "elevenlabs/audio/S040.wav",
+      "narration_script": "elevenlabs/scenes/S040.txt",
+      "caption": null,
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-13",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": false,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 7,
+      "change_note": "Carried over from the trial package unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S040"
+        }
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S050",
+      "chapter": "CH02",
+      "title": "Choose the facility",
+      "purpose": "Select the facility and show a facility can be added.",
+      "audience_benefit": "Field partner and facility customer both see where records land.",
+      "narration": "I'll start by choosing the facility—Valley Medical Center. If a facility isn't in the list yet, Add creates it.",
+      "screen_action": [
+        "Move pointer to the FACILITY select; open it; choose 'Valley Medical Center'.",
+        "Hold 1s on the selected value.",
+        "Move pointer over the '+ Add' button without clicking it."
+      ],
+      "expected_visible_result": "FACILITY reads 'Valley Medical Center'.",
+      "on_screen_values": [
+        "FACILITY: Valley Medical Center"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S050.webm",
+      "narration_file": "elevenlabs/audio/S050.wav",
+      "narration_script": "elevenlabs/scenes/S050.txt",
+      "caption": "Demonstration facility · Valley Medical Center",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.facility",
+        "account.auth"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 9,
+      "change_note": "v1.1b: caption identifies the facility as demonstration data. Narration unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S050"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "demonstration-data identification added",
+          "amendment": "Master Directive v1.1b — demonstration-data clarification"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "blocker rewritten to the approved local demonstration mode",
+          "amendment": "Approved decisions — OP2 values, S100 narration, PC-2 local demonstration mode"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "acceptance_criteria": [
+        "The caption identifies the facility as demonstration data.",
+        "Nothing states or implies this is a real customer facility."
+      ],
+      "notes": [
+        "2026-09-14: Recorded against the controlled demonstration build: facility selector visible, Valley Medical Center selected, no sign-in prompt."
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S060",
+      "chapter": "CH02",
+      "title": "Type the location",
+      "purpose": "Type the location.",
+      "audience_benefit": "Everything collected belongs to a findable place.",
+      "narration": "For the location, I'm entering East corridor.",
+      "screen_action": [
+        "Move pointer into the Location field and click.",
+        "Type 'East corridor' character by character, finishing as the phrase ends (~90ms per character).",
+        "Hold the completed field 1.5s."
+      ],
+      "expected_visible_result": "Location field reads 'East corridor'.",
+      "on_screen_values": [
+        "Location: East corridor"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S060.webm",
+      "narration_file": "elevenlabs/audio/S060.wav",
+      "narration_script": "elevenlabs/scenes/S060.txt",
+      "caption": "Location · East corridor (illustrative)",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-13",
+      "dependencies": [
+        "OI-DEMO.OP1.location"
+      ],
+      "rerecord_required": true,
+      "renarrate_required": false,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 3,
+      "change_note": "Carried over from the trial package unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S060"
+        }
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S070",
+      "chapter": "CH02",
+      "title": "Type the opening number",
+      "purpose": "Type the opening number and say why identity matters.",
+      "audience_benefit": "A technician returning later finds the same door.",
+      "narration": "And this is opening two zero five A. This is a demonstration record—the facility, the opening and the product images are all set up to show the workflow. Now we have a specific door to attach the photos, hardware and service record to, so when someone comes back to this door, everything we collected is under this one opening.",
+      "screen_action": [
+        "Click the Opening # field; type '205A' during the first phrase.",
+        "Hold both completed fields on screen for at least 2s while the benefit line is spoken."
+      ],
+      "expected_visible_result": "Location 'East corridor' and Opening # '205A' both readable.",
+      "on_screen_values": [
+        "Opening #: 205A"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S070.webm",
+      "narration_file": "elevenlabs/audio/S070.wav",
+      "narration_script": "elevenlabs/scenes/S070.txt",
+      "caption": "Opening 205A",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-13",
+      "dependencies": [
+        "OI-DEMO.OP1.opening_number"
+      ],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 26,
+      "change_note": "v1.1b: the illustrative-values line now covers the images as well as the field values, and says 'demonstration record' plainly. Structure, ID and timing unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S070"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "demonstration-data identification added",
+          "amendment": "Master Directive v1.1b — demonstration-data clarification"
+        }
+      ],
+      "acceptance_criteria": [
+        "The record and the images are identified as a demonstration, out loud, before any hardware is captured.",
+        "Nothing states or implies the images were photographed at one real door."
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S080",
+      "chapter": "CH02",
+      "title": "Starting controls — guide and fire-rated field",
+      "purpose": "Show the how-to guide and the fire-rated field.",
+      "audience_benefit": "Guidance is at hand; the rating is recorded honestly, not certified.",
+      "narration": "Before we start, the how-to guide is right here if you need a reminder while you're working. There's also a field for whether this is a fire-rated opening. This door carries a fire-rated exit device, so I'll check it. That records what we verified at the door—it isn't a compliance sign-off.",
+      "screen_action": [
+        "Tap 'How to use — tap to expand'; hold 4s on the numbered steps; collapse it.",
+        "Move to the 'This is a fire-rated opening' checkbox; check it.",
+        "Hold on the checked box and its helper text."
+      ],
+      "expected_visible_result": "Guide opens and closes; checkbox visibly becomes checked.",
+      "on_screen_values": [
+        "This is a fire-rated opening: checked"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S080.webm",
+      "narration_file": "elevenlabs/audio/S080.wav",
+      "narration_script": "elevenlabs/scenes/S080.txt",
+      "caption": "Fire-rated: recorded at the door, not a compliance sign-off",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.fire_rated"
+      ],
+      "rerecord_required": true,
+      "renarrate_required": false,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 25,
+      "change_note": "Carried over from the trial package unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S080"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "acceptance criterion added",
+          "amendment": "Master Directive v1.1c — asset intake"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "fire-language limit recorded",
+          "amendment": "Asset intake 3 — intro image + ESC trim-selection excerpt"
+        }
+      ],
+      "acceptance_criteria": [
+        "The fire-rated check rests on the AF7700 selection, which manufacturer documentation establishes as the fire variant. It is never presented as a compliance determination, and never as something the image shows.",
+        "Fire language stays within limits: the AF7700 is a fire-rated rim exit device per manufacturer documentation, and the checkbox records what was observed. Never a certified or UL-listed fire-door assembly claim."
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S090",
+      "chapter": "CH03",
+      "title": "Choose the part type",
+      "purpose": "Choose the part type.",
+      "audience_benefit": "Shows the part vocabulary a tech works from.",
+      "narration": "Let's start with the closer.",
+      "screen_action": [
+        "Scroll to '1 · WHAT KIND OF PART?'; hold 1s on the full grid; tap 'DOOR CLOSER'."
+      ],
+      "expected_visible_result": "DOOR CLOSER highlights and the guided capture panel appears.",
+      "on_screen_values": [
+        "1 · WHAT KIND OF PART? → DOOR CLOSER selected"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S090.webm",
+      "narration_file": "elevenlabs/audio/S090.wav",
+      "narration_script": "elevenlabs/scenes/S090.txt",
+      "caption": null,
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-13",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": false,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 2,
+      "change_note": "Carried over from the trial package unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S090"
+        }
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S100",
+      "chapter": "CH03",
+      "title": "Guided photo capture",
+      "purpose": "Work the guided photo sequence for the closer.",
+      "audience_benefit": "The app asks for the shots that actually identify hardware.",
+      "narration": "The field guide normally asks for the whole closer on the door. For this demonstration, I'm using an approved product reference image.",
+      "screen_action": [
+        "Hold on the guided step so the app's own wording — 'Step 1 of 2: Whole closer on the door' — is readable.",
+        "Load the approved product reference image; hold on the returned thumbnail.",
+        "Load the body-stamp reference image; hold until '✓ All 2 shots taken' appears."
+      ],
+      "expected_visible_result": "Both reference images are loaded through the app's own guided capture steps.",
+      "on_screen_values": [
+        "Step 1 of 2: Whole closer on the door",
+        "Step 2 of 2: Body stamp / label",
+        "✓ All 2 shots taken"
+      ],
+      "required_source_assets": [
+        "assets/photos/_supplemental/CR441_CAD_exploded_A.jpg (approved CR441 CAD/product view)",
+        "assets/photos/_supplemental/CR441_CAD_exploded_B.jpg (approved CR441 CAD/product view)",
+        "assets/photos/_supplemental/CR441_CAD_exploded_C.jpg (approved CR441 CAD/product view)",
+        "assets/photos/OP1_closer_whole.jpg (step 1 of 2 — approved product reference image)",
+        "assets/photos/OP1_closer_stamp.jpg (step 2 of 2 — CR441 label image)",
+        "assets/documents/CalRoyal_CR441_Specs.pdf (manufacturer documentation)"
+      ],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S100.webm",
+      "narration_file": "elevenlabs/audio/S100.wav",
+      "narration_script": "elevenlabs/scenes/S100.txt",
+      "caption": "Guided capture · approved reference images",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.closer.field_photographs"
+      ],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 10,
+      "change_note": "Approved decision: the app's guidance is preserved and the narration names the reference image for what it is. Replaces the earlier line that echoed 'the whole closer on the door' as if the asset showed it.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S100"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "amended",
+          "amendment": "Master Directive v1.1 — conservative image-recognition standard"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "asset intake 2",
+          "amendment": "Asset intake 2 — nine images, opening 1 complete"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "approved narration applied",
+          "amendment": "Approved decisions — OP2 values, S100 narration, PC-2 local demonstration mode"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "asset requirement corrected to the approved demonstration assets",
+          "note": "Reclassified from 'missing source asset' to 'recording not yet performed'. No real field photographs are required. Narration, scene structure and evidence classification unchanged."
+        }
+      ],
+      "acceptance_criteria": [
+        "The app's 'Whole closer on the door' guidance stays visible and is not altered.",
+        "The narration says plainly that an approved product reference image is being used.",
+        "Nothing claims an installed mounting configuration."
+      ],
+      "narration_provisional": false,
+      "asset_note": "Presentation-demonstration decision: real installed field photographs are NOT required. The field guide normally asks for an installed image; this demonstration uses an approved product reference image, and S100's narration already discloses exactly that. Narration unchanged.",
+      "superseded_asset_requirement": [
+        "ASSET NEEDED: real CR441 installed-hardware photos (whole closer, body stamp)"
+      ]
+    },
+    {
+      "scene_id": "S110",
+      "chapter": "CH03",
+      "title": "Record what you can see",
+      "purpose": "Record the visible attributes.",
+      "audience_benefit": "A tech can contribute without disassembling anything.",
+      "narration": "I add what I can see without taking anything apart: the closer type, how it's mounted, the arm configuration, the cover, and the manufacturer stamp if it's legible. OI works from the photographs and these attributes together—what comes back is built on both, not on the images alone.",
+      "screen_action": [
+        "Open each dropdown in '2 · WHAT CAN YOU SEE?' as it is named and set: ARM TYPE = hold_open, COVER TYPE = plastic, MANUFACTURER STAMP = Cal-Royal.",
+        "Leave MOUNTING at '— not sure —' and let that stand; do not narrate it as known."
+      ],
+      "expected_visible_result": "Each selection visibly lands in its field.",
+      "on_screen_values": [
+        "ARM TYPE: hold_open",
+        "COVER TYPE: plastic",
+        "MANUFACTURER STAMP: Cal-Royal"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S110.webm",
+      "narration_file": "elevenlabs/audio/S110.wav",
+      "narration_script": "elevenlabs/scenes/S110.txt",
+      "caption": "Photographs and visible attributes together",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.closer.attributes"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 22,
+      "change_note": "v1.1f: 'the two work together' made explicit — the result is built on the photographs AND the technician-entered attributes. No result or percentage changed.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S110"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "amended",
+          "amendment": "Master Directive v1.1 — conservative image-recognition standard"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "narration revised",
+          "amendment": "Master Directive v1.1f — narration consistency"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "narration_previous": "OI analyzes the photographs, and I add what I can see without taking anything apart: the closer type, how it's mounted, the arm configuration, the cover, and the manufacturer stamp if it's legible. The two work together—neither the photographs nor the attributes carry it alone.",
+      "acceptance_criteria": [
+        "The narration must not say or imply that the photographs alone produced the manufacturer result. The technician-entered manufacturer attribute contributed to it, and the line says so.",
+        "The on-screen result and its percentages are exactly what the application returned. The narration describes them; it never restates them differently."
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S120",
+      "chapter": "CH03",
+      "title": "Identify",
+      "purpose": "Run identification.",
+      "audience_benefit": "Shows the moment of asking the app.",
+      "narration": "Now I'll ask OI to analyze the photographs.",
+      "screen_action": [
+        "Press Identify; hold through the analysing state until the result card renders."
+      ],
+      "expected_visible_result": "Result card appears with a ranked shortlist.",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S120.webm",
+      "narration_file": "elevenlabs/audio/S120.wav",
+      "narration_script": "elevenlabs/scenes/S120.txt",
+      "caption": "Image-assisted identification",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 4,
+      "change_note": "v1.1: terminology — 'analyze the photographs' replaces 'select Identify'.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S120"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "amended",
+          "amendment": "Master Directive v1.1 — conservative image-recognition standard"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S130",
+      "chapter": "CH03",
+      "title": "What the analysis supports",
+      "purpose": "Read the result at the level the evidence supports.",
+      "audience_benefit": "Honest uncertainty is the product's strongest sales point.",
+      "narration": "OI analyzes the photographs together with the visible attributes I entered and tells me how far the evidence goes. Surface-mounted closer, manufacturer Cal-Royal, family C R four forty-one—and then it stops. Model: not established. This family has look-alikes, and nothing in the evidence separates them yet. It reports the level it can defend, not the one I'd like.",
+      "screen_action": [
+        "Hold on the result card while the level rows are spoken.",
+        "One push-in across the three level rows. No second push-in.",
+        "Do not read the headline percentage aloud.",
+        "Leave the reference-coverage and cross-reference detail unexplained here — it belongs to the standalone recognition module."
+      ],
+      "expected_visible_result": "Manufacturer, family and model rows plus the highest defensible level are readable, and the spoken level matches the screen exactly.",
+      "on_screen_values": [
+        "confidence 51% · 1 best-match",
+        "Manufacturer · Cal-Royal · 97%",
+        "Family · CR441 · 421 · 97%",
+        "Model · Not established · 0%",
+        "Highest defensible level: family",
+        "Cross-reference group HN-005 — look-alike / replacement family"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.12.0",
+      "screen_recording": "recordings/scenes/S130.webm",
+      "narration_file": "elevenlabs/audio/S130.wav",
+      "narration_script": "elevenlabs/scenes/S130.txt",
+      "caption": "Category and family supported — model not established",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.closer.attribute_only_result"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 28,
+      "change_note": "v1.1g: all three narration variants and the base line now attribute the result to the photographs TOGETHER WITH the technician-entered visible attributes. The photographs did not independently establish Cal-Royal. Results and percentages unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S130"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "pipeline proof only — recorded against index_offline_validation.html (Supabase import stubbed) with placeholder silent audio; clip kept in proof/, NOT a production take",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "amended",
+          "amendment": "Master Directive v1.1 — conservative image-recognition standard"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "tightened",
+          "amendment": "Master Directive v1.1a — recognition sequence tightened, standalone module created"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "acceptance criterion added",
+          "amendment": "Master Directive v1.1b — demonstration-data clarification"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "asset intake 2",
+          "amendment": "Asset intake 2 — nine images, opening 1 complete"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "narration variants corrected for joint attribution",
+          "amendment": "Master Directive v1.1g — narration consistency"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "acceptance_criteria": [
+        "The spoken identification level matches the on-screen 'Highest defensible level' exactly.",
+        "No model is named as established unless the screen establishes it.",
+        "The headline confidence percentage is not read aloud.",
+        "A family-level outcome is delivered as the intended result, not as a failure or a workaround.",
+        "Runs no longer than about 25 seconds.",
+        "Nothing presents a result obtained from clean or manufacturer-supplied images as measured field-recognition accuracy.",
+        "The CR441 label is legible to a viewer in the underside asset, but its marking is below the app's marking gate. Nothing claims the application transcribed it.",
+        "No variant may say or imply that the photographs independently established the manufacturer. The technician entered the manufacturer attribute in S110, and every variant says so.",
+        "Whichever variant the photograph test selects, this criterion applies to it. A variant may not be activated without the joint-attribution clause."
+      ],
+      "narration_variants": {
+        "active": "family_established",
+        "note": "The recorded result and the spoken line must agree exactly. Test the exact demonstration photographs against the OI image-recognition service, see which path the result takes, then set `active` and copy that variant into `narration` before generating the clip.",
+        "model_established": "OI analyzes the photographs together with the visible attributes I entered, and identifies this as Cal-Royal's C R four forty-one. The stamp in the second shot is what carried it to the model—that's why we take that photograph. I'll still check it against the marking in front of me before I save it.",
+        "family_established": "OI analyzes the photographs together with the visible attributes I entered and tells me how far the evidence goes. Surface-mounted closer, manufacturer Cal-Royal, family C R four forty-one—and then it stops. Model: not established. This family has look-alikes, and nothing in the evidence separates them yet. It reports the level it can defend, not the one I'd like.",
+        "evidence_required": "OI analyzes the photographs together with the visible attributes I entered and recognizes a surface-mounted closer. It's leaning toward Cal-Royal, but it won't go further on the evidence it has, and it says so rather than guessing.",
+        "_previous": {
+          "family_established": "OI analyzes the photographs and tells me how far the evidence goes. Surface-mounted closer, manufacturer Cal-Royal, family C R four forty-one—and then it stops. Model: not established. This family has look-alikes, and nothing it can see separates them yet. It reports the level it can defend, not the one I'd like.",
+          "model_established": "OI analyzes the photographs and identifies this as Cal-Royal's C R four forty-one. The stamp in the second shot is what carried it to the model—that's why we take that photograph. I'll still check it against the marking in front of me before I save it.",
+          "evidence_required": "OI analyzes the photographs and recognizes a surface-mounted closer. It's leaning toward Cal-Royal, but it won't go further on what it can see, and it says so rather than guessing."
+        }
+      },
+      "narration_previous": "OI analyzes the photographs and tells me how far the evidence goes. Surface-mounted closer, manufacturer Cal-Royal, family C R four forty-one—and then it stops. Model: not established. This family has look-alikes, and nothing it can see separates them yet. It reports the level it can defend, not the one I'd like.",
+      "narration_provisional": true,
+      "provisional_reason": "Asserts the recognition RESULT: manufacturer Cal-Royal, family CR441, model not established. Three narration variants exist; the controlled recognition test (PC-7) selects which is spoken.",
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+    },
+    {
+      "scene_id": "S130A",
+      "chapter": "CH03",
+      "title": "OI asks for the evidence it needs",
+      "purpose": "Show that OI names the specific evidence that would resolve an uncertain identification.",
+      "audience_benefit": "A technician learns what to photograph next instead of guessing; a facility gets a record that says why it is uncertain.",
+      "narration": "And it doesn't leave it there. It names what would settle it: photograph the stamp on the body, because across this family the printed identifier is the one thing that separates them.",
+      "screen_action": [
+        "Hold on the 'To confirm, capture:' panel; one push-in on the request.",
+        "Do NOT reference a Needs Review flag here — the closer's result does not carry one."
+      ],
+      "expected_visible_result": "The evidence request and the needs-review flag are both readable.",
+      "on_screen_values": [
+        "To confirm, capture:",
+        "Top candidate is in cross-reference group HN-005 (official cross reference); stamp / body_shape / mounting_hole_spacing needed to separate brands."
+      ],
+      "acceptance_criteria": [
+        "The spoken evidence request matches the request on screen in substance.",
+        "No Needs Review flag is claimed for the closer — tested 13 Sep 2026, the closer's result returns needs_review = false.",
+        "Runs no longer than about 15 seconds."
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S130A.webm",
+      "narration_file": "elevenlabs/audio/S130A.wav",
+      "narration_script": "elevenlabs/scenes/S130A.txt",
+      "caption": "OI names the evidence it needs",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.closer.attribute_only_result"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 14,
+      "change_note": "v1.1a, corrected by the photograph test: the closer's result carries an evidence request but NOT a Needs Review flag. The review clause was removed rather than narrated over a screen that does not show it.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "created",
+          "amendment": "Master Directive v1.1 — conservative image-recognition standard"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "pipeline proof only — recorded against index_offline_validation.html with the Supabase import stubbed; clip kept in proof/, NOT a production take"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "tightened",
+          "amendment": "Master Directive v1.1a — recognition sequence tightened, standalone module created"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "corrected by exact-photograph test baseline",
+          "finding": "closer result: needs_review = false"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "narration_provisional": true,
+      "provisional_reason": "Describes the specific evidence OI asks for, which only exists if the result lands at family level. Follows whichever variant S130 takes.",
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+    },
+    {
+      "scene_id": "S130B",
+      "chapter": "CH03",
+      "title": "The technician's review, and what saves the result",
+      "purpose": "Show that OI proposes and the technician confirms, and that the confirmation is kept beside the prediction.",
+      "audience_benefit": "Technicians keep authority over the record; facilities get identifications a person stood behind; manufacturers get calibration data.",
+      "narration": "Nothing goes onto this record automatically. What puts the closer on the opening is me saving it. And if I can read the stamp, I enter the model in the calibration field, so OI keeps what I read beside what it predicted.",
+      "screen_action": [
+        "Move to the 'True model, if you know it (for calibration)' field; hold on it.",
+        "Enter a model ONLY if the demonstration photographs actually establish one; otherwise leave it empty and let the narration match.",
+        "Show the Save this part control as the thing that commits the part — do not imply any other confirmation action."
+      ],
+      "expected_visible_result": "The calibration field is visible, and saving is shown as what puts the part on the record.",
+      "on_screen_values": [
+        "True model, if you know it (for calibration)"
+      ],
+      "acceptance_criteria": [
+        "Nothing states or implies that an explicit 'confirm identification' control exists. The application has none.",
+        "Only the calibration field and the save behaviour are shown.",
+        "If no model is confirmed, the field is left empty and the narration matches.",
+        "Runs no longer than about 18 seconds."
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S130B.webm",
+      "narration_file": "elevenlabs/audio/S130B.wav",
+      "narration_script": "elevenlabs/scenes/S130B.txt",
+      "caption": "The calibration field · saving is what commits the part",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.closer.attribute_only_result"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 18,
+      "change_note": "v1.1a: rewritten so nothing implies a confirmation control. The technician's act is entering the calibration value and saving the part — which is what the application actually does.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "created",
+          "amendment": "Master Directive v1.1 — conservative image-recognition standard"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "pipeline proof only — recorded against index_offline_validation.html with the Supabase import stubbed; clip kept in proof/, NOT a production take"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "tightened",
+          "amendment": "Master Directive v1.1a — recognition sequence tightened, standalone module created"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S130C",
+      "chapter": "MOD1",
+      "title": "What an uncertain result carries",
+      "purpose": "Show that unresolved identifications are routed for human review and feed future recognition performance.",
+      "audience_benefit": "Facilities see that uncertainty is tracked rather than buried; manufacturers see how representation improves over time.",
+      "narration": "When a part stays uncertain, that's kept rather than smoothed over. The saved record carries what OI predicted, how confident it was at each level, what evidence it asked for, and anything I entered for calibration. The accuracy panel reports how those calls are tracking—identification accuracy, confidence calibration, and recent scans.",
+      "screen_action": [
+        "Open the 'Testing — identification accuracy' panel; hold on the loaded figures.",
+        "Show the saved record for the uncertain part and its Needs Review status.",
+        "Show only the record and the accuracy panel."
+      ],
+      "expected_visible_result": "The Needs Review status on the saved record, and the accuracy panel with real loaded figures.",
+      "on_screen_values": [
+        "needs_review",
+        "Testing — identification accuracy"
+      ],
+      "acceptance_criteria": [
+        "Nothing states or implies that a visible review queue exists in the Field App. There is none.",
+        "Only the Needs Review status, the saved-record fields and the accuracy panel are shown.",
+        "Any figure shown is one the application actually loaded.",
+        "The demonstration label must be visible on screen wherever an accuracy figure is: \"Demonstration data — illustrates metric calculation; not measured field performance.\" — rendered above the figures, in the same frame, for the whole time any figure is shown.",
+        "No figure from this dataset may be described as measured field accuracy or as evidence of six-month field performance. It illustrates how the metric is calculated, nothing more.",
+        "The narration covers the SEPARATION — OI recognition, technician assistance, final record completion — and does not present any percentage as a product-performance claim."
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.12.0",
+      "screen_recording": "recordings/scenes/S130C.webm",
+      "narration_file": "elevenlabs/audio/S130C.wav",
+      "narration_script": "elevenlabs/scenes/S130C.txt",
+      "caption": "What the saved record carries",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "account.auth"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": false,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 23,
+      "change_note": "v1.1g: demonstration label required on every accuracy figure; no percentage may be presented as a product-performance claim. Narration unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "created",
+          "amendment": "Master Directive v1.1 — conservative image-recognition standard"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "moved to standalone module MOD1",
+          "amendment": "Master Directive v1.1a — recognition sequence tightened, standalone module created"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "blocker rewritten to the approved local demonstration mode",
+          "amendment": "Approved decisions — OP2 values, S100 narration, PC-2 local demonstration mode"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "notes": [
+        "2026-09-14: Recorded. The identification-accuracy panel loads controlled demonstration records with no sign-in — 20 scans, 16 labelled, accuracy 75%, needs-review 50%, average confidence 49%."
+      ]
+    },
+    {
+      "scene_id": "S140",
+      "chapter": "CH04",
+      "title": "Open the manufacturer's cut sheet",
+      "purpose": "Open and read the closer's manufacturer document.",
+      "audience_benefit": "The supporting document is available at the door.",
+      "narration": "Let's open the manufacturer's document for that family. This is Cal-Royal's own C R four forty-one installation sheet—the standard, top jamb and parallel mounting options, the maximum door width and spring power table, and how the hand of the door is defined. Even before the exact model is pinned down, the family document is what you check the hardware against while you're still standing at the door.",
+      "screen_action": [
+        "Tap 'View cut sheet'; let the document panel open.",
+        "Zoom the three mounting illustrations; hold 4s.",
+        "Zoom the maximum-door-width / turns table; hold 5s.",
+        "Return to the part record."
+      ],
+      "expected_visible_result": "The real Cal-Royal CR441 sheet opens and is legible at the zoom levels used.",
+      "on_screen_values": [
+        "Cal-Royal CR441 — Cut Sheet"
+      ],
+      "required_source_assets": [
+        "assets/documents/CalRoyal_CR441_Specs.pdf"
+      ],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S140.webm",
+      "narration_file": "elevenlabs/audio/S140.wav",
+      "narration_script": "elevenlabs/scenes/S140.txt",
+      "caption": "Manufacturer documentation for the supported family",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.closer.cut_sheet"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 31,
+      "change_note": "v1.1: documentation is now explicitly tied to the supported family, so it reads correctly when the model is not established.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S140"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "amended",
+          "amendment": "Master Directive v1.1 — conservative image-recognition standard"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "manufacturer document supplied",
+          "amendment": "Master Directive v1.1c — asset intake"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "acceptance_criteria": [
+        "The document opened belongs to the family OI actually supported.",
+        "The document is legible at the zoom levels used.",
+        "Nothing implies the document confirms a model OI has not established."
+      ],
+      "notes": [
+        "2026-09-14: Recorded. PC-3: the CR441 manufacturer specification renders inside OI as six page images; no external tab opens."
+      ],
+      "narration_provisional": true,
+      "provisional_reason": "Framed on the closer resolving at FAMILY level ('even before the exact model is pinned down'). If the test establishes the model, the framing changes.",
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+    },
+    {
+      "scene_id": "S150",
+      "chapter": "CH03",
+      "title": "Condition, estimate, save",
+      "purpose": "Record condition and cost, and save the part.",
+      "audience_benefit": "Cost is attached to a specific part on a specific opening.",
+      "narration": "Now the condition. This one is worn, so I'll select worn—aging or degraded—and enter a sample estimate of four hundred fifty dollars to repair or replace it. That estimate stays attached to this part on this opening, and it rolls into the facility's corrective work total. Then I'll select Save this part, and check that it saved before we move on.",
+      "screen_action": [
+        "Set CONDITION OF THE HARDWARE = 'Worn — aging / degraded'.",
+        "Click the cost field and type '450' while the amount is spoken.",
+        "Tap 'Save this part'.",
+        "Hold on the saved confirmation; if the build shows no explicit confirmation, reopen the saved closer record and hold on it."
+      ],
+      "expected_visible_result": "A visible saved state for the closer on opening 205A.",
+      "on_screen_values": [
+        "CONDITION: Worn — aging / degraded",
+        "ESTIMATED REPAIR / REPLACEMENT COST: $450"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S150.webm",
+      "narration_file": "elevenlabs/audio/S150.wav",
+      "narration_script": "elevenlabs/scenes/S150.txt",
+      "caption": "Condition + estimate saved to this part",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.closer.condition",
+        "OI-DEMO.OP1.closer.estimated_cost"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 28,
+      "change_note": "Carried over from the trial package unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S150"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "notes": [
+        "2026-09-14: Recorded. PC-5: 'Save this part' now writes a visible confirmation card, and the counter reads parts, not openings."
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S155",
+      "chapter": "CH03",
+      "title": "Flag the worn part for purchasing",
+      "purpose": "Explain how a part reaches the purchasing request.",
+      "audience_benefit": "Recording a part is not the same as ordering it.",
+      "narration": "Notice I don't have to decide here what gets ordered. The condition does that. Anything marked worn or failed is what the purchasing request picks up later — everything else stays on the record as documentation.",
+      "screen_action": [
+        "Hold on the saved closer with its condition visible.",
+        "Do not click 'Send to purchasing' — that button shares a single part by email and is not part of this walkthrough."
+      ],
+      "expected_visible_result": "Viewer understands the link between condition and the purchasing list.",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S155.webm",
+      "narration_file": "elevenlabs/audio/S155.wav",
+      "narration_script": "elevenlabs/scenes/S155.txt",
+      "caption": "Flagged for purchasing",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 15,
+      "change_note": "Rewritten. sendLogToPurchasing() selects on condition worn/failed, not on pressing 'Send to purchasing'.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S155"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S160",
+      "chapter": "CH03",
+      "title": "Add the exit device",
+      "purpose": "Add the exit device to the same opening.",
+      "audience_benefit": "Several parts live on one door.",
+      "narration": "Next is the exit device on this same door.",
+      "screen_action": [
+        "Tap '+ Add another part on this door'; tap 'EXIT DEVICE' in the part grid."
+      ],
+      "expected_visible_result": "Exit device guided capture panel appears; opening identity unchanged.",
+      "on_screen_values": [
+        "EXIT DEVICE selected"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S160.webm",
+      "narration_file": "elevenlabs/audio/S160.wav",
+      "narration_script": "elevenlabs/scenes/S160.txt",
+      "caption": null,
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-13",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": false,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 4,
+      "change_note": "Carried over from the trial package unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S160"
+        }
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S170",
+      "chapter": "CH03",
+      "title": "Capture the device",
+      "purpose": "Work the exit device's three guided shots.",
+      "audience_benefit": "Device, stamp and trim are all asked for.",
+      "narration": "Three shots this time: the whole device across the door, the end cap or chassis stamp where the model number is marked, and the outside trim. OI analyzes all three.",
+      "screen_action": [
+        "Work through all three guided photo steps; hold on each returned image."
+      ],
+      "expected_visible_result": "'✓ All 3 shots taken'.",
+      "on_screen_values": [
+        "Step 1 of 3",
+        "Step 2 of 3: End cap / chassis stamp",
+        "Step 3 of 3",
+        "✓ All 3 shots taken"
+      ],
+      "required_source_assets": [
+        "assets/photos/OP1_exit_full.jpg (step 1 of 3 — approved AF7700 product image)",
+        "assets/photos/OP1_exit_stamp.jpg (step 2 of 3 — Cal-Royal end-cap image)",
+        "assets/photos/OP1_exit_trim.jpg (step 3 of 3 — outside trim)",
+        "assets/documents/CalRoyal_A7700_AF7700_Rim_Features.pdf (manufacturer documentation)",
+        "assets/documents/CalRoyal_AF7700_Installation_Instructions.pdf (manufacturer documentation)"
+      ],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S170.webm",
+      "narration_file": "elevenlabs/audio/S170.wav",
+      "narration_script": "elevenlabs/scenes/S170.txt",
+      "caption": null,
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.exit_device.field_photographs"
+      ],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 13,
+      "change_note": "v1.1: terminology.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S170"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "amended",
+          "amendment": "Master Directive v1.1 — conservative image-recognition standard"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "2 of 3 images supplied",
+          "amendment": "Master Directive v1.1c — asset intake"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "asset intake 2",
+          "amendment": "Asset intake 2 — nine images, opening 1 complete"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "asset requirement corrected to the approved demonstration assets",
+          "note": "Reclassified from 'missing source asset' to 'recording not yet performed'. No real field photographs are required. Narration, scene structure and evidence classification unchanged."
+        }
+      ],
+      "acceptance_criteria": [
+        "Nothing claims the end-cap photograph establishes AF7700 or the fire rating. It carries no model number and no fire marking; it establishes Cal-Royal only."
+      ],
+      "narration_provisional": false,
+      "asset_note": "Presentation-demonstration decision: real installed field photographs are NOT required. EVIDENCE CLASSIFICATION, PRESERVED UNCHANGED: the Cal-Royal end-cap image establishes the MANUFACTURER ONLY. It does not visually establish the AF7700 model and it does not establish fire rating. The AF7700 demonstration record remains user-confirmed and supported by manufacturer documentation — not image-recognized. Narration unchanged.",
+      "superseded_asset_requirement": [
+        "ASSET NEEDED: real AF7700 photos — whole device, end cap stamp, outside trim"
+      ]
+    },
+    {
+      "scene_id": "S180",
+      "chapter": "CH03",
+      "title": "Identify the device",
+      "purpose": "Look the device up by model and be clear what that does.",
+      "audience_benefit": "Catalog lookup speeds entry; the stamp is still what establishes the model.",
+      "narration": "Same process for the device. Using the photographs and the visible attributes I entered, OI establishes Cal-Royal as the manufacturer. It does not establish the exact family or model—eight candidates it can't separate, and it says so rather than picking one. The stamp here is legible, so I'll look the model up: A F seventy-seven hundred. There it is—Cal-Royal's A seventy-seven hundred, A F seventy-seven hundred rim exit device. Choosing it sets the part type and the manufacturer, and OI records it as my selection, not as something it recognized.",
+      "screen_action": [
+        "Type 'AF7700' into the model lookup while it is spoken; press Search catalog.",
+        "Hold on the result rows.",
+        "Click 'use →' on the 'Cal-Royal A7700 / AF7700 · exit device' row — it is the THIRD row, because the search substring-matches '700'.",
+        "Hold on the part type and manufacturer the app fills in."
+      ],
+      "expected_visible_result": "EXIT DEVICE is selected and manufacturer reads Cal-Royal.",
+      "on_screen_values": [
+        "Look up by model number: AF7700",
+        "Cal-Royal A7700 / AF7700 · exit device"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S180.webm",
+      "narration_file": "elevenlabs/audio/S180.wav",
+      "narration_script": "elevenlabs/scenes/S180.txt",
+      "caption": "Image-assisted, then confirmed against the stamp",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.exit_device.model"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 43,
+      "change_note": "v1.1f: 'on the images alone' removed. The manufacturer attribute the technician entered contributed to the Cal-Royal result, so the narration now says so. Adds that OI records the choice as a selection. Result and percentages unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S180"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "pipeline proof only — recorded against index_offline_validation.html (Supabase import stubbed) with placeholder silent audio; clip kept in proof/, NOT a production take",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "amended",
+          "amendment": "Master Directive v1.1 — conservative image-recognition standard"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "acceptance criterion added",
+          "amendment": "Master Directive v1.1c — asset intake"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "fire-language limit recorded",
+          "amendment": "Asset intake 3 — intro image + ESC trim-selection excerpt"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "narration revised",
+          "amendment": "Master Directive v1.1f — narration consistency"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "acceptance_criteria": [
+        "The spoken recognition level matches the on-screen result.",
+        "The catalog lookup is described as setting part type and manufacturer — never as producing an identification.",
+        "The model is attributed to the technician reading the stamp, not to the lookup.",
+        "Nothing claims the image visibly distinguishes the fire-rated AF7700 from the A7700. No fire label or model marking is legible in the supplied image; the AF7700 selection is user-confirmed demonstration data supported by manufacturer documentation.",
+        "Never claim the complete opening is a certified or UL-listed fire-door assembly.",
+        "The narration must not say or imply that the photographs alone produced the manufacturer result. The technician-entered manufacturer attribute contributed to it, and the line says so.",
+        "The on-screen result and its percentages are exactly what the application returned. The narration describes them; it never restates them differently."
+      ],
+      "narration_previous": "Same process for the device. OI analyzes the photographs and puts the manufacturer at Cal-Royal—and on the images alone, that's as far as it goes. The stamp on this one is legible, so I'll help it along: I'll look the model up, A F seventy-seven hundred. There it is in the catalog—Cal-Royal's A seventy-seven hundred, A F seventy-seven hundred rim exit device. Choosing it sets the part type and the manufacturer. What establishes the model is the stamp I can read and confirm, not the fact that I typed it.",
+      "narration_provisional": true,
+      "provisional_reason": "Asserts the device result: Cal-Royal established, family and model not established, eight unresolved candidates. Subject to what the deployed recognition service returns.",
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+    },
+    {
+      "scene_id": "S190",
+      "chapter": "CH03",
+      "title": "The outside trim belongs to the device",
+      "purpose": "Record the outside trim on the device record.",
+      "audience_benefit": "Trim is part of the exit device, not a separate lock.",
+      "narration": "The trim on the outside of the door belongs to this exit device—it isn't a separate lock. It's a rigid lever escutcheon, so I'll record it here as the outside trim, and whoever reads this record later knows how the door is worked from the pull side.",
+      "screen_action": [
+        "Open the 'Outside trim' select and choose the confirmed value; hold on it."
+      ],
+      "expected_visible_result": "Outside trim is recorded on the exit device record.",
+      "on_screen_values": [
+        "Outside trim: lever"
+      ],
+      "required_source_assets": [
+        "assets/photos/OP1_exit_trim.jpg",
+        "assets/documents/CalRoyal_Rigid_Lever_Escutcheon_ESC77_Specs.pdf"
+      ],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S190.webm",
+      "narration_file": "elevenlabs/audio/S190.wav",
+      "narration_script": "elevenlabs/scenes/S190.txt",
+      "caption": "Outside trim belongs to the exit device",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.exit_trim"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 21,
+      "change_note": "Documentation intake: the complete Cal-Royal Rigid Lever Escutcheon specification is now the primary source, replacing the screenshot excerpt as primary evidence. Status, structure and narration unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S190"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "unblocked by asset intake",
+          "amendment": "Master Directive v1.1c — asset intake"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "ESC/AF7700 presentation-compatibility closed",
+          "amendment": "Asset intake 3 — intro image + ESC trim-selection excerpt"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "supporting excerpt registered as a file",
+          "amendment": "Asset intake 4 — S010 image replaced and accepted; ESC excerpt registered"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "primary manufacturer specification registered",
+          "amendment": "Documentation intake — ESC primary source"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "acceptance_criteria": [
+        "Display and speak only 'ESC — Rigid Lever Escutcheon'. No function-specific suffix is selected or narrated, and no function is inferred from the generic trim image.",
+        "No Vortex SKU on the trim, and nothing implies SWFD-10183 includes or separately identifies it. SWFD-10183 stays scoped exclusively to the AF7700 exit device.",
+        "The trim may be shown as trim for the AF7700 presentation configuration — Cal-Royal's complete Rigid Lever Escutcheon specification states the hardened steel heavy duty tailpiece is available for fire and non-fire rated rim and vertical rod exit devices.",
+        "Never claim the complete opening is a certified or UL-listed fire-door assembly.",
+        "Never claim any single document establishes a complete fire-listing combination."
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S190A",
+      "chapter": "CH04",
+      "title": "Technician-selected exit device and its manufacturer document",
+      "purpose": "Show the technician establishing the exit-device model by selection, with OI's own result preserved beside it, and open the manufacturer document from that state.",
+      "audience_benefit": "The record says how each product was established. A technician's selection is never presented as a recognition result.",
+      "narration": "So the record shows both. OI got to the manufacturer and stopped; the A F seventy-seven hundred came from me. It's marked a technician selection, OI's own result is kept underneath it unchanged, and the manufacturer's document opens from here—supporting the product I selected. Same habit as the closer: check what's installed against what the manufacturer published, while we're still at the door.",
+      "screen_action": [
+        "Hold on the technician-selected record state: Product, Establishment method, Supporting evidence, Original OI prediction.",
+        "Hold on the preserved OI result inside it — manufacturer, family and model levels exactly as OI reported them.",
+        "Open the manufacturer document for the selected product from that state; scroll at readable size.",
+        "Close and return to the part record."
+      ],
+      "expected_visible_result": "The technician-selected state reads: Product Cal-Royal A7700 / AF7700 · Establishment method Technician selected from model lookup · Supporting evidence Manufacturer documentation · Original OI prediction Preserved — with OI's own levels shown unchanged and an explicit note that the product was not established by image recognition. The AF7700 installation document then opens inside OI.",
+      "on_screen_values": [
+        "Cal-Royal A7700 / AF7700",
+        "Technician selected from model lookup",
+        "Manufacturer documentation",
+        "Original OI prediction: Preserved",
+        "Manufacturer Cal-Royal 91% · Family Not established · Model Not established",
+        "Highest defensible level: manufacturer"
+      ],
+      "required_source_assets": [
+        "assets/documents/CalRoyal_AF7700_Installation_Instructions.pdf",
+        "assets/documents/CalRoyal_A7700_AF7700_Rim_Features.pdf"
+      ],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.10.0",
+      "screen_recording": "recordings/scenes/S190A.webm",
+      "narration_file": "elevenlabs/audio/S190A.wav",
+      "narration_script": "elevenlabs/scenes/S190A.txt",
+      "caption": "Cal-Royal A7700 / AF7700 — manufacturer document",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.exit_device.cut_sheet"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 29,
+      "change_note": "v1.1f: narration revised to explain the technician-selected state — OI did not establish the exact product, the technician selected it, manufacturer documentation supports the selection, OI's original result is preserved, and the document opens from this state.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "created in modular system",
+          "from": null
+        },
+        {
+          "date": "2026-09-14",
+          "event": "document supplied",
+          "amendment": "Master Directive v1.1c — asset intake"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "unblocked — PC-6 resolved by technician-selection workflow",
+          "amendment": "Master Directive v1.1e"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "narration revised",
+          "amendment": "Master Directive v1.1f — narration consistency"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "acceptance_criteria": [
+        "The exit-device model is NOT described as image-recognized. OI established the manufacturer only; the model is established by technician selection.",
+        "OI's original result is visible and unchanged in the same frame as the selection — manufacturer, family and model levels, with their confidences.",
+        "The three facts stay distinct on screen and in the saved record: OI's image/attribute result, the technician's selection, and manufacturer-document support.",
+        "The manufacturer document opens ONLY from the technician-selected state. It must never open from the unresolved candidate card.",
+        "No candidate is relabelled. The Cal-Royal 5000 Rim and the other alphabetical candidates are untouched, and none is presented as a result.",
+        "Manufacturer-document support means support for the selected product. It is never presented as evidence that the photographs identified it.",
+        "If the controlled recognition test later establishes the AF7700 from the photographs, this scene must be re-reviewed before any 'recognized' language is used. Until then, none is.",
+        "Fire-rating language follows the Master Directive: the AF7700 is a fire-rated rim exit device; the complete opening is never called a certified or UL-listed fire-door assembly."
+      ],
+      "narration_previous": "Here's the manufacturer's document for the device. Same habit as the closer — we're checking what's installed against what the manufacturer published, while we're still at the door.",
+      "narration_provisional": true,
+      "provisional_reason": "Rests on the AF7700 being technician-selected rather than recognized. Acceptance criterion requires re-review if the test later establishes it from the photographs.",
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+    },
+    {
+      "scene_id": "S200",
+      "chapter": "CH03",
+      "title": "Condition and save the exit device",
+      "purpose": "Record condition and save the exit device.",
+      "audience_benefit": "A serviceable part is recorded without being ordered.",
+      "narration": "This one is in good shape — serviceable — so I'll record that and save the part. It's on the record for this opening, but nothing about recording it says it needs replacing.",
+      "screen_action": [
+        "Set the device's condition to 'Good — serviceable'.",
+        "Press Save this part; hold on the saved state.",
+        "Do not press 'Send to purchasing' for this part."
+      ],
+      "expected_visible_result": "Exit device saved to opening 205A with condition Good — serviceable.",
+      "on_screen_values": [
+        "CONDITION: Good — serviceable"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S200.webm",
+      "narration_file": "elevenlabs/audio/S200.wav",
+      "narration_script": "elevenlabs/scenes/S200.txt",
+      "caption": "Serviceable — recorded, not ordered",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.exit_device.condition"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 14,
+      "change_note": "Cut sheet beat removed and moved to S190A (CH04 Manufacturer documentation), so this scene no longer depends on prototype change PC-3.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S200"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "document beat split out to S190A"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S210",
+      "chapter": "CH03",
+      "title": "Capture and identify the hinges",
+      "purpose": "Capture and identify the hinges.",
+      "audience_benefit": "Consistency across every part on the door.",
+      "narration": "Now the hinges on this same door. Three shots again: the full hinge with the door open, the knuckle close-up, and the leaf stamp. OI analyzes them, and I add what I can see—knuckle count, bearing type, leaf profile, pin type. Hinges are hard from a photograph alone, and OI is straight about that: it tells us where it lands and what it still needs.",
+      "screen_action": [
+        "Work all three guided photo steps.",
+        "Set the four visible hinge attributes from the actual photographs, then Identify.",
+        "Hold on the result."
+      ],
+      "expected_visible_result": "A result whose level reflects the attributes actually set.",
+      "on_screen_values": [
+        "Step 1 of 3: Full hinge on the door",
+        "Step 2 of 3: Knuckle close-up",
+        "Step 3 of 3: Leaf stamp"
+      ],
+      "required_source_assets": [
+        "assets/photos/OP1_hinge_full.jpg (step 1 of 3 — full hinge on the door)",
+        "assets/photos/OP1_hinge_knuckle.jpg (step 2 of 3 — knuckle close-up)",
+        "assets/photos/OP1_hinge_stamp.jpg (step 3 of 3 — leaf stamp)"
+      ],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S210.webm",
+      "narration_file": "elevenlabs/audio/S210.wav",
+      "narration_script": "elevenlabs/scenes/S210.txt",
+      "caption": "Hinges · OI states where it lands and what it needs",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.hinges.field_photographs"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 29,
+      "change_note": "v1.1: image-assisted framing and an explicit acknowledgement that hinges are hard from photographs.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S210"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "amended",
+          "amendment": "Master Directive v1.1 — conservative image-recognition standard"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "asset intake 2",
+          "amendment": "Asset intake 2 — nine images, opening 1 complete"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "stale asset requirement corrected to the approved demonstration hinge images",
+          "note": "Inventory correction only. No real field photographs requested. Evidence limitations preserved: workflow and visible manufacturer evidence only — not proof of Ives 5BB1, not model-level image recognition. Narration, recognition outcome, held status, scene timing and acceptance criteria unchanged."
+        }
+      ],
+      "acceptance_criteria": [
+        "The spoken level matches the on-screen result for the hinge.",
+        "A low or component-level result is presented as honest behaviour, not as a defect.",
+        "The hinge images support IVES, five knuckles and bearing detail. Nothing claims 5BB1 is established by image — no model number appears in any hinge asset."
+      ],
+      "narration_provisional": true,
+      "provisional_reason": "Characterises the hinge outcome ('hinges are hard from a photograph alone… it tells us where it lands'). Subject to the recorded result.",
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
+      "asset_note": "Approved demonstration hinge images, already on disk. EVIDENCE LIMITATIONS, PRESERVED: these images support the guided-capture WORKFLOW and visible manufacturer evidence only, to the level already established — nothing further. They are NOT proof of Ives 5BB1 and they are NOT model-level image recognition. The 5BB1 record remains technician-selected and supported by manufacturer documentation (the PC-6 pattern shown in S220), never image-recognized. S210's recognition outcome, narration, held status, scene timing and acceptance criteria are unchanged by this inventory correction; the scene remains held pending the controlled recognition test.",
+      "superseded_asset_requirement": [
+        "ASSET NEEDED: real hinge photos"
+      ]
+    },
+    {
+      "scene_id": "S220",
+      "chapter": "CH03",
+      "title": "The hinge document stays locked until the product is selected",
+      "purpose": "Save the hinges and close out the hardware.",
+      "audience_benefit": "Every part is saved before leaving the opening.",
+      "narration": "OI hasn't established the exact hinge model. The cut-sheet link belongs to a candidate, so OI correctly keeps it locked until the product is supported and selected. So I'll look up eyes five bee bee one and select it. OI preserves its original result and records that I made the selection using the manufacturer's documentation. Now I can open that document directly from the selected product. These hinges are serviceable, so I'll save them. The confirmation shows that five bee bee one was technician-selected, not recognized from the image.",
+      "screen_action": [
+        "Hold on the unresolved hinge result: manufacturer, family and model all Not established.",
+        "Rest on the 'View cut sheet' link while nothing is established — it is not opened.",
+        "Type 5BB1 into the model lookup and search — during 'look up eyes five bee bee one'.",
+        "Select Ives 5BB1 from the results — during 'and select it'.",
+        "Hold on the technician-selected state with OI's unresolved result preserved beneath it — during the preservation sentence.",
+        "Open the Ives 5BB1 document from that state and scroll it — during the documentation sentence.",
+        "Set the condition and press Save this part — during \"I'll save them\".",
+        "Scroll the save-confirmation card into view and HOLD on it, readable, to the end of the scene — during the final sentence."
+      ],
+      "expected_visible_result": "The save-confirmation card is on screen and legible at the end of the scene, reading '✓ Saved to opening 205A · hinge butt · Ives 5BB1 · how established: technician selected'. The viewer can read it before the cut.",
+      "on_screen_values": [
+        "Manufacturer Not established · Family Not established · Model Not established",
+        "Highest defensible level: component",
+        "Ives 5BB1",
+        "Technician selected from model lookup",
+        "Manufacturer documentation",
+        "Original OI prediction: Preserved"
+      ],
+      "required_source_assets": [
+        "assets/documents/Ives_5BB1_Architectural_Hinges.pdf"
+      ],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S220.webm",
+      "narration_file": "elevenlabs/audio/S220.wav",
+      "narration_script": "elevenlabs/scenes/S220.txt",
+      "caption": "Ives 5BB1 — technician-selected, not image-recognized",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.hinges.condition"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 40,
+      "change_note": "v1.1h: approved S220 correction applied verbatim; the PC-6 technician-selection pattern extended to Ives 5BB1; acceptance criteria rewritten. Scene not restructured — same ID, same chapter, same position.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S220"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "amended",
+          "amendment": "Master Directive v1.1 — conservative image-recognition standard"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "manufacturer document supplied",
+          "amendment": "Master Directive v1.1c — asset intake"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "asset intake 2",
+          "amendment": "Asset intake 2 — nine images, opening 1 complete"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "narration corrected; PC-6 applied to the hinge",
+          "amendment": "Master Directive v1.1h"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "acceptance_criteria": [
+        "The narration must not say there is no cut sheet linked. There is a link; it belongs to a candidate, and nothing is established.",
+        "The document must NOT be opened from the unresolved result card. It opens only from the technician-selected state.",
+        "No candidate is relabelled. Ives 3CB1 and the other twelve unresolved candidates are untouched, and none is presented as a result.",
+        "Ives 5BB1 is never described as image-recognized. It is established by technician selection and supported by manufacturer documentation.",
+        "OI's original unresolved result stays visible and unchanged in the same frame as the selection.",
+        "The selection must not be counted as a successful model recognition anywhere — record, purchasing output or accuracy view.",
+        "The 'next, to separate the candidates' line must read the class-neutral copy. 'eight closers' must not appear on a hinge card.",
+        "The save-confirmation card must be scrolled into view and held long enough to READ — not merely rendered. The scene does not cut away before that.",
+        "The card must show the product as technician-selected. If it shows anything that reads as a recognition result, the scene fails.",
+        "Narration beats must land on their actions: lookup during 'look up', selection during 'select it', the preserved-result state during the preservation sentence, the open document during the documentation sentence, the save press during \"I'll save them\", and the confirmation card during the final sentence.",
+        "The voice is never sped up to fit the picture. The picture is cut to the measured clip."
+      ],
+      "narration_provisional": true,
+      "provisional_reason": "Wording is approved. Held for two reasons: the measured ElevenLabs duration must be fitted to the extended picture before the scene is approved, and the approved opening states what OI has NOT established — itself a recognition outcome, subject to PC-7.",
+      "provisional_depends_on": "the measured S220 clip duration (voice ID still required), and PC-7 — controlled recognition test (not run)",
+      "narration_previous": "There's no cut sheet linked for this hinge, so we record what we can verify—what OI supported, what I confirmed, and the condition. These are serviceable. I'll save the hinges, and that's every part on this door.",
+      "narration_composition": {
+        "approved_verbatim": "OI hasn't established the exact hinge model. The cut-sheet link belongs to a candidate, so OI correctly keeps it locked until the product is supported and selected. So I'll look up eyes five bee bee one and select it. OI preserves its original result and records that I made the selection using the manufacturer's documentation. Now I can open that document directly from the selected product. These hinges are serviceable, so I'll save them. The confirmation shows that five bee bee one was technician-selected, not recognized from the image.",
+        "approved": "2026-09-14 — both the opening and the continuation are Stephan's wording",
+        "spoken_spelling": "'eyes five bee bee one' is the SPOKEN form. The screen and the caption keep 'Ives 5BB1'. The script is spelled for the ear; the interface is never changed to match it.",
+        "superseded_drafts": [
+          "draft 1 — said the document 'opens from there' and nothing about the saved record",
+          "draft 2 — mine; replaced wholesale by Stephan's wording above"
+        ]
+      }
+    },
+    {
+      "scene_id": "S230",
+      "chapter": "CH05",
+      "title": "Door and frame spec for the same opening",
+      "purpose": "Record the door and frame for the same opening.",
+      "audience_benefit": "Hardware and door describe one physical opening.",
+      "narration": "We've recorded the hardware. Now the door and frame it's all hanging on. I'll open Door and frame spec for this same opening. The door is hollow metal, thirty-six inches wide by eighty-four high, one and three-quarter inches thick. It's a left-hand door, in a hollow metal frame. Those are illustrative values for this walkthrough—on a real survey they're what you measured and read at the door. I'll save the door and frame, and bring the record back up so we can see it landed on two zero five A.",
+      "screen_action": [
+        "Tap 'Door & frame spec'.",
+        "Set each field as it is spoken: DOOR MATERIAL, then type 36, then 84, then 1-3/4\", then HANDING = LH, then FRAME = Hollow Metal.",
+        "Tap 'Save door & frame'; hold on '✓ Door & frame saved to this opening'.",
+        "Reopen the panel and hold on the saved values."
+      ],
+      "expected_visible_result": "Door and frame values visibly saved against opening 205A.",
+      "on_screen_values": [
+        "DOOR MATERIAL: Hollow Metal",
+        "WIDTH (IN): 36",
+        "HEIGHT (IN): 84",
+        "THICK: 1-3/4\"",
+        "HANDING: LH",
+        "FRAME: Hollow Metal"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S230.webm",
+      "narration_file": "elevenlabs/audio/S230.wav",
+      "narration_script": "elevenlabs/scenes/S230.txt",
+      "caption": "Door & frame · same opening 205A",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP1.door_and_frame",
+        "account.auth"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 42,
+      "change_note": "Carried over from the trial package unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S230"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "blocker rewritten to the approved local demonstration mode",
+          "amendment": "Approved decisions — OP2 values, S100 narration, PC-2 local demonstration mode"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "notes": [
+        "2026-09-14: Recorded. Door & frame saves in demonstration mode — '✓ Door & frame saved to opening 205A'."
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S240",
+      "chapter": "CH06",
+      "title": "Review and finish the opening",
+      "purpose": "Review the opening and finish it.",
+      "audience_benefit": "A complete opening before any purchasing step.",
+      "narration": "Let's check what we have before we finish: the closer, the exit device with its outside trim, the hinges, and the door and frame—all on opening two zero five A. Now I'll finish the opening.",
+      "screen_action": [
+        "Scroll slowly through the saved items on the opening; hold on each.",
+        "Tap '✓ Finish opening'.",
+        "Hold on the completion message."
+      ],
+      "expected_visible_result": "The app confirms opening 205A is complete and unlocks the QR.",
+      "on_screen_values": [
+        "✓ Opening 205A is complete — you can now generate its QR"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S240.webm",
+      "narration_file": "elevenlabs/audio/S240.wav",
+      "narration_script": "elevenlabs/scenes/S240.txt",
+      "caption": "Opening 205A complete",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "S230"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 16,
+      "change_note": "Carried over from the trial package unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S240"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "blocker rewritten to the approved local demonstration mode",
+          "amendment": "Approved decisions — OP2 values, S100 narration, PC-2 local demonstration mode"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "notes": [
+        "2026-09-14: Recorded. 'Finish opening' succeeds — '✓ Opening 205A is complete (3 parts + door)'."
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S280",
+      "chapter": "CH06",
+      "title": "Opening QR (full version — scene 13, not in trial 1)",
+      "purpose": "Generate and explain the opening QR.",
+      "audience_benefit": "Continuity across visits.",
+      "narration": "Here's how someone coming back to this door brings the record up again. The QR is generated once the opening is finished; it goes on the door, and a scan loads this opening.",
+      "screen_action": [
+        "Tap 'Generate opening QR'; hold on the QR card."
+      ],
+      "expected_visible_result": "QR card for opening 205A.",
+      "on_screen_values": [
+        "Opening 205A · Valley Medical Center · Scan to load this opening"
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S280.webm",
+      "narration_file": "elevenlabs/audio/S280.wav",
+      "narration_script": "elevenlabs/scenes/S280.txt",
+      "caption": null,
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "S240"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": false,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 14,
+      "change_note": "Carried over from the trial package unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S280"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "blocker rewritten to the approved local demonstration mode",
+          "amendment": "Approved decisions — OP2 values, S100 narration, PC-2 local demonstration mode"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "notes": [
+        "2026-09-14: Recorded. The opening QR is drawn (SVG) and held on screen; label reads 'Opening 205A · Valley Medical Center'."
+      ]
+    },
+    {
+      "scene_id": "S260",
+      "chapter": "CH07",
+      "title": "Open what purchasing receives",
+      "purpose": "Open what purchasing receives.",
+      "audience_benefit": "Purchasing gets context, not a phone photo.",
+      "narration": "Now that the opening is finished, here's what purchasing receives. It's the location, the opening number, and the parts whose condition put them on the list — for this door, the worn closer, with its cut sheet attached. The exit device and the hinges are on the record, but they're serviceable, so they aren't in this request. And the note at the bottom is the honest one: confirm quantities and finishes before ordering.",
+      "screen_action": [
+        "Press 'Send full log to purchasing'.",
+        "Hold on the in-app preview panel (see prototype change PC-4); push in on the part line and on the closing note."
+      ],
+      "expected_visible_result": "The generated request is readable on screen before it is shared.",
+      "on_screen_values": [
+        "Opening Intelligence — replacement part request",
+        "Location: East corridor",
+        "Opening #: 205A",
+        "Confirm quantities and finishes before ordering."
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S260.webm",
+      "narration_file": "elevenlabs/audio/S260.wav",
+      "narration_script": "elevenlabs/scenes/S260.txt",
+      "caption": "Purchasing log · flagged parts only",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "S240",
+        "OI-DEMO.OP1.purchasing_output"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 32,
+      "change_note": "Blocked. This build renders nothing — the text goes straight to navigator.share() or mailto:. Requires prototype change PC-4.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S260"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        }
+      ],
+      "notes": [
+        "2026-09-14: Recorded. PC-4: the purchasing request appears in an in-app preview before anything is sent, with corrected counts."
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S270",
+      "chapter": "CH07",
+      "title": "Vortex SKU mapping",
+      "purpose": "State the Vortex mapping Elite Sales applies.",
+      "audience_benefit": "Connects OI output to the numbers actually ordered against.",
+      "narration": "On our side, we map what comes out of OI to the Vortex numbers we order against. The C R four forty-one hold-open arm maps to Vortex E D one three two eight two. That number is the hold-open arm on its own, not the complete closer—so it's what you'd use if the arm is the part that needs replacing. And the A F seventy-seven hundred exit device maps to Vortex S W F D one zero one eight three.",
+      "screen_action": [
+        "Keep the purchasing panel on screen; bring in a mapping card in the letterbox area beside the app frame, captioned 'Vortex SKU mapping — maintained by Elite Sales Consultants. Not a screen in the OI app.'",
+        "Reveal one row at a time as each is spoken; do not cover the purchasing panel."
+      ],
+      "expected_visible_result": "Both mappings are readable and visibly outside the application interface.",
+      "on_screen_values": [
+        "CR441 hold-open arm → Vortex ED-13282",
+        "AF7700 exit device → Vortex SWFD-10183"
+      ],
+      "required_source_assets": [
+        "mapping_card.png (to be produced; text only unless a verified hold-open arm image is supplied)"
+      ],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S270.webm",
+      "narration_file": "elevenlabs/audio/S270.wav",
+      "narration_script": "elevenlabs/scenes/S270.txt",
+      "caption": "Elite Sales mapping — not a screen in the OI app",
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-13",
+      "dependencies": [
+        "assets/mapping_card.png",
+        "OI-DEMO.OP1.closer.sku",
+        "OI-DEMO.OP1.exit_device.sku"
+      ],
+      "rerecord_required": false,
+      "renarrate_required": false,
+      "in_master": true,
+      "still": null,
+      "overlay_card": "mapping_card.png",
+      "est_seconds": 37,
+      "change_note": "Carried over from the trial package unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S270"
+        }
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S275",
+      "chapter": "CH07",
+      "title": "Close the first opening",
+      "purpose": "Close the first opening.",
+      "audience_benefit": "Recaps the chain from door to purchasing.",
+      "narration": "So that's one opening end to end: photos and attributes taken at the door, a ranked identification you check against the hardware in front of you, the manufacturer's document open beside it, condition and cost saved against a specific opening, and a purchasing request that carries all of it. Same pattern for the next two.",
+      "screen_action": [
+        "Pull back to the whole opening record; hold; fade to the OI wordmark."
+      ],
+      "expected_visible_result": "Trial ends on the completed opening.",
+      "on_screen_values": [],
+      "required_source_assets": [
+        "title_card.png"
+      ],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S275.webm",
+      "narration_file": "elevenlabs/audio/S275.wav",
+      "narration_script": "elevenlabs/scenes/S275.txt",
+      "caption": null,
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-13",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": false,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 24,
+      "change_note": "Carried over from the trial package unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "migrated from trial package v1.0",
+          "from": "oi_trial1_scenes.json:S275"
+        }
+      ],
+      "narration_provisional": false
+    },
+    {
+      "scene_id": "S300",
+      "chapter": "CH08",
+      "title": "Opening 2 — Schlage ND80 storeroom lockset",
+      "purpose": "Demonstrate a second opening whose locking hardware is a cylindrical lockset rather than an exit device.",
+      "audience_benefit": "Shows the same workflow on a different hardware configuration, and that an opening carries either an exit device or a lockset — never both.",
+      "narration": "",
+      "screen_action": [
+        "Not written. Hardware and door values for opening 2 have not been selected."
+      ],
+      "expected_visible_result": "—",
+      "on_screen_values": [
+        "Location: West corridor",
+        "Opening #: 310B",
+        "Condition: Good — serviceable"
+      ],
+      "required_source_assets": [
+        "assets/photos/OP2_lockset_whole.jpg",
+        "assets/photos/OP2_lockset_trim.jpg",
+        "assets/photos/OP2_lockset_stamp.jpg",
+        "assets/documents/Schlage_ND_Series_Cut_Sheet.pdf"
+      ],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S300.webm",
+      "narration_file": "elevenlabs/audio/S300.wav",
+      "narration_script": "elevenlabs/scenes/S300.txt",
+      "caption": null,
+      "status": "Blocked",
+      "blocked_reason": "Opening 2 is fully specified — Schlage ND80, cylindrical, storeroom, 3'-0\" x 7'-0\" wood door, hollow-metal frame, West corridor, opening 310B, good/serviceable, no visible deficiency, record only. Remaining work is writing the scene content, which happens after Trial 1.",
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "OI-DEMO.OP2"
+      ],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": false,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Approved decision: location, opening number, condition and action applied. Content written after Trial 1.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "created in modular system",
+          "from": null
+        },
+        {
+          "date": "2026-09-14",
+          "event": "opening specified by asset intake",
+          "amendment": "Master Directive v1.1c — asset intake"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "opening 2 values approved and applied",
+          "amendment": "Approved decisions — OP2 values, S100 narration, PC-2 local demonstration mode"
+        }
+      ]
+    },
+    {
+      "scene_id": "S310",
+      "chapter": "CH08",
+      "title": "Opening 3 — placeholder",
+      "purpose": "Placeholder — content not written.",
+      "audience_benefit": "—",
+      "narration": "",
+      "screen_action": [
+        "Not written. Hardware and door values for opening 3 have not been selected."
+      ],
+      "expected_visible_result": "—",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S310.webm",
+      "narration_file": "elevenlabs/audio/S310.wav",
+      "narration_script": "elevenlabs/scenes/S310.txt",
+      "caption": null,
+      "status": "Blocked",
+      "blocked_reason": "Content for this chapter has not been written.",
+      "last_modified": "2026-09-13",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": false,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "New scene.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "created in modular system",
+          "from": null
+        }
+      ]
+    },
+    {
+      "scene_id": "S400",
+      "chapter": "CH09",
+      "title": "Service call — placeholder",
+      "purpose": "Placeholder — content not written.",
+      "audience_benefit": "—",
+      "narration": "",
+      "screen_action": [
+        "Not written. Recorded only after all three openings are demonstrated."
+      ],
+      "expected_visible_result": "—",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S400.webm",
+      "narration_file": "elevenlabs/audio/S400.wav",
+      "narration_script": "elevenlabs/scenes/S400.txt",
+      "caption": null,
+      "status": "Blocked",
+      "blocked_reason": "Content for this chapter has not been written.",
+      "last_modified": "2026-09-13",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": false,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "New scene.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "created in modular system",
+          "from": null
+        }
+      ]
+    },
+    {
+      "scene_id": "S500",
+      "chapter": "CH10",
+      "title": "Facility view and closing benefits — placeholder",
+      "purpose": "Placeholder — content not written.",
+      "audience_benefit": "—",
+      "narration": "",
+      "screen_action": [
+        "Not written. Depends on a verified facility-side view in the application."
+      ],
+      "expected_visible_result": "—",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S500.webm",
+      "narration_file": "elevenlabs/audio/S500.wav",
+      "narration_script": "elevenlabs/scenes/S500.txt",
+      "caption": null,
+      "status": "Blocked",
+      "blocked_reason": "Content for this chapter has not been written.",
+      "last_modified": "2026-09-13",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": false,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "New scene.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "created in modular system",
+          "from": null
+        }
+      ]
+    },
+    {
+      "scene_id": "R010",
+      "chapter": "MOD1",
+      "title": "How OI reports confidence",
+      "purpose": "Explain the three identification levels and what 'highest defensible level' means.",
+      "audience_benefit": "Manufacturer partners and facility customers can read an OI result correctly instead of treating one percentage as the answer.",
+      "narration": "OI reports three levels, not one number. Manufacturer, family, model—each with its own confidence, and a line saying which of them the evidence actually defends. The headline figure is a summary; the level is the claim. When the model line reads not established, that is OI declining to make a claim it can't support.",
+      "screen_action": [
+        "Hold on the level rows; push in on 'Highest defensible level'."
+      ],
+      "expected_visible_result": "All three levels and the defensible-level line are readable.",
+      "on_screen_values": [
+        "Manufacturer · Cal-Royal · 97%",
+        "Family · CR441 · 421 · 97%",
+        "Model · Not established · 0%",
+        "Highest defensible level: family"
+      ],
+      "acceptance_criteria": [
+        "Only levels the screen shows are described.",
+        "The headline percentage is explained as a summary, never as accuracy.",
+        "Nothing presents demonstration-image confidence figures as measured field accuracy."
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/R010.webm",
+      "narration_file": "elevenlabs/audio/R010.wav",
+      "narration_script": "elevenlabs/scenes/R010.txt",
+      "caption": "Three levels, and the one OI will defend",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-13",
+      "dependencies": [
+        "OI-DEMO.OP1.closer.attribute_only_result"
+      ],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": false,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 24,
+      "change_note": "New in Master Directive v1.1a — recognition sequence tightened, standalone module created. Carries detail moved out of the principal walkthrough.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "created",
+          "amendment": "Master Directive v1.1a — recognition sequence tightened, standalone module created"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "acceptance criterion added",
+          "amendment": "Master Directive v1.1b — demonstration-data clarification"
+        }
+      ]
+    },
+    {
+      "scene_id": "R020",
+      "chapter": "MOD1",
+      "title": "Reference coverage is not a match score",
+      "purpose": "Separate how completely a product is documented from how confident the identification is.",
+      "audience_benefit": "Manufacturers see that thin documentation is reported as thin documentation, not as a low match.",
+      "narration": "This panel is a different thing again. Reference coverage says how completely each product is documented in the catalog—twenty-eight documents on one, two on another. It is not a match score and it does not move the confidence. Reading the two as one number is the mistake OI is built to prevent.",
+      "screen_action": [
+        "Hold on the reference-coverage panel; push in on the disclaimer line."
+      ],
+      "expected_visible_result": "The coverage figures and the disclaimer are both readable.",
+      "on_screen_values": [
+        "Reference coverage — how completely each product is documented",
+        "This is not a match score and does not affect confidence"
+      ],
+      "acceptance_criteria": [
+        "The disclaimer on screen is read as written, not paraphrased into a claim."
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/R020.webm",
+      "narration_file": "elevenlabs/audio/R020.wav",
+      "narration_script": "elevenlabs/scenes/R020.txt",
+      "caption": "Coverage ≠ confidence",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-13",
+      "dependencies": [
+        "OI-DEMO.OP1.closer.attribute_only_result"
+      ],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": false,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 24,
+      "change_note": "New in Master Directive v1.1a — recognition sequence tightened, standalone module created. Carries detail moved out of the principal walkthrough.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "created",
+          "amendment": "Master Directive v1.1a — recognition sequence tightened, standalone module created"
+        }
+      ]
+    },
+    {
+      "scene_id": "R030",
+      "chapter": "MOD1",
+      "title": "Look-alike families and cross-reference groups",
+      "purpose": "Explain why a stamp is required before a brand is called on certain families.",
+      "audience_benefit": "Technicians learn which families cannot be called by sight; manufacturers see their products are not confused with replicas.",
+      "narration": "Some families are replicas of each other, and OI knows which. This one sits in a cross-reference group, so it says plainly: don't call the brand without the stamp. That's why the evidence request asks for the marking rather than another wide shot—it's the only feature that separates the group at once.",
+      "screen_action": [
+        "Hold on the cross-reference warning; push in on the group line."
+      ],
+      "expected_visible_result": "The cross-reference warning is readable.",
+      "on_screen_values": [
+        "⚠ Cross-reference group HN-005 — look-alike / replacement family",
+        "Don't call the brand without the stamp"
+      ],
+      "acceptance_criteria": [
+        "The group is described as the application describes it."
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/R030.webm",
+      "narration_file": "elevenlabs/audio/R030.wav",
+      "narration_script": "elevenlabs/scenes/R030.txt",
+      "caption": "Look-alike families are named, not guessed",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-13",
+      "dependencies": [
+        "OI-DEMO.OP1.closer.attribute_only_result"
+      ],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": false,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 24,
+      "change_note": "New in Master Directive v1.1a — recognition sequence tightened, standalone module created. Carries detail moved out of the principal walkthrough.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "created",
+          "amendment": "Master Directive v1.1a — recognition sequence tightened, standalone module created"
+        }
+      ]
+    },
+    {
+      "scene_id": "R040",
+      "chapter": "MOD1",
+      "title": "Calibration, and where improvement comes from",
+      "purpose": "Show that technician-entered true models sit beside predictions and feed the accuracy measures.",
+      "audience_benefit": "Everyone sees the mechanism by which recognition is meant to get better, stated as intent rather than as a delivered result.",
+      "narration": "Every model a technician enters puts a known answer beside a prediction. That pairing is what the accuracy figures are built from—how often the call was right, and how well the confidence matched the outcome. What you're looking at is the measurement. Improving recognition is the work it feeds, and it's measured here rather than claimed.",
+      "screen_action": [
+        "Open the accuracy view; hold on each heading with its real loaded values."
+      ],
+      "expected_visible_result": "The accuracy views load with real values.",
+      "on_screen_values": [
+        "Identification accuracy",
+        "Confidence calibration",
+        "Accuracy over time",
+        "Recent scans"
+      ],
+      "acceptance_criteria": [
+        "The improvement loop is stated as intent and as measurement — never as a demonstrated improvement.",
+        "Only figures the application actually loads are shown.",
+        "Nothing presents demonstration-image results as measured field accuracy. The six-month field-trial positioning is maintained.",
+        "The demonstration label must be visible on screen wherever an accuracy figure is: \"Demonstration data — illustrates metric calculation; not measured field performance.\" — rendered above the figures, in the same frame, for the whole time any figure is shown.",
+        "No figure from this dataset may be described as measured field accuracy or as evidence of six-month field performance. It illustrates how the metric is calculated, nothing more.",
+        "The narration covers the SEPARATION — OI recognition, technician assistance, final record completion — and does not present any percentage as a product-performance claim."
+      ],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.12.0",
+      "screen_recording": "recordings/scenes/R040.webm",
+      "narration_file": "elevenlabs/audio/R040.wav",
+      "narration_script": "elevenlabs/scenes/R040.txt",
+      "caption": "Measured, not claimed",
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-14",
+      "dependencies": [
+        "account.auth"
+      ],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": false,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 25,
+      "change_note": "v1.1g: demonstration label required on every accuracy figure; no percentage may be presented as a product-performance claim. Narration unchanged.",
+      "history": [
+        {
+          "date": "2026-09-13",
+          "event": "created",
+          "amendment": "Master Directive v1.1a — recognition sequence tightened, standalone module created"
+        },
+        {
+          "date": "2026-09-13",
+          "event": "acceptance criterion added",
+          "amendment": "Master Directive v1.1b — demonstration-data clarification"
+        },
+        {
+          "date": "2026-09-14",
+          "event": "blocker rewritten to the approved local demonstration mode",
+          "amendment": "Approved decisions — OP2 values, S100 narration, PC-2 local demonstration mode"
+        }
+      ],
+      "notes": [
+        "2026-09-14: Unblocked: controlled demonstration records are in scope and drive the accuracy views. Recording still to be cut with the rest of MOD1."
+      ]
+    }
+  ],
+  "directive_version": "1.1c",
+  "duration_basis": {
+    "words_per_second": 2.278,
+    "measured_from": "elevenlabs/reference/VOICE_REFERENCE.mp3",
+    "sample_words": 159,
+    "sample_runtime_seconds": 69.799167,
+    "voice": "Amy - Natural and Sweet",
+    "model": "eleven_multilingual_v2",
+    "speed": 0.72,
+    "note": "Measured, not assumed. The previous 2.4 words/second was a guess and ran 5.1% fast. Re-measure if the voice, model or speed setting changes."
+  }
+}

@@ -1,0 +1,15 @@
+# Dependencies for the narration workflow, pinned.
+#
+# The generation and verification scripts themselves use only the Python
+# standard library — urllib for the API call, json, hashlib, wave, subprocess.
+# That is deliberate: fewer pinned versions is fewer things that can drift
+# between a run on your machine and a run in CI.
+#
+# PyYAML is needed only by the workflow's own test suite, which reads the
+# workflow file as data.
+PyYAML==6.0.2
+
+# Not installed by pip — installed by the workflow with apt, and checked by
+# preflight.py:
+#   ffmpeg / ffprobe   (ubuntu-latest: ffmpeg 6.x)
+# Python: 3.11, pinned in the workflow's actions/setup-python step.

@@ -1,0 +1,532 @@
+#!/usr/bin/env python3
+"""
+OI Modular Video Production System — one command for the whole pipeline.
+
+    python system/oi_video.py status
+    python system/oi_video.py scripts
+    python system/oi_video.py voicecheck
+    python system/oi_video.py inventory
+    python system/oi_video.py record  --scenes S130 S150 --app "C:\\path\\index.html"
+    python system/oi_video.py build   --scenes S130 S150
+    python system/oi_video.py build   --stale
+    python system/oi_video.py assemble --quality review
+    python system/oi_video.py missing
+    python system/oi_video.py impact  reports/impact_request.json
+    python system/oi_video.py approve S130 S150 --note "reviewed with Stephan"
+    python system/oi_video.py release 1.0.0 --note "first opening trial"
+
+Scene content lives in scenes/scenes.json. Nothing else is a source of truth.
+"""
+import argparse
+import datetime
+import json
+import pathlib
+import re
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+import builder  # noqa: E402
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+REG = ROOT / "scenes" / "scenes.json"
+STATUSES = ["Draft", "Ready for review", "Approved", "Superseded", "Blocked"]
+# Measured, not assumed. The approved validation sample reads the 159-word
+# VALIDATION_SCRIPT.txt in 69.799s at speed 0.72 — 2.278 words/second. The old
+# 2.4 was a guess and ran 5.1% fast, which compounds across 31 scenes.
+# Re-measure this if the voice, model or speed setting ever changes.
+WPS = 2.278
+TODAY = datetime.date.today().isoformat()
+
+
+def load():
+    return json.loads(REG.read_text(encoding="utf-8"))
+
+
+def save(reg):
+    reg["last_modified"] = TODAY
+    REG.write_text(json.dumps(reg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def pick(reg, ids=None, stale=False, chapter=None):
+    out = []
+    for s in reg["scenes"]:
+        if ids and s["scene_id"] not in ids:
+            continue
+        if chapter and s["chapter"] != chapter:
+            continue
+        if stale and not builder.is_stale(s):
+            continue
+        out.append(s)
+    return out
+
+
+def est(text):
+    return len(re.findall(r"[A-Za-z0-9$']+", text)) / WPS
+
+
+# ---------------------------------------------------------------- status
+def cmd_status(reg, a):
+    counts = {}
+    print(f"{reg['project']}  v{reg['video_version']}")
+    print(f"field app {reg['field_app_version']} · demo data {reg['demo_data_version']}\n")
+    cur = None
+    total = 0.0
+    for s in reg["scenes"]:
+        counts[s["status"]] = counts.get(s["status"], 0) + 1
+        if s["chapter"] != cur:
+            cur = s["chapter"]
+            title = next(c["title"] for c in reg["chapters"] if c["id"] == cur)
+            print(f"\n{cur}  {title}")
+        gone = builder.missing_inputs(s)
+        built = (ROOT / "builds" / "scenes" / f"{s['scene_id']}.mp4").exists()
+        flags = []
+        if built and builder.is_stale(s):
+            flags.append("STALE")
+        if gone:
+            flags.append(f"missing {len(gone)}")
+        if s.get("rerecord_required"):
+            flags.append("rerecord")
+        if s.get("renarrate_required"):
+            flags.append("renarrate")
+        secs = est(s["narration"])
+        total += secs
+        print(f"  {s['scene_id']:<6} {s['status']:<16} {int(secs):>3}s  {s['title'][:38]:<38} "
+              f"{'built' if built else '     '}  {' · '.join(flags)}")
+        if a.verbose and s.get("blocked_reason"):
+            print(f"         ↳ {s['blocked_reason']}")
+    print("\n" + "  ".join(f"{k}: {v}" for k, v in counts.items()))
+    print(f"estimated narration across all scenes: {int(total)//60}:{int(total)%60:02d}")
+
+
+# ---------------------------------------------------------------- scripts
+def cmd_scripts(reg, a):
+    sc = ROOT / "elevenlabs" / "scenes"
+    sc.mkdir(parents=True, exist_ok=True)
+    voice = json.loads((ROOT / "elevenlabs" / "voice_settings.json").read_text(encoding="utf-8"))
+    manifest, master = [], []
+    for s in reg["scenes"]:
+        if not s["narration"].strip():
+            continue
+        p = sc / f"{s['scene_id']}.txt"
+        p.write_text(s["narration"] + "\n", encoding="utf-8")
+        if s.get("in_master"):
+            master.append(s["narration"])
+        audio = ROOT / s["narration_file"]
+        manifest.append({
+            "scene_id": s["scene_id"],
+            "script": f"elevenlabs/scenes/{s['scene_id']}.txt",
+            "audio": s["narration_file"],
+            "audio_present": audio.exists(),
+            "renarrate_required": s.get("renarrate_required", False),
+            "words": len(re.findall(r"[A-Za-z0-9$']+", s["narration"])),
+            "estimated_seconds": round(est(s["narration"]), 1),
+            "voice_id": voice["voice_id"],
+            "model_id": voice["model_id"],
+            "settings": voice["settings"],
+            "output_format": voice["output_format"],
+            "status": s["status"],
+            "in_master": bool(s.get("in_master")),
+            # A provisional line must never be generated by accident: the
+            # manifest carries the flag, and `need` excludes it below.
+            "narration_provisional": bool(s.get("narration_provisional")),
+            "provisional_reason": s.get("provisional_reason"),
+            "provisional_depends_on": s.get("provisional_depends_on"),
+        })
+    (ROOT / "elevenlabs" / "master_narration.txt").write_text("\n\n".join(master) + "\n", encoding="utf-8")
+    (ROOT / "elevenlabs" / "generation_manifest.json").write_text(
+        json.dumps({"generated": TODAY, "video_version": reg["video_version"],
+                    "voice": voice, "clips": manifest}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8")
+    pending = [m for m in manifest if not m["audio_present"] or m["renarrate_required"]]
+    ready = [m["scene_id"] for m in pending
+             if m["in_master"] and not m["narration_provisional"]]
+    held = [m["scene_id"] for m in pending if m["narration_provisional"]]
+    module = [m["scene_id"] for m in pending if not m["in_master"]]
+    print(f"wrote {len(manifest)} scene scripts + master_narration.txt + generation_manifest.json")
+    print(f"READY for final narration now ({len(ready)}): {' '.join(ready) or 'none'}")
+    if held:
+        print(f"HELD — provisional, do not generate ({len(held)}): {' '.join(held)}")
+    if module:
+        print(f"outside Trial 1 ({len(module)}): {' '.join(module)}")
+
+
+# ---------------------------------------------------------------- record
+def cmd_record(reg, a):
+    import recorder
+    ids = a.scenes or [s["scene_id"] for s in reg["scenes"] if s.get("in_master")]
+    blocked = [s["scene_id"] for s in pick(reg, ids) if s["status"] == "Blocked"]
+    if blocked and not a.force:
+        print("refusing to record scenes still blocked:")
+        for s in pick(reg, blocked):
+            print(f"  {s['scene_id']}  {s['blocked_reason']}")
+        print("fix the prototype or the data, or pass --force to try anyway.")
+        return
+    url = a.app
+    if pathlib.Path(url).exists():
+        url = pathlib.Path(url).absolute().as_uri()
+    made = recorder.record(url, ids, headed=a.headed)
+    for s in reg["scenes"]:
+        if s["scene_id"] in made:
+            s["rerecord_required"] = False
+            s["last_modified"] = TODAY
+            s["history"].append({"date": TODAY, "event": "re-recorded",
+                                 "field_app_version": reg["field_app_version"]})
+    save(reg)
+
+
+# ---------------------------------------------------------------- build
+def cmd_build(reg, a):
+    scenes = pick(reg, a.scenes, stale=a.stale, chapter=a.chapter)
+    if not scenes:
+        print("nothing selected")
+        return
+    report = []
+    for s in scenes:
+        builder.build_scene(s, report)
+    for r in report:
+        if r["result"] == "built":
+            print(f"  {r['scene']}: {r['seconds']:>5.1f}s  narration {r['narration']:>5.1f}s  "
+                  f"({r['fit']})  [{r['status']}]")
+        else:
+            print(f"  {r['scene']}: {r['result']} — {r['detail']}")
+    (ROOT / "reports" / f"build_{TODAY}.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+
+# ---------------------------------------------------------------- assemble
+def cmd_assemble(reg, a):
+    report = []
+    builder.assemble(reg, a.quality, report)
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+
+
+# ---------------------------------------------------------------- missing
+def cmd_missing(reg, a):
+    rows = []
+    for s in reg["scenes"]:
+        gone = builder.missing_inputs(s)
+        if gone:
+            rows.append((s["scene_id"], s["status"], [str(p.relative_to(ROOT)) for p in gone]))
+    if not rows:
+        print("no missing assets")
+        return
+    print(f"{len(rows)} scene(s) with missing assets\n")
+    for sid, st, files in rows:
+        print(f"  {sid}  [{st}]")
+        for f in files:
+            print(f"      {f}")
+    stale = [s["scene_id"] for s in reg["scenes"]
+             if (ROOT / "builds" / "scenes" / f"{s['scene_id']}.mp4").exists() and builder.is_stale(s)]
+    print(f"\nstale built scenes: {' '.join(stale) or 'none'}")
+
+
+# ---------------------------------------------------------------- impact
+def cmd_impact(reg, a):
+    """Video impact report for a proposed feature or benefit, BEFORE anything changes.
+
+    Request file:
+      {"change": "...", "kind": "feature|benefit|ui|data|correction",
+       "new_scenes": [{"after":"S150","title":"...","narration":"..."}],
+       "modified_scenes": ["S130"], "ui_touches": ["result card"],
+       "data_touches": ["OP1.closer.condition"]}
+    """
+    req = json.loads(pathlib.Path(a.request).read_text(encoding="utf-8"))
+    by_id = {s["scene_id"]: s for s in reg["scenes"]}
+    modified = [m for m in req.get("modified_scenes", []) if m in by_id]
+    new = req.get("new_scenes", [])
+
+    # A UI touch hits every scene whose actions or values mention it.
+    ui_hits = set()
+    for t in req.get("ui_touches", []):
+        for s in reg["scenes"]:
+            hay = " ".join(s["screen_action"] + s["on_screen_values"] + [s["expected_visible_result"]]).lower()
+            if t.lower() in hay:
+                ui_hits.add(s["scene_id"])
+    data_hits = {s["scene_id"] for s in reg["scenes"]
+                 for t in req.get("data_touches", []) if t in " ".join(s["dependencies"])}
+
+    rerecord = sorted(ui_hits | data_hits | set(modified))
+    renarrate = sorted(set(modified) | {n.get("after", "") for n in new if n.get("after")} - {""})
+    untouched = [s["scene_id"] for s in reg["scenes"]
+                 if s["status"] == "Approved" and s["scene_id"] not in rerecord]
+    added = sum(est(n.get("narration", "")) for n in new)
+    removed = sum(est(by_id[m]["narration"]) for m in req.get("removed_scenes", []) if m in by_id)
+
+    # suggested IDs that do not collide and do not force renumbering
+    suggestions = []
+    for n in new:
+        anchor = n.get("after")
+        if anchor and anchor in by_id:
+            for suffix in "ABCDEFGH":
+                cand = anchor + suffix
+                if cand not in by_id and cand not in suggestions:
+                    suggestions.append(cand)
+                    break
+        else:
+            suggestions.append("S900")
+
+    out = {
+        "report": "video impact",
+        "date": TODAY,
+        "change": req.get("change"),
+        "kind": req.get("kind"),
+        "new_scenes": [{"suggested_id": i, "after": n.get("after"), "title": n.get("title")}
+                       for i, n in zip(suggestions, new)],
+        "modified_scenes": modified,
+        "scenes_requiring_rerecording": rerecord,
+        "scenes_requiring_new_narration": renarrate,
+        "data_or_asset_dependencies": sorted(set(req.get("data_touches", [])) |
+                                             {d for m in modified for d in by_id[m]["dependencies"]}),
+        "unaffected_approved_scenes": untouched,
+        "expected_runtime_change_seconds": round(added - removed, 1),
+        "version_bump": ("major" if req.get("kind") == "restructure"
+                         else "minor" if new else "patch"),
+    }
+    dest = ROOT / "reports" / f"impact_{TODAY}.json"
+    dest.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    print(f"\nwritten to {dest.relative_to(ROOT)}")
+
+
+# ---------------------------------------------------------------- status changes
+def cmd_setstatus(reg, a):
+    status = {"approve": "Approved", "supersede": "Superseded",
+              "block": "Blocked", "review": "Ready for review", "draft": "Draft"}[a.cmd]
+    for s in pick(reg, a.scenes):
+        old = s["status"]
+        s["status"] = status
+        s["last_modified"] = TODAY
+        if status == "Approved":
+            s["rerecord_required"] = False
+            s["renarrate_required"] = False
+            s["blocked_reason"] = None
+        s["history"].append({"date": TODAY, "event": f"{old} → {status}", "note": a.note})
+        print(f"  {s['scene_id']}: {old} → {status}")
+    save(reg)
+
+
+# ---------------------------------------------------------------- inventory
+def cmd_inventory(reg, a):
+    """Where every Trial 1 scene stands on picture, by cause.
+
+    Written because the classification has to be reproducible rather than
+    retyped. Two rules it encodes, both of which a hand count gets wrong:
+
+    * a scene with a `still` needs the still and NOT a screen recording —
+      builder.inputs_for() asks for one or the other, never both;
+    * a `still` resolves against assets/, not the project root. Resolving it
+      against the root is what produced a false 'missing asset' report.
+    """
+    def asset_path(entry):
+        name = entry.split(" (")[0].strip()
+        for cand in (ROOT / name, ROOT / "assets" / name):
+            if cand.exists():
+                return cand
+        return None
+
+    groups = {"missing_asset": [], "not_copied": [], "no_recording": [],
+              "still_done": [], "recording_done": []}
+    held = []
+    for s in reg["scenes"]:
+        if not s.get("in_master"):
+            continue
+        sid = s["scene_id"]
+        if s.get("narration_provisional"):
+            held.append(sid)
+            continue
+        declared = s.get("required_source_assets") or []
+        if any("ASSET NEEDED" in d for d in declared):
+            groups["missing_asset"].append(sid)
+            continue
+        gone = [d for d in declared if asset_path(d) is None]
+        if gone:
+            groups["not_copied"].append(f"{sid} ({', '.join(gone)})")
+            continue
+        if s.get("still"):
+            key = "still_done" if (ROOT / "assets" / s["still"]).exists() else "missing_asset"
+            groups[key].append(sid)
+        elif (ROOT / s["screen_recording"]).exists():
+            groups["recording_done"].append(sid)
+        else:
+            groups["no_recording"].append(sid)
+
+    ready_total = sum(len(v) for v in groups.values())
+    print(f"Trial 1 picture inventory — {ready_total} narration-ready scenes\n")
+    for key, label in (("missing_asset", "Missing source assets"),
+                       ("not_copied", "Source exists but not copied"),
+                       ("no_recording", "Recording not yet performed"),
+                       ("still_done", "Still-based, already complete"),
+                       ("recording_done", "Recording already on disk")):
+        ids = groups[key]
+        print(f"{label:<32}{len(ids)}")
+        if ids:
+            print(f"    {' '.join(ids)}")
+    print(f"\ncomplete: {len(groups['still_done']) + len(groups['recording_done'])}"
+          f" · outstanding: {len(groups['missing_asset']) + len(groups['not_copied']) + len(groups['no_recording'])}")
+    print(f"held on narration, not counted above ({len(held)}): {' '.join(held)}")
+    print("\nNothing is re-recorded until the narration clips establish real timing —")
+    print("the build fits picture to speech, so a recording made first is made to a guess.")
+    return 0
+
+
+# ---------------------------------------------------------------- voicecheck
+def cmd_voicecheck(reg, a):
+    """Is the voice still the one that was locked, and do the clips match it?
+
+    Answers three questions that only bite later: has anything in
+    voice_settings.json drifted since the lock; was every existing clip made at
+    the locked settings; and is any clip's speech longer than the picture cut
+    for it, which the build cannot fix by speeding the voice up.
+    """
+    import hashlib
+    v = json.loads((ROOT / "elevenlabs" / "voice_settings.json").read_text(encoding="utf-8"))
+    locked = {"voice_id": v["voice_id"], "model_id": v["model_id"], "settings": v["settings"]}
+    fp = hashlib.sha256(json.dumps(locked, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    rec = v.get("lock", {}).get("fingerprint_sha256")
+
+    print(f"voice_id         {v['voice_id']}")
+    print(f"model_id         {v['model_id']}")
+    for k in ("speed", "stability", "similarity_boost", "style", "use_speaker_boost"):
+        print(f"{k:<16} {v['settings'][k]}")
+    print(f"reference        {v['reference_sample']['file']}")
+
+    ok = True
+    if not rec:
+        print("\nLOCK  absent — settings are not locked.")
+        ok = False
+    elif rec != fp:
+        print(f"\nLOCK  MISMATCH\n  recorded {rec}\n  computed {fp}")
+        print("  Settings have changed since the lock. Every existing clip was made at the "
+              "old values; restore them, or re-lock and regenerate all clips in one session.")
+        ok = False
+    else:
+        print(f"\nLOCK  verified  {fp[:16]}…  ({v['lock']['locked_on']})")
+
+    log = ROOT / "elevenlabs" / "generation_log.json"
+    if log.exists():
+        gl = json.loads(log.read_text(encoding="utf-8"))
+        if gl.get("lock_fingerprint") != fp:
+            print("  ! the existing clips were generated at DIFFERENT settings than are "
+                  "recorded now — they do not match each other.")
+            ok = False
+
+    clips = sorted((ROOT / "elevenlabs" / "audio").glob("*.*")) if (ROOT / "elevenlabs" / "audio").exists() else []
+    print(f"\nclips          {len(clips)} present")
+    if clips:
+        import subprocess as sp
+        over = []
+        by_id = {s["scene_id"]: s for s in reg["scenes"]}
+        for c in clips:
+            sid = c.stem
+            out = sp.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                          "-of", "csv=p=0", str(c)], capture_output=True, text=True)
+            if out.returncode != 0:
+                print(f"  {sid:<6} UNREADABLE"); ok = False; continue
+            secs = float(out.stdout.strip())
+            s = by_id.get(sid)
+            # The picture's real length is the recording on disk, not a number in
+            # the registry — the registry's est_seconds is an estimate of speech.
+            pic = None
+            if s:
+                rec_file = ROOT / s["screen_recording"]
+                if rec_file.exists():
+                    ro = sp.run(["ffprobe", "-v", "error", "-show_entries",
+                                 "format=duration", "-of", "csv=p=0", str(rec_file)],
+                                capture_output=True, text=True)
+                    if ro.returncode == 0 and ro.stdout.strip():
+                        pic = float(ro.stdout.strip())
+            flag = ""
+            if pic is None:
+                flag = "  (no recording on disk yet — picture length unknown)"
+            elif secs > pic + 0.05:
+                flag = f"  ! speech {secs:.1f}s exceeds picture {pic:.1f}s — recut the picture"
+                over.append(sid)
+            print(f"  {sid:<6} {secs:>6.2f}s{flag}")
+        if over:
+            print(f"\n{len(over)} scene(s) need a longer picture: {' '.join(over)}")
+            print("The build fits picture to speech. The voice is never sped up.")
+            recut = True
+        else:
+            recut = False
+    else:
+        recut = False
+    if not ok:
+        print("\nPROBLEMS ABOVE")
+        return 2
+    if recut:
+        print("\nVOICE OK — PICTURE RECUTS OUTSTANDING")
+        return 1
+    print("\nOK")
+    return 0
+
+
+# ---------------------------------------------------------------- release
+def cmd_release(reg, a):
+    if not re.fullmatch(r"\d+\.\d+\.\d+", a.version):
+        raise SystemExit("version must be MAJOR.MINOR.PATCH")
+    prev = reg["video_version"]
+    reg["video_version"] = a.version
+    manifest = {
+        "release": a.version,
+        "previous": prev,
+        "date": TODAY,
+        "note": a.note,
+        "field_app_version": reg["field_app_version"],
+        "demo_data_version": reg["demo_data_version"],
+        "scenes": [{"scene_id": s["scene_id"], "status": s["status"],
+                    "last_modified": s["last_modified"],
+                    "recording": s["screen_recording"] if (ROOT / s["screen_recording"]).exists() else None,
+                    "narration": s["narration_file"] if (ROOT / s["narration_file"]).exists() else None,
+                    "built": (ROOT / "builds" / "scenes" / f"{s['scene_id']}.mp4").exists(),
+                    "in_master": s.get("in_master", False)}
+                   for s in reg["scenes"]],
+    }
+    dest = ROOT / "reports" / "manifests" / f"release_{a.version}.json"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    log = ROOT / "reports" / "CHANGELOG.md"
+    entry = [f"\n## v{a.version} — {TODAY}", f"\n{a.note}\n",
+             f"- field app: {reg['field_app_version']}  ·  demo data: {reg['demo_data_version']}",
+             f"- manifest: reports/manifests/release_{a.version}.json"]
+    for st in STATUSES:
+        ids = [s["scene_id"] for s in reg["scenes"] if s["status"] == st]
+        if ids:
+            entry.append(f"- {st}: {' '.join(ids)}")
+    log.write_text((log.read_text(encoding="utf-8") if log.exists() else
+                    "# Opening Intelligence — video change log\n") + "\n".join(entry) + "\n",
+                   encoding="utf-8")
+    save(reg)
+    print(f"released v{a.version}\n  {dest.relative_to(ROOT)}\n  {log.relative_to(ROOT)}")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("status"); p.add_argument("-v", "--verbose", action="store_true")
+    sub.add_parser("scripts")
+    sub.add_parser("voicecheck")
+    sub.add_parser("inventory")
+    p = sub.add_parser("record"); p.add_argument("--scenes", nargs="*"); p.add_argument("--app", required=True)
+    p.add_argument("--headed", action="store_true"); p.add_argument("--force", action="store_true")
+    p = sub.add_parser("build"); p.add_argument("--scenes", nargs="*")
+    p.add_argument("--stale", action="store_true"); p.add_argument("--chapter")
+    p = sub.add_parser("assemble"); p.add_argument("--quality", choices=["review", "delivery"], default="review")
+    sub.add_parser("missing")
+    p = sub.add_parser("impact"); p.add_argument("request")
+    for c in ("approve", "supersede", "block", "review", "draft"):
+        p = sub.add_parser(c); p.add_argument("scenes", nargs="+"); p.add_argument("--note", default="")
+    p = sub.add_parser("release"); p.add_argument("version"); p.add_argument("--note", default="")
+
+    a = ap.parse_args()
+    reg = load()
+    {"status": cmd_status, "scripts": cmd_scripts, "record": cmd_record, "build": cmd_build,
+     "assemble": cmd_assemble, "missing": cmd_missing, "impact": cmd_impact,
+     "voicecheck": cmd_voicecheck,
+     "inventory": cmd_inventory,
+     "approve": cmd_setstatus, "supersede": cmd_setstatus, "block": cmd_setstatus,
+     "review": cmd_setstatus, "draft": cmd_setstatus, "release": cmd_release}[a.cmd](reg, a)
+
+
+if __name__ == "__main__":
+    main()

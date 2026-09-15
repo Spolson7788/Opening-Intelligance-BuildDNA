@@ -1,0 +1,73 @@
+# OI_Narration_Deployment — file manifest
+
+Built 2026-09-14 · 40 files · 2,015,313 bytes
+
+Every path below is REPOSITORY-RELATIVE. Copying this directory's contents onto
+the repository root puts each file exactly where the workflow expects it.
+
+NOT INSTALLED. Nothing in this package has been committed to GitHub, no GitHub
+environment exists, no secret has been added, and the workflow has never been
+dispatched.
+
+## Voice configuration (locked)
+
+  voice_id          OZxMHsGaBmV5pjMIDIn0
+  model_id          eleven_multilingual_v2
+  speed             0.72
+  stability         0.6
+  similarity_boost  0.75
+  style             0.0
+  use_speaker_boost True   (user-approved production setting, 2026-09-14)
+  lock fingerprint  6de1f549a5cca453b174c9d6a5527a723e5e64185ed175ba17d111952b44ecb2
+
+  Master format: pcm_44100, WAV container, 44.1 kHz, mono.
+
+## Held scenes — no narration script for these is in this package
+
+  S130 S130A S140 S180 S190A S210 S220
+
+## SHA-256
+
+4840e7f6cbeaa21b8c187a4bb111aa4ea06d368988d3c970c7d8b58b843d3848      12313  .github/workflows/generate-narration.yml
+d2a795154b5e71569e0699a1795af6b3baf3cee2f32512adc2ae1f6f7e94e48d       7208  .github/workflows/preflight.py
+2532bee77ff594ad083662459fe360043ad4f9c4d6e2a9fc2580a4894d0b3d39        660  .github/workflows/requirements.txt
+6268d29b974fa53727c3d4cf1cba07f683fa71999c7e5bd13aec87ce7e8ae732      14273  .github/workflows/test_generate_narration_workflow.py
+78f9d4ae82cad4a9053a03b608d4a630595e0e88d36de1148df1aa05f960cf4c       7547  elevenlabs/WORKFLOW_DEPLOYMENT.md
+7c64db8bc4c71640d9dbdaa46d860e42730c824294fba83044e48a034c402cb2       6456  elevenlabs/WORKFLOW_REVIEW.md
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855          0  elevenlabs/audio/.gitkeep
+a00be572b0850f5db924470cfc338f1107426ea72a1af5c0131d0edad3091951      14743  elevenlabs/generate_scenes.py
+d30f79fcff134d953f135ed8cf7908e0433932c0a2dd4fcc36690fd5106482b7      67256  elevenlabs/generation_manifest.json
+555d5ba283fdf756e159b4cea728e60da49e0508429b6e37fb1f2dd77af39fb0       8634  elevenlabs/pronunciation_guide.md
+a6e788c64907c6b5bf34216fa09726791100dcb248f1996d3ce40dcf85bdd8b7    1691828  elevenlabs/reference/VOICE_REFERENCE.mp3
+eb58c1e44175b1e58e2808c152490ff2c91142e470e7a3b24fd9b4601646fa79        182  elevenlabs/scenes/S010.txt
+8a5853a831feefde083e81d754c18e4499aca2b091cd4479e6fa1495a335041e        464  elevenlabs/scenes/S020.txt
+1be42134feaa2763135bd0ff18c3a42159fcd9618b7397b6ec97341fbc6c0939         81  elevenlabs/scenes/S030.txt
+a8bb81afa569df88a19ab9eaaf6de756b5792c266993334090ecd4f2a51be117         98  elevenlabs/scenes/S040.txt
+fd8cb4eb6b371369599ab7954e95380192346892c0309c7fc3fb50ff221301c2        114  elevenlabs/scenes/S050.txt
+3fb5e86275c6cef9b3839866ee4ab71c02913ab89a84c209588d449dc4ae78d8         46  elevenlabs/scenes/S060.txt
+3169f6512e94fc4f92f137a99e6c01ef937cb5aebc6d247753048fd99a868d36        330  elevenlabs/scenes/S070.txt
+897c634adf43edbfc5fb2d98dba9a619f147a1e58604b4b3444ec4f20542e2c1        294  elevenlabs/scenes/S080.txt
+49847a50689b9512aa04b68ebae3ad206ab6038f7947695ff4625bb011ea8734         29  elevenlabs/scenes/S090.txt
+b6d8babcaff984fc3158a3b4e1328e8498911b87ad758ac702953d56c275b318        135  elevenlabs/scenes/S100.txt
+a95a7f5e91bb234efbd6340d173c74eec678b8317108eda96e15f0a8d457b2a0        286  elevenlabs/scenes/S110.txt
+bdbeb10330c63c32dad2c07629fc33241cc41e759cc8f43fb8592caad38bc650         44  elevenlabs/scenes/S120.txt
+b0315c3dae38ee60f7abeef33773b5110d136a4ba7d88964fda229e2bc234267        221  elevenlabs/scenes/S130B.txt
+20150d7347a336d8e752879572b688d897a3c2180b766c283a95189f52515f96        353  elevenlabs/scenes/S150.txt
+ed27f2564efa976b2ed76d76432abe17060c95d10f99fcaf2355b72a4f1899f3        214  elevenlabs/scenes/S155.txt
+0bc0e1d6cae2b2ecdbc987dc742645325552805d0dc7a79ac5028aa1a0dd36c3         43  elevenlabs/scenes/S160.txt
+4a9ae4342200f9e900807786eac9596f4a8baf769270fe6cd0e15c3590ae4a7f        165  elevenlabs/scenes/S170.txt
+94416239ec1ff014bf979b598148ef337d7488a271f0e20c1c3792f8d4ac62d9        252  elevenlabs/scenes/S190.txt
+864edc25a0333b06754397eb868944c5a9e0039232f80a44ba9601faea1aa0af        178  elevenlabs/scenes/S200.txt
+39102c026b727c85ba9edc7f3cf50c088968a14171585bf4a9c2acda414a53bf        501  elevenlabs/scenes/S230.txt
+7055161c6ce1ac7e252a6b72a2ea9884e644688082b905a1ffb04eab9917e32d        192  elevenlabs/scenes/S240.txt
+d1f0c133607d8db8c2f2117b77dbd98c069f8c0ec5d53da83da85235464568d0        424  elevenlabs/scenes/S260.txt
+c7c84038ade18402c78e203db06b2b3f360ee661f920579be7c2fff8c13f5894        396  elevenlabs/scenes/S270.txt
+60add10ed42446cd51d82b231fe82ec4c5222e9dbf9870b6782200c3c1abfd30        324  elevenlabs/scenes/S275.txt
+258f3a38efa40e1dd4c1b7169971596bc78fc2270af73cf6adab28b51a14c71f       9223  elevenlabs/verify_clips.py
+6cd8ac43a624e928450fd4b298b08511f77807038cc466245ab6881e6e0c12fb       6913  elevenlabs/voice_settings.json
+0ec553133f8e2d1e23959ff6fd73fc598e20b31a8ca5a97e82c66dee7c282dc6     131149  scenes/scenes.json
+c268aeeb2d43bca0a2349e7fe2cc8645a7dc01fc6b8b781fd77e98e9261220b2       7840  system/builder.py
+73ec633354028d01ceff31553f28245c4a7cbdbe63a99e1118561ffd9ef775c6      23904  system/oi_video.py
+
+Verify after extracting:
+  awk 'NF==3 && length($1)==64 {print $1"  "$3}' MANIFEST.sha256 | sha256sum -c -

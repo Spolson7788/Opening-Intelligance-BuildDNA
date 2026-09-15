@@ -1,0 +1,1625 @@
+{
+  "generated": "2026-09-14",
+  "video_version": "0.29.0",
+  "voice": {
+    "_status": "LOCKED. Validation sample approved by Michelle on 2026-09-14; voice ID and settings locked for the OI Modular Video Production System. Every narration clip in every chapter — Trial 1 and everything after it — is generated at exactly these values. Changing any one of them invalidates every existing clip and requires regenerating all of them in a single session, plus a minor version bump on the video system.",
+    "voice_name": "Amy - Natural and Sweet",
+    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+    "voice_kind": "pvc (professional voice clone) — from the sample filename",
+    "model_id": "eleven_multilingual_v2",
+    "settings": {
+      "speed": 0.72,
+      "stability": 0.6,
+      "similarity_boost": 0.75,
+      "style": 0.0,
+      "use_speaker_boost": true
+    },
+    "_settings_provenance": {
+      "source": "the sample filename ElevenLabs_2026-09-14T21_35_46_Amy_-_Natural_and_Sweet_pvc_sp72_s60_sb75_se0_b_m2.mp3, cross-checked against the settings screenshot",
+      "sp72_s60_sb75_se0": "speed 0.72 · stability 0.60 · similarity_boost 0.75 · style 0.0 — each written as a percentage in the filename",
+      "screenshot_agrees": "Speed near the left of its 0.7-1.2 track, Stability just past the middle, Similarity high, Style Exaggeration at None",
+      "use_speaker_boost": "INFERRED from the `_b_` token in the filename. Confirm it in the UI before the full generation run — it is the one setting not visible in the screenshot.",
+      "m2": "eleven_multilingual_v2"
+    },
+    "reference_sample": {
+      "file": "elevenlabs/reference/VOICE_REFERENCE.mp3",
+      "settings_screenshot": "elevenlabs/reference/VALIDATION_SETTINGS_screenshot.png",
+      "script": "elevenlabs/VALIDATION_SCRIPT.txt",
+      "measured": {
+        "duration_seconds": 69.799167,
+        "codec": "mp3",
+        "sample_rate": 44100,
+        "channels": 1,
+        "bit_rate_bps": 193908
+      },
+      "sha256": "a6e788c64907c6b5bf34216fa09726791100dcb248f1996d3ce40dcf85bdd8b7",
+      "verified": "Probed with ffprobe rather than taken on trust — every stated value matches.",
+      "status": "APPROVED on 2026-09-14 and preserved as the voice reference for the OI Modular Video Production System. Any future question about whether a clip matches the approved voice is answered against this file.",
+      "not": "This is NOT Trial 1 narration. It is a terminology and delivery test, and it is never cut into the video.",
+      "previous_filename": "VALIDATION_SAMPLE_pending_approval.mp3 — renamed once Michelle designated it the voice-reference sample. Same file; sha256 verified identical across the rename.",
+      "approved_by": "Michelle — 'The validation sample is approved.'"
+    },
+    "output_format": {
+      "preferred": {
+        "api_value": "pcm_44100",
+        "container": "wav",
+        "sample_rate": 44100,
+        "bit_depth": 16,
+        "channels": 1,
+        "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+      },
+      "accepted": {
+        "container": "mp3",
+        "bit_rate": "192 kbps",
+        "sample_rate": 44100,
+        "channels": 1,
+        "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+        "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+      }
+    },
+    "loudness": {
+      "rule": "Normalise at final assembly, never by changing voice settings.",
+      "why": "Stability, similarity and style shape the performance. Turning them to chase volume changes how the voice sounds and desynchronises the cut from the approved sample. Loudness is fixed once, on the finished mix.",
+      "how": "ffmpeg loudnorm at assembly, applied to the assembled narration bed."
+    },
+    "speaking_rate": {
+      "words_per_second": 2.278,
+      "measured_from": "159 words of VALIDATION_SCRIPT.txt read in 69.799s at speed 0.72",
+      "previous_assumption": 2.4,
+      "effect": "The old figure ran 5.1% fast. Every scene estimate is now derived from this measurement.",
+      "note": "Re-measure if the voice, model or speed setting changes. Speed 0.72 is well below the 1.0 default and is a large part of why."
+    },
+    "delivery_naming": "elevenlabs/audio/<SCENE_ID>.wav (or .mp3) — for example elevenlabs/audio/S130.wav",
+    "generation_rules": [
+      "Generate the validation sample first and get it approved. Nothing else until then.",
+      "Use the exact same voice, model and settings for every scene clip. No per-scene adjustment, for any reason.",
+      "Generate every clip in one session with identical settings. Clips generated weeks apart drift in tone and the cut hears it.",
+      "One clip per scene. Never one long read sliced afterwards — that is what makes a one-line correction expensive.",
+      "Never speed the voice up to fit a picture. The picture is cut to the speech.",
+      "Never change settings to make a clip louder. Normalise at assembly.",
+      "Model, settings and format are written into elevenlabs/generation_manifest.json on every `scripts` run, so any clip can be reproduced exactly."
+    ],
+    "_voice_id_provenance": "Supplied by Michelle on 2026-09-14 alongside the voice name, model and the four settings, all of which match what was already recorded from the sample filename and screenshot. Not derived, not guessed.",
+    "_outstanding": [
+      "use_speaker_boost is INFERRED from the `_b_` token in the reference sample's filename. It is the one locked value not visible in the settings screenshot and not in the supplied list. It is locked as true. If the ElevenLabs UI shows it off, say so before the generation run — after the run it means regenerating every clip."
+    ],
+    "lock": {
+      "state": "LOCKED",
+      "locked_on": "2026-09-14",
+      "locked_by": "Michelle — 'The validation sample is approved. Lock this voice ID and these settings for the OI modular video system.'",
+      "scope": "The whole OI Modular Video Production System, not Trial 1 alone.",
+      "fingerprint_sha256": "6de1f549a5cca453b174c9d6a5527a723e5e64185ed175ba17d111952b44ecb2",
+      "fingerprint_covers": [
+        "voice_id",
+        "model_id",
+        "settings"
+      ],
+      "how_to_verify": "python system/oi_video.py voicecheck",
+      "change_procedure": [
+        "A change to any locked value is a system-level change, not a scene edit.",
+        "Every clip already generated becomes invalid — tone drifts audibly between settings, and a half-regenerated cut is worse than either.",
+        "Re-measure words-per-second from a new validation sample; every scene duration estimate is derived from it.",
+        "Regenerate all clips in one session, then rebuild every scene."
+      ]
+    }
+  },
+  "clips": [
+    {
+      "scene_id": "S010",
+      "script": "elevenlabs/scenes/S010.txt",
+      "audio": "elevenlabs/audio/S010.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 26,
+      "estimated_seconds": 11.4,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S020",
+      "script": "elevenlabs/scenes/S020.txt",
+      "audio": "elevenlabs/audio/S020.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 75,
+      "estimated_seconds": 32.9,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S030",
+      "script": "elevenlabs/scenes/S030.txt",
+      "audio": "elevenlabs/audio/S030.wav",
+      "audio_present": false,
+      "renarrate_required": false,
+      "words": 10,
+      "estimated_seconds": 4.4,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Ready for review",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S040",
+      "script": "elevenlabs/scenes/S040.txt",
+      "audio": "elevenlabs/audio/S040.wav",
+      "audio_present": false,
+      "renarrate_required": false,
+      "words": 16,
+      "estimated_seconds": 7.0,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S050",
+      "script": "elevenlabs/scenes/S050.txt",
+      "audio": "elevenlabs/audio/S050.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 20,
+      "estimated_seconds": 8.8,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S060",
+      "script": "elevenlabs/scenes/S060.txt",
+      "audio": "elevenlabs/audio/S060.wav",
+      "audio_present": false,
+      "renarrate_required": false,
+      "words": 7,
+      "estimated_seconds": 3.1,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S070",
+      "script": "elevenlabs/scenes/S070.txt",
+      "audio": "elevenlabs/audio/S070.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 60,
+      "estimated_seconds": 26.3,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S080",
+      "script": "elevenlabs/scenes/S080.txt",
+      "audio": "elevenlabs/audio/S080.wav",
+      "audio_present": false,
+      "renarrate_required": false,
+      "words": 56,
+      "estimated_seconds": 24.6,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S090",
+      "script": "elevenlabs/scenes/S090.txt",
+      "audio": "elevenlabs/audio/S090.wav",
+      "audio_present": false,
+      "renarrate_required": false,
+      "words": 5,
+      "estimated_seconds": 2.2,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S100",
+      "script": "elevenlabs/scenes/S100.txt",
+      "audio": "elevenlabs/audio/S100.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 22,
+      "estimated_seconds": 9.7,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S110",
+      "script": "elevenlabs/scenes/S110.txt",
+      "audio": "elevenlabs/audio/S110.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 49,
+      "estimated_seconds": 21.5,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S120",
+      "script": "elevenlabs/scenes/S120.txt",
+      "audio": "elevenlabs/audio/S120.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 8,
+      "estimated_seconds": 3.5,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S130",
+      "script": "elevenlabs/scenes/S130.txt",
+      "audio": "elevenlabs/audio/S130.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 63,
+      "estimated_seconds": 27.7,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": true,
+      "provisional_reason": "Asserts the recognition RESULT: manufacturer Cal-Royal, family CR441, model not established. Three narration variants exist; the controlled recognition test (PC-7) selects which is spoken.",
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+    },
+    {
+      "scene_id": "S130A",
+      "script": "elevenlabs/scenes/S130A.txt",
+      "audio": "elevenlabs/audio/S130A.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 32,
+      "estimated_seconds": 14.0,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": true,
+      "provisional_reason": "Describes the specific evidence OI asks for, which only exists if the result lands at family level. Follows whichever variant S130 takes.",
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+    },
+    {
+      "scene_id": "S130B",
+      "script": "elevenlabs/scenes/S130B.txt",
+      "audio": "elevenlabs/audio/S130B.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 42,
+      "estimated_seconds": 18.4,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S130C",
+      "script": "elevenlabs/scenes/S130C.txt",
+      "audio": "elevenlabs/audio/S130C.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 52,
+      "estimated_seconds": 22.8,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": false,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S140",
+      "script": "elevenlabs/scenes/S140.txt",
+      "audio": "elevenlabs/audio/S140.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 70,
+      "estimated_seconds": 30.7,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": true,
+      "provisional_reason": "Framed on the closer resolving at FAMILY level ('even before the exact model is pinned down'). If the test establishes the model, the framing changes.",
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+    },
+    {
+      "scene_id": "S150",
+      "script": "elevenlabs/scenes/S150.txt",
+      "audio": "elevenlabs/audio/S150.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 63,
+      "estimated_seconds": 27.7,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S155",
+      "script": "elevenlabs/scenes/S155.txt",
+      "audio": "elevenlabs/audio/S155.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 35,
+      "estimated_seconds": 15.4,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S160",
+      "script": "elevenlabs/scenes/S160.txt",
+      "audio": "elevenlabs/audio/S160.wav",
+      "audio_present": false,
+      "renarrate_required": false,
+      "words": 9,
+      "estimated_seconds": 4.0,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S170",
+      "script": "elevenlabs/scenes/S170.txt",
+      "audio": "elevenlabs/audio/S170.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 30,
+      "estimated_seconds": 13.2,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S180",
+      "script": "elevenlabs/scenes/S180.txt",
+      "audio": "elevenlabs/audio/S180.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 97,
+      "estimated_seconds": 42.6,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": true,
+      "provisional_reason": "Asserts the device result: Cal-Royal established, family and model not established, eight unresolved candidates. Subject to what the deployed recognition service returns.",
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+    },
+    {
+      "scene_id": "S190",
+      "script": "elevenlabs/scenes/S190.txt",
+      "audio": "elevenlabs/audio/S190.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 48,
+      "estimated_seconds": 21.1,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S190A",
+      "script": "elevenlabs/scenes/S190A.txt",
+      "audio": "elevenlabs/audio/S190A.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 65,
+      "estimated_seconds": 28.5,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": true,
+      "provisional_reason": "Rests on the AF7700 being technician-selected rather than recognized. Acceptance criterion requires re-review if the test later establishes it from the photographs.",
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+    },
+    {
+      "scene_id": "S200",
+      "script": "elevenlabs/scenes/S200.txt",
+      "audio": "elevenlabs/audio/S200.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 31,
+      "estimated_seconds": 13.6,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S210",
+      "script": "elevenlabs/scenes/S210.txt",
+      "audio": "elevenlabs/audio/S210.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 67,
+      "estimated_seconds": 29.4,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": true,
+      "provisional_reason": "Characterises the hinge outcome ('hinges are hard from a photograph alone… it tells us where it lands'). Subject to the recorded result.",
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+    },
+    {
+      "scene_id": "S220",
+      "script": "elevenlabs/scenes/S220.txt",
+      "audio": "elevenlabs/audio/S220.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 91,
+      "estimated_seconds": 39.9,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": true,
+      "provisional_reason": "Wording is approved. Held for two reasons: the measured ElevenLabs duration must be fitted to the extended picture before the scene is approved, and the approved opening states what OI has NOT established — itself a recognition outcome, subject to PC-7.",
+      "provisional_depends_on": "the measured S220 clip duration (voice ID still required), and PC-7 — controlled recognition test (not run)"
+    },
+    {
+      "scene_id": "S230",
+      "script": "elevenlabs/scenes/S230.txt",
+      "audio": "elevenlabs/audio/S230.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 95,
+      "estimated_seconds": 41.7,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S240",
+      "script": "elevenlabs/scenes/S240.txt",
+      "audio": "elevenlabs/audio/S240.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 36,
+      "estimated_seconds": 15.8,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S280",
+      "script": "elevenlabs/scenes/S280.txt",
+      "audio": "elevenlabs/audio/S280.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 33,
+      "estimated_seconds": 14.5,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": false,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S260",
+      "script": "elevenlabs/scenes/S260.txt",
+      "audio": "elevenlabs/audio/S260.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 72,
+      "estimated_seconds": 31.6,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S270",
+      "script": "elevenlabs/scenes/S270.txt",
+      "audio": "elevenlabs/audio/S270.wav",
+      "audio_present": false,
+      "renarrate_required": false,
+      "words": 85,
+      "estimated_seconds": 37.3,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Ready for review",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S275",
+      "script": "elevenlabs/scenes/S275.txt",
+      "audio": "elevenlabs/audio/S275.wav",
+      "audio_present": false,
+      "renarrate_required": false,
+      "words": 55,
+      "estimated_seconds": 24.1,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": true,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "R010",
+      "script": "elevenlabs/scenes/R010.txt",
+      "audio": "elevenlabs/audio/R010.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 55,
+      "estimated_seconds": 24.1,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": false,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "R020",
+      "script": "elevenlabs/scenes/R020.txt",
+      "audio": "elevenlabs/audio/R020.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 54,
+      "estimated_seconds": 23.7,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": false,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "R030",
+      "script": "elevenlabs/scenes/R030.txt",
+      "audio": "elevenlabs/audio/R030.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 54,
+      "estimated_seconds": 23.7,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": false,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "R040",
+      "script": "elevenlabs/scenes/R040.txt",
+      "audio": "elevenlabs/audio/R040.wav",
+      "audio_present": false,
+      "renarrate_required": true,
+      "words": 57,
+      "estimated_seconds": 25.0,
+      "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+      "model_id": "eleven_multilingual_v2",
+      "settings": {
+        "speed": 0.72,
+        "stability": 0.6,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": true
+      },
+      "output_format": {
+        "preferred": {
+          "api_value": "pcm_44100",
+          "container": "wav",
+          "sample_rate": 44100,
+          "bit_depth": 16,
+          "channels": 1,
+          "why": "Lossless through the build. The delivery MP4 is encoded to AAC once, at assembly, rather than re-compressing per scene."
+        },
+        "accepted": {
+          "container": "mp3",
+          "bit_rate": "192 kbps",
+          "sample_rate": 44100,
+          "channels": 1,
+          "why": "What the ElevenLabs download button gives, and what the validation sample is. The builder already accepts .mp3 as well as .wav, so scene clips in this format work — at the cost of one lossy generation before assembly.",
+          "important": "Output format is a DELIVERY choice, not a voice setting. Choosing mp3 over wav changes nothing about the voice, the model or the four settings above."
+        }
+      },
+      "status": "Draft",
+      "in_master": false,
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    }
+  ]
+}
