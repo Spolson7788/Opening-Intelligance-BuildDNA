@@ -1,6 +1,6 @@
 {
   "generated": "2026-09-15",
-  "video_version": "0.33.0",
+  "video_version": "0.42.0",
   "voice": {
     "_status": "LOCKED. Validation sample approved by Michelle on 2026-09-14; voice ID and settings locked for the OI Modular Video Production System. Every narration clip in every chapter — Trial 1 and everything after it — is generated at exactly these values. Changing any one of them invalidates every existing clip and requires regenerating all of them in a single session, plus a minor version bump on the video system.",
     "voice_name": "Amy - Natural and Sweet",
@@ -1001,7 +1001,7 @@
       },
       "status": "Draft",
       "in_master": true,
-      "narration_provisional": true,
+      "narration_provisional": false,
       "provisional_reason": "Asserts the device result: Cal-Royal established, family and model not established, eight unresolved candidates. Subject to what the deployed recognition service returns.",
       "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
     },
@@ -1083,7 +1083,7 @@
       },
       "status": "Draft",
       "in_master": true,
-      "narration_provisional": true,
+      "narration_provisional": false,
       "provisional_reason": "Rests on the AF7700 being technician-selected rather than recognized. Acceptance criterion requires re-review if the test later establishes it from the photographs.",
       "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
     },
@@ -1134,8 +1134,8 @@
       "audio": "elevenlabs/audio/S210.mp3",
       "audio_present": false,
       "renarrate_required": true,
-      "words": 67,
-      "estimated_seconds": 29.4,
+      "words": 70,
+      "estimated_seconds": 30.7,
       "voice_id": "OZxMHsGaBmV5pjMIDIn0",
       "model_id": "eleven_multilingual_v2",
       "settings": {
@@ -1165,7 +1165,7 @@
       },
       "status": "Draft",
       "in_master": true,
-      "narration_provisional": true,
+      "narration_provisional": false,
       "provisional_reason": "Characterises the hinge outcome ('hinges are hard from a photograph alone… it tells us where it lands'). Subject to the recorded result.",
       "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
     },
@@ -1206,7 +1206,7 @@
       },
       "status": "Draft",
       "in_master": true,
-      "narration_provisional": true,
+      "narration_provisional": false,
       "provisional_reason": "Wording is approved. Held for two reasons: the measured ElevenLabs duration must be fitted to the extended picture before the scene is approved, and the approved opening states what OI has NOT established — itself a recognition outcome, subject to PC-7.",
       "provisional_depends_on": "the measured S220 clip duration (voice ID still required), and PC-7 — controlled recognition test (not run)"
     },

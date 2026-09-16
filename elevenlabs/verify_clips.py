@@ -6,6 +6,7 @@ on disk is exactly the set that was supposed to be generated.
 Approved master format: mp3_44100_128 — a valid 44.1 kHz mono MP3 at about
 128 kbps. Lossy by design; these files are never transcoded into WAV.
 
+    python elevenlabs/verify_clips.py --expect-scenes S180 S190A S210 S220
     python elevenlabs/verify_clips.py --expect-set ready
     python elevenlabs/verify_clips.py --expect-set ready --report validation_report.md
 
@@ -93,7 +94,12 @@ def expected_set(kind, clips):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--expect-set", choices=["ready", "any"], default="ready")
+    ap.add_argument("--expect-set", choices=["ready", "any", "scenes"], default="ready")
+    ap.add_argument("--expect-scenes", nargs="*", metavar="SCENE_ID",
+                    help="Verify EXACTLY these scene IDs and no others. This is what a "
+                         "scoped run uses: a four-scene run produces four clips, and "
+                         "requiring the whole 'ready' set would report every clip the "
+                         "checkout does not hold as missing. Implies --expect-set scenes.")
     ap.add_argument("--report", help="write a markdown validation report here")
     a = ap.parse_args()
 
@@ -101,11 +107,25 @@ def main():
     voice = json.loads(VOICE.read_text(encoding="utf-8"))
     clips = man["clips"]
     by_id = {c["scene_id"]: c for c in clips}
-    want = expected_set(a.expect_set, clips)
+    if a.expect_scenes:
+        a.expect_set = "scenes"
+        unknown = [sid for sid in a.expect_scenes if sid not in by_id]
+        if unknown:
+            print(f"unknown scene id(s): {' '.join(unknown)} — not in the manifest")
+            return 2
+        held_ids = expected_set("held", clips)
+        wrong = [sid for sid in a.expect_scenes if sid in held_ids]
+        if wrong:
+            print(f"HELD scene(s) named in --expect-scenes: {' '.join(wrong)} — refusing")
+            return 2
+        want = set(a.expect_scenes)
+    else:
+        want = expected_set(a.expect_set, clips)
     held = expected_set("held", clips)
 
     present = {p.stem: p for p in sorted(AUDIO.glob("*")) if p.suffix in AUDIO_SUFFIXES}
     problems, rows = [], []
+    notes_out_of_scope = []
 
     # --- the set itself ---------------------------------------------------
     if a.expect_set != "any":
@@ -113,15 +133,29 @@ def main():
         extra = sorted(present.keys() - want)
         if missing:
             problems.append(f"missing {len(missing)} expected clip(s): {' '.join(missing)}")
+        out_of_scope = []
         for sid in extra:
             if sid in held:
+                # Always a hard failure, in every mode. A held scene must never
+                # have audio, whatever this run was scoped to.
                 problems.append(f"HELD scene {sid} has an audio file — it must not "
                                 f"have been generated")
+            elif a.expect_set == "scenes":
+                # A scoped run is not the only thing that may ever have written to
+                # this directory. A clip outside the scope is out of scope: this
+                # run neither produced it nor makes any claim about it.
+                out_of_scope.append(sid)
             else:
                 problems.append(f"unexpected clip on disk: {sid}")
+        notes_out_of_scope = sorted(out_of_scope)
 
     # --- each file --------------------------------------------------------
-    for sid in sorted(present):
+    # In scoped mode, only the scenes this run produced are opened, probed and
+    # hashed. A clip outside the scope is not inspected, so the report never
+    # implies it was checked.
+    to_inspect = (sorted(set(present) & want) if a.expect_set == "scenes"
+                  else sorted(present))
+    for sid in to_inspect:
         p = present[sid]
         info = probe(p)
         if not info:
@@ -187,6 +221,9 @@ def main():
     print(f"{'scene':<8}{'duration':<11}{'bytes':<12}{'format':<22}{'sha256':<18}note")
     for r in rows:
         print(f"{r[0]:<8}{r[1]:<11}{r[2]:<12}{r[3]:<22}{r[4]:<18}{r[5]}")
+    if notes_out_of_scope:
+        print(f"\nout of scope — present but NOT part of this run and NOT checked "
+              f"({len(notes_out_of_scope)}): {' '.join(notes_out_of_scope)}")
     total = sum(float(r[1][:-1]) for r in rows if r[1].endswith("s"))
     print(f"\n{len(rows)} clip(s) · {int(total) // 60}:{int(total) % 60:02d} of speech")
 
@@ -207,7 +244,14 @@ def main():
                f"- settings {voice['settings']}",
                f"- lock fingerprint `{fp[:16]}…`",
                f"- {len(rows)} clip(s), {int(total) // 60}:{int(total) % 60:02d} of speech",
-               f"- expected set: **{a.expect_set}** ({len(want)} scenes)",
+               (f"- expected set: **exactly these {len(want)} scene(s)** — "
+                f"{' '.join(sorted(want))}" if a.expect_set == "scenes"
+                else f"- expected set: **{a.expect_set}** ({len(want)} scenes)"),
+               ("- scope: this run verifies ONLY the scenes it generated. Clips absent "
+                "from this checkout are out of scope and are neither required nor "
+                "claimed to have been checked."
+                if a.expect_set == "scenes" else
+                "- scope: the whole ready set."),
                f"- held scenes, which must have no audio: {' '.join(sorted(held))}",
                "",
                "| scene | duration | bytes | format | sha256 (16) | note |",

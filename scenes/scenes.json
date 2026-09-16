@@ -1,6 +1,6 @@
 {
   "project": "Opening Intelligence — Modular Video Production System",
-  "video_version": "0.33.0",
+  "video_version": "0.42.0",
   "version_policy": "major = workflow or presentation restructuring; minor = new feature or chapter; patch = corrections that do not materially change the presentation",
   "master_cut": "Trial 1 — introduction and first complete opening through the purchasing handoff",
   "field_app_version": "FA-v40-drop14",
@@ -872,7 +872,12 @@
       "narration_previous": "OI analyzes the photographs and tells me how far the evidence goes. Surface-mounted closer, manufacturer Cal-Royal, family C R four forty-one—and then it stops. Model: not established. This family has look-alikes, and nothing it can see separates them yet. It reports the level it can defend, not the one I'd like.",
       "narration_provisional": true,
       "provisional_reason": "Asserts the recognition RESULT: manufacturer Cal-Royal, family CR441, model not established. Three narration variants exist; the controlled recognition test (PC-7) selects which is spoken.",
-      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
+      "recognition_hold": {
+        "state": "HELD",
+        "reason": "closer result is semantically incoherent — see reports/PC7_Stage_B_Reconciliation.md. Blocked on the closer correction, not on evidence volume.",
+        "confirmed_on": "2026-09-15"
+      }
     },
     {
       "scene_id": "S130A",
@@ -943,7 +948,12 @@
       ],
       "narration_provisional": true,
       "provisional_reason": "Describes the specific evidence OI asks for, which only exists if the result lands at family level. Follows whichever variant S130 takes.",
-      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
+      "recognition_hold": {
+        "state": "HELD",
+        "reason": "closer result is semantically incoherent — see reports/PC7_Stage_B_Reconciliation.md. Blocked on the closer correction, not on evidence volume.",
+        "confirmed_on": "2026-09-15"
+      }
     },
     {
       "scene_id": "S130B",
@@ -1172,7 +1182,12 @@
       ],
       "narration_provisional": true,
       "provisional_reason": "Framed on the closer resolving at FAMILY level ('even before the exact model is pinned down'). If the test establishes the model, the framing changes.",
-      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
+      "recognition_hold": {
+        "state": "HELD",
+        "reason": "closer result is semantically incoherent — see reports/PC7_Stage_B_Reconciliation.md. Blocked on the closer correction, not on evidence volume.",
+        "confirmed_on": "2026-09-15"
+      }
     },
     {
       "scene_id": "S150",
@@ -1411,7 +1426,7 @@
       "title": "Identify the device",
       "purpose": "Look the device up by model and be clear what that does.",
       "audience_benefit": "Catalog lookup speeds entry; the stamp is still what establishes the model.",
-      "narration": "Same process for the device. Using the photographs and the visible attributes I entered, OI establishes Cal-Royal as the manufacturer. It does not establish the exact family or model—eight candidates it can't separate, and it says so rather than picking one. The stamp here is legible, so I'll look the model up: A F seventy-seven hundred. There it is—Cal-Royal's A seventy-seven hundred, A F seventy-seven hundred rim exit device. Choosing it sets the part type and the manufacturer, and OI records it as my selection, not as something it recognized.",
+      "narration": "Same process for the device. Using the photographs and the visible attributes I entered, OI establishes Cal-Royal as the manufacturer. It does not establish the exact family or model—several candidates it can't separate, and it says so rather than picking one. The stamp here is legible, so I'll look the model up: A F seventy-seven hundred. There it is—Cal-Royal's A seventy-seven hundred, A F seventy-seven hundred rim exit device. Choosing it sets the part type and the manufacturer, and OI records it as my selection, not as something it recognized.",
       "screen_action": [
         "Type 'AF7700' into the model lookup while it is spoken; press Search catalog.",
         "Hold on the result rows.",
@@ -1432,7 +1447,7 @@
       "caption": "Image-assisted, then confirmed against the stamp",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.exit_device.model"
       ],
@@ -1498,6 +1513,12 @@
           "date": "2026-09-14",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
+          "change": "released from the recognition hold under the evidence-acceptance exception; narration edited (see narration_change)",
+          "evidence": "reports/pc7_evidence/photograph_test_results_2026-09-15T1825Z.json",
+          "approval": "Michelle, 15 Sep 2026"
         }
       ],
       "acceptance_criteria": [
@@ -1510,9 +1531,22 @@
         "The on-screen result and its percentages are exactly what the application returned. The narration describes them; it never restates them differently."
       ],
       "narration_previous": "Same process for the device. OI analyzes the photographs and puts the manufacturer at Cal-Royal—and on the images alone, that's as far as it goes. The stamp on this one is legible, so I'll help it along: I'll look the model up, A F seventy-seven hundred. There it is in the catalog—Cal-Royal's A seventy-seven hundred, A F seventy-seven hundred rim exit device. Choosing it sets the part type and the manufacturer. What establishes the model is the stamp I can read and confirm, not the fact that I typed it.",
-      "narration_provisional": true,
+      "narration_provisional": false,
       "provisional_reason": "Asserts the device result: Cal-Royal established, family and model not established, eight unresolved candidates. Subject to what the deployed recognition service returns.",
-      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
+      "narration_change": {
+        "date": "2026-09-15",
+        "from": "eight candidates it can't separate",
+        "to": "several candidates it can't separate",
+        "approved_by": "Michelle, 15 Sep 2026"
+      },
+      "recognition_hold": {
+        "state": "RELEASED",
+        "released_on": "2026-09-15",
+        "basis": "evidence-acceptance exception, approved by Michelle 15 Sep 2026",
+        "scope": "Released under the evidence-acceptance exception of 15 Sep 2026. The exit-device and hinge results were identical across both completed repetitions of the 15 Sep PC-7 Stage B run with no semantic violations, and are accepted as sufficient evidence for this scene. This does NOT re-grade the run, which remains a FAILURE under its original +/-2-point rule. Evidence: reports/pc7_evidence/photograph_test_results_2026-09-15T1825Z.json sha256 23aa3dce737bfed7...",
+        "narration_text": "final and approved; audio NOT yet generated (separate approval)"
+      }
     },
     {
       "scene_id": "S190",
@@ -1636,7 +1670,7 @@
       "caption": "Cal-Royal A7700 / AF7700 — manufacturer document",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.exit_device.cut_sheet"
       ],
@@ -1687,6 +1721,12 @@
           "date": "2026-09-14",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
+          "change": "released from the recognition hold under the evidence-acceptance exception; narration unchanged",
+          "evidence": "reports/pc7_evidence/photograph_test_results_2026-09-15T1825Z.json",
+          "approval": "Michelle, 15 Sep 2026"
         }
       ],
       "acceptance_criteria": [
@@ -1700,9 +1740,16 @@
         "Fire-rating language follows the Master Directive: the AF7700 is a fire-rated rim exit device; the complete opening is never called a certified or UL-listed fire-door assembly."
       ],
       "narration_previous": "Here's the manufacturer's document for the device. Same habit as the closer — we're checking what's installed against what the manufacturer published, while we're still at the door.",
-      "narration_provisional": true,
+      "narration_provisional": false,
       "provisional_reason": "Rests on the AF7700 being technician-selected rather than recognized. Acceptance criterion requires re-review if the test later establishes it from the photographs.",
-      "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+      "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
+      "recognition_hold": {
+        "state": "RELEASED",
+        "released_on": "2026-09-15",
+        "basis": "evidence-acceptance exception, approved by Michelle 15 Sep 2026",
+        "scope": "Released under the evidence-acceptance exception of 15 Sep 2026. The exit-device and hinge results were identical across both completed repetitions of the 15 Sep PC-7 Stage B run with no semantic violations, and are accepted as sufficient evidence for this scene. This does NOT re-grade the run, which remains a FAILURE under its original +/-2-point rule. Evidence: reports/pc7_evidence/photograph_test_results_2026-09-15T1825Z.json sha256 23aa3dce737bfed7...",
+        "narration_text": "final and approved; audio NOT yet generated (separate approval)"
+      }
     },
     {
       "scene_id": "S200",
@@ -1774,7 +1821,7 @@
       "title": "Capture and identify the hinges",
       "purpose": "Capture and identify the hinges.",
       "audience_benefit": "Consistency across every part on the door.",
-      "narration": "Now the hinges on this same door. Three shots again: the full hinge with the door open, the knuckle close-up, and the leaf stamp. OI analyzes them, and I add what I can see—knuckle count, bearing type, leaf profile, pin type. Hinges are hard from a photograph alone, and OI is straight about that: it tells us where it lands and what it still needs.",
+      "narration": "Now the hinges on this same door. Three shots again: the full hinge with the door open, the knuckle close-up, and the leaf stamp. OI analyzes them, and I add what I can see—knuckle count, bearing type, leaf profile, pin type. Hinges are hard from a photograph alone, and OI is straight about that: it tells us where it lands, and flags it for review rather than guessing.",
       "screen_action": [
         "Work all three guided photo steps.",
         "Set the four visible hinge attributes from the actual photographs, then Identify.",
@@ -1799,7 +1846,7 @@
       "caption": "Hinges · OI states where it lands and what it needs",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.hinges.field_photographs"
       ],
@@ -1840,6 +1887,12 @@
           "date": "2026-09-14",
           "event": "stale asset requirement corrected to the approved demonstration hinge images",
           "note": "Inventory correction only. No real field photographs requested. Evidence limitations preserved: workflow and visible manufacturer evidence only — not proof of Ives 5BB1, not model-level image recognition. Narration, recognition outcome, held status, scene timing and acceptance criteria unchanged."
+        },
+        {
+          "date": "2026-09-15",
+          "change": "released from the recognition hold under the evidence-acceptance exception; narration edited (see narration_change)",
+          "evidence": "reports/pc7_evidence/photograph_test_results_2026-09-15T1825Z.json",
+          "approval": "Michelle, 15 Sep 2026"
         }
       ],
       "acceptance_criteria": [
@@ -1847,13 +1900,26 @@
         "A low or component-level result is presented as honest behaviour, not as a defect.",
         "The hinge images support IVES, five knuckles and bearing detail. Nothing claims 5BB1 is established by image — no model number appears in any hinge asset."
       ],
-      "narration_provisional": true,
+      "narration_provisional": false,
       "provisional_reason": "Characterises the hinge outcome ('hinges are hard from a photograph alone… it tells us where it lands'). Subject to the recorded result.",
       "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
       "asset_note": "Approved demonstration hinge images, already on disk. EVIDENCE LIMITATIONS, PRESERVED: these images support the guided-capture WORKFLOW and visible manufacturer evidence only, to the level already established — nothing further. They are NOT proof of Ives 5BB1 and they are NOT model-level image recognition. The 5BB1 record remains technician-selected and supported by manufacturer documentation (the PC-6 pattern shown in S220), never image-recognized. S210's recognition outcome, narration, held status, scene timing and acceptance criteria are unchanged by this inventory correction; the scene remains held pending the controlled recognition test.",
       "superseded_asset_requirement": [
         "ASSET NEEDED: real hinge photos"
-      ]
+      ],
+      "narration_change": {
+        "date": "2026-09-15",
+        "from": "it tells us where it lands and what it still needs",
+        "to": "it tells us where it lands, and flags it for review rather than guessing",
+        "approved_by": "Michelle, 15 Sep 2026"
+      },
+      "recognition_hold": {
+        "state": "RELEASED",
+        "released_on": "2026-09-15",
+        "basis": "evidence-acceptance exception, approved by Michelle 15 Sep 2026",
+        "scope": "Released under the evidence-acceptance exception of 15 Sep 2026. The exit-device and hinge results were identical across both completed repetitions of the 15 Sep PC-7 Stage B run with no semantic violations, and are accepted as sufficient evidence for this scene. This does NOT re-grade the run, which remains a FAILURE under its original +/-2-point rule. Evidence: reports/pc7_evidence/photograph_test_results_2026-09-15T1825Z.json sha256 23aa3dce737bfed7...",
+        "narration_text": "final and approved; audio NOT yet generated (separate approval)"
+      }
     },
     {
       "scene_id": "S220",
@@ -1892,7 +1958,7 @@
       "caption": "Ives 5BB1 — technician-selected, not image-recognized",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.hinges.condition"
       ],
@@ -1963,6 +2029,12 @@
           "date": "2026-09-14",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
+          "change": "released from the recognition hold under the evidence-acceptance exception; narration unchanged",
+          "evidence": "reports/pc7_evidence/photograph_test_results_2026-09-15T1825Z.json",
+          "approval": "Michelle, 15 Sep 2026"
         }
       ],
       "acceptance_criteria": [
@@ -1978,7 +2050,7 @@
         "Narration beats must land on their actions: lookup during 'look up', selection during 'select it', the preserved-result state during the preservation sentence, the open document during the documentation sentence, the save press during \"I'll save them\", and the confirmation card during the final sentence.",
         "The voice is never sped up to fit the picture. The picture is cut to the measured clip."
       ],
-      "narration_provisional": true,
+      "narration_provisional": false,
       "provisional_reason": "Wording is approved. Held for two reasons: the measured ElevenLabs duration must be fitted to the extended picture before the scene is approved, and the approved opening states what OI has NOT established — itself a recognition outcome, subject to PC-7.",
       "provisional_depends_on": "the measured S220 clip duration (voice ID still required), and PC-7 — controlled recognition test (not run)",
       "narration_previous": "There's no cut sheet linked for this hinge, so we record what we can verify—what OI supported, what I confirmed, and the condition. These are serviceable. I'll save the hinges, and that's every part on this door.",
@@ -1990,6 +2062,13 @@
           "draft 1 — said the document 'opens from there' and nothing about the saved record",
           "draft 2 — mine; replaced wholesale by Stephan's wording above"
         ]
+      },
+      "recognition_hold": {
+        "state": "RELEASED",
+        "released_on": "2026-09-15",
+        "basis": "evidence-acceptance exception, approved by Michelle 15 Sep 2026",
+        "scope": "Released under the evidence-acceptance exception of 15 Sep 2026. The exit-device and hinge results were identical across both completed repetitions of the 15 Sep PC-7 Stage B run with no semantic violations, and are accepted as sufficient evidence for this scene. This does NOT re-grade the run, which remains a FAILURE under its original +/-2-point rule. Evidence: reports/pc7_evidence/photograph_test_results_2026-09-15T1825Z.json sha256 23aa3dce737bfed7...",
+        "narration_text": "final and approved; audio NOT yet generated (separate approval)"
       }
     },
     {
@@ -2730,13 +2809,20 @@
   ],
   "directive_version": "1.1c",
   "duration_basis": {
-    "words_per_second": 2.278,
-    "measured_from": "elevenlabs/reference/VOICE_REFERENCE.mp3",
-    "sample_words": 159,
-    "sample_runtime_seconds": 69.799167,
+    "words_per_second": 2.079,
+    "measured_from": "elevenlabs/audio/ — the 24 completed narration clips (paid run #6)",
+    "sample_words": 955,
+    "sample_runtime_seconds": 459.4,
     "voice": "Amy - Natural and Sweet",
     "model": "eleven_multilingual_v2",
     "speed": 0.72,
-    "note": "Measured, not assumed. The previous 2.4 words/second was a guess and ran 5.1% fast. Re-measure if the voice, model or speed setting changes."
+    "note": "Measured across all 24 completed clips, not a single sample. Re-measure if the voice, model or speed setting changes. Picture is fitted to speech, never the reverse: this figure estimates, the generated master decides.",
+    "superseded": {
+      "words_per_second": 2.278,
+      "measured_from": "elevenlabs/reference/VOICE_REFERENCE.mp3",
+      "sample_words": 159,
+      "sample_runtime_seconds": 69.799167,
+      "why": "Derived from a single validation sample. Measured against the 24 real clips it runs about 9.6% fast. Corrected 15 Sep 2026."
+    }
   }
 }

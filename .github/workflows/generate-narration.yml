@@ -17,13 +17,17 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type exactly: GENERATE 24 CLIPS'
+        description: 'Type exactly: GENERATE CLIPS'
+        required: true
+        default: ''
+      scenes:
+        description: 'REQUIRED. Space-separated scene IDs this run is approved for, e.g. "S180 S190A S210 S220". A paid run must always name its explicitly approved scenes. There is no full-batch shortcut.'
         required: true
         default: ''
       expected_scene_count:
         description: 'Number of scenes this run is approved for. Mismatch stops the run.'
         required: true
-        default: '24'
+        default: '4'
       dry_run:
         description: 'Plan and check only — no API calls, no credits spent'
         type: boolean
@@ -90,17 +94,36 @@ jobs:
         env:
           CONFIRM: ${{ inputs.confirm }}
           DRY: ${{ inputs.dry_run }}
+          SCENES: ${{ inputs.scenes }}
+          EXPECTED: ${{ inputs.expected_scene_count }}
         run: |
           if [ "$DRY" = "true" ]; then
             echo "Dry run: no credits will be spent. Confirmation not required."
             exit 0
           fi
-          if [ "$CONFIRM" != "GENERATE 24 CLIPS" ]; then
+          if [ "$CONFIRM" != "GENERATE CLIPS" ]; then
             echo "::error::Confirmation text did not match. Nothing was generated."
             echo "To spend credits, re-dispatch with dry_run unchecked and the"
-            echo "confirmation typed exactly as: GENERATE 24 CLIPS"
+            echo "confirmation typed exactly as: GENERATE CLIPS"
             exit 1
           fi
+          # A scoped run must say which scenes, and the count must agree with the
+          # list. An unscoped run regenerates every scene the registry still flags
+          # renarrate_required, which on 15 Sep 2026 meant 20 scenes and 16
+          # existing masters overwritten. Scope is not optional here.
+          if [ -z "$SCENES" ]; then
+            echo "::error::No scene list given. This workflow never runs unscoped."
+            echo "A paid run must always name its explicitly approved scene IDs in"
+            echo "the 'scenes' input. There is no full-batch shortcut."
+            exit 1
+          fi
+          COUNT=$(echo $SCENES | wc -w)
+          if [ "$COUNT" != "$EXPECTED" ]; then
+            echo "::error::scenes lists $COUNT scene(s) but expected_scene_count is $EXPECTED."
+            echo "Nothing was generated."
+            exit 1
+          fi
+          echo "Scoped to $COUNT scene(s): $SCENES"
           echo "Confirmed by dispatcher. Proceeding to spend credits."
 
       - name: Voice lock — voicecheck before any request
@@ -142,7 +165,7 @@ jobs:
           print("the basis for it. Nothing outstanding.")
           PY
 
-      - name: The 24 permitted and the 7 held
+      - name: The permitted scenes and the held scenes
         run: |
           python - <<'PY'
           import json, pathlib
@@ -160,7 +183,10 @@ jobs:
       - name: Plan and credit estimate
         env:
           EXPECTED: ${{ inputs.expected_scene_count }}
-        run: python elevenlabs/generate_scenes.py --dry-run --expect "$EXPECTED"
+          SCENES: ${{ inputs.scenes }}
+        run: |
+          python elevenlabs/generate_scenes.py --dry-run --expect "$EXPECTED" \
+            ${SCENES:+--scenes $SCENES}
 
       - name: Secret is present
         # Presence only. The value is never echoed, never written to a file,
@@ -181,9 +207,11 @@ jobs:
         env:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           EXPECTED: ${{ inputs.expected_scene_count }}
+          SCENES: ${{ inputs.scenes }}
         run: |
           python elevenlabs/generate_scenes.py \
             --expect "$EXPECTED" \
+            ${SCENES:+--scenes $SCENES} \
             --fail-fast
         # --fail-fast stops at the first API error, unreadable or incomplete
         # file. A half-generated batch uploaded as if complete is the failure
@@ -199,10 +227,18 @@ jobs:
         # still fails — this step reports the missing ones — but nothing already
         # paid for is thrown away.
         if: ${{ !cancelled() && inputs.dry_run == false }}
+        env:
+          SCENES: ${{ inputs.scenes }}
         run: |
           python elevenlabs/verify_clips.py \
-            --expect-set ready \
+            --expect-scenes $SCENES \
             --report validation_report.md
+        # --expect-scenes, NOT --expect-set ready. This run generated exactly the
+        # scenes it was scoped to. The repository does not hold the previously
+        # generated masters -- those are build outputs, not source -- so requiring
+        # the whole ready set would report every absent clip as missing and would
+        # claim to have checked files that are not here. A run verifies what it
+        # produced and says nothing about what it did not.
         # Approved master format: mp3_44100_128 — a valid 44.1 kHz mono MP3 at
         # about 128 kbps. Lossy, never transcoded to WAV. A readable file that
         # decodes to continuous silence is a failure, not a pass.
@@ -287,6 +323,23 @@ jobs:
       # visibility and are not public for a private repo. The MP3 masters, the
       # manifest, the generation log and the validation report only. No logs
       # that could carry a header, and nothing is committed to the branch.
+      - name: List exactly this run's outputs for upload
+        if: ${{ !cancelled() && inputs.dry_run == false }}
+        env:
+          SCENES: ${{ inputs.scenes }}
+        run: |
+          # Upload the scoped clips by name, not the whole audio directory. If
+          # anything else ever lands there, it does not silently ride along in an
+          # artifact labelled as this run's output.
+          LIST=""
+          for S in $SCENES; do LIST="$LIST"$'\n'"elevenlabs/audio/$S.mp3"; done
+          {
+            echo "SCOPED_AUDIO<<EOF"
+            echo "$LIST" | sed '/^$/d'
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+          echo "Artifact will carry exactly:"; echo "$LIST" | sed '/^$/d'
+
       - name: Upload the MP3 masters and reports
         # Runs even when an earlier step failed, so a partial batch is still
         # downloadable. generation_manifest.json is always present, so
@@ -298,7 +351,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
           path: |
-            elevenlabs/audio/
+            ${{ env.SCOPED_AUDIO }}
             elevenlabs/generation_manifest.json
             elevenlabs/generation_log.json
             validation_report.md

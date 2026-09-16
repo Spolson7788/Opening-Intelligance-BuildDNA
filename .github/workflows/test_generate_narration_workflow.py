@@ -68,9 +68,9 @@ class TestTriggers(unittest.TestCase):
         self.assertIs(i["default"], True)
         self.assertEqual(i["type"], "boolean")
 
-    def test_expected_scene_count_defaults_to_24(self):
+    def test_expected_scene_count_defaults_to_the_approved_run(self):
         i = TRIGGERS["workflow_dispatch"]["inputs"]["expected_scene_count"]
-        self.assertEqual(i["default"], "24")
+        self.assertEqual(i["default"], "4")
         self.assertTrue(i["required"])
 
 
@@ -173,7 +173,7 @@ class TestOrderOfChecks(unittest.TestCase):
         self.assertLess(conf, gen)
 
     def test_the_ids_and_the_credit_estimate_print_before_generation(self):
-        ids, _ = step_named("permitted and the")
+        ids, _ = step_named("permitted scenes and the held")
         est, _ = step_named("credit estimate")
         gen, _ = step_named("Generate the permitted")
         self.assertLess(ids, gen)
@@ -198,9 +198,20 @@ class TestGenerationIsBounded(unittest.TestCase):
         _, s = step_named("Generate the permitted")
         self.assertIn("inputs.dry_run == false", s["if"])
 
-    def test_verification_expects_exactly_the_ready_set(self):
+    def test_verification_is_scoped_to_the_scenes_this_run_generated(self):
+        """A scoped run verifies what it produced, and nothing else.
+
+        This test used to require `--expect-set ready`. That was wrong once the
+        run became scoped: the repository holds no previously generated masters
+        -- they are build outputs, not source -- so the ready set would report
+        every absent clip as missing, and the report would claim to have checked
+        files that are not in the checkout.
+        """
         _, s = step_named("Verify every clip")
-        self.assertIn("--expect-set ready", s["run"])
+        self.assertIn("--expect-scenes", s["run"])
+        self.assertIn("$SCENES", s["run"])
+        self.assertNotIn("--expect-set ready", s["run"])
+        self.assertEqual(s.get("env", {}).get("SCENES"), "${{ inputs.scenes }}")
 
 
 class TestNoCommitting(unittest.TestCase):
@@ -220,14 +231,26 @@ class TestNoCommitting(unittest.TestCase):
 
 
 class TestArtifact(unittest.TestCase):
-    def test_uploads_only_audio_manifest_log_and_report(self):
+    def test_uploads_exactly_this_runs_clips_plus_manifest_log_and_report(self):
+        """The artifact carries this run's clips by name, not a whole directory.
+
+        Uploading elevenlabs/audio/ wholesale would sweep in anything else that
+        happened to be there and label it as this run's output.
+        """
         _, s = step_named("Upload the MP3 masters")
         paths = [p.strip() for p in s["with"]["path"].strip().splitlines()]
         self.assertEqual(sorted(paths), sorted([
-            "elevenlabs/audio/",
+            "${{ env.SCOPED_AUDIO }}",
             "elevenlabs/generation_manifest.json",
             "elevenlabs/generation_log.json",
             "validation_report.md"]))
+        self.assertNotIn("elevenlabs/audio/", paths)
+
+    def test_the_scoped_audio_list_is_built_from_the_approved_scene_ids(self):
+        _, s = step_named("List exactly this run's outputs")
+        self.assertEqual(s.get("env", {}).get("SCENES"), "${{ inputs.scenes }}")
+        self.assertIn("SCOPED_AUDIO", s["run"])
+        self.assertIn("elevenlabs/audio/$S.mp3", s["run"])
 
     def test_never_uploads_voice_settings_or_whole_directories(self):
         _, s = step_named("Upload the MP3 masters")
@@ -337,13 +360,29 @@ class TestEmbeddedPython(unittest.TestCase):
         _, s = step_named(self.NEEDS_A_GIT_REPO)
         self.assertIn("-uall", s["run"])
 
-    def test_the_held_scene_block_names_all_seven(self):
-        _, s = step_named("permitted and the")
+    def test_the_held_scene_block_names_every_held_scene(self):
+        """Derived from the manifest, not from a count written down once.
+
+        This test used to assert seven held scenes and 'PERMITTED (24)'. On
+        15 Sep 2026 four scenes were released from the recognition hold under an
+        evidence-acceptance exception, and the assertion went stale while the
+        workflow itself was still correct. It now reads the manifest, so the
+        held set is whatever the registry says it is.
+        """
+        import json
+        man = json.loads((ROOT / "elevenlabs" / "generation_manifest.json")
+                         .read_text(encoding="utf-8"))
+        held = sorted(c["scene_id"] for c in man["clips"]
+                      if c.get("narration_provisional"))
+        ready = [c for c in man["clips"]
+                 if c.get("in_master") and not c.get("narration_provisional")]
+        _, s = step_named("permitted scenes and the held")
         r = subprocess.run([sys.executable, "-c", embedded_python(s["run"])[0]],
                            capture_output=True, text=True, cwd=ROOT)
-        for sid in ("S130", "S130A", "S140", "S180", "S190A", "S210", "S220"):
+        self.assertTrue(held, "the manifest lists no held scenes at all")
+        for sid in held:
             self.assertIn(sid, r.stdout)
-        self.assertIn("PERMITTED (24)", r.stdout)
+        self.assertIn(f"PERMITTED ({len(ready)})", r.stdout)
 
 
 class TestPythonCachesCannotDirtyTheTree(unittest.TestCase):

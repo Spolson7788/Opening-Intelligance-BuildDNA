@@ -13,6 +13,7 @@ Exit 0 = every required file present and coherent. Exit 1 = do not dispatch.
 """
 import hashlib
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -36,10 +37,14 @@ EXPECTED_VOICE_ID = "OZxMHsGaBmV5pjMIDIn0"
 EXPECTED_MODEL = "eleven_multilingual_v2"
 EXPECTED_SETTINGS = {"speed": 0.72, "stability": 0.60, "similarity_boost": 0.75,
                      "style": 0.0, "use_speaker_boost": True}
-EXPECTED_READY = 24
+# The approved run's shape, not a constant baked in once. Set these to what the
+# authorization says. Leaving them stale is how a preflight blocks a run it was
+# never told about — which is what happened on 15 Sep 2026, when four scenes were
+# released from the recognition hold and this file still expected seven held.
+EXPECTED_READY = int(os.environ.get("OI_EXPECTED_READY", "28"))
 APPROVED_FORMAT = "mp3_44100_128"
 MASTER_CONTAINER = "mp3"
-HELD = {"S130", "S130A", "S140", "S180", "S190A", "S210", "S220"}
+HELD = set(os.environ.get("OI_HELD", "S130 S130A S140").split())
 
 
 def main():
