@@ -1426,7 +1426,7 @@
       "title": "Identify the device",
       "purpose": "Look the device up by model and be clear what that does.",
       "audience_benefit": "Catalog lookup speeds entry; the stamp is still what establishes the model.",
-      "narration": "Same process for the device. Using the photographs and the visible attributes I entered, OI establishes Cal-Royal as the manufacturer. It does not establish the exact family or model—several candidates it can't separate, and it says so rather than picking one. The stamp here is legible, so I'll look the model up: A F seventy-seven hundred. There it is—Cal-Royal's A seventy-seven hundred, A F seventy-seven hundred rim exit device. Choosing it sets the part type and the manufacturer, and OI records it as my selection, not as something it recognized.",
+      "narration": "Same process for the device. Using the visible attributes I entered, OI establishes Cal-Royal as the manufacturer. It does not establish the exact family or model—candidates it can't separate, and it says so rather than picking one. The stamp here is legible, so I'll look the model up: A F seventy-seven hundred. There it is—Cal-Royal's A seventy-seven hundred, A F seventy-seven hundred rim exit device. Choosing it sets the part type and the manufacturer, and OI records it as my selection, not as something it recognized.",
       "screen_action": [
         "Type 'AF7700' into the model lookup while it is spoken; press Search catalog.",
         "Hold on the result rows.",
@@ -1821,7 +1821,7 @@
       "title": "Capture and identify the hinges",
       "purpose": "Capture and identify the hinges.",
       "audience_benefit": "Consistency across every part on the door.",
-      "narration": "Now the hinges on this same door. Three shots again: the full hinge with the door open, the knuckle close-up, and the leaf stamp. OI analyzes them, and I add what I can see—knuckle count, bearing type, leaf profile, pin type. Hinges are hard from a photograph alone, and OI is straight about that: it tells us where it lands, and flags it for review rather than guessing.",
+      "narration": "Now the hinges for this same opening. Three shots again — the whole hinge, the knuckle close-up, and the leaf stamp. I add what the pictures show — knuckle count, bearing type, leaf profile, and the Ives stamp on the leaf — and leave the pin type unknown. OI works from that. Hinges are hard from a photograph alone, and OI is straight about that: it tells us where it lands, and flags it for review rather than guessing.",
       "screen_action": [
         "Work all three guided photo steps.",
         "Set the four visible hinge attributes from the actual photographs, then Identify.",
@@ -1927,7 +1927,7 @@
       "title": "The hinge document stays locked until the product is selected",
       "purpose": "Save the hinges and close out the hardware.",
       "audience_benefit": "Every part is saved before leaving the opening.",
-      "narration": "OI hasn't established the exact hinge model. The cut-sheet link belongs to a candidate, so OI correctly keeps it locked until the product is supported and selected. So I'll look up eyes five bee bee one and select it. OI preserves its original result and records that I made the selection using the manufacturer's documentation. Now I can open that document directly from the selected product. These hinges are serviceable, so I'll save them. The confirmation shows that five bee bee one was technician-selected, not recognized from the image.",
+      "narration": "OI hasn't established the exact hinge model, so the cut-sheet control stays locked. I'll look up eyes five bee bee one and select it. OI preserves its original result and records that I made the selection using the manufacturer's documentation. Now I can open that document directly from the selected product. These hinges are serviceable, so I'll save them. The record shows that five bee bee one was technician-selected, not recognized from the image.",
       "screen_action": [
         "Hold on the unresolved hinge result: manufacturer, family and model all Not established.",
         "Rest on the 'View cut sheet' link while nothing is established — it is not opened.",

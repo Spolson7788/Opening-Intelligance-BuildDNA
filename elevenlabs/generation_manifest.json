@@ -970,8 +970,8 @@
       "audio": "elevenlabs/audio/S180.mp3",
       "audio_present": false,
       "renarrate_required": true,
-      "words": 97,
-      "estimated_seconds": 42.6,
+      "words": 93,
+      "estimated_seconds": 40.8,
       "voice_id": "OZxMHsGaBmV5pjMIDIn0",
       "model_id": "eleven_multilingual_v2",
       "settings": {
@@ -1134,8 +1134,8 @@
       "audio": "elevenlabs/audio/S210.mp3",
       "audio_present": false,
       "renarrate_required": true,
-      "words": 70,
-      "estimated_seconds": 30.7,
+      "words": 77,
+      "estimated_seconds": 33.8,
       "voice_id": "OZxMHsGaBmV5pjMIDIn0",
       "model_id": "eleven_multilingual_v2",
       "settings": {
@@ -1175,8 +1175,8 @@
       "audio": "elevenlabs/audio/S220.mp3",
       "audio_present": false,
       "renarrate_required": true,
-      "words": 91,
-      "estimated_seconds": 39.9,
+      "words": 76,
+      "estimated_seconds": 33.4,
       "voice_id": "OZxMHsGaBmV5pjMIDIn0",
       "model_id": "eleven_multilingual_v2",
       "settings": {
