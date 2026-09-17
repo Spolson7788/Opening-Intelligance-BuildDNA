@@ -141,7 +141,7 @@
       "title": "Preview the walkthrough",
       "purpose": "Promise the walkthrough, showing the actual screens named.",
       "audience_benefit": "Viewer knows the scope and can decide to keep watching.",
-      "narration": "Let me show you how it works. We'll walk through three different openings, photograph the hardware and see what OI can support from those photographs, review the manufacturer's documentation, and save each part. We'll also record the door and frame details for those same openings. For each opening, we'll finish the opening before looking at what purchasing receives. After all three, we'll log a service call and see how the information helps the facility team.",
+      "narration": "Let's walk through one demonstration opening. I'll enter its details, add reference photographs, and record the visible attributes. We'll review what OI reports, distinguish a technician's product selection from image recognition, consult manufacturer references, and save the hardware records locally. We'll also see why no purchasing request can be prepared while the closer's model is unresolved.",
       "screen_action": [
         "Three short readable previews, ~4s each, of screens named in the line: (1) the identification result card, (2) the Cal-Royal CR441 cut sheet, (3) the Door & frame spec panel.",
         "No SKU card and no purchasing screen in this preview (reserved for CH8)."
@@ -166,7 +166,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 33,
+      "est_seconds": 25,
       "change_note": "v1.1: the preview now promises what OI can support from the photographs rather than a flat 'identify the hardware', so the introduction cannot over-promise a model-level result.",
       "history": [
         {
@@ -289,7 +289,7 @@
       "title": "Choose the facility",
       "purpose": "Select the facility and show a facility can be added.",
       "audience_benefit": "Field partner and facility customer both see where records land.",
-      "narration": "I'll start by choosing the facility—Valley Medical Center. If a facility isn't in the list yet, Add creates it.",
+      "narration": "There's no facility on this device yet, so I'll add one: Valley Medical Center, a healthcare facility. Once it's created, I select it, and the opening records I save from here belong to it.",
       "screen_action": [
         "Move pointer to the FACILITY select; open it; choose 'Valley Medical Center'.",
         "Hold 1s on the selected value.",
@@ -318,7 +318,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 9,
+      "est_seconds": 15,
       "change_note": "v1.1b: caption identifies the facility as demonstration data. Narration unchanged.",
       "history": [
         {
@@ -407,7 +407,7 @@
       "title": "Type the opening number",
       "purpose": "Type the opening number and say why identity matters.",
       "audience_benefit": "A technician returning later finds the same door.",
-      "narration": "And this is opening two zero five A. This is a demonstration record—the facility, the opening and the product images are all set up to show the workflow. Now we have a specific door to attach the photos, hardware and service record to, so when someone comes back to this door, everything we collected is under this one opening.",
+      "narration": "And this is opening two zero five A. The facility and opening are records I just created; the images are reference images, as the label says. The hardware and door-and-frame records attach to this opening and stay on this device. This local-only build doesn't synchronize, and it doesn't retain the photographs as opening records.",
       "screen_action": [
         "Click the Opening # field; type '205A' during the first phrase.",
         "Hold both completed fields on screen for at least 2s while the benefit line is spoken."
@@ -434,7 +434,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 26,
+      "est_seconds": 25,
       "change_note": "v1.1b: the illustrative-values line now covers the images as well as the field values, and says 'demonstration record' plainly. Structure, ID and timing unchanged.",
       "history": [
         {
@@ -460,16 +460,10 @@
       "title": "Starting controls — guide and fire-rated field",
       "purpose": "Show the how-to guide and the fire-rated field.",
       "audience_benefit": "Guidance is at hand; the rating is recorded honestly, not certified.",
-      "narration": "Before we start, the how-to guide is right here if you need a reminder while you're working. There's also a field for whether this is a fire-rated opening. This door carries a fire-rated exit device, so I'll check it. That records what we verified at the door—it isn't a compliance sign-off.",
-      "screen_action": [
-        "Tap 'How to use — tap to expand'; hold 4s on the numbered steps; collapse it.",
-        "Move to the 'This is a fire-rated opening' checkbox; check it.",
-        "Hold on the checked box and its helper text."
-      ],
-      "expected_visible_result": "Guide opens and closes; checkbox visibly becomes checked.",
-      "on_screen_values": [
-        "This is a fire-rated opening: checked"
-      ],
+      "narration": "The how-to guide is here if you need a reminder. There's also a field for whether the opening is fire-rated. A fire-rated exit device alone does not establish the rating of the whole opening. For this demonstration, I'll leave that field unchecked.",
+      "screen_action": ["Tap 'How to use — tap to expand'; hold 4s on the numbered steps; collapse it.", "Move to the 'This is a fire-rated opening' checkbox. Do not check it.", "Hold on the unchecked box and its helper text."],
+      "expected_visible_result": "Guide opens and closes; the fire-rated checkbox is left unchecked and held.",
+      "on_screen_values": ["This is a fire-rated opening: unchecked"],
       "required_source_assets": [],
       "field_app_version": "FA-v40-drop14",
       "demo_data_version": "OI-DEMO 1.8.0",
@@ -484,11 +478,11 @@
         "OI-DEMO.OP1.fire_rated"
       ],
       "rerecord_required": true,
-      "renarrate_required": false,
+      "renarrate_required": true,
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 25,
+      "est_seconds": 20,
       "change_note": "Carried over from the trial package unchanged.",
       "history": [
         {
@@ -643,17 +637,10 @@
       "title": "Record what you can see",
       "purpose": "Record the visible attributes.",
       "audience_benefit": "A tech can contribute without disassembling anything.",
-      "narration": "I add what I can see without taking anything apart: the closer type, how it's mounted, the arm configuration, the cover, and the manufacturer stamp if it's legible. OI works from the photographs and these attributes together—what comes back is built on both, not on the images alone.",
-      "screen_action": [
-        "Open each dropdown in '2 · WHAT CAN YOU SEE?' as it is named and set: ARM TYPE = hold_open, COVER TYPE = plastic, MANUFACTURER STAMP = Cal-Royal.",
-        "Leave MOUNTING at '— not sure —' and let that stand; do not narrate it as known."
-      ],
+      "narration": "I enter the visible closer attributes: its type, mounting, arm configuration, cover, and any legible manufacturer stamp. I leave anything I can't establish unknown. In this demonstration, OI works from those entries; no photograph is being analyzed.",
+      "screen_action": ["Open each dropdown in '2 · WHAT CAN YOU SEE?' as it is named. Set only what the supplied reference images establish: CLOSER TYPE = surface, MANUFACTURER STAMP = Cal-Royal.", "Leave MOUNTING, ARM TYPE and COVER TYPE at '— not sure —'. The images do not establish them, and the line 'I leave anything I can't establish unknown' refers to exactly these three."],
       "expected_visible_result": "Each selection visibly lands in its field.",
-      "on_screen_values": [
-        "ARM TYPE: hold_open",
-        "COVER TYPE: plastic",
-        "MANUFACTURER STAMP: Cal-Royal"
-      ],
+      "on_screen_values": ["CLOSER TYPE: surface", "MOUNTING: — not sure —", "ARM TYPE: — not sure —", "COVER TYPE: — not sure —", "MANUFACTURER STAMP: Cal-Royal"],
       "required_source_assets": [],
       "field_app_version": "FA-v40-drop14",
       "demo_data_version": "OI-DEMO 1.8.0",
@@ -672,7 +659,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 22,
+      "est_seconds": 16,
       "change_note": "v1.1f: 'the two work together' made explicit — the result is built on the photographs AND the technician-entered attributes. No result or percentage changed.",
       "history": [
         {
@@ -709,11 +696,9 @@
       "title": "Identify",
       "purpose": "Run identification.",
       "audience_benefit": "Shows the moment of asking the app.",
-      "narration": "Now I'll ask OI to analyze the photographs.",
-      "screen_action": [
-        "Press Identify; hold through the analysing state until the result card renders."
-      ],
-      "expected_visible_result": "Result card appears with a ranked shortlist.",
+      "narration": "Now let's review the result from those entries.",
+      "screen_action": ["Open on the result the entered attributes have already produced; hold, then push in on the three rows and the review flag. Identify is not pressed — the manufacturer field runs identification on change."],
+      "expected_visible_result": "The result card the entries produced is reviewed. It carries a ranked shortlist and a needs-review flag.",
       "on_screen_values": [],
       "required_source_assets": [],
       "field_app_version": "FA-v40-drop14",
@@ -961,7 +946,7 @@
       "title": "The technician's review, and what saves the result",
       "purpose": "Show that OI proposes and the technician confirms, and that the confirmation is kept beside the prediction.",
       "audience_benefit": "Technicians keep authority over the record; facilities get identifications a person stood behind; manufacturers get calibration data.",
-      "narration": "Nothing goes onto this record automatically. What puts the closer on the opening is me saving it. And if I can read the stamp, I enter the model in the calibration field, so OI keeps what I read beside what it predicted.",
+      "narration": "I review the result before saving the closer. If the exact model isn't established, I leave it unresolved. A model I enter myself is technician-supplied information, not a model recognized from these photographs.",
       "screen_action": [
         "Move to the 'True model, if you know it (for calibration)' field; hold on it.",
         "Enter a model ONLY if the demonstration photographs actually establish one; otherwise leave it empty and let the narration match.",
@@ -995,7 +980,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 18,
+      "est_seconds": 15,
       "change_note": "v1.1a: rewritten so nothing implies a confirmation control. The technician's act is entering the calibration value and saving the part — which is what the application actually does.",
       "history": [
         {
@@ -1195,7 +1180,7 @@
       "title": "Condition, estimate, save",
       "purpose": "Record condition and cost, and save the part.",
       "audience_benefit": "Cost is attached to a specific part on a specific opening.",
-      "narration": "Now the condition. This one is worn, so I'll select worn—aging or degraded—and enter a sample estimate of four hundred fifty dollars to repair or replace it. That estimate stays attached to this part on this opening, and it rolls into the facility's corrective work total. Then I'll select Save this part, and check that it saved before we move on.",
+      "narration": "For this demonstration, I'll mark the closer worn and enter a sample repair or replacement estimate of four hundred fifty dollars. Then I'll save the part and check the local record. The condition and estimate describe this demonstration entry; they do not establish the closer's model.",
       "screen_action": [
         "Set CONDITION OF THE HARDWARE = 'Worn — aging / degraded'.",
         "Click the cost field and type '450' while the amount is spoken.",
@@ -1226,7 +1211,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 28,
+      "est_seconds": 20,
       "change_note": "Carried over from the trial package unchanged.",
       "history": [
         {
@@ -1261,7 +1246,7 @@
       "title": "Flag the worn part for purchasing",
       "purpose": "Explain how a part reaches the purchasing request.",
       "audience_benefit": "Recording a part is not the same as ordering it.",
-      "narration": "Notice I don't have to decide here what gets ordered. The condition does that. Anything marked worn or failed is what the purchasing request picks up later — everything else stays on the record as documentation.",
+      "narration": "Condition is recorded part by part: serviceable, worn, or failed. I'm recording what I found at this opening, and it stays attached to this part on this record.",
       "screen_action": [
         "Hold on the saved closer with its condition visible.",
         "Do not click 'Send to purchasing' — that button shares a single part by email and is not part of this walkthrough."
@@ -1284,7 +1269,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 15,
+      "est_seconds": 12,
       "change_note": "Rewritten. sendLogToPurchasing() selects on condition worn/failed, not on pressing 'Send to purchasing'.",
       "history": [
         {
@@ -1347,7 +1332,7 @@
       "title": "Capture the device",
       "purpose": "Work the exit device's three guided shots.",
       "audience_benefit": "Device, stamp and trim are all asked for.",
-      "narration": "Three shots this time: the whole device across the door, the end cap or chassis stamp where the model number is marked, and the outside trim. OI analyzes all three.",
+      "narration": "The guide calls for three views: the whole device, the end cap or chassis stamp, and the outside trim. Here I'm adding catalogue and supplied reference photographs for the demonstration. No photo recognition is being run.",
       "screen_action": [
         "Work through all three guided photo steps; hold on each returned image."
       ],
@@ -1382,7 +1367,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 13,
+      "est_seconds": 16,
       "change_note": "v1.1: terminology.",
       "history": [
         {
@@ -2077,7 +2062,7 @@
       "title": "Door and frame spec for the same opening",
       "purpose": "Record the door and frame for the same opening.",
       "audience_benefit": "Hardware and door describe one physical opening.",
-      "narration": "We've recorded the hardware. Now the door and frame it's all hanging on. I'll open Door and frame spec for this same opening. The door is hollow metal, thirty-six inches wide by eighty-four high, one and three-quarter inches thick. It's a left-hand door, in a hollow metal frame. Those are illustrative values for this walkthrough—on a real survey they're what you measured and read at the door. I'll save the door and frame, and bring the record back up so we can see it landed on two zero five A.",
+      "narration": "We've recorded the hardware. Now the door and frame it hangs on. The door is hollow metal, thirty-six by eighty-four, one and three-quarter inches thick, left-hand, in a hollow metal frame. Those are illustrative values for this walkthrough — on a real survey they're what you measured at the door. I'll save them, then close the panel and open it again, so we can see the record came back from storage.",
       "screen_action": [
         "Tap 'Door & frame spec'.",
         "Set each field as it is spoken: DOOR MATERIAL, then type 36, then 84, then 1-3/4\", then HANDING = LH, then FRAME = Hollow Metal.",
@@ -2112,7 +2097,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 42,
+      "est_seconds": 32,
       "change_note": "Carried over from the trial package unchanged.",
       "history": [
         {
@@ -2171,7 +2156,7 @@
         "S230"
       ],
       "rerecord_required": false,
-      "renarrate_required": true,
+      "renarrate_required": false,
       "in_master": true,
       "still": null,
       "overlay_card": null,
@@ -2275,7 +2260,7 @@
       "title": "Open what purchasing receives",
       "purpose": "Open what purchasing receives.",
       "audience_benefit": "Purchasing gets context, not a phone photo.",
-      "narration": "Now that the opening is finished, here's what purchasing receives. It's the location, the opening number, and the parts whose condition put them on the list — for this door, the worn closer, with its cut sheet attached. The exit device and the hinges are on the record, but they're serviceable, so they aren't in this request. And the note at the bottom is the honest one: confirm quantities and finishes before ordering.",
+      "narration": "With the opening finished, purchasing is still locked, and the app says why: the closer's replacement identity is not gate-approved. It's the only part in poor condition, and its model was never established, so a request would have to name a product no one confirmed. The exit device and hinges are technician-selected. Both are serviceable, so neither is eligible for a replacement request.",
       "screen_action": [
         "Press 'Send full log to purchasing'.",
         "Hold on the in-app preview panel (see prototype change PC-4); push in on the part line and on the closing note."
@@ -2306,7 +2291,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 32,
+      "est_seconds": 28,
       "change_note": "Blocked. This build renders nothing — the text goes straight to navigator.share() or mailto:. Requires prototype change PC-4.",
       "history": [
         {
@@ -2336,7 +2321,7 @@
       "title": "Vortex SKU mapping",
       "purpose": "State the Vortex mapping Elite Sales applies.",
       "audience_benefit": "Connects OI output to the numbers actually ordered against.",
-      "narration": "On our side, we map what comes out of OI to the Vortex numbers we order against. The C R four forty-one hold-open arm maps to Vortex E D one three two eight two. That number is the hold-open arm on its own, not the complete closer—so it's what you'd use if the arm is the part that needs replacing. And the A F seventy-seven hundred exit device maps to Vortex S W F D one zero one eight three.",
+      "narration": "One step sits outside OI entirely: mapping a product to the Vortex number we order against. That mapping is ours, not OI's, and nothing in this record depends on it. No order was produced here.",
       "screen_action": [
         "Keep the purchasing panel on screen; bring in a mapping card in the letterbox area beside the app frame, captioned 'Vortex SKU mapping — maintained by Elite Sales Consultants. Not a screen in the OI app.'",
         "Reveal one row at a time as each is spoken; do not cover the purchasing panel."
@@ -2364,11 +2349,11 @@
         "OI-DEMO.OP1.exit_device.sku"
       ],
       "rerecord_required": false,
-      "renarrate_required": false,
+      "renarrate_required": true,
       "in_master": true,
       "still": null,
       "overlay_card": "mapping_card.png",
-      "est_seconds": 37,
+      "est_seconds": 15,
       "change_note": "Carried over from the trial package unchanged.",
       "history": [
         {
@@ -2385,7 +2370,7 @@
       "title": "Close the first opening",
       "purpose": "Close the first opening.",
       "audience_benefit": "Recaps the chain from door to purchasing.",
-      "narration": "So that's one opening end to end: photos and attributes taken at the door, a ranked identification you check against the hardware in front of you, the manufacturer's document open beside it, condition and cost saved against a specific opening, and a purchasing request that carries all of it. Same pattern for the next two.",
+      "narration": "That's our demonstration for one opening: reference photographs, visible attributes, OI's reported result, technician-selected products, manufacturer references, and hardware records saved locally. The distinction stays clear: a product selected by a technician is not a product recognized from an image.",
       "screen_action": [
         "Pull back to the whole opening record; hold; fade to the OI wordmark."
       ],
@@ -2405,11 +2390,11 @@
       "last_modified": "2026-09-13",
       "dependencies": [],
       "rerecord_required": true,
-      "renarrate_required": false,
+      "renarrate_required": true,
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 24,
+      "est_seconds": 18,
       "change_note": "Carried over from the trial package unchanged.",
       "history": [
         {

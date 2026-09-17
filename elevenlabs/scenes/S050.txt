@@ -1,1 +1,1 @@
-I'll start by choosing the facility—Valley Medical Center. If a facility isn't in the list yet, Add creates it.
+There's no facility on this device yet, so I'll add one: Valley Medical Center, a healthcare facility. Once it's created, I select it, and the opening records I save from here belong to it.

@@ -1,1 +1,1 @@
-Notice I don't have to decide here what gets ordered. The condition does that. Anything marked worn or failed is what the purchasing request picks up later — everything else stays on the record as documentation.
+Condition is recorded part by part: serviceable, worn, or failed. I'm recording what I found at this opening, and it stays attached to this part on this record.
