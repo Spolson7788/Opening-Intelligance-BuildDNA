@@ -524,14 +524,80 @@ export async function fetchWarrantyAlerts(propertyId?: string): Promise<Warranty
 }
 
 export interface OpeningDetail extends Opening {
-  hardware_components: any[];
+  completed_at: string | null;
+  frame: OpeningFrame | null;
+  door_leaves: DoorLeaf[];
+  hardware_components: HardwareComponent[];
   service_events: any[];
   inspection_events: any[];
-  photos: any[];
+  photos: OpeningPhoto[];
+}
+
+export interface OpeningFrame {
+  id: string;
+  material: string | null;
+  frame_type: string | null;
+  width_in: number | null;
+  height_in: number | null;
+  condition: string;
+}
+
+export interface DoorLeaf {
+  id: string;
+  leaf_role: "single" | "active" | "inactive";
+  handing: string | null;
+  material: string | null;
+  width_in: number | null;
+  height_in: number | null;
+  condition: string;
+}
+
+export interface HardwareComponent {
+  id: string;
+  tracker_id: string | null;
+  serial_number: string | null;
+  component_type: string;
+  manufacturer: string | null;
+  model_number: string | null;
+  install_date: string | null;
+  unit_cost: number | null;
+  supplier_name: string | null;
+  supplier_contact: string | null;
+  shipment_status: string | null;
+  carrier: string | null;
+  tracking_number: string | null;
+  mounting_scope: "opening" | "frame" | "door_leaf";
+  door_leaf_id: string | null;
+  frame_id: string | null;
+  position_label: string | null;
+  condition: "good" | "worn" | "failed" | "unverified";
+  identity_status: "established" | "unresolved";
+  review_state: "pending" | "reviewed";
+  replacement_required: boolean;
+}
+
+export interface OpeningPhoto {
+  id: string;
+  media_type: "photo" | "video";
+  storage_url: string;
+  entity_type: string;
+  frame_id: string | null;
+  door_leaf_id: string | null;
+  hardware_component_id: string | null;
+}
+
+export interface PurchasingEligibility {
+  opening_id: string;
+  opening_complete: boolean;
+  decisions: Array<{ component_id: string; eligible: boolean; reasons: string[] }>;
 }
 
 export async function fetchOpening(id: string): Promise<OpeningDetail> {
   return authedFetch(`/openings/${id}`);
+}
+
+export async function fetchPurchasingEligibility(id: string): Promise<PurchasingEligibility> {
+  return authedFetch(`/openings/${id}/purchasing-eligibility`);
 }
 
 export async function listOpenings(params: Record<string, string> = {}): Promise<Opening[]> {

@@ -41,6 +41,6 @@ Purchasing eligibility is evaluated per physical component and requires the enti
 
 Component and photo creates accept client operation UUIDs. Partial/offline retries using the same operation UUID return the existing row instead of duplicating it. Every hierarchy mutation validates the opening through the caller's organization before writing, and every leaf/frame/component photo association is verified against the same opening.
 
-## Known repository gap
+## Dashboard source provenance
 
-The committed Dashboard imports numerous page modules that are absent from Git, and `dashboard/tsconfig.json` is also absent. An older repository ZIP contains candidates, but they were not restored because their provenance relative to the current commit is not established. API hydration now returns the new hierarchy, and Dashboard API types include the new opening fields; completing and testing the Dashboard presentation requires the authoritative missing source.
+The Git working tree omitted numerous Dashboard page modules and TypeScript/Vite support files. Those files were recovered from `opening-intel-main.zip`, which is itself tracked by the repository from commit `f39f0b6`. Recovery was limited to absent files; current tracked files were not overwritten. The paired-opening Dashboard presentation was then added to the recovered opening detail page and verified by a successful TypeScript/Vite build. Connected staging and real storage/browser verification remain outstanding.
