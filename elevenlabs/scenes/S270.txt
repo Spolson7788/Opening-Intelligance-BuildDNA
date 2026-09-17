@@ -1,1 +1,1 @@
-One step sits outside OI entirely: mapping a product to the Vortex number we order against. That mapping is ours, not OI's, and nothing in this record depends on it. No order was produced here.
+The service provider supplies OI with a cross-reference linking the manufacturer's product to the service provider's purchasing SKU. That cross-reference does not identify the installed hardware. Importing or applying it is not demonstrated here. No purchasing request was produced.

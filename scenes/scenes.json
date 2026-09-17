@@ -2318,15 +2318,12 @@
     {
       "scene_id": "S270",
       "chapter": "CH07",
-      "title": "Vortex SKU mapping",
-      "purpose": "State the Vortex mapping Elite Sales applies.",
+      "title": "Ordering cross-reference — editorial card",
+      "purpose": "State where the manufacturer-product-to-purchasing-SKU cross-reference comes from, without demonstrating it.",
       "audience_benefit": "Connects OI output to the numbers actually ordered against.",
-      "narration": "One step sits outside OI entirely: mapping a product to the Vortex number we order against. That mapping is ours, not OI's, and nothing in this record depends on it. No order was produced here.",
-      "screen_action": [
-        "Keep the purchasing panel on screen; bring in a mapping card in the letterbox area beside the app frame, captioned 'Vortex SKU mapping — maintained by Elite Sales Consultants. Not a screen in the OI app.'",
-        "Reveal one row at a time as each is spoken; do not cover the purchasing panel."
-      ],
-      "expected_visible_result": "Both mappings are readable and visibly outside the application interface.",
+      "narration": "The service provider supplies OI with a cross-reference linking the manufacturer's product to the service provider's purchasing SKU. That cross-reference does not identify the installed hardware. Importing or applying it is not demonstrated here. No purchasing request was produced.",
+      "screen_action": ["Hold the finished record, then cut to the separate editorial card; reveal one block at a time as each is spoken; cut back to the finished record for the closing line.", "The card is an assembly card, never overlaid on the application, and carries 'ASSEMBLY CARD — NOT AN OI SCREEN' on every frame. No SKU, part number or mapping result appears on it."],
+      "expected_visible_result": "The card is readable and plainly not the application. No SKU or mapping result appears, and no purchasing request is produced.",
       "on_screen_values": [
         "CR441 hold-open arm → Vortex ED-13282",
         "AF7700 exit device → Vortex SWFD-10183"
@@ -2339,7 +2336,7 @@
       "screen_recording": "recordings/scenes/S270.webm",
       "narration_file": "elevenlabs/audio/S270.mp3",
       "narration_script": "elevenlabs/scenes/S270.txt",
-      "caption": "Elite Sales mapping — not a screen in the OI app",
+      "caption": "Editorial explanation — not a screen in the OI app",
       "status": "Ready for review",
       "blocked_reason": null,
       "last_modified": "2026-09-13",
@@ -2353,7 +2350,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": "mapping_card.png",
-      "est_seconds": 15,
+      "est_seconds": 18,
       "change_note": "Carried over from the trial package unchanged.",
       "history": [
         {

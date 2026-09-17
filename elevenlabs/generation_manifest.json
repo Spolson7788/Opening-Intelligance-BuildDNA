@@ -1380,8 +1380,8 @@
       "audio": "elevenlabs/audio/S270.mp3",
       "audio_present": false,
       "renarrate_required": true,
-      "words": 35,
-      "estimated_seconds": 15.4,
+      "words": 41,
+      "estimated_seconds": 18.0,
       "voice_id": "OZxMHsGaBmV5pjMIDIn0",
       "model_id": "eleven_multilingual_v2",
       "settings": {
