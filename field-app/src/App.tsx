@@ -10,6 +10,7 @@ import { LogInspectionEventPage } from "./pages/LogInspectionEventPage";
 import { LogHardwarePage } from "./pages/LogHardwarePage";
 import { EditHardwarePage } from "./pages/EditHardwarePage";
 import { MyWorkOrdersPage } from "./pages/MyWorkOrdersPage";
+import { OpeningStructurePage } from "./pages/OpeningStructurePage";
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { auth, loading } = useAuth();
@@ -35,6 +36,7 @@ function AppRoutes() {
       <Route path="/opening/:id/log-service" element={<RequireAuth><LogServiceEventPage /></RequireAuth>} />
       <Route path="/opening/:id/log-inspection" element={<RequireAuth><LogInspectionEventPage /></RequireAuth>} />
       <Route path="/opening/:id/add-hardware" element={<RequireAuth><LogHardwarePage /></RequireAuth>} />
+      <Route path="/opening/:id/structure" element={<RequireAuth><OpeningStructurePage /></RequireAuth>} />
       <Route path="/opening/:id/edit-hardware/:hardwareId" element={<RequireAuth><EditHardwarePage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/scan" replace />} />
     </Routes>

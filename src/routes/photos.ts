@@ -68,8 +68,12 @@ const createPhotoSchema = z.object({
   opening_id: z.string().uuid(),
   storage_url: z.string().url(),
   content_type: z.string(),
-  related_entity_type: z.enum(["opening", "hardware_component", "service_event", "inspection_event"]).optional(),
+  related_entity_type: z.enum(["opening", "frame", "door_leaf", "hardware_component", "service_event", "inspection_event"]).optional(),
   related_entity_id: z.string().uuid().optional(),
+  frame_id: z.string().uuid().optional(),
+  door_leaf_id: z.string().uuid().optional(),
+  hardware_component_id: z.string().uuid().optional(),
+  client_operation_id: z.string().uuid().optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
   taken_at: z.string().optional(),
@@ -94,13 +98,33 @@ photosRouter.post("/", async (req: AuthedRequest, res) => {
       return res.status(403).json({ error: "forbidden" });
     }
 
+    const associations = [b.frame_id, b.door_leaf_id, b.hardware_component_id].filter(Boolean);
+    if (associations.length > 1) return res.status(400).json({ error: "one_photo_target_only" });
+    if (b.frame_id) {
+      const target = await pool.query("SELECT 1 FROM opening_frames WHERE id=$1 AND opening_id=$2", [b.frame_id, b.opening_id]);
+      if (!target.rows.length) return res.status(400).json({ error: "frame_not_in_opening" });
+    }
+    if (b.door_leaf_id) {
+      const target = await pool.query("SELECT 1 FROM door_leaves WHERE id=$1 AND opening_id=$2", [b.door_leaf_id, b.opening_id]);
+      if (!target.rows.length) return res.status(400).json({ error: "door_leaf_not_in_opening" });
+    }
+    if (b.hardware_component_id) {
+      const target = await pool.query("SELECT 1 FROM hardware_components WHERE id=$1 AND opening_id=$2", [b.hardware_component_id, b.opening_id]);
+      if (!target.rows.length) return res.status(400).json({ error: "hardware_not_in_opening" });
+    }
+
     const result = await pool.query(
       `INSERT INTO photos
-        (opening_id, related_entity_type, related_entity_id, storage_url, media_type, latitude, longitude, taken_at, uploaded_by_user_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        (opening_id, related_entity_type, related_entity_id, storage_url, media_type, latitude, longitude,
+         taken_at, uploaded_by_user_id, frame_id, door_leaf_id, hardware_component_id, client_operation_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ON CONFLICT (opening_id, client_operation_id) WHERE client_operation_id IS NOT NULL
+       DO UPDATE SET opening_id=EXCLUDED.opening_id RETURNING *`,
       [
         b.opening_id, b.related_entity_type ?? "opening", b.related_entity_id ?? null,
         b.storage_url, mediaType, b.latitude ?? null, b.longitude ?? null, b.taken_at ?? null, userId,
+        b.frame_id ?? null, b.door_leaf_id ?? null, b.hardware_component_id ?? null,
+        b.client_operation_id ?? null,
       ]
     );
     res.status(201).json(result.rows[0]);

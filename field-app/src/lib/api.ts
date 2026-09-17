@@ -138,6 +138,18 @@ export async function addHardwareComponent(payload: any) {
   return authedFetch("/hardware", { method: "POST", body: JSON.stringify(payload) });
 }
 
+export async function saveOpeningFrame(openingId: string, payload: any) {
+  return authedFetch(`/openings/${openingId}/frame`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export async function saveDoorLeaf(openingId: string, payload: any) {
+  return authedFetch(`/openings/${openingId}/door-leaves`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function completeOpening(openingId: string) {
+  return authedFetch(`/openings/${openingId}/complete`, { method: "POST" });
+}
+
 export async function submitServiceEvent(payload: any) {
   return authedFetch("/events/service-events", { method: "POST", body: JSON.stringify(payload) });
 }

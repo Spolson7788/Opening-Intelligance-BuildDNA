@@ -25,7 +25,9 @@ function forbidden(res: Response) {
 // so a scanned/looked-up opening showed no photos, hardware, or history at all.
 async function hydrateOpening(openingRow: any) {
   const openingId = openingRow.id;
-  const [hardware, serviceEvents, inspections, photos] = await Promise.all([
+  const [frame, leaves, hardware, serviceEvents, inspections, photos] = await Promise.all([
+    pool.query("SELECT * FROM opening_frames WHERE opening_id = $1", [openingId]),
+    pool.query("SELECT * FROM door_leaves WHERE opening_id = $1 ORDER BY CASE leaf_role WHEN 'single' THEN 0 WHEN 'active' THEN 1 ELSE 2 END", [openingId]),
     pool.query("SELECT * FROM hardware_components WHERE opening_id = $1 ORDER BY install_date", [openingId]),
     pool.query("SELECT * FROM service_events WHERE opening_id = $1 ORDER BY event_date DESC", [openingId]),
     pool.query("SELECT * FROM inspection_events WHERE opening_id = $1 ORDER BY event_date DESC", [openingId]),
@@ -33,6 +35,8 @@ async function hydrateOpening(openingRow: any) {
   ]);
   return {
     ...openingRow,
+    frame: frame.rows[0] ?? null,
+    door_leaves: leaves.rows,
     hardware_components: hardware.rows,
     service_events: serviceEvents.rows,
     inspection_events: inspections.rows,
@@ -50,6 +54,7 @@ const createOpeningSchema = z.object({
   ]),
   fire_rated: z.boolean().optional(),
   life_safety_critical: z.boolean().optional(),
+  opening_configuration: z.enum(["single", "pair"]).optional(),
   is_electrified: z.boolean().optional(),
   install_date: z.string().optional(),
   latitude: z.number().optional(),
@@ -75,15 +80,16 @@ openingsRouter.post("/", async (req: AuthedRequest, res) => {
     const result = await pool.query(
       `INSERT INTO openings
         (opening_code, building_id, floor_label, location_description, opening_type,
-         fire_rated, life_safety_critical, is_electrified, install_date, latitude, longitude, qr_token, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending_capture')
+         fire_rated, life_safety_critical, is_electrified, install_date, latitude, longitude, qr_token, status,
+         opening_configuration)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending_capture',$13)
        RETURNING *`,
       [
         body.opening_code, body.building_id, body.floor_label ?? null,
         body.location_description ?? null, body.opening_type,
         body.fire_rated ?? false, body.life_safety_critical ?? false, body.is_electrified ?? false,
         body.install_date ?? null, body.latitude ?? null, body.longitude ?? null,
-        qrToken,
+        qrToken, body.opening_configuration ?? "single",
       ]
     );
     res.status(201).json(result.rows[0]);
@@ -92,6 +98,140 @@ openingsRouter.post("/", async (req: AuthedRequest, res) => {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
   }
+});
+
+const frameSchema = z.object({
+  material: z.string().optional(),
+  frame_type: z.string().optional(),
+  width_in: z.number().positive().optional(),
+  height_in: z.number().positive().optional(),
+  fire_rated: z.boolean().optional(),
+  condition: z.enum(["good", "worn", "failed", "unverified"]).optional(),
+  notes: z.string().optional(),
+});
+
+const leafSchema = z.object({
+  leaf_role: z.enum(["single", "active", "inactive"]),
+  handing: z.string().optional(),
+  material: z.string().optional(),
+  width_in: z.number().positive().optional(),
+  height_in: z.number().positive().optional(),
+  thickness_in: z.number().positive().optional(),
+  fire_rated: z.boolean().optional(),
+  condition: z.enum(["good", "worn", "failed", "unverified"]).optional(),
+  notes: z.string().optional(),
+});
+
+async function getOpeningForOrg(openingId: string, orgId: string) {
+  const result = await pool.query(
+    `SELECT * FROM openings WHERE id = $1 AND id IN (${openingsForOrgSubquery(2)})`,
+    [openingId, orgId]
+  );
+  return result.rows[0] ?? null;
+}
+
+// One frame per opening. PUT is deliberately idempotent for field retries.
+openingsRouter.put("/:id/frame", async (req: AuthedRequest, res) => {
+  const parsed = frameSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const opening = await getOpeningForOrg(req.params.id, req.auth!.organizationId);
+  if (!opening) return res.status(404).json({ error: "not_found" });
+  const b = parsed.data;
+  const result = await pool.query(
+    `INSERT INTO opening_frames
+      (opening_id, material, frame_type, width_in, height_in, fire_rated, condition, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT (opening_id) DO UPDATE SET
+       material=EXCLUDED.material, frame_type=EXCLUDED.frame_type,
+       width_in=EXCLUDED.width_in, height_in=EXCLUDED.height_in,
+       fire_rated=EXCLUDED.fire_rated, condition=EXCLUDED.condition,
+       notes=EXCLUDED.notes, updated_at=now()
+     RETURNING *`,
+    [opening.id, b.material ?? null, b.frame_type ?? null, b.width_in ?? null,
+     b.height_in ?? null, b.fire_rated ?? false, b.condition ?? "unverified", b.notes ?? null]
+  );
+  res.json(result.rows[0]);
+});
+
+// A role identifies a physical leaf within an opening, not a viewing direction.
+// POST is idempotent on (opening_id, leaf_role) so offline retries do not duplicate leaves.
+openingsRouter.post("/:id/door-leaves", async (req: AuthedRequest, res) => {
+  const parsed = leafSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const opening = await getOpeningForOrg(req.params.id, req.auth!.organizationId);
+  if (!opening) return res.status(404).json({ error: "not_found" });
+  const b = parsed.data;
+  if (opening.opening_configuration === "single" && b.leaf_role !== "single") {
+    return res.status(409).json({ error: "single_opening_requires_single_leaf" });
+  }
+  if (opening.opening_configuration === "pair" && b.leaf_role === "single") {
+    return res.status(409).json({ error: "paired_opening_requires_active_or_inactive_leaf" });
+  }
+  const result = await pool.query(
+    `INSERT INTO door_leaves
+      (opening_id, leaf_role, handing, material, width_in, height_in, thickness_in, fire_rated, condition, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     ON CONFLICT (opening_id, leaf_role) DO UPDATE SET
+       handing=EXCLUDED.handing, material=EXCLUDED.material,
+       width_in=EXCLUDED.width_in, height_in=EXCLUDED.height_in,
+       thickness_in=EXCLUDED.thickness_in, fire_rated=EXCLUDED.fire_rated,
+       condition=EXCLUDED.condition, notes=EXCLUDED.notes, updated_at=now()
+     RETURNING *`,
+    [opening.id, b.leaf_role, b.handing ?? null, b.material ?? null, b.width_in ?? null,
+     b.height_in ?? null, b.thickness_in ?? null, b.fire_rated ?? false,
+     b.condition ?? "unverified", b.notes ?? null]
+  );
+  res.status(201).json(result.rows[0]);
+});
+
+// Completion is a backend fact. It requires the whole physical opening hierarchy.
+openingsRouter.post("/:id/complete", async (req: AuthedRequest, res) => {
+  const opening = await getOpeningForOrg(req.params.id, req.auth!.organizationId);
+  if (!opening) return res.status(404).json({ error: "not_found" });
+  const [frame, leaves, hardware] = await Promise.all([
+    pool.query("SELECT 1 FROM opening_frames WHERE opening_id=$1", [opening.id]),
+    pool.query("SELECT leaf_role FROM door_leaves WHERE opening_id=$1", [opening.id]),
+    pool.query("SELECT review_state FROM hardware_components WHERE opening_id=$1", [opening.id]),
+  ]);
+  const roles = new Set(leaves.rows.map((row) => row.leaf_role));
+  const leavesComplete = opening.opening_configuration === "pair"
+    ? roles.has("active") && roles.has("inactive")
+    : roles.has("single");
+  const missing = [
+    ...(frame.rows.length ? [] : ["frame"]),
+    ...(leavesComplete ? [] : [opening.opening_configuration === "pair" ? "active_and_inactive_leaves" : "single_leaf"]),
+    ...(hardware.rows.length ? [] : ["hardware_component"]),
+    ...(hardware.rows.some((row) => row.review_state !== "reviewed") ? ["hardware_review"] : []),
+  ];
+  if (missing.length) return res.status(409).json({ error: "opening_incomplete", missing });
+  const result = await pool.query(
+    `UPDATE openings SET completion_state='complete', completed_at=COALESCE(completed_at,now()),
+       completed_by_user_id=COALESCE(completed_by_user_id,$2), status='active', updated_at=now()
+     WHERE id=$1 RETURNING *`,
+    [opening.id, req.auth!.userId]
+  );
+  res.json(result.rows[0]);
+});
+
+openingsRouter.get("/:id/purchasing-eligibility", async (req: AuthedRequest, res) => {
+  const opening = await getOpeningForOrg(req.params.id, req.auth!.organizationId);
+  if (!opening) return res.status(404).json({ error: "not_found" });
+  const components = await pool.query(
+    "SELECT * FROM hardware_components WHERE opening_id=$1 ORDER BY created_at",
+    [opening.id]
+  );
+  const complete = opening.completion_state === "complete";
+  const decisions = components.rows.map((component) => {
+    const reasons: string[] = [];
+    if (!complete) reasons.push("opening_not_complete");
+    if (component.review_state !== "reviewed") reasons.push("component_not_reviewed");
+    if (component.identity_status !== "established") reasons.push("identity_unresolved");
+    if (!component.replacement_required || !["worn", "failed"].includes(component.condition)) {
+      reasons.push("replacement_not_required");
+    }
+    return { component_id: component.id, eligible: reasons.length === 0, reasons };
+  });
+  res.json({ opening_id: opening.id, opening_complete: complete, decisions });
 });
 
 const bulkImportRowSchema = z.object({

@@ -77,6 +77,8 @@ export interface Opening {
   is_electrified: boolean;
   health_score: number | null;
   status: string;
+  opening_configuration: "single" | "pair";
+  completion_state: "draft" | "complete";
 }
 
 export interface Building {
@@ -366,6 +368,7 @@ export async function createOpening(payload: {
   life_safety_critical?: boolean;
   is_electrified?: boolean;
   install_date?: string;
+  opening_configuration?: "single" | "pair";
 }) {
   return authedFetch("/openings", { method: "POST", body: JSON.stringify(payload) });
 }

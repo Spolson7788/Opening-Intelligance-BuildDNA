@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto } from "../lib/api";
+import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, completeOpening } from "../lib/api";
 import { getPhotoOutboxForOpening } from "../lib/db";
 import type { PhotoOutboxItem } from "../lib/db";
 import { onSyncStateChange } from "../lib/sync";
@@ -53,6 +53,15 @@ export function OpeningDetailPage() {
       reload(); // re-fetch so the grid reflects the deletion
     } catch {
       window.alert("Couldn't delete that photo — please try again.");
+    }
+  }
+
+  async function handleCompleteOpening() {
+    try {
+      await completeOpening(opening.id);
+      reload();
+    } catch (err: any) {
+      window.alert(err?.message === "opening_incomplete" ? "Save the frame, every door leaf, and review all hardware first." : "Opening could not be completed.");
     }
   }
 
@@ -138,6 +147,20 @@ export function OpeningDetailPage() {
           <Link to={`/opening/${opening.id}/log-inspection`} className="btn btn-secondary" style={{ textDecoration: "none" }}>
             Log Inspection
           </Link>
+        </div>
+
+        <div className="section-label">Opening Structure</div>
+        <div className="card">
+          <strong>{opening.opening_configuration === "pair" ? "Door pair" : "Single door"}</strong>
+          <p style={{ margin: "6px 0", fontSize: 13, color: "var(--text-secondary)" }}>
+            Frame: {opening.frame?.material || "not saved"} · Door leaves: {opening.door_leaves?.length || 0}
+          </p>
+          <Link to={`/opening/${opening.id}/structure`} state={{ opening }} className="btn btn-secondary" style={{ textDecoration: "none" }}>
+            Door &amp; frame details
+          </Link>
+          <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={handleCompleteOpening} disabled={opening.completion_state === "complete"}>
+            {opening.completion_state === "complete" ? "Opening complete" : "Finish the opening"}
+          </button>
         </div>
 
         <div className="section-label" style={{ marginTop: 20 }}>Photos &amp; Videos</div>
