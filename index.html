@@ -6534,6 +6534,7 @@ const {createClient}=OI_LOCAL_MODE
 const SUPA_URL='https://ytqiulxtiharrplqnuir.supabase.co';
 const SUPA_KEY='sb_publishable_PcN0MDr9GHe20ku7xICZ_g_XhWpLVaF';
 const sb=createClient(SUPA_URL,SUPA_KEY);
+window.oiDataClient=function(){return sb;};
 window.OI_LOCAL_MODE=OI_LOCAL_MODE;
 let facility=null;
 const $=id=>document.getElementById(id);
@@ -6555,7 +6556,7 @@ async function loadFacility(){
   const {data,error}=await sb.from('memberships').select('facility_id,facilities(name,facility_type)');
   MEMBERSHIPS=(!error&&data)?data:[];
   const sel=$('facSel'); if(sel)sel.innerHTML='';
-  if(error||!data||!data.length){facility=null;if(sel){const o=document.createElement('option');o.textContent='(no facility yet \u2014 tap Add)';sel.appendChild(o);}return;}
+  if(error||!data||!data.length){facility=null;window.OI_ACTIVE_FACILITY=null;if(sel){const o=document.createElement('option');o.value='';o.textContent='(no facility yet \u2014 tap Add)';sel.appendChild(o);}return;}
   data.forEach(function(row){const o=document.createElement('option');o.value=row.facility_id;o.textContent=row.facilities?row.facilities.name:'facility';if(row.facilities&&row.facilities.facility_type)o.setAttribute('data-type',row.facilities.facility_type);sel.appendChild(o);});
   var wanted=OI_LOCAL_MODE?localStorage.getItem('oi_local_selected_facility_id'):null;
   sel.selectedIndex=0;
@@ -6809,10 +6810,13 @@ async function svcSave(){
   var costRef=($('svcCostRef').value||'').trim();
   if(cost && !costRef){ say('A cost needs its work order or invoice reference.',1); return; }
 
+  var db = (typeof window.oiDataClient==='function') ? window.oiDataClient() : null;
+  if(!db){ say('Could not save: data service is unavailable.',1); return; }
+
   btn.disabled=true; say('Saving…');
   try{
     // 1 · the reported symptom, kept verbatim
-    var req=await sb.from('service_requests').insert({
+    var req=await db.from('service_requests').insert({
       facility_id:fac.id, opening_no:opn, symptom:symptom,
       reported_by:($('svcReporter').value||'').trim()||null,
       priority:$('svcPriority').value||null
@@ -6821,7 +6825,7 @@ async function svcSave(){
 
     // 2 · the visit
     var parts=($('svcParts').value||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
-    var ev=await sb.from('service_events').insert({
+    var ev=await db.from('service_events').insert({
       facility_id:fac.id, opening_no:opn, request_id:req.data.id,
       work_performed:($('svcWork').value||'').trim()||null,
       parts_used:parts,
@@ -6836,7 +6840,7 @@ async function svcSave(){
     // 3 · observations — facts, one row each
     var obs=($('svcObs').value||'').split('\n').map(function(s){return s.trim();}).filter(Boolean);
     if(obs.length){
-      var o=await sb.from('service_observations').insert(
+      var o=await db.from('service_observations').insert(
         obs.map(function(t){return {event_id:eid, observation:t};}));
       if(o.error) throw o.error;
     }
@@ -6850,13 +6854,13 @@ async function svcSave(){
                 status:(i+1===confirmedRank)?'CONFIRMED':'FIELD_VERIFICATION_REQUIRED',
                 resolved_at:(i+1===confirmedRank)?new Date().toISOString():null};
       });
-      var hh=await sb.from('diagnostic_hypotheses').insert(hrows);
+      var hh=await db.from('diagnostic_hypotheses').insert(hrows);
       if(hh.error) throw hh.error;
     }
 
     // 5 · outcome, about the event
     var ft=$('svcFirstTrip').value||'UNDETERMINED';
-    var oc=await sb.from('service_outcomes').insert({
+    var oc=await db.from('service_outcomes').insert({
       event_id:eid, first_trip:ft,
       return_reason: ft==='RETURN_VISIT_REQUIRED' ? (($('svcReturnReason').value||'').trim()||null) : null
     });
@@ -6865,7 +6869,7 @@ async function svcSave(){
     // 6 · compliance — never closed by this repair
     var deficNote='';
     if($('svcDefic').checked){
-      var d=await sb.from('deficiencies').insert({
+      var d=await db.from('deficiencies').insert({
         facility_id:fac.id, opening_no:opn,
         deficiency_ref:($('svcDeficRef').value||'').trim()||null,
         criterion:($('svcDeficCrit').value||'').trim()||'Not stated',
