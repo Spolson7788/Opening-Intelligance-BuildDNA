@@ -6,13 +6,13 @@ No row may be marked passed without environment, app/schema version, setup, acti
 |---|---|---|---|
 | OS-01 | Single opening completed offline | Complete hierarchy persists; local completion remains distinct | Prepared |
 | OS-02 | Paired opening completed offline | Frame plus active/inactive leaves and associations persist | Prepared |
-| OS-03 | Multiple same-class components | Separate UUIDs; no overwrite | Contract tested |
+| OS-03 | Multiple same-class components | Separate UUIDs; no overwrite | API and contract tested |
 | OS-04 | Photos on opening/frame/leaves/components | Exact target UUID retained through sync | Prepared |
 | OS-05 | Close and reopen application | Records, operations, blobs, states survive | Store prepared |
 | OS-06 | Restart device/simulation | Queue and session policy survive | Prepared |
 | OS-07 | Restore connectivity | Hierarchy syncs in dependency order | Ordering tested; connected test pending |
 | OS-08 | Interrupt photograph upload | Same IDs resume without duplicate | Prepared |
-| OS-09 | Replay component operation | One component and same receipt | Prepared |
+| OS-09 | Replay component operation | One component and same receipt | API tested |
 | OS-10 | Replay photograph operation | One row and one canonical object | Prepared |
 | OS-11 | Checksum and authorized retrieval | Retrieved private object matches original SHA-256 | Prepared |
 | OS-12 | Restore in Field App | Connected hierarchy and associations match | Prepared |
@@ -21,11 +21,11 @@ No row may be marked passed without environment, app/schema version, setup, acti
 | OS-15 | Update synchronized opening | New revision and immutable audit event | Prepared |
 | OS-16 | Expire auth with pending work | Data retained; sync paused; reauth recovers | Prepared |
 | OS-17 | Revoke access before sync | Write denied; Needs attention | Prepared |
-| OS-18 | Cross-organization access | API and private object denied | Prepared |
+| OS-18 | Cross-organization access | API and private object denied | Component/reservation API tested; storage pending |
 | OS-19 | Competing edit | Both versions preserved and resolution audited | Conflict store prepared |
 | OS-20 | Purchasing through retry | Eligibility/refusal unchanged | Prepared |
 | OS-21 | Provider mapping isolation | No cross-provider lookup/use | Prepared |
-| OS-22 | Diagnostic inspection | No credentials, signed URLs, sensitive data, or bytes | Prepared |
+| OS-22 | Diagnostic inspection | No credentials, signed URLs, sensitive data, or bytes | Contract prepared; connected inspection pending |
 | OS-23 | Successful sync retention | Original remains until explicit verified cleanup | Contract defined |
 | OS-24 | Device capability fallback | Manual/camera flow works without depth APIs | Prepared |
 
