@@ -49,7 +49,7 @@ jobs:
   # its secret. This keeps branch protection intact while allowing a verified
   # credit estimate before Stephan authorizes any paid generation.
   plan:
-    if: \${{ inputs.dry_run == true }}
+    if: ${{ inputs.dry_run == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -99,11 +99,11 @@ jobs:
 
       - name: Plan and credit estimate
         env:
-          EXPECTED: \${{ inputs.expected_scene_count }}
-          SCENES: \${{ inputs.scenes }}
+          EXPECTED: ${{ inputs.expected_scene_count }}
+          SCENES: ${{ inputs.scenes }}
         run: |
           python elevenlabs/generate_scenes.py --dry-run --expect "$EXPECTED" \
-            \${SCENES:+--scenes $SCENES}
+            ${SCENES:+--scenes $SCENES}
 
 
   generate:
