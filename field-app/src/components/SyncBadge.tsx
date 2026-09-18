@@ -4,7 +4,7 @@ import type { SyncState } from "../lib/sync";
 
 export function SyncBadge() {
   const [online, setOnline] = useState(navigator.onLine);
-  const [syncState, setSyncState] = useState<SyncState>({ pending: 0, syncing: false });
+  const [syncState, setSyncState] = useState<SyncState>({ pending: 0, syncing: false, failed: 0, conflicts: 0 });
 
   useEffect(() => {
     const goOnline = () => setOnline(true);
@@ -29,6 +29,14 @@ export function SyncBadge() {
 
   if (syncState.syncing) {
     return <span className="badge">Syncing…</span>;
+  }
+
+  if (syncState.conflicts > 0) {
+    return <span className="badge badge-offline" title="Saved locally; review is required before synchronization can continue">{syncState.conflicts} conflict{syncState.conflicts === 1 ? "" : "s"}</span>;
+  }
+
+  if (syncState.failed > 0) {
+    return <span className="badge badge-offline" title="Saved locally; synchronization will retry">{syncState.failed} retrying</span>;
   }
 
   if (syncState.pending > 0) {

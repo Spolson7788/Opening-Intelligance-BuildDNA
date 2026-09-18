@@ -30,10 +30,12 @@ interface FieldAppDB extends DBSchema {
 
 export interface OutboxItem {
   id: string; // uuid, generated client-side
-  kind: "service_event" | "inspection_event";
+  kind: "service_event" | "inspection_event" | "opening_frame" | "door_leaf" | "hardware_component" | "complete_opening";
   payload: any;
+  openingId?: string;
   createdAt: number;
   attempts: number;
+  status: "pending" | "failed" | "conflict";
   lastError?: string;
 }
 
@@ -42,10 +44,16 @@ export interface PhotoOutboxItem {
   openingId: string;
   blob: Blob;
   contentType: string;
+  relatedEntityType: "opening" | "frame" | "door_leaf" | "hardware_component";
+  relatedEntityId?: string;
+  frameId?: string;
+  doorLeafId?: string;
+  hardwareComponentId?: string;
   latitude?: number;
   longitude?: number;
   createdAt: number;
   attempts: number;
+  status: "pending" | "failed" | "conflict";
   lastError?: string;
 }
 
@@ -79,14 +87,21 @@ export async function getCachedOpening(id: string) {
   return db.get("openings", id);
 }
 
-export async function enqueueOutboxItem(item: Omit<OutboxItem, "attempts" | "createdAt">) {
+export async function updateCachedOpening(id: string, updater: (opening: any) => any) {
   const db = await getDb();
-  await db.put("outbox", { ...item, attempts: 0, createdAt: Date.now() });
+  const current = await db.get("openings", id);
+  if (!current) return;
+  await db.put("openings", updater(current));
+}
+
+export async function enqueueOutboxItem(item: Omit<OutboxItem, "attempts" | "createdAt" | "status">) {
+  const db = await getDb();
+  await db.put("outbox", { ...item, attempts: 0, status: "pending", createdAt: Date.now() });
 }
 
 export async function getOutbox(): Promise<OutboxItem[]> {
   const db = await getDb();
-  return db.getAll("outbox");
+  return (await db.getAll("outbox")).map((item) => ({ ...item, status: item.status || "pending" }));
 }
 
 export async function removeOutboxItem(id: string) {
@@ -99,14 +114,18 @@ export async function updateOutboxItem(item: OutboxItem) {
   await db.put("outbox", item);
 }
 
-export async function enqueuePhotoOutboxItem(item: Omit<PhotoOutboxItem, "attempts" | "createdAt">) {
+export async function enqueuePhotoOutboxItem(item: Omit<PhotoOutboxItem, "attempts" | "createdAt" | "status">) {
   const db = await getDb();
-  await db.put("photoOutbox", { ...item, attempts: 0, createdAt: Date.now() });
+  await db.put("photoOutbox", { ...item, attempts: 0, status: "pending", createdAt: Date.now() });
 }
 
 export async function getPhotoOutbox(): Promise<PhotoOutboxItem[]> {
   const db = await getDb();
-  return db.getAll("photoOutbox");
+  return (await db.getAll("photoOutbox")).map((item) => ({
+    ...item,
+    status: item.status || "pending",
+    relatedEntityType: item.relatedEntityType || "opening",
+  }));
 }
 
 export async function getPhotoOutboxForOpening(openingId: string): Promise<PhotoOutboxItem[]> {

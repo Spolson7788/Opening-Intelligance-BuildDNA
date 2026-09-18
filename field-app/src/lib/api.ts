@@ -90,17 +90,23 @@ export async function listOpenings(params: Record<string, string> = {}) {
   return authedFetch(`/openings${qs ? `?${qs}` : ""}`);
 }
 
-export async function presignPhotoUpload(openingId: string, contentType: string) {
+export async function presignPhotoUpload(openingId: string, contentType: string, clientOperationId: string) {
   return authedFetch("/photos/presign", {
     method: "POST",
-    body: JSON.stringify({ opening_id: openingId, content_type: contentType }),
+    body: JSON.stringify({ opening_id: openingId, content_type: contentType, client_operation_id: clientOperationId }),
   });
 }
 
 export async function confirmPhotoUpload(payload: {
   opening_id: string;
-  storage_url: string;
+  storage_key: string;
   content_type: string;
+  client_operation_id: string;
+  related_entity_type?: "opening" | "frame" | "door_leaf" | "hardware_component";
+  related_entity_id?: string;
+  frame_id?: string;
+  door_leaf_id?: string;
+  hardware_component_id?: string;
   latitude?: number;
   longitude?: number;
 }) {

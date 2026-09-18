@@ -90,10 +90,13 @@ export async function getPresignedUploadUrl(key: string, contentType: string, ex
   return uploadUrl;
 }
 
-export function buildStorageKey(orgId: string, openingId: string, contentType: string): string {
+export function buildStorageKey(orgId: string, openingId: string, contentType: string, objectId: string = randomUUID()): string {
   const ext = extensionForContentType(contentType);
-  const uuid = randomUUID();
-  return `org/${orgId}/opening/${openingId}/${uuid}.${ext}`;
+  return `org/${orgId}/opening/${openingId}/${objectId}.${ext}`;
+}
+
+export function isStorageKeyInOpeningScope(key: string, orgId: string, openingId: string): boolean {
+  return key.startsWith(`org/${orgId}/opening/${openingId}/`) && !key.includes("..");
 }
 
 // Documents can attach to a property alone (a property-wide insurance

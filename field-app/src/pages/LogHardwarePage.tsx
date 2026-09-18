@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { addHardwareComponent, fetchOpening } from "../lib/api";
+import { fetchOpening } from "../lib/api";
+import { queueOpeningMutation } from "../lib/sync";
 import { CARRIER_OPTIONS } from "../lib/tracking";
 import { SyncBadge } from "../components/SyncBadge";
 
@@ -67,10 +68,8 @@ export function LogHardwarePage() {
     setSubmitting(true);
     setError(null);
     try {
-      // This one requires connectivity — hardware capture isn't queued offline
-      // yet (unlike service/inspection events), since it's typically a one-time
-      // setup step done during initial capture, not a routine field action.
-      await addHardwareComponent({
+      const operationId = crypto.randomUUID();
+      await queueOpeningMutation("hardware_component", id!, {
         opening_id: id,
         component_type: componentType,
         manufacturer: manufacturer || undefined,
@@ -87,12 +86,12 @@ export function LogHardwarePage() {
         door_leaf_id: mountingScope === "door_leaf" ? doorLeafId : undefined,
         frame_id: mountingScope === "frame" ? opening?.frame?.id : undefined,
         position_label: positionLabel || undefined,
-        client_operation_id: crypto.randomUUID(),
+        client_operation_id: operationId,
         condition,
         identity_status: identityStatus,
         review_state: reviewState,
         replacement_required: replacementRequired,
-      });
+      }, operationId);
       setSaved(true);
       setTimeout(() => navigate(`/opening/${id}`), 700);
     } catch {
@@ -113,8 +112,7 @@ export function LogHardwarePage() {
       <div className="screen">
         <h2 style={{ marginBottom: 4 }}>Add Hardware</h2>
         <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 20 }}>
-          Requires a connection — this is typically done during initial capture. A tracker ID is assigned
-          automatically once saved.
+          Saved locally first and synchronized automatically. A tracker ID is assigned by the server.
         </p>
 
         {saved ? (
