@@ -45,7 +45,69 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Free planning runs do not request the protected ElevenLabs environment or
+  # its secret. This keeps branch protection intact while allowing a verified
+  # credit estimate before Stephan authorizes any paid generation.
+  plan:
+    if: \${{ inputs.dry_run == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      - name: Check out the video system
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: ffmpeg and ffprobe
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffprobe -version | head -1
+
+      - name: Python dependencies (pinned)
+        run: pip install --disable-pip-version-check -r .github/workflows/requirements.txt
+
+      - name: Preflight — every required file present and coherent
+        run: python .github/workflows/preflight.py
+
+      - name: Dry-run safety gate
+        run: echo "Dry run only. No secret requested, no API call, no credits spent."
+
+      - name: Voice lock — voicecheck before any request
+        run: python system/oi_video.py voicecheck
+
+      - name: The permitted scenes and the held scenes
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          m = json.loads(pathlib.Path("elevenlabs/generation_manifest.json").read_text())
+          ready = [c["scene_id"] for c in m["clips"]
+                   if c["in_master"] and not c["narration_provisional"]]
+          held = [c for c in m["clips"] if c["narration_provisional"]]
+          print(f"PERMITTED ({len(ready)}):")
+          print("  " + " ".join(ready))
+          print(f"\nHELD — will NOT be generated ({len(held)}):")
+          for c in held:
+              print(f"  {c['scene_id']:<6} {c['provisional_reason']}")
+          PY
+
+      - name: Plan and credit estimate
+        env:
+          EXPECTED: \${{ inputs.expected_scene_count }}
+          SCENES: \${{ inputs.scenes }}
+        run: |
+          python elevenlabs/generate_scenes.py --dry-run --expect "$EXPECTED" \
+            \${SCENES:+--scenes $SCENES}
+
+
   generate:
+    if: ${{ inputs.dry_run == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
