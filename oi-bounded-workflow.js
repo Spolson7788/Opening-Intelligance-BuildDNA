@@ -354,30 +354,39 @@
 
   function evaluate(records) {
     const replacements = (records || []).filter((record) => ['worn', 'failed'].includes(String(record.cond || '').toLowerCase()));
-    if (!replacements.length) return { allowed: false, noOrder: true, reasons: ['No worn or failed parts require ordering.'], parts: [], openingCount: 0 };
+    if (!replacements.length) return { allowed: false, noOrder: true, reasons: ['No worn or failed parts require ordering.'], parts: [], blocked: [], openingCount: 0, requiresAcknowledgment: false };
     const reasons = [];
     const eligible = [];
+    const blocked = [];
     const openingKeys = new Set();
     replacements.forEach((record) => {
       const label = 'Opening ' + (record.opnum || 'unknown') + ' ' + String(record.CLASS || 'part').replace(/_/g, ' ').toLowerCase();
-      if (!record.facility_id || !record.opnum) reasons.push(label + ': facility or opening provenance is missing');
+      const itemReasons = [];
+      if (!record.facility_id || !record.opnum) itemReasons.push('facility or opening provenance is missing');
       const opening = openingForRecord(record);
-      if (!opening || !opening.finished) reasons.push(label + ': opening is not finished');
+      if (!opening || !opening.finished) itemReasons.push('opening is not finished');
       else {
         const saved = opening.components.find((item) => item.component_id === record.component_id);
-        if (!saved || !saved.saved_at || !saved.reviewed_at) reasons.push(label + ': part is not reviewed and saved in the finished opening');
+        if (!saved || !saved.saved_at || !saved.reviewed_at) itemReasons.push('part is not reviewed and saved in the finished opening');
       }
       const identity = productForSavedRecord(record);
-      if (!identity.product) reasons.push(label + ': ' + identity.reason);
-      else eligible.push({ record, product: identity.product, method: identity.method });
-      if (record.facility_id && record.opnum) openingKeys.add(openingKey(record.facility_id, record.opnum));
+      if (!identity.product) itemReasons.push(identity.reason);
+      if (itemReasons.length) {
+        itemReasons.forEach((reason) => reasons.push(label + ': ' + reason));
+        blocked.push({ record, label, reasons: Array.from(new Set(itemReasons)), followUpRequired: true });
+      } else {
+        eligible.push({ record, product: identity.product, method: identity.method });
+        openingKeys.add(openingKey(record.facility_id, record.opnum));
+      }
     });
     return {
-      allowed: reasons.length === 0,
+      allowed: eligible.length > 0,
       noOrder: false,
       reasons: Array.from(new Set(reasons)),
       parts: eligible,
+      blocked,
       openingCount: openingKeys.size,
+      requiresAcknowledgment: eligible.length > 0 && blocked.length > 0,
     };
   }
 
@@ -415,6 +424,14 @@
       lines.push('   Cut sheet: ' + (product.cut_sheet_url || 'not on file — review before ordering'));
       lines.push('');
     });
+    if (decision.blocked && decision.blocked.length) {
+      lines.push('Excluded from this request — follow-up required:');
+      decision.blocked.forEach((item, index) => {
+        lines.push((index + 1) + '. ' + item.label);
+        item.reasons.forEach((reason) => lines.push('   ' + reason));
+      });
+      lines.push('These items remain unresolved and were not sent for ordering.', '');
+    }
     if (total > 0) lines.push('Estimated total: $' + total, '');
     lines.push('Confirm quantities, finishes and handing before ordering.');
     return {
@@ -432,6 +449,8 @@
     overlay.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:16px">' +
       '<div style="display:flex;justify-content:space-between;gap:12px"><b>Purchasing request review</b><button id="oiPurchaseClose" class="btn sec" style="width:auto;margin:0;padding:6px 10px">Close</button></div>' +
       '<div id="oiPurchaseStatus" class="hint" style="margin:8px 0"></div><pre id="oiPurchasePayload" style="white-space:pre-wrap;background:#f7f8fa;border:1px solid var(--line);border-radius:9px;padding:10px;font:12px ui-monospace,monospace"></pre>' +
+      '<div id="oiPurchaseExclusions" style="display:none;margin:10px 0;padding:10px;border:1px solid #d5a52a;border-radius:9px;background:#fff8e8;color:#5c4813;font-size:12px"></div>' +
+      '<label id="oiPurchaseAcknowledgeWrap" style="display:none;margin:10px 0;font-size:13px"><input id="oiPurchaseAcknowledge" type="checkbox"> I understand the listed items are excluded and still require follow-up.</label>' +
       '<button id="oiPurchaseDispatch" class="btn">Share / email reviewed request</button></div>';
     document.body.appendChild(overlay);
     document.getElementById('oiPurchaseClose').addEventListener('click', () => { overlay.style.display = 'none'; });
@@ -459,13 +478,27 @@
     const status = document.getElementById('oiPurchaseStatus');
     const pre = document.getElementById('oiPurchasePayload');
     const button = document.getElementById('oiPurchaseDispatch');
+    const exclusions = document.getElementById('oiPurchaseExclusions');
+    const acknowledgeWrap = document.getElementById('oiPurchaseAcknowledgeWrap');
+    const acknowledge = document.getElementById('oiPurchaseAcknowledge');
     overlay.style.display = 'flex';
     const payload = payloadFor(decision);
     window.OI_LAST_PURCHASE_PAYLOAD = JSON.parse(JSON.stringify(payload));
     status.textContent = 'Review only — nothing has been sent. ' + decision.openingCount + ' opening' + (decision.openingCount === 1 ? '' : 's') + ' · ' + decision.parts.length + ' part' + (decision.parts.length === 1 ? '' : 's') + ' to order.';
     pre.textContent = payload.text;
-    button.disabled = false;
-    button.onclick = () => dispatch(payload);
+    const blockedCount = (decision.blocked || []).length;
+    exclusions.style.display = blockedCount ? 'block' : 'none';
+    exclusions.textContent = blockedCount
+      ? blockedCount + ' item' + (blockedCount === 1 ? ' is' : 's are') + ' excluded from this request and remain open for identification or assistance.'
+      : '';
+    acknowledgeWrap.style.display = decision.requiresAcknowledgment ? 'block' : 'none';
+    acknowledge.checked = false;
+    button.disabled = !!decision.requiresAcknowledgment;
+    acknowledge.onchange = () => { button.disabled = !acknowledge.checked; };
+    button.onclick = () => {
+      if (decision.requiresAcknowledgment && !acknowledge.checked) return false;
+      return dispatch(payload);
+    };
     return true;
   }
 
@@ -476,13 +509,13 @@
       const decision = evaluate(records);
       bulk.disabled = !records.length;
       bulk.setAttribute('aria-disabled', String(!records.length));
-      bulk.dataset.oiEligibility = decision.allowed ? 'eligible' : 'blocked';
-      bulk.textContent = decision.allowed ? '📤 Review purchasing request' : '🔒 Purchasing unavailable — check reason';
+      bulk.dataset.oiEligibility = decision.allowed ? (decision.requiresAcknowledgment ? 'eligible-with-exclusions' : 'eligible') : 'blocked';
+      bulk.textContent = decision.allowed ? (decision.requiresAcknowledgment ? '📤 Review eligible items and exclusions' : '📤 Review purchasing request') : '🔒 Purchasing unavailable — check reason';
       bulk.title = decision.allowed ? 'Review the request before sharing' : decision.reasons.join('; ');
       const note = document.getElementById('oiBulkGateReason');
       if (note) {
         note.textContent = decision.allowed
-          ? decision.openingCount + ' opening' + (decision.openingCount === 1 ? '' : 's') + ' complete · ' + decision.parts.length + ' replacement part' + (decision.parts.length === 1 ? '' : 's') + ' eligible for review.'
+          ? decision.openingCount + ' opening' + (decision.openingCount === 1 ? '' : 's') + ' · ' + decision.parts.length + ' replacement part' + (decision.parts.length === 1 ? '' : 's') + ' eligible for review.' + (decision.requiresAcknowledgment ? ' ' + decision.blocked.length + ' item' + (decision.blocked.length === 1 ? ' is' : 's are') + ' excluded and require acknowledgment and follow-up.' : '')
           : 'Purchasing unavailable — ' + decision.reasons.join('; ');
         note.style.color = decision.allowed ? 'var(--good)' : 'var(--muted)';
       }

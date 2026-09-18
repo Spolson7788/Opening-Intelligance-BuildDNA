@@ -81,6 +81,36 @@ assert.equal(bounded.evaluate([component]).allowed, false, 'unfinished opening m
 const serviceable = Object.assign({}, component, { cond: 'good' });
 assert.equal(bounded.evaluate([serviceable]).noOrder, true, 'serviceable parts must not become orderable');
 
+const blockedCloser = Object.assign({}, component, {
+  component_id: 'closer-205a', opnum: '205A', CLASS: 'DOOR_CLOSER',
+  gate_product: null, how_established: 'unresolved',
+});
+bounded.writeStore({ version: 1, openings: {
+  [bounded.openingKey('facility-b', '205A')]: {
+    facility_id: 'facility-b', opening_no: '205A', finished: true,
+    door_frame: { material: 'Hollow Metal' }, components: [blockedCloser],
+  },
+  [bounded.openingKey('facility-b', '310C')]: {
+    facility_id: 'facility-b', opening_no: '310C', finished: true,
+    door_frame: { material: 'Hollow Metal' }, components: [component],
+  },
+}});
+const mixed = bounded.evaluate([blockedCloser, component]);
+assert.equal(mixed.allowed, true, 'an unresolved part must not block an independently eligible part');
+assert.equal(mixed.requiresAcknowledgment, true, 'excluded items require explicit acknowledgment');
+assert.equal(mixed.parts.length, 1);
+assert.equal(mixed.parts[0].record.component_id, 'af-1');
+assert.equal(mixed.blocked.length, 1);
+assert.equal(mixed.blocked[0].record.component_id, 'closer-205a');
+assert.equal(mixed.blocked[0].followUpRequired, true);
+const mixedPayload = bounded.payloadFor(mixed).text;
+assert.match(mixedPayload, /Opening 310C/);
+assert.match(mixedPayload, /SWFD-10183/);
+assert.match(mixedPayload, /Excluded from this request — follow-up required/);
+assert.match(mixedPayload, /Opening 205A door closer/);
+assert.match(mixedPayload, /remain unresolved and were not sent/);
+assert.doesNotMatch(mixedPayload, /Opening 205A[\s\S]*The service provider SKU:/);
+
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 assert.match(html, /function selectAuthorizedFacility\(fid\)/);
 assert.match(html, /if\(!selectAuthorizedFacility\(fid\)\)/);
@@ -100,6 +130,7 @@ console.log(JSON.stringify({
   exact_AF7700_mapping: 'PASS',
   reverse_mapping_checks: 'PASS',
   purchasing_gates: 'PASS',
+  partial_purchasing_with_acknowledged_exclusions: 'PASS',
   result_card_determination_contract: 'PASS',
   facility_link_authorization_contract: 'PASS',
 }, null, 2));
