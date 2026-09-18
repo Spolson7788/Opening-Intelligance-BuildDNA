@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, completeOpening } from "../lib/api";
-import { getPhotoOutboxForOpening } from "../lib/db";
+import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto } from "../lib/api";
+import { getPhotoOutboxForOpening, updateCachedOpening } from "../lib/db";
 import type { PhotoOutboxItem } from "../lib/db";
-import { onSyncStateChange } from "../lib/sync";
+import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
 import { SyncBadge } from "../components/SyncBadge";
 import { PhotoCapture } from "../components/PhotoCapture";
 
@@ -58,8 +58,9 @@ export function OpeningDetailPage() {
 
   async function handleCompleteOpening() {
     try {
-      await completeOpening(opening.id);
-      reload();
+      await queueOpeningMutation("complete_opening", opening.id, {});
+      await updateCachedOpening(opening.id, (cached) => ({ ...cached, completion_state: "pending_sync" }));
+      setOpening({ ...opening, completion_state: "pending_sync" });
     } catch (err: any) {
       window.alert(err?.message === "opening_incomplete" ? "Save the frame, every door leaf, and review all hardware first." : "Opening could not be completed.");
     }
@@ -159,7 +160,7 @@ export function OpeningDetailPage() {
             Door &amp; frame details
           </Link>
           <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={handleCompleteOpening} disabled={opening.completion_state === "complete"}>
-            {opening.completion_state === "complete" ? "Opening complete" : "Finish the opening"}
+            {opening.completion_state === "complete" ? "Opening complete" : opening.completion_state === "pending_sync" ? "Completion pending sync" : "Finish the opening"}
           </button>
         </div>
 
@@ -228,13 +229,8 @@ export function OpeningDetailPage() {
           <>
             <div className="section-label">Hardware</div>
             {opening.hardware_components.map((hw: any) => (
-              <Link
-                to={`/opening/${opening.id}/edit-hardware/${hw.id}`}
-                state={{ hardware: hw }}
-                key={hw.id}
-                className="card"
-                style={{ display: "block", textDecoration: "none", color: "inherit" }}
-              >
+              <div key={hw.id} className="card">
+              <Link to={`/opening/${opening.id}/edit-hardware/${hw.id}`} state={{ hardware: hw }} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
                     <strong style={{ textTransform: "capitalize" }}>{hw.component_type.replace(/_/g, " ")}</strong>
@@ -265,6 +261,10 @@ export function OpeningDetailPage() {
                   <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>Edit ›</span>
                 </div>
               </Link>
+              <div style={{ marginTop: 10 }}>
+                <PhotoCapture openingId={opening.id} relatedEntityType="hardware_component" relatedEntityId={hw.id} onQueued={loadQueuedPhotos} />
+              </div>
+              </div>
             ))}
           </>
         )}

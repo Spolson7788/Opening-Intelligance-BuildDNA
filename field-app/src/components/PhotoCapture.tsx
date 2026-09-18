@@ -4,6 +4,8 @@ import { flushOutbox } from "../lib/sync";
 
 interface Props {
   openingId: string;
+  relatedEntityType?: "opening" | "frame" | "door_leaf" | "hardware_component";
+  relatedEntityId?: string;
   onQueued: () => void; // fires the instant a photo/video is saved locally, not once it's uploaded
 }
 
@@ -14,7 +16,7 @@ interface Props {
 // round trip surfaced as an error later rather than caught at capture time).
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100MB, matches the server-side constant
 
-export function PhotoCapture({ openingId, onQueued }: Props) {
+export function PhotoCapture({ openingId, relatedEntityType = "opening", relatedEntityId, onQueued }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +56,11 @@ export function PhotoCapture({ openingId, onQueued }: Props) {
         openingId,
         blob: file,
         contentType: file.type,
+        relatedEntityType,
+        relatedEntityId,
+        frameId: relatedEntityType === "frame" ? relatedEntityId : undefined,
+        doorLeafId: relatedEntityType === "door_leaf" ? relatedEntityId : undefined,
+        hardwareComponentId: relatedEntityType === "hardware_component" ? relatedEntityId : undefined,
         ...location,
       });
       onQueued();

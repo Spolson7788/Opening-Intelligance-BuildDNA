@@ -101,6 +101,7 @@ openingsRouter.post("/", async (req: AuthedRequest, res) => {
 });
 
 const frameSchema = z.object({
+  id: z.string().uuid().optional(),
   material: z.string().optional(),
   frame_type: z.string().optional(),
   width_in: z.number().positive().optional(),
@@ -111,6 +112,7 @@ const frameSchema = z.object({
 });
 
 const leafSchema = z.object({
+  id: z.string().uuid().optional(),
   leaf_role: z.enum(["single", "active", "inactive"]),
   handing: z.string().optional(),
   material: z.string().optional(),
@@ -139,15 +141,15 @@ openingsRouter.put("/:id/frame", async (req: AuthedRequest, res) => {
   const b = parsed.data;
   const result = await pool.query(
     `INSERT INTO opening_frames
-      (opening_id, material, frame_type, width_in, height_in, fire_rated, condition, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      (id, opening_id, material, frame_type, width_in, height_in, fire_rated, condition, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      ON CONFLICT (opening_id) DO UPDATE SET
        material=EXCLUDED.material, frame_type=EXCLUDED.frame_type,
        width_in=EXCLUDED.width_in, height_in=EXCLUDED.height_in,
        fire_rated=EXCLUDED.fire_rated, condition=EXCLUDED.condition,
        notes=EXCLUDED.notes, updated_at=now()
      RETURNING *`,
-    [opening.id, b.material ?? null, b.frame_type ?? null, b.width_in ?? null,
+    [b.id ?? uuidv4(), opening.id, b.material ?? null, b.frame_type ?? null, b.width_in ?? null,
      b.height_in ?? null, b.fire_rated ?? false, b.condition ?? "unverified", b.notes ?? null]
   );
   res.json(result.rows[0]);
@@ -169,15 +171,15 @@ openingsRouter.post("/:id/door-leaves", async (req: AuthedRequest, res) => {
   }
   const result = await pool.query(
     `INSERT INTO door_leaves
-      (opening_id, leaf_role, handing, material, width_in, height_in, thickness_in, fire_rated, condition, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      (id, opening_id, leaf_role, handing, material, width_in, height_in, thickness_in, fire_rated, condition, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      ON CONFLICT (opening_id, leaf_role) DO UPDATE SET
        handing=EXCLUDED.handing, material=EXCLUDED.material,
        width_in=EXCLUDED.width_in, height_in=EXCLUDED.height_in,
        thickness_in=EXCLUDED.thickness_in, fire_rated=EXCLUDED.fire_rated,
        condition=EXCLUDED.condition, notes=EXCLUDED.notes, updated_at=now()
      RETURNING *`,
-    [opening.id, b.leaf_role, b.handing ?? null, b.material ?? null, b.width_in ?? null,
+    [b.id ?? uuidv4(), opening.id, b.leaf_role, b.handing ?? null, b.material ?? null, b.width_in ?? null,
      b.height_in ?? null, b.thickness_in ?? null, b.fire_rated ?? false,
      b.condition ?? "unverified", b.notes ?? null]
   );

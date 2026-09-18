@@ -19,6 +19,7 @@ import {
   headPrivatePhoto,
   verifyStoredPhoto,
   verifyPrivatePhotoRetrieval,
+  isStorageKeyInOpeningScope,
 } from "../services/storage";
 
 export const photosRouter = Router();
@@ -307,6 +308,7 @@ photosRouter.get("/:id/access", async (req: AuthedRequest, res) => {
 const presignSchema = z.object({
   opening_id: z.string().uuid(),
   content_type: z.string(),
+  client_operation_id: z.string().uuid().optional(),
 });
 
 // Step 1: client asks for a place to upload. We never touch the image bytes —
@@ -315,7 +317,7 @@ const presignSchema = z.object({
 photosRouter.post("/presign", async (req: AuthedRequest, res) => {
   const parsed = presignSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { opening_id, content_type } = parsed.data;
+  const { opening_id, content_type, client_operation_id } = parsed.data;
   const orgId = req.auth!.organizationId;
 
   if (!isAllowedPhotoContentType(content_type)) {
@@ -327,7 +329,10 @@ photosRouter.post("/presign", async (req: AuthedRequest, res) => {
       return res.status(403).json({ error: "forbidden" });
     }
 
-    const key = buildStorageKey(orgId, opening_id, content_type);
+    // The operation ID makes the object key stable across retries. A dropped
+    // confirmation response can therefore be retried without leaving another
+    // orphaned object in storage.
+    const key = buildStorageKey(orgId, opening_id, content_type, client_operation_id);
     const uploadUrl = await getPresignedUploadUrl(key, content_type);
     const storageUrl = buildPublicUrl(key);
 
@@ -343,7 +348,8 @@ photosRouter.post("/presign", async (req: AuthedRequest, res) => {
 
 const createPhotoSchema = z.object({
   opening_id: z.string().uuid(),
-  storage_url: z.string().url(),
+  storage_key: z.string().optional(),
+  storage_url: z.string().url().optional(),
   content_type: z.string(),
   related_entity_type: z.enum(["opening", "frame", "door_leaf", "hardware_component", "service_event", "inspection_event"]).optional(),
   related_entity_id: z.string().uuid().optional(),
@@ -354,12 +360,12 @@ const createPhotoSchema = z.object({
   latitude: z.number().optional(),
   longitude: z.number().optional(),
   taken_at: z.string().optional(),
-});
+}).refine((value) => value.storage_key || value.storage_url, { message: "storage_key_required" });
 
-// Step 2: client confirms the upload succeeded and we record it. Trusts the
-// client's storage_url rather than re-verifying the object exists in S3 — fine
-// for MVP scale, worth adding a HEAD-object check before this goes multi-tenant
-// at real volume. media_type is derived from content_type here, not trusted
+// Step 2: client confirms the upload succeeded and we record it. New clients
+// send the server-issued storage key; the server validates its tenant/opening
+// scope and derives the URL. Legacy URL input remains temporarily compatible.
+// A HEAD-object check remains a later hardening item. media_type is derived from content_type here, not trusted
 // as a separate client-supplied field, so there's exactly one place
 // (storage.ts) that decides what counts as a photo vs. a video.
 photosRouter.post("/", async (req: AuthedRequest, res) => {
@@ -390,16 +396,20 @@ photosRouter.post("/", async (req: AuthedRequest, res) => {
       if (!target.rows.length) return res.status(400).json({ error: "hardware_not_in_opening" });
     }
 
+    if (b.storage_key && !isStorageKeyInOpeningScope(b.storage_key, orgId, b.opening_id)) {
+      return res.status(400).json({ error: "storage_key_outside_opening_scope" });
+    }
+    const storageUrl = b.storage_key ? buildPublicUrl(b.storage_key) : b.storage_url!;
     const result = await pool.query(
       `INSERT INTO photos
-        (opening_id, related_entity_type, related_entity_id, storage_url, media_type, latitude, longitude,
+        (opening_id, related_entity_type, related_entity_id, storage_url, storage_key, media_type, latitude, longitude,
          taken_at, uploaded_by_user_id, frame_id, door_leaf_id, hardware_component_id, client_operation_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        ON CONFLICT (opening_id, client_operation_id) WHERE client_operation_id IS NOT NULL
        DO UPDATE SET opening_id=EXCLUDED.opening_id RETURNING *`,
       [
         b.opening_id, b.related_entity_type ?? "opening", b.related_entity_id ?? null,
-        b.storage_url, mediaType, b.latitude ?? null, b.longitude ?? null, b.taken_at ?? null, userId,
+        storageUrl, b.storage_key ?? null, mediaType, b.latitude ?? null, b.longitude ?? null, b.taken_at ?? null, userId,
         b.frame_id ?? null, b.door_leaf_id ?? null, b.hardware_component_id ?? null,
         b.client_operation_id ?? null,
       ]

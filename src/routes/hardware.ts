@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
+import { v4 as uuidv4 } from "uuid";
 import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
@@ -40,6 +41,7 @@ async function assertHardwareInOrg(hardwareId: string, orgId: string): Promise<s
 }
 
 const createHardwareSchema = z.object({
+  id: z.string().uuid().optional(),
   opening_id: z.string().uuid(),
   component_type: z.enum([
     "lockset", "cylinder", "closer", "exit_device", "hinge",
@@ -110,16 +112,16 @@ hardwareRouter.post("/", async (req: AuthedRequest, res) => {
     const trackerId = generateTrackerId();
     const result = await pool.query(
       `INSERT INTO hardware_components
-        (opening_id, component_type, manufacturer, model_number, finish, install_date, warranty_expiration, notes,
+        (id, opening_id, component_type, manufacturer, model_number, finish, install_date, warranty_expiration, notes,
          unit_cost, supplier_name, supplier_contact, tracker_id, serial_number, carrier, tracking_number,
          shipment_status, expected_delivery_date, shipped_date, delivered_date,
          mounting_scope, door_leaf_id, frame_id, position_label, client_operation_id,
          condition, identity_status, review_state, replacement_required)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
        ON CONFLICT (opening_id, client_operation_id) WHERE client_operation_id IS NOT NULL
        DO UPDATE SET opening_id=EXCLUDED.opening_id RETURNING *`,
       [
-        b.opening_id, b.component_type, b.manufacturer ?? null, b.model_number ?? null,
+        b.id ?? uuidv4(), b.opening_id, b.component_type, b.manufacturer ?? null, b.model_number ?? null,
         b.finish ?? null, b.install_date ?? null, b.warranty_expiration ?? null, b.notes ?? null,
         b.unit_cost ?? null, b.supplier_name ?? null, b.supplier_contact ?? null,
         trackerId, b.serial_number ?? null, b.carrier ?? null, b.tracking_number ?? null,
@@ -200,7 +202,7 @@ hardwareRouter.get("/", async (req: AuthedRequest, res) => {
   }
 });
 
-const updateHardwareSchema = createHardwareSchema.partial().omit({ opening_id: true });
+const updateHardwareSchema = createHardwareSchema.partial().omit({ id: true, opening_id: true });
 
 hardwareRouter.patch("/:id", async (req: AuthedRequest, res) => {
   const { id } = req.params;
