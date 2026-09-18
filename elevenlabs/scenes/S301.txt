@@ -1,0 +1,1 @@
+This is a cylindrical lockset, not an exit device. I choose that part type, and the app changes what it asks for and which photographs it wants.

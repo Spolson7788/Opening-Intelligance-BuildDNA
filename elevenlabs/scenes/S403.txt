@@ -1,0 +1,1 @@
+Work performed, parts, and cost. The cost needs a work order or invoice reference; without one the record will not treat it as realized. Then the functional check: closes, latches, hardware operates.

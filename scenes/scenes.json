@@ -5,7 +5,7 @@
   "master_cut": "Trial 1 — introduction and first complete opening through the purchasing handoff",
   "field_app_version": "FA-v40-drop14",
   "demo_data_version": "OI-DEMO 1.12.0",
-  "last_modified": "2026-09-15",
+  "last_modified": "2026-09-18",
   "statuses": [
     "Draft",
     "Ready for review",
@@ -159,14 +159,14 @@
       "caption": null,
       "status": "Draft",
       "blocked_reason": "Needs in-app previews of the cut sheet and the door & frame panel — so it follows the local demonstration mode and PC-3, not a credentials question.",
-      "last_modified": "2026-09-13",
+      "last_modified": "2026-09-15",
       "dependencies": [],
-      "rerecord_required": true,
+      "rerecord_required": false,
       "renarrate_required": true,
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 25,
+      "est_seconds": 27,
       "change_note": "v1.1: the preview now promises what OI can support from the photographs rather than a flat 'identify the hardware', so the introduction cannot over-promise a model-level result.",
       "history": [
         {
@@ -183,6 +183,11 @@
           "date": "2026-09-14",
           "event": "asset requirement restated as the demonstration build",
           "note": "Inventory record only. Narration, scene structure and evidence classification unchanged."
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "narration_provisional": false,
@@ -265,9 +270,9 @@
       "caption": null,
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-13",
+      "last_modified": "2026-09-15",
       "dependencies": [],
-      "rerecord_required": true,
+      "rerecord_required": false,
       "renarrate_required": false,
       "in_master": true,
       "still": null,
@@ -279,6 +284,11 @@
           "date": "2026-09-13",
           "event": "migrated from trial package v1.0",
           "from": "oi_trial1_scenes.json:S040"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "narration_provisional": false
@@ -308,7 +318,7 @@
       "caption": "Demonstration facility · Valley Medical Center",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.facility",
         "account.auth"
@@ -318,7 +328,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 15,
+      "est_seconds": 16,
       "change_note": "v1.1b: caption identifies the facility as demonstration data. Narration unchanged.",
       "history": [
         {
@@ -343,6 +353,11 @@
         },
         {
           "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
         }
@@ -381,11 +396,11 @@
       "caption": "Location · East corridor (illustrative)",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-13",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.location"
       ],
-      "rerecord_required": true,
+      "rerecord_required": false,
       "renarrate_required": false,
       "in_master": true,
       "still": null,
@@ -397,6 +412,11 @@
           "date": "2026-09-13",
           "event": "migrated from trial package v1.0",
           "from": "oi_trial1_scenes.json:S060"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "narration_provisional": false
@@ -425,16 +445,16 @@
       "caption": "Opening 205A",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-13",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.opening_number"
       ],
-      "rerecord_required": true,
+      "rerecord_required": false,
       "renarrate_required": true,
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 25,
+      "est_seconds": 27,
       "change_note": "v1.1b: the illustrative-values line now covers the images as well as the field values, and says 'demonstration record' plainly. Structure, ID and timing unchanged.",
       "history": [
         {
@@ -446,6 +466,16 @@
           "date": "2026-09-13",
           "event": "demonstration-data identification added",
           "amendment": "Master Directive v1.1b — demonstration-data clarification"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "acceptance_criteria": [
@@ -461,9 +491,15 @@
       "purpose": "Show the how-to guide and the fire-rated field.",
       "audience_benefit": "Guidance is at hand; the rating is recorded honestly, not certified.",
       "narration": "The how-to guide is here if you need a reminder. There's also a field for whether the opening is fire-rated. A fire-rated exit device alone does not establish the rating of the whole opening. For this demonstration, I'll leave that field unchecked.",
-      "screen_action": ["Tap 'How to use — tap to expand'; hold 4s on the numbered steps; collapse it.", "Move to the 'This is a fire-rated opening' checkbox. Do not check it.", "Hold on the unchecked box and its helper text."],
+      "screen_action": [
+        "Tap 'How to use — tap to expand'; hold 4s on the numbered steps; collapse it.",
+        "Move to the 'This is a fire-rated opening' checkbox. Do not check it.",
+        "Hold on the unchecked box and its helper text."
+      ],
       "expected_visible_result": "Guide opens and closes; the fire-rated checkbox is left unchecked and held.",
-      "on_screen_values": ["This is a fire-rated opening: unchecked"],
+      "on_screen_values": [
+        "This is a fire-rated opening: unchecked"
+      ],
       "required_source_assets": [],
       "field_app_version": "FA-v40-drop14",
       "demo_data_version": "OI-DEMO 1.8.0",
@@ -473,16 +509,16 @@
       "caption": "Fire-rated: recorded at the door, not a compliance sign-off",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.fire_rated"
       ],
-      "rerecord_required": true,
+      "rerecord_required": false,
       "renarrate_required": true,
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 20,
+      "est_seconds": 22,
       "change_note": "Carried over from the trial package unchanged.",
       "history": [
         {
@@ -499,6 +535,16 @@
           "date": "2026-09-14",
           "event": "fire-language limit recorded",
           "amendment": "Asset intake 3 — intro image + ESC trim-selection excerpt"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "acceptance_criteria": [
@@ -530,9 +576,9 @@
       "caption": null,
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-13",
+      "last_modified": "2026-09-15",
       "dependencies": [],
-      "rerecord_required": true,
+      "rerecord_required": false,
       "renarrate_required": false,
       "in_master": true,
       "still": null,
@@ -544,6 +590,11 @@
           "date": "2026-09-13",
           "event": "migrated from trial package v1.0",
           "from": "oi_trial1_scenes.json:S090"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "narration_provisional": false
@@ -582,11 +633,11 @@
       "caption": "Guided capture · approved reference images",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.closer.field_photographs"
       ],
-      "rerecord_required": true,
+      "rerecord_required": false,
       "renarrate_required": true,
       "in_master": true,
       "still": null,
@@ -618,6 +669,11 @@
           "date": "2026-09-14",
           "event": "asset requirement corrected to the approved demonstration assets",
           "note": "Reclassified from 'missing source asset' to 'recording not yet performed'. No real field photographs are required. Narration, scene structure and evidence classification unchanged."
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "acceptance_criteria": [
@@ -638,9 +694,18 @@
       "purpose": "Record the visible attributes.",
       "audience_benefit": "A tech can contribute without disassembling anything.",
       "narration": "I enter the visible closer attributes: its type, mounting, arm configuration, cover, and any legible manufacturer stamp. I leave anything I can't establish unknown. In this demonstration, OI works from those entries; no photograph is being analyzed.",
-      "screen_action": ["Open each dropdown in '2 · WHAT CAN YOU SEE?' as it is named. Set only what the supplied reference images establish: CLOSER TYPE = surface, MANUFACTURER STAMP = Cal-Royal.", "Leave MOUNTING, ARM TYPE and COVER TYPE at '— not sure —'. The images do not establish them, and the line 'I leave anything I can't establish unknown' refers to exactly these three."],
+      "screen_action": [
+        "Open each dropdown in '2 · WHAT CAN YOU SEE?' as it is named. Set only what the supplied reference images establish: CLOSER TYPE = surface, MANUFACTURER STAMP = Cal-Royal.",
+        "Leave MOUNTING, ARM TYPE and COVER TYPE at '— not sure —'. The images do not establish them, and the line 'I leave anything I can't establish unknown' refers to exactly these three."
+      ],
       "expected_visible_result": "Each selection visibly lands in its field.",
-      "on_screen_values": ["CLOSER TYPE: surface", "MOUNTING: — not sure —", "ARM TYPE: — not sure —", "COVER TYPE: — not sure —", "MANUFACTURER STAMP: Cal-Royal"],
+      "on_screen_values": [
+        "CLOSER TYPE: surface",
+        "MOUNTING: — not sure —",
+        "ARM TYPE: — not sure —",
+        "COVER TYPE: — not sure —",
+        "MANUFACTURER STAMP: Cal-Royal"
+      ],
       "required_source_assets": [],
       "field_app_version": "FA-v40-drop14",
       "demo_data_version": "OI-DEMO 1.8.0",
@@ -650,7 +715,7 @@
       "caption": "Photographs and visible attributes together",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.closer.attributes"
       ],
@@ -659,7 +724,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 16,
+      "est_seconds": 18,
       "change_note": "v1.1f: 'the two work together' made explicit — the result is built on the photographs AND the technician-entered attributes. No result or percentage changed.",
       "history": [
         {
@@ -681,6 +746,11 @@
           "date": "2026-09-14",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "narration_previous": "OI analyzes the photographs, and I add what I can see without taking anything apart: the closer type, how it's mounted, the arm configuration, the cover, and the manufacturer stamp if it's legible. The two work together—neither the photographs nor the attributes carry it alone.",
@@ -697,7 +767,9 @@
       "purpose": "Run identification.",
       "audience_benefit": "Shows the moment of asking the app.",
       "narration": "Now let's review the result from those entries.",
-      "screen_action": ["Open on the result the entered attributes have already produced; hold, then push in on the three rows and the review flag. Identify is not pressed — the manufacturer field runs identification on change."],
+      "screen_action": [
+        "Open on the result the entered attributes have already produced; hold, then push in on the three rows and the review flag. Identify is not pressed — the manufacturer field runs identification on change."
+      ],
       "expected_visible_result": "The result card the entries produced is reviewed. It carries a ranked shortlist and a needs-review flag.",
       "on_screen_values": [],
       "required_source_assets": [],
@@ -709,7 +781,7 @@
       "caption": "Image-assisted identification",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [],
       "rerecord_required": false,
       "renarrate_required": true,
@@ -731,6 +803,11 @@
         },
         {
           "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
         }
@@ -971,7 +1048,7 @@
       "caption": "The calibration field · saving is what commits the part",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.closer.attribute_only_result"
       ],
@@ -980,7 +1057,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 15,
+      "est_seconds": 16,
       "change_note": "v1.1a: rewritten so nothing implies a confirmation control. The technician's act is entering the calibration value and saving the part — which is what the application actually does.",
       "history": [
         {
@@ -999,6 +1076,11 @@
         },
         {
           "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
         }
@@ -1180,7 +1262,7 @@
       "title": "Condition, estimate, save",
       "purpose": "Record condition and cost, and save the part.",
       "audience_benefit": "Cost is attached to a specific part on a specific opening.",
-      "narration": "For this demonstration, I'll mark the closer worn and enter a sample repair or replacement estimate of four hundred fifty dollars. Then I'll save the part and check the local record. The condition and estimate describe this demonstration entry; they do not establish the closer's model.",
+      "narration": "For this demonstration I mark the closer worn and enter a provisional estimate of four hundred fifty dollars. The technician typed that figure; the app did not calculate it, and no product has been identified to price.",
       "screen_action": [
         "Set CONDITION OF THE HARDWARE = 'Worn — aging / degraded'.",
         "Click the cost field and type '450' while the amount is spoken.",
@@ -1199,9 +1281,9 @@
       "narration_file": "elevenlabs/audio/S150.mp3",
       "narration_script": "elevenlabs/scenes/S150.txt",
       "caption": "Condition + estimate saved to this part",
-      "status": "Draft",
+      "status": "Ready for review",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-18",
       "dependencies": [
         "OI-DEMO.OP1.closer.condition",
         "OI-DEMO.OP1.closer.estimated_cost"
@@ -1211,8 +1293,8 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 20,
-      "change_note": "Carried over from the trial package unchanged.",
+      "est_seconds": 22,
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
       "history": [
         {
           "date": "2026-09-13",
@@ -1233,12 +1315,19 @@
           "date": "2026-09-14",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "notes": [
         "2026-09-14: Recorded. PC-5: 'Save this part' now writes a visible confirmation card, and the counter reads parts, not openings."
       ],
-      "narration_provisional": false
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
     },
     {
       "scene_id": "S155",
@@ -1262,14 +1351,14 @@
       "caption": "Flagged for purchasing",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [],
       "rerecord_required": false,
       "renarrate_required": true,
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 12,
+      "est_seconds": 14,
       "change_note": "Rewritten. sendLogToPurchasing() selects on condition worn/failed, not on pressing 'Send to purchasing'.",
       "history": [
         {
@@ -1279,6 +1368,11 @@
         },
         {
           "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
         }
@@ -1308,9 +1402,9 @@
       "caption": null,
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-13",
+      "last_modified": "2026-09-15",
       "dependencies": [],
-      "rerecord_required": true,
+      "rerecord_required": false,
       "renarrate_required": false,
       "in_master": true,
       "still": null,
@@ -1322,6 +1416,11 @@
           "date": "2026-09-13",
           "event": "migrated from trial package v1.0",
           "from": "oi_trial1_scenes.json:S160"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "narration_provisional": false
@@ -1358,16 +1457,16 @@
       "caption": null,
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.exit_device.field_photographs"
       ],
-      "rerecord_required": true,
+      "rerecord_required": false,
       "renarrate_required": true,
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 16,
+      "est_seconds": 17,
       "change_note": "v1.1: terminology.",
       "history": [
         {
@@ -1394,6 +1493,11 @@
           "date": "2026-09-14",
           "event": "asset requirement corrected to the approved demonstration assets",
           "note": "Reclassified from 'missing source asset' to 'recording not yet performed'. No real field photographs are required. Narration, scene structure and evidence classification unchanged."
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "acceptance_criteria": [
@@ -1411,7 +1515,7 @@
       "title": "Identify the device",
       "purpose": "Look the device up by model and be clear what that does.",
       "audience_benefit": "Catalog lookup speeds entry; the stamp is still what establishes the model.",
-      "narration": "Same process for the device. Using the visible attributes I entered, OI establishes Cal-Royal as the manufacturer. It does not establish the exact family or model—candidates it can't separate, and it says so rather than picking one. The stamp here is legible, so I'll look the model up: A F seventy-seven hundred. There it is—Cal-Royal's A seventy-seven hundred, A F seventy-seven hundred rim exit device. Choosing it sets the part type and the manufacturer, and OI records it as my selection, not as something it recognized.",
+      "narration": "Same process for the device. Using the photographs and the visible attributes I entered, OI establishes Cal-Royal as the manufacturer. It does not establish the exact family or model—several candidates it can't separate, and it says so rather than picking one. The stamp here is legible, so I'll look the model up: A F seventy-seven hundred. There it is—Cal-Royal's A seventy-seven hundred, A F seventy-seven hundred rim exit device. Choosing it sets the part type and the manufacturer, and OI records it as my selection, not as something it recognized.",
       "screen_action": [
         "Type 'AF7700' into the model lookup while it is spoken; press Search catalog.",
         "Hold on the result rows.",
@@ -1519,18 +1623,18 @@
       "narration_provisional": false,
       "provisional_reason": "Asserts the device result: Cal-Royal established, family and model not established, eight unresolved candidates. Subject to what the deployed recognition service returns.",
       "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
-      "narration_change": {
-        "date": "2026-09-15",
-        "from": "eight candidates it can't separate",
-        "to": "several candidates it can't separate",
-        "approved_by": "Michelle, 15 Sep 2026"
-      },
       "recognition_hold": {
         "state": "RELEASED",
         "released_on": "2026-09-15",
         "basis": "evidence-acceptance exception, approved by Michelle 15 Sep 2026",
         "scope": "Released under the evidence-acceptance exception of 15 Sep 2026. The exit-device and hinge results were identical across both completed repetitions of the 15 Sep PC-7 Stage B run with no semantic violations, and are accepted as sufficient evidence for this scene. This does NOT re-grade the run, which remains a FAILURE under its original +/-2-point rule. Evidence: reports/pc7_evidence/photograph_test_results_2026-09-15T1825Z.json sha256 23aa3dce737bfed7...",
         "narration_text": "final and approved; audio NOT yet generated (separate approval)"
+      },
+      "narration_change": {
+        "date": "2026-09-15",
+        "from": "eight candidates it can't separate",
+        "to": "several candidates it can't separate",
+        "approved_by": "Michelle, 15 Sep 2026"
       }
     },
     {
@@ -1559,7 +1663,7 @@
       "caption": "Outside trim belongs to the exit device",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.exit_trim"
       ],
@@ -1610,11 +1714,21 @@
           "date": "2026-09-14",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "acceptance_criteria": [
         "Display and speak only 'ESC — Rigid Lever Escutcheon'. No function-specific suffix is selected or narrated, and no function is inferred from the generic trim image.",
-        "No Vortex SKU on the trim, and nothing implies SWFD-10183 includes or separately identifies it. SWFD-10183 stays scoped exclusively to the AF7700 exit device.",
+        "No ordering SKU appears on the trim, and nothing implies the exit device's ordering reference includes or separately identifies it. Any such reference stays scoped exclusively to the AF7700 exit device.",
         "The trim may be shown as trim for the AF7700 presentation configuration — Cal-Royal's complete Rigid Lever Escutcheon specification states the hardened steel heavy duty tailpiece is available for fire and non-fire rated rim and vertical rod exit devices.",
         "Never claim the complete opening is a certified or UL-listed fire-door assembly.",
         "Never claim any single document establishes a complete fire-listing combination."
@@ -1761,7 +1875,7 @@
       "caption": "Serviceable — recorded, not ordered",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.exit_device.condition"
       ],
@@ -1796,6 +1910,11 @@
           "date": "2026-09-14",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "narration_provisional": false
@@ -1806,7 +1925,7 @@
       "title": "Capture and identify the hinges",
       "purpose": "Capture and identify the hinges.",
       "audience_benefit": "Consistency across every part on the door.",
-      "narration": "Now the hinges for this same opening. Three shots again — the whole hinge, the knuckle close-up, and the leaf stamp. I add what the pictures show — knuckle count, bearing type, leaf profile, and the Ives stamp on the leaf — and leave the pin type unknown. OI works from that. Hinges are hard from a photograph alone, and OI is straight about that: it tells us where it lands, and flags it for review rather than guessing.",
+      "narration": "Now the hinges on this same door. Three shots again: the full hinge with the door open, the knuckle close-up, and the leaf stamp. OI analyzes them, and I add what I can see—knuckle count, bearing type, leaf profile, pin type. Hinges are hard from a photograph alone, and OI is straight about that: it tells us where it lands, and flags it for review rather than guessing.",
       "screen_action": [
         "Work all three guided photo steps.",
         "Set the four visible hinge attributes from the actual photographs, then Identify.",
@@ -1892,18 +2011,18 @@
       "superseded_asset_requirement": [
         "ASSET NEEDED: real hinge photos"
       ],
-      "narration_change": {
-        "date": "2026-09-15",
-        "from": "it tells us where it lands and what it still needs",
-        "to": "it tells us where it lands, and flags it for review rather than guessing",
-        "approved_by": "Michelle, 15 Sep 2026"
-      },
       "recognition_hold": {
         "state": "RELEASED",
         "released_on": "2026-09-15",
         "basis": "evidence-acceptance exception, approved by Michelle 15 Sep 2026",
         "scope": "Released under the evidence-acceptance exception of 15 Sep 2026. The exit-device and hinge results were identical across both completed repetitions of the 15 Sep PC-7 Stage B run with no semantic violations, and are accepted as sufficient evidence for this scene. This does NOT re-grade the run, which remains a FAILURE under its original +/-2-point rule. Evidence: reports/pc7_evidence/photograph_test_results_2026-09-15T1825Z.json sha256 23aa3dce737bfed7...",
         "narration_text": "final and approved; audio NOT yet generated (separate approval)"
+      },
+      "narration_change": {
+        "date": "2026-09-15",
+        "from": "it tells us where it lands and what it still needs",
+        "to": "it tells us where it lands, and flags it for review rather than guessing",
+        "approved_by": "Michelle, 15 Sep 2026"
       }
     },
     {
@@ -1912,7 +2031,7 @@
       "title": "The hinge document stays locked until the product is selected",
       "purpose": "Save the hinges and close out the hardware.",
       "audience_benefit": "Every part is saved before leaving the opening.",
-      "narration": "OI hasn't established the exact hinge model, so the cut-sheet control stays locked. I'll look up eyes five bee bee one and select it. OI preserves its original result and records that I made the selection using the manufacturer's documentation. Now I can open that document directly from the selected product. These hinges are serviceable, so I'll save them. The record shows that five bee bee one was technician-selected, not recognized from the image.",
+      "narration": "OI hasn't established the exact hinge model. The cut-sheet link belongs to a candidate, so OI correctly keeps it locked until the product is supported and selected. So I'll look up eyes five bee bee one and select it. OI preserves its original result and records that I made the selection using the manufacturer's documentation. Now I can open that document directly from the selected product. These hinges are serviceable, so I'll save them. The confirmation shows that five bee bee one was technician-selected, not recognized from the image.",
       "screen_action": [
         "Hold on the unresolved hinge result: manufacturer, family and model all Not established.",
         "Rest on the 'View cut sheet' link while nothing is established — it is not opened.",
@@ -2087,7 +2206,7 @@
       "caption": "Door & frame · same opening 205A",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "OI-DEMO.OP1.door_and_frame",
         "account.auth"
@@ -2097,7 +2216,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 32,
+      "est_seconds": 36,
       "change_note": "Carried over from the trial package unchanged.",
       "history": [
         {
@@ -2117,6 +2236,11 @@
         },
         {
           "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
         }
@@ -2151,7 +2275,7 @@
       "caption": "Opening 205A complete",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "S230"
       ],
@@ -2180,6 +2304,11 @@
         },
         {
           "date": "2026-09-14",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
         }
@@ -2281,7 +2410,7 @@
       "caption": "Purchasing log · flagged parts only",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "S240",
         "OI-DEMO.OP1.purchasing_output"
@@ -2291,7 +2420,7 @@
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 28,
+      "est_seconds": 31,
       "change_note": "Blocked. This build renders nothing — the text goes straight to navigator.share() or mailto:. Requires prototype change PC-4.",
       "history": [
         {
@@ -2308,6 +2437,16 @@
           "date": "2026-09-14",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "notes": [
@@ -2322,12 +2461,12 @@
       "purpose": "State where the manufacturer-product-to-purchasing-SKU cross-reference comes from, without demonstrating it.",
       "audience_benefit": "Connects OI output to the numbers actually ordered against.",
       "narration": "The service provider supplies OI with a cross-reference linking the manufacturer's product to the service provider's purchasing SKU. That cross-reference does not identify the installed hardware. Importing or applying it is not demonstrated here. No purchasing request was produced.",
-      "screen_action": ["Hold the finished record, then cut to the separate editorial card; reveal one block at a time as each is spoken; cut back to the finished record for the closing line.", "The card is an assembly card, never overlaid on the application, and carries 'ASSEMBLY CARD — NOT AN OI SCREEN' on every frame. No SKU, part number or mapping result appears on it."],
-      "expected_visible_result": "The card is readable and plainly not the application. No SKU or mapping result appears, and no purchasing request is produced.",
-      "on_screen_values": [
-        "CR441 hold-open arm → Vortex ED-13282",
-        "AF7700 exit device → Vortex SWFD-10183"
+      "screen_action": [
+        "Hold the finished record, then cut to the separate editorial card; reveal one block at a time as each is spoken; cut back to the finished record for the closing line.",
+        "The card is an assembly card, never overlaid on the application, and carries 'ASSEMBLY CARD — NOT AN OI SCREEN' on every frame. No SKU, part number or mapping result appears on it."
       ],
+      "expected_visible_result": "The card is readable and plainly not the application. No SKU or mapping result appears, and no purchasing request is produced.",
+      "on_screen_values": [],
       "required_source_assets": [
         "mapping_card.png (to be produced; text only unless a verified hold-open arm image is supplied)"
       ],
@@ -2339,7 +2478,7 @@
       "caption": "Editorial explanation — not a screen in the OI app",
       "status": "Ready for review",
       "blocked_reason": null,
-      "last_modified": "2026-09-13",
+      "last_modified": "2026-09-15",
       "dependencies": [
         "assets/mapping_card.png",
         "OI-DEMO.OP1.closer.sku",
@@ -2350,13 +2489,18 @@
       "in_master": true,
       "still": null,
       "overlay_card": "mapping_card.png",
-      "est_seconds": 18,
+      "est_seconds": 20,
       "change_note": "Carried over from the trial package unchanged.",
       "history": [
         {
           "date": "2026-09-13",
           "event": "migrated from trial package v1.0",
           "from": "oi_trial1_scenes.json:S270"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "narration_provisional": false
@@ -2384,20 +2528,30 @@
       "caption": null,
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-13",
+      "last_modified": "2026-09-15",
       "dependencies": [],
-      "rerecord_required": true,
+      "rerecord_required": false,
       "renarrate_required": true,
       "in_master": true,
       "still": null,
       "overlay_card": null,
-      "est_seconds": 18,
+      "est_seconds": 20,
       "change_note": "Carried over from the trial package unchanged.",
       "history": [
         {
           "date": "2026-09-13",
           "event": "migrated from trial package v1.0",
           "from": "oi_trial1_scenes.json:S275"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-15",
+          "event": "re-recorded",
+          "field_app_version": "FA-v40-drop14"
         }
       ],
       "narration_provisional": false
@@ -2405,10 +2559,10 @@
     {
       "scene_id": "S300",
       "chapter": "CH08",
-      "title": "Opening 2 — Schlage ND80 storeroom lockset",
-      "purpose": "Demonstrate a second opening whose locking hardware is a cylindrical lockset rather than an exit device.",
+      "title": "Opening 2 — a second opening, entered by hand",
+      "purpose": "Start a second opening on a different corridor, entering both fields rather than letting the number step up.",
       "audience_benefit": "Shows the same workflow on a different hardware configuration, and that an opening carries either an exit device or a lockset — never both.",
-      "narration": "",
+      "narration": "Two zero five A is finished. This next door is on a different corridor, so I enter both fields myself: West corridor, opening three ten B.",
       "screen_action": [
         "Not written. Hardware and door values for opening 2 have not been selected."
       ],
@@ -2430,19 +2584,19 @@
       "narration_file": "elevenlabs/audio/S300.mp3",
       "narration_script": "elevenlabs/scenes/S300.txt",
       "caption": null,
-      "status": "Blocked",
-      "blocked_reason": "Opening 2 is fully specified — Schlage ND80, cylindrical, storeroom, 3'-0\" x 7'-0\" wood door, hollow-metal frame, West corridor, opening 310B, good/serviceable, no visible deficiency, record only. Remaining work is writing the scene content, which happens after Trial 1.",
-      "last_modified": "2026-09-14",
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
       "dependencies": [
         "OI-DEMO.OP2"
       ],
       "rerecord_required": true,
       "renarrate_required": true,
-      "in_master": false,
+      "in_master": true,
       "still": null,
       "overlay_card": null,
       "est_seconds": 0,
-      "change_note": "Approved decision: location, opening number, condition and action applied. Content written after Trial 1.",
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
       "history": [
         {
           "date": "2026-09-13",
@@ -2459,15 +2613,18 @@
           "event": "opening 2 values approved and applied",
           "amendment": "Approved decisions — OP2 values, S100 narration, PC-2 local demonstration mode"
         }
-      ]
+      ],
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
     },
     {
       "scene_id": "S310",
       "chapter": "CH08",
-      "title": "Opening 3 — placeholder",
-      "purpose": "Placeholder — content not written.",
+      "title": "Opening 3 — 310C, the replacement case",
+      "purpose": "Introduce the third opening and its worn exit device.",
       "audience_benefit": "—",
-      "narration": "",
+      "narration": "One more door on the same corridor: opening three ten C. An exit device, and this is the replacement case.",
       "screen_action": [
         "Not written. Hardware and door values for opening 3 have not been selected."
       ],
@@ -2480,32 +2637,35 @@
       "narration_file": "elevenlabs/audio/S310.mp3",
       "narration_script": "elevenlabs/scenes/S310.txt",
       "caption": null,
-      "status": "Blocked",
-      "blocked_reason": "Content for this chapter has not been written.",
-      "last_modified": "2026-09-13",
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
       "dependencies": [],
       "rerecord_required": true,
       "renarrate_required": true,
-      "in_master": false,
+      "in_master": true,
       "still": null,
       "overlay_card": null,
       "est_seconds": 0,
-      "change_note": "New scene.",
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
       "history": [
         {
           "date": "2026-09-13",
           "event": "created in modular system",
           "from": null
         }
-      ]
+      ],
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
     },
     {
       "scene_id": "S400",
       "chapter": "CH09",
-      "title": "Service call — placeholder",
-      "purpose": "Placeholder — content not written.",
+      "title": "Service call — 310B revisited",
+      "purpose": "Open a recorded opening and log a service call against it.",
       "audience_benefit": "—",
-      "narration": "",
+      "narration": "A record is not closed the day it is written. This is opening three ten B, and a complaint has come in against it. Everything that follows is demonstration data. I open the record and log a service call; the opening gains an event.",
       "screen_action": [
         "Not written. Recorded only after all three openings are demonstrated."
       ],
@@ -2518,24 +2678,27 @@
       "narration_file": "elevenlabs/audio/S400.mp3",
       "narration_script": "elevenlabs/scenes/S400.txt",
       "caption": null,
-      "status": "Blocked",
-      "blocked_reason": "Content for this chapter has not been written.",
-      "last_modified": "2026-09-13",
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
       "dependencies": [],
       "rerecord_required": true,
       "renarrate_required": true,
-      "in_master": false,
+      "in_master": true,
       "still": null,
       "overlay_card": null,
       "est_seconds": 0,
-      "change_note": "New scene.",
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
       "history": [
         {
           "date": "2026-09-13",
           "event": "created in modular system",
           "from": null
         }
-      ]
+      ],
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
     },
     {
       "scene_id": "S500",
@@ -2787,6 +2950,550 @@
       "notes": [
         "2026-09-14: Unblocked: controlled demonstration records are in scope and drive the accuracy views. Recording still to be cut with the rest of MOD1."
       ]
+    },
+    {
+      "scene_id": "S301",
+      "chapter": "CH08",
+      "title": "Opening 2 — part type: cylindrical lockset",
+      "purpose": "Choose the lockset class and show the form change what it asks for.",
+      "audience_benefit": "",
+      "narration": "This is a cylindrical lockset, not an exit device. I choose that part type, and the app changes what it asks for and which photographs it wants.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S301.webm",
+      "narration_file": "elevenlabs/audio/S301.mp3",
+      "narration_script": "elevenlabs/scenes/S301.txt",
+      "caption": null,
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S302",
+      "chapter": "CH08",
+      "title": "Opening 2 — photographs, then the supplied function",
+      "purpose": "Record what the photographs support, then enter the supplied function on camera before any result.",
+      "audience_benefit": "",
+      "narration": "Three photographs: the lock on the door, the trim, and the latch. What they support is the shape of the thing. Lever trim, round rose, keyway in the lever. The function is not visible in any of them, so it is supplied for this demonstration: storeroom. I enter it with the rest.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S302.webm",
+      "narration_file": "elevenlabs/audio/S302.mp3",
+      "narration_script": "elevenlabs/scenes/S302.txt",
+      "caption": null,
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S303",
+      "chapter": "CH08",
+      "title": "Opening 2 — the app reaches the manufacturer; the technician supplies the model",
+      "purpose": "Show the app deciding the manufacturer and no further, then a technician selection in the catalogue.",
+      "audience_benefit": "",
+      "narration": "With those entries the app reaches Schlage and stops. Manufacturer established; family and model not, and flagged for review. The storeroom entry did that work, not the photographs. The model comes from me. I search N D eighty and take the mechanical one over the electrified version, and the app records a technician selection, not a recognition.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S303.webm",
+      "narration_file": "elevenlabs/audio/S303.mp3",
+      "narration_script": "elevenlabs/scenes/S303.txt",
+      "caption": null,
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S304",
+      "chapter": "CH08",
+      "title": "Opening 2 — condition, then door and frame",
+      "purpose": "Save the condition and the door-and-frame record.",
+      "audience_benefit": "",
+      "narration": "The catalogue entry carries what this lock is for: cylindrical, keyed, storeroom. Condition good, serviceable, saved. Then the door and frame, three feet by seven, wood in a hollow metal frame, saved as its own record.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S304.webm",
+      "narration_file": "elevenlabs/audio/S304.mp3",
+      "narration_script": "elevenlabs/scenes/S304.txt",
+      "caption": null,
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S305",
+      "chapter": "CH08",
+      "title": "Opening 2 — finished, nothing to order",
+      "purpose": "Finish the opening and show the scoped purchasing outcome.",
+      "audience_benefit": "",
+      "narration": "The recorded lockset is serviceable, so there is nothing to order for this opening.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S305.webm",
+      "narration_file": "elevenlabs/audio/S305.mp3",
+      "narration_script": "elevenlabs/scenes/S305.txt",
+      "caption": null,
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S312",
+      "chapter": "CH08",
+      "title": "Opening 3 — condition worn, part saved",
+      "purpose": "Record the demonstration condition and save the part.",
+      "audience_benefit": "",
+      "narration": "For this demonstration, I mark the device worn and save the part.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S312.webm",
+      "narration_file": "elevenlabs/audio/S312.mp3",
+      "narration_script": "elevenlabs/scenes/S312.txt",
+      "caption": null,
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S312A",
+      "chapter": "CH08",
+      "title": "Opening 3 — door and frame saved",
+      "purpose": "Save the door-and-frame record, which the finish gate requires.",
+      "audience_benefit": "",
+      "narration": "The opening also needs its door and frame: width, height, thickness, material, frame. I save that record.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S312A.webm",
+      "narration_file": "elevenlabs/audio/S312A.mp3",
+      "narration_script": "elevenlabs/scenes/S312A.txt",
+      "caption": null,
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S313",
+      "chapter": "CH08",
+      "title": "Opening 3 — finish, then purchasing review",
+      "purpose": "Finish the opening and open purchasing review, in that order.",
+      "audience_benefit": "",
+      "narration": "With the part and door-and-frame records saved, I finish the opening and open purchasing review.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S313.webm",
+      "narration_file": "elevenlabs/audio/S313.mp3",
+      "narration_script": "elevenlabs/scenes/S313.txt",
+      "caption": null,
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S401",
+      "chapter": "CH09",
+      "title": "Service call — reported, then observed",
+      "purpose": "Show reported and observed captured separately.",
+      "audience_benefit": "",
+      "narration": "What was reported, as it was given: door will not latch, reported by facilities. Then separately, what was observed. The door reaches the frame, and the latch does not engage.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S401.webm",
+      "narration_file": "elevenlabs/audio/S401.mp3",
+      "narration_script": "elevenlabs/scenes/S401.txt",
+      "caption": null,
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S402",
+      "chapter": "CH09",
+      "title": "Service call — likely causes, unconfirmed",
+      "purpose": "Show suspected causes held as field verification required.",
+      "audience_benefit": "",
+      "narration": "Then likely causes. Alignment, closer adjustment, latch wear. They stay marked field verification required until someone confirms one at the door.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S402.webm",
+      "narration_file": "elevenlabs/audio/S402.mp3",
+      "narration_script": "elevenlabs/scenes/S402.txt",
+      "caption": null,
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S403",
+      "chapter": "CH09",
+      "title": "Service call — work, parts, cost with a reference",
+      "purpose": "Show the cost refused without a reference, then accepted.",
+      "audience_benefit": "",
+      "narration": "Work performed, parts, and cost. The cost needs a work order or invoice reference; without one the record will not treat it as realized. Then the functional check: closes, latches, hardware operates.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S403.webm",
+      "narration_file": "elevenlabs/audio/S403.mp3",
+      "narration_script": "elevenlabs/scenes/S403.txt",
+      "caption": null,
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S404",
+      "chapter": "CH09",
+      "title": "Service call — outcome and compliance",
+      "purpose": "Show the outcome and the compliance deficiency remaining open.",
+      "audience_benefit": "",
+      "narration": "And the outcome. Resolved on this trip, or a return visit and why. That describes the visit, not the technician. A repair that addressed a compliance deficiency moves to repair complete, verification pending, and only a qualified verifier closes it.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S404.webm",
+      "narration_file": "elevenlabs/audio/S404.mp3",
+      "narration_script": "elevenlabs/scenes/S404.txt",
+      "caption": null,
+      "status": "Ready for review",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Wording frozen 18 Sep 2026 by Michelle. Frozen-set fingerprint 96bb9abfde7636a79690102421213b33e7aee92057b177750618af451bf1736c.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null
+    },
+    {
+      "scene_id": "S311",
+      "chapter": "CH08",
+      "title": "Opening 3 — stamp, catalogue search, family resolved to AF7700",
+      "purpose": "Show the technician resolving the family to the specific device before it is recorded.",
+      "audience_benefit": "",
+      "narration": "The stamp gives me Cal-Royal and no model. So I search the catalogue for A F seven seven hundred. It is listed as a family, and the two devices in it are not interchangeable, so I resolve the selection to the A F seven seven hundred before it is recorded.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S311.webm",
+      "narration_file": "elevenlabs/audio/S311.mp3",
+      "narration_script": "elevenlabs/scenes/S311.txt",
+      "caption": null,
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Provisional wording, 18 Sep 2026. NOT in run 16.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": true,
+      "provisional_reason": "Describes the corrected AF7700 search and the family resolving to AF7700 in the saved record. Neither exists in the build yet.",
+      "provisional_depends_on": "Verified against the working development build before generation. Not in run 16."
+    },
+    {
+      "scene_id": "S314",
+      "chapter": "CH08",
+      "title": "Opening 3 — the service provider cross-reference",
+      "purpose": "Show the provider mapping loaded with its revision and effective date.",
+      "audience_benefit": "",
+      "narration": "The service provider has given us a cross-reference from a manufacturer's product to their own ordering number, loaded here with its revision and the date it applies from.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S314.webm",
+      "narration_file": "elevenlabs/audio/S314.mp3",
+      "narration_script": "elevenlabs/scenes/S314.txt",
+      "caption": null,
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Provisional wording, 18 Sep 2026. NOT in run 16.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": true,
+      "provisional_reason": "Describes the provider mapping loaded with its revision and effective date. The import capability does not exist yet.",
+      "provisional_depends_on": "Verified against the working development build before generation. Not in run 16."
+    },
+    {
+      "scene_id": "S315",
+      "chapter": "CH08",
+      "title": "Opening 3 — SWFD-10183 in the purchasing review",
+      "purpose": "Show the ordering number beside the product and the opening, with nothing sent.",
+      "audience_benefit": "",
+      "narration": "So the review already carries it. S W F D one oh one eight three, beside the A F seven seven hundred on opening three ten C. Nothing is sent. This is the request for me to check.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S315.webm",
+      "narration_file": "elevenlabs/audio/S315.mp3",
+      "narration_script": "elevenlabs/scenes/S315.txt",
+      "caption": null,
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Provisional wording, 18 Sep 2026. NOT in run 16.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": true,
+      "provisional_reason": "Describes SWFD-10183 on the purchasing review beside the product and opening. That line does not exist yet.",
+      "provisional_depends_on": "Verified against the working development build before generation. Not in run 16."
+    },
+    {
+      "scene_id": "S316",
+      "chapter": "CH08",
+      "title": "Opening 3 — what the number does not do",
+      "purpose": "State the limit of a SKU mapping, and show the combined request still refused.",
+      "audience_benefit": "",
+      "narration": "That number is the provider's identifier for the product I selected. It says nothing about what is fitted to any door. And the combined request across every opening is still refused, because the closer on the first opening was never resolved.",
+      "screen_action": [],
+      "expected_visible_result": "",
+      "on_screen_values": [],
+      "required_source_assets": [],
+      "field_app_version": "FA-v40-drop14",
+      "demo_data_version": "OI-DEMO 1.8.0",
+      "screen_recording": "recordings/scenes/S316.webm",
+      "narration_file": "elevenlabs/audio/S316.mp3",
+      "narration_script": "elevenlabs/scenes/S316.txt",
+      "caption": null,
+      "status": "Draft",
+      "blocked_reason": null,
+      "last_modified": "2026-09-18",
+      "dependencies": [],
+      "rerecord_required": true,
+      "renarrate_required": true,
+      "in_master": true,
+      "still": null,
+      "overlay_card": null,
+      "est_seconds": 0,
+      "change_note": "Provisional wording, 18 Sep 2026. NOT in run 16.",
+      "history": [],
+      "notes": "",
+      "narration_provisional": true,
+      "provisional_reason": "Its combined-request claim is verified in source but has never been observed on a screen.",
+      "provisional_depends_on": "Verified against the working development build before generation. Not in run 16."
     }
   ],
   "directive_version": "1.1c",
@@ -2806,5 +3513,44 @@
       "sample_runtime_seconds": 69.799167,
       "why": "Derived from a single validation sample. Measured against the 24 real clips it runs about 9.6% fast. Corrected 15 Sep 2026."
     }
+  },
+  "review_baseline": {
+    "accepted": "2026-09-15",
+    "file": "builds/review/OpeningIntelligence_review_v0.37.0_106.mp4",
+    "scenes": 24,
+    "runtime": "7:22",
+    "bed": "elevenlabs/audio_preview_1p06x (1.06x, pitch preserved)",
+    "not": "NOT complete Trial 1. Seven scenes are held: S130 S130A S140 S180 S190A S210 S220. PC-7 is the critical-path blocker.",
+    "superseded": "The 23-scene native and 1.06x cuts. Their full-quality originals were deleted by accident on 2026-09-15 and cannot be reproduced; compressed copies are kept in archive/superseded_cuts/ with a note."
+  },
+  "cleanup_rule": "Before any deletion, enumerate the exact targets and run `python system/baseline.py plan <paths>`. It lists every file that would go and exits 2 if any is protected. It never deletes. Protected roots are listed in system/baseline.py and hashed in reports/baselines.json; `baseline.py check` verifies they are all present and unchanged.",
+  "audio_baseline": {
+    "approved": "2026-09-15",
+    "integrated_lufs": -16.05,
+    "loudness_range_lu": 3.8,
+    "true_peak_dbtp": -1.51,
+    "target": {
+      "integrated_lufs": -16.0,
+      "true_peak_dbtp": -1.0
+    },
+    "file": "builds/review/OpeningIntelligence_review_v0.37.0_106_mixed.mp4",
+    "untreated_picture_baseline": "builds/review/OpeningIntelligence_review_v0.37.0_106.mp4",
+    "process": "python system/mixdown.py --cut <cut> --modules <modules> --out <file>. Measurement-driven: it re-measures every scene module, re-derives the median anchor, and applies per-scene GAIN ONLY before the programme chain (light compression, two-pass linear loudnorm, true-peak limiter verified on the finished file). Compression settings are approved as-is and are not to be adjusted further without a request.",
+    "do_not": "Do NOT carry forward the gain figures from the 24-scene run. They belong to those modules. Every new scene is measured on its own; the anchor shifts as the seven held scenes join the median.",
+    "masters": "The 24 native masters are never read, normalised or re-encoded by this process."
+  },
+  "production_hold": {
+    "since": "2026-09-15",
+    "state": "HELD pending PC-7 and review feedback. No recording, narration generation, re-choreography, assembly or deletion until asked.",
+    "blocked_scenes": [
+      "S130",
+      "S130A",
+      "S140",
+      "S180",
+      "S190A",
+      "S210",
+      "S220"
+    ],
+    "blocker": "PC-7 — the controlled recognition test, outside the video workstream"
   }
 }
