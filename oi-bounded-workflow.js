@@ -563,6 +563,9 @@
     finishReasons, evaluate, payloadFor, hydrateDoorForm, logCounts,
     rebindOpeningControls: installOpeningFunctions,
   });
+  // Shared facility resolver for app features loaded in later script blocks.
+  // Return a copy so consumers cannot mutate the active selection.
+  window.oiActiveFacility = activeFacility;
 
   if (document.readyState === 'complete') init();
   else window.addEventListener('load', init, { once: true });

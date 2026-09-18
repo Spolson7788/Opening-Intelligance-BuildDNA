@@ -3221,7 +3221,7 @@ function captureRequests(cands,V,tokens,ctx){
       if(f.field.indexOf('marking')>=0&&refCompare(f,V,tokens).verdict==='match')markingSeen=true;
     });
   });
-  if(!markingSeen)add('Photograph any stamped model number, label, casting mark or logo on the body. Across these eight closers the printed identifier is the only feature that separates all of them at once.','visual',0);
+  if(!markingSeen)add('Photograph any stamped model number, label, casting mark or logo on the body. A readable marking may provide additional evidence for the manufacturer, family or model.','visual',0);
   var needPhoto=false,needClose=false,needMeasure=false,needCover=false;
   cands.forEach(function(c){
     refFeatures(c).forEach(function(f){
@@ -6794,8 +6794,10 @@ async function svcSave(){
   var msg=$('svcMsg'), btn=$('svcSaveBtn');
   function say(t,bad){ msg.textContent=t; msg.style.color=bad?'var(--critical, #d03b3b)':'var(--muted)'; }
 
-  // context comes from the same place the rest of the app uses
-  var fac = (typeof facility!=='undefined' && facility) ? facility : null;
+  // Resolve the selected facility through the same bounded-workflow accessor
+  // used by the opening record. The module-scoped `facility` binding above is
+  // intentionally not read from this later classic script.
+  var fac = (typeof window.oiActiveFacility==='function') ? window.oiActiveFacility() : null;
   var opn = ($('opnum') && $('opnum').value || '').trim();
   if(!fac || !fac.id){ say('Pick a facility first.',1); return; }
   if(!opn){ say('Enter the opening # first — the service call is recorded against the opening.',1); return; }
