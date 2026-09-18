@@ -489,7 +489,7 @@
     const blockedCount = (decision.blocked || []).length;
     exclusions.style.display = blockedCount ? 'block' : 'none';
     exclusions.textContent = blockedCount
-      ? blockedCount + ' item' + (blockedCount === 1 ? ' is' : 's are') + ' excluded from this request and remain open for identification or assistance.'
+      ? blockedCount + ' item' + (blockedCount === 1 ? ' is' : 's are') + ' excluded from this request and ' + (blockedCount === 1 ? 'remains' : 'remain') + ' open for identification or assistance.'
       : '';
     acknowledgeWrap.style.display = decision.requiresAcknowledgment ? 'block' : 'none';
     acknowledge.checked = false;
@@ -515,7 +515,7 @@
       const note = document.getElementById('oiBulkGateReason');
       if (note) {
         note.textContent = decision.allowed
-          ? decision.openingCount + ' opening' + (decision.openingCount === 1 ? '' : 's') + ' · ' + decision.parts.length + ' replacement part' + (decision.parts.length === 1 ? '' : 's') + ' eligible for review.' + (decision.requiresAcknowledgment ? ' ' + decision.blocked.length + ' item' + (decision.blocked.length === 1 ? ' is' : 's are') + ' excluded and require acknowledgment and follow-up.' : '')
+          ? decision.openingCount + ' opening' + (decision.openingCount === 1 ? '' : 's') + ' · ' + decision.parts.length + ' replacement part' + (decision.parts.length === 1 ? '' : 's') + ' eligible for review.' + (decision.requiresAcknowledgment ? ' ' + decision.blocked.length + ' item' + (decision.blocked.length === 1 ? ' is' : 's are') + ' excluded and ' + (decision.blocked.length === 1 ? 'requires' : 'require') + ' acknowledgment and follow-up.' : '')
           : 'Purchasing unavailable — ' + decision.reasons.join('; ');
         note.style.color = decision.allowed ? 'var(--good)' : 'var(--muted)';
       }

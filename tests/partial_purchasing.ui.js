@@ -69,6 +69,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     });
 
     const beforeStore = await page.evaluate(() => localStorage.getItem('oi_bounded_workflow_v1'));
+    await page.evaluate(() => window.oiRenderActions());
     await page.evaluate(() => window.sendLogToPurchasing());
 
     await check('eligible_310c_remains_orderable', async () => {
@@ -86,6 +87,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     });
     await check('acknowledgment_required_before_dispatch', async () => {
       assert.equal(await page.isVisible('#oiPurchaseAcknowledgeWrap'), true);
+      assert.match(await page.textContent('#oiBulkGateReason'), /1 item is excluded and requires acknowledgment and follow-up/);
+      assert.match(await page.textContent('#oiPurchaseExclusions'), /1 item is excluded from this request and remains open/);
       assert.equal(await page.isDisabled('#oiPurchaseDispatch'), true);
       await page.check('#oiPurchaseAcknowledge');
       assert.equal(await page.isDisabled('#oiPurchaseDispatch'), false);
