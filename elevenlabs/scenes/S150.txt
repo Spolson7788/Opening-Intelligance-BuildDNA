@@ -1,1 +1,1 @@
-For this demonstration, I'll mark the closer worn and enter a sample repair or replacement estimate of four hundred fifty dollars. Then I'll save the part and check the local record. The condition and estimate describe this demonstration entry; they do not establish the closer's model.
+For this demonstration I mark the closer worn and enter a provisional estimate of four hundred fifty dollars. The technician typed that figure; the app did not calculate it, and no product has been identified to price.

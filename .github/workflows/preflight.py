@@ -41,10 +41,18 @@ EXPECTED_SETTINGS = {"speed": 0.72, "stability": 0.60, "similarity_boost": 0.75,
 # authorization says. Leaving them stale is how a preflight blocks a run it was
 # never told about — which is what happened on 15 Sep 2026, when four scenes were
 # released from the recognition hold and this file still expected seven held.
-EXPECTED_READY = int(os.environ.get("OI_EXPECTED_READY", "28"))
+# Updated 18 Sep 2026 for run 16. The registry gained Opening 2 (6), Opening 3 (8)
+# and the service call (5): 28 -> 43 ready, and the four provisional Opening 3
+# scenes join the held set. Run 16 is SCOPED to 16 of the 43 via the workflow's
+# `scenes` input; this number is the registry's shape, not the run's size.
+EXPECTED_READY = int(os.environ.get("OI_EXPECTED_READY", "43"))
 APPROVED_FORMAT = "mp3_44100_128"
 MASTER_CONTAINER = "mp3"
-HELD = set(os.environ.get("OI_HELD", "S130 S130A S140").split())
+# S130/S130A/S140 wait on the PC-7 recognition result. S311/S314/S315/S316
+# describe screens that do not exist in the build yet and are verified against
+# it before they are ever generated.
+HELD = set(os.environ.get(
+    "OI_HELD", "S130 S130A S140 S311 S314 S315 S316").split())
 
 
 def main():

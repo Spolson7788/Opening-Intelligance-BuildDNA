@@ -1,0 +1,99 @@
+Opening Intelligence, or OI, helps you identify commercial door hardware and organize the information about each opening—from the products installed to the service work performed.
+
+Let's walk through one demonstration opening. I'll enter its details, add reference photographs, and record the visible attributes. We'll review what OI reports, distinguish a technician's product selection from image recognition, consult manufacturer references, and save the hardware records locally. We'll also see why no purchasing request can be prepared while the closer's model is unresolved.
+
+Opening Intelligence—commercial door hardware identified right at the opening.
+
+Let's start with this door. I'll choose the facility, then enter its location and opening number.
+
+There's no facility on this device yet, so I'll add one: Valley Medical Center, a healthcare facility. Once it's created, I select it, and the opening records I save from here belong to it.
+
+For the location, I'm entering East corridor.
+
+And this is opening two zero five A. The facility and opening are records I just created; the images are reference images, as the label says. The hardware and door-and-frame records attach to this opening and stay on this device. This local-only build doesn't synchronize, and it doesn't retain the photographs as opening records.
+
+The how-to guide is here if you need a reminder. There's also a field for whether the opening is fire-rated. A fire-rated exit device alone does not establish the rating of the whole opening. For this demonstration, I'll leave that field unchecked.
+
+Let's start with the closer.
+
+The field guide normally asks for the whole closer on the door. For this demonstration, I'm using an approved product reference image.
+
+I enter the visible closer attributes: its type, mounting, arm configuration, cover, and any legible manufacturer stamp. I leave anything I can't establish unknown. In this demonstration, OI works from those entries; no photograph is being analyzed.
+
+Now let's review the result from those entries.
+
+OI analyzes the photographs together with the visible attributes I entered and tells me how far the evidence goes. Surface-mounted closer, manufacturer Cal-Royal, family C R four forty-one—and then it stops. Model: not established. This family has look-alikes, and nothing in the evidence separates them yet. It reports the level it can defend, not the one I'd like.
+
+And it doesn't leave it there. It names what would settle it: photograph the stamp on the body, because across this family the printed identifier is the one thing that separates them.
+
+I review the result before saving the closer. If the exact model isn't established, I leave it unresolved. A model I enter myself is technician-supplied information, not a model recognized from these photographs.
+
+Let's open the manufacturer's document for that family. This is Cal-Royal's own C R four forty-one installation sheet—the standard, top jamb and parallel mounting options, the maximum door width and spring power table, and how the hand of the door is defined. Even before the exact model is pinned down, the family document is what you check the hardware against while you're still standing at the door.
+
+For this demonstration I mark the closer worn and enter a provisional estimate of four hundred fifty dollars. The technician typed that figure; the app did not calculate it, and no product has been identified to price.
+
+Condition is recorded part by part: serviceable, worn, or failed. I'm recording what I found at this opening, and it stays attached to this part on this record.
+
+Next is the exit device on this same door.
+
+The guide calls for three views: the whole device, the end cap or chassis stamp, and the outside trim. Here I'm adding catalogue and supplied reference photographs for the demonstration. No photo recognition is being run.
+
+Same process for the device. Using the photographs and the visible attributes I entered, OI establishes Cal-Royal as the manufacturer. It does not establish the exact family or model—several candidates it can't separate, and it says so rather than picking one. The stamp here is legible, so I'll look the model up: A F seventy-seven hundred. There it is—Cal-Royal's A seventy-seven hundred, A F seventy-seven hundred rim exit device. Choosing it sets the part type and the manufacturer, and OI records it as my selection, not as something it recognized.
+
+The trim on the outside of the door belongs to this exit device—it isn't a separate lock. It's a rigid lever escutcheon, so I'll record it here as the outside trim, and whoever reads this record later knows how the door is worked from the pull side.
+
+So the record shows both. OI got to the manufacturer and stopped; the A F seventy-seven hundred came from me. It's marked a technician selection, OI's own result is kept underneath it unchanged, and the manufacturer's document opens from here—supporting the product I selected. Same habit as the closer: check what's installed against what the manufacturer published, while we're still at the door.
+
+This one is in good shape — serviceable — so I'll record that and save the part. It's on the record for this opening, but nothing about recording it says it needs replacing.
+
+Now the hinges on this same door. Three shots again: the full hinge with the door open, the knuckle close-up, and the leaf stamp. OI analyzes them, and I add what I can see—knuckle count, bearing type, leaf profile, pin type. Hinges are hard from a photograph alone, and OI is straight about that: it tells us where it lands, and flags it for review rather than guessing.
+
+OI hasn't established the exact hinge model. The cut-sheet link belongs to a candidate, so OI correctly keeps it locked until the product is supported and selected. So I'll look up eyes five bee bee one and select it. OI preserves its original result and records that I made the selection using the manufacturer's documentation. Now I can open that document directly from the selected product. These hinges are serviceable, so I'll save them. The confirmation shows that five bee bee one was technician-selected, not recognized from the image.
+
+We've recorded the hardware. Now the door and frame it hangs on. The door is hollow metal, thirty-six by eighty-four, one and three-quarter inches thick, left-hand, in a hollow metal frame. Those are illustrative values for this walkthrough — on a real survey they're what you measured at the door. I'll save them, then close the panel and open it again, so we can see the record came back from storage.
+
+Let's check what we have before we finish: the closer, the exit device with its outside trim, the hinges, and the door and frame—all on opening two zero five A. Now I'll finish the opening.
+
+With the opening finished, purchasing is still locked, and the app says why: the closer's replacement identity is not gate-approved. It's the only part in poor condition, and its model was never established, so a request would have to name a product no one confirmed. The exit device and hinges are technician-selected. Both are serviceable, so neither is eligible for a replacement request.
+
+The service provider supplies OI with a cross-reference linking the manufacturer's product to the service provider's purchasing SKU. That cross-reference does not identify the installed hardware. Importing or applying it is not demonstrated here. No purchasing request was produced.
+
+That's our demonstration for one opening: reference photographs, visible attributes, OI's reported result, technician-selected products, manufacturer references, and hardware records saved locally. The distinction stays clear: a product selected by a technician is not a product recognized from an image.
+
+Two zero five A is finished. This next door is on a different corridor, so I enter both fields myself: West corridor, opening three ten B.
+
+One more door on the same corridor: opening three ten C. An exit device, and this is the replacement case.
+
+A record is not closed the day it is written. This is opening three ten B, and a complaint has come in against it. Everything that follows is demonstration data. I open the record and log a service call; the opening gains an event.
+
+This is a cylindrical lockset, not an exit device. I choose that part type, and the app changes what it asks for and which photographs it wants.
+
+Three photographs: the lock on the door, the trim, and the latch. What they support is the shape of the thing. Lever trim, round rose, keyway in the lever. The function is not visible in any of them, so it is supplied for this demonstration: storeroom. I enter it with the rest.
+
+With those entries the app reaches Schlage and stops. Manufacturer established; family and model not, and flagged for review. The storeroom entry did that work, not the photographs. The model comes from me. I search N D eighty and take the mechanical one over the electrified version, and the app records a technician selection, not a recognition.
+
+The catalogue entry carries what this lock is for: cylindrical, keyed, storeroom. Condition good, serviceable, saved. Then the door and frame, three feet by seven, wood in a hollow metal frame, saved as its own record.
+
+The recorded lockset is serviceable, so there is nothing to order for this opening.
+
+For this demonstration, I mark the device worn and save the part.
+
+The opening also needs its door and frame: width, height, thickness, material, frame. I save that record.
+
+With the part and door-and-frame records saved, I finish the opening and open purchasing review.
+
+What was reported, as it was given: door will not latch, reported by facilities. Then separately, what was observed. The door reaches the frame, and the latch does not engage.
+
+Then likely causes. Alignment, closer adjustment, latch wear. They stay marked field verification required until someone confirms one at the door.
+
+Work performed, parts, and cost. The cost needs a work order or invoice reference; without one the record will not treat it as realized. Then the functional check: closes, latches, hardware operates.
+
+And the outcome. Resolved on this trip, or a return visit and why. That describes the visit, not the technician. A repair that addressed a compliance deficiency moves to repair complete, verification pending, and only a qualified verifier closes it.
+
+The stamp gives me Cal-Royal and no model. So I search the catalogue for A F seven seven hundred. It is listed as a family, and the two devices in it are not interchangeable, so I resolve the selection to the A F seven seven hundred before it is recorded.
+
+The service provider has given us a cross-reference from a manufacturer's product to their own ordering number, loaded here with its revision and the date it applies from.
+
+So the review already carries it. S W F D one oh one eight three, beside the A F seven seven hundred on opening three ten C. Nothing is sent. This is the request for me to check.
+
+That number is the provider's identifier for the product I selected. It says nothing about what is fitted to any door. And the combined request across every opening is still refused, because the closer on the first opening was never resolved.
