@@ -8,6 +8,8 @@ Authoritative base: `feat/paired-opening-data-model` at
 - Frames, door leaves, installed components, opening completion, service events,
   inspection events, and photographs are written to IndexedDB before network work.
 - Mutations carry stable client operation IDs and flush in capture order.
+- New frames and leaves retain immutable client-generated IDs, so components
+  captured offline can reference their parents before either reaches the server.
 - Hardware and photograph confirmation are idempotent at the API/database boundary.
 - Photo object keys reuse the client operation ID, preventing duplicate stored
   objects when presign, upload, or confirmation is retried.
@@ -16,6 +18,7 @@ Authoritative base: `feat/paired-opening-data-model` at
 - HTTP 409 responses remain locally preserved as conflicts instead of being
   discarded or repeatedly submitted.
 - Cached opening structure is updated immediately for offline frame and leaf work.
+- Pending opening completion is persisted in the local opening cache across restart.
 - Server-side storage-key validation prevents cross-tenant/cross-opening binding.
 
 ## Migration and rollback

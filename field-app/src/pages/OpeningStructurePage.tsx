@@ -11,6 +11,10 @@ export function OpeningStructurePage() {
   const opening = (location.state as any)?.opening;
   const configuration = opening?.opening_configuration ?? "single";
   const roles = configuration === "pair" ? ["active", "inactive"] : ["single"];
+  const [frameId] = useState(opening?.frame?.id ?? crypto.randomUUID());
+  const [leafIds] = useState<Record<string, string>>(() => Object.fromEntries(
+    roles.map((leafRole) => [leafRole, opening?.door_leaves?.find((leaf: any) => leaf.leaf_role === leafRole)?.id ?? crypto.randomUUID()])
+  ));
   const [frameMaterial, setFrameMaterial] = useState(opening?.frame?.material ?? "");
   const [leafMaterial, setLeafMaterial] = useState("");
   const [handing, setHanding] = useState("");
@@ -20,8 +24,8 @@ export function OpeningStructurePage() {
   async function saveFrame() {
     setMessage("Saving frame…");
     try {
-      await queueOpeningMutation("opening_frame", id!, { material: frameMaterial || undefined, condition: "unverified" });
-      await updateCachedOpening(id!, (cached) => ({ ...cached, frame: { ...cached.frame, material: frameMaterial || null, condition: "unverified", pending_sync: true } }));
+      await queueOpeningMutation("opening_frame", id!, { id: frameId, material: frameMaterial || undefined, condition: "unverified" });
+      await updateCachedOpening(id!, (cached) => ({ ...cached, frame: { ...cached.frame, id: frameId, material: frameMaterial || null, condition: "unverified", pending_sync: true } }));
       setMessage("Frame saved locally. It will synchronize automatically.");
     } catch {
       setMessage("Frame was not saved. Check the connection and try again.");
@@ -32,13 +36,14 @@ export function OpeningStructurePage() {
     setMessage(`Saving ${role} leaf…`);
     try {
       await queueOpeningMutation("door_leaf", id!, {
+        id: leafIds[role],
         leaf_role: role,
         material: leafMaterial || undefined,
         handing: handing || undefined,
         condition: "unverified",
       });
       await updateCachedOpening(id!, (cached) => {
-        const pending = { id: `local-${role}`, leaf_role: role, material: leafMaterial || null, handing: handing || null, condition: "unverified", pending_sync: true };
+        const pending = { id: leafIds[role], leaf_role: role, material: leafMaterial || null, handing: handing || null, condition: "unverified", pending_sync: true };
         const leaves = [...(cached.door_leaves || []).filter((leaf: any) => leaf.leaf_role !== role), pending];
         return { ...cached, door_leaves: leaves };
       });

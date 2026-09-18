@@ -5,6 +5,27 @@ import { app, createPortfolioHierarchy, createTestOpening, signupTestOrg } from 
 import { buildStorageKey, isStorageKeyInOpeningScope } from "../src/services/storage";
 
 describe("offline synchronization and photograph retention", () => {
+  it("preserves client-generated parent IDs for an offline leaf-to-component chain", async () => {
+    const org = await signupTestOrg();
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId, { opening_configuration: "single" });
+    const frameId = randomUUID();
+    const leafId = randomUUID();
+    const frame = await request(app).put(`/api/openings/${opening.id}/frame`).set("Authorization", `Bearer ${org.token}`).send({ id: frameId, material: "Steel" });
+    const leaf = await request(app).post(`/api/openings/${opening.id}/door-leaves`).set("Authorization", `Bearer ${org.token}`).send({ id: leafId, leaf_role: "single", material: "Steel" });
+    const component = await request(app).post("/api/hardware").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: opening.id,
+      component_type: "closer",
+      mounting_scope: "door_leaf",
+      door_leaf_id: leafId,
+      client_operation_id: randomUUID(),
+    });
+    expect(frame.body.id).toBe(frameId);
+    expect(leaf.body.id).toBe(leafId);
+    expect(component.status).toBe(201);
+    expect(component.body.door_leaf_id).toBe(leafId);
+  });
+
   it("uses a stable client operation id for retry-safe object keys", () => {
     const operationId = randomUUID();
     const first = buildStorageKey("org-a", "opening-a", "image/jpeg", operationId);

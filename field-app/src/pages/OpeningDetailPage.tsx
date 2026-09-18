@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto } from "../lib/api";
-import { getPhotoOutboxForOpening } from "../lib/db";
+import { getPhotoOutboxForOpening, updateCachedOpening } from "../lib/db";
 import type { PhotoOutboxItem } from "../lib/db";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
 import { SyncBadge } from "../components/SyncBadge";
@@ -59,6 +59,7 @@ export function OpeningDetailPage() {
   async function handleCompleteOpening() {
     try {
       await queueOpeningMutation("complete_opening", opening.id, {});
+      await updateCachedOpening(opening.id, (cached) => ({ ...cached, completion_state: "pending_sync" }));
       setOpening({ ...opening, completion_state: "pending_sync" });
     } catch (err: any) {
       window.alert(err?.message === "opening_incomplete" ? "Save the frame, every door leaf, and review all hardware first." : "Opening could not be completed.");
