@@ -143,6 +143,17 @@ export async function updatePhotoOutboxItem(item: PhotoOutboxItem) {
   await db.put("photoOutbox", item);
 }
 
+export async function retryOutboxItem(id: string, photo: boolean) {
+  const db = await getDb();
+  if (photo) {
+    const item = await db.get("photoOutbox", id);
+    if (item) await db.put("photoOutbox", { ...item, status: "pending", lastError: undefined });
+    return;
+  }
+  const item = await db.get("outbox", id);
+  if (item) await db.put("outbox", { ...item, status: "pending", lastError: undefined });
+}
+
 export async function saveAuth(auth: { token: string; userId: string; organizationId: string; role: string }) {
   const db = await getDb();
   await db.put("auth", { ...auth, savedAt: Date.now() }, "current");

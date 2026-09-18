@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { fetchOpening } from "../lib/api";
 import { queueOpeningMutation } from "../lib/sync";
+import { updateCachedOpening } from "../lib/db";
 import { CARRIER_OPTIONS } from "../lib/tracking";
 import { SyncBadge } from "../components/SyncBadge";
 
@@ -69,7 +70,9 @@ export function LogHardwarePage() {
     setError(null);
     try {
       const operationId = crypto.randomUUID();
-      await queueOpeningMutation("hardware_component", id!, {
+      const componentId = crypto.randomUUID();
+      const payload = {
+        id: componentId,
         opening_id: id,
         component_type: componentType,
         manufacturer: manufacturer || undefined,
@@ -91,7 +94,17 @@ export function LogHardwarePage() {
         identity_status: identityStatus,
         review_state: reviewState,
         replacement_required: replacementRequired,
+      };
+      await queueOpeningMutation("hardware_component", id!, {
+        ...payload,
       }, operationId);
+      await updateCachedOpening(id!, (cached) => ({
+        ...cached,
+        hardware_components: [
+          ...(cached.hardware_components || []).filter((item: any) => item.id !== componentId),
+          { ...payload, pending_sync: true },
+        ],
+      }));
       setSaved(true);
       setTimeout(() => navigate(`/opening/${id}`), 700);
     } catch {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { onSyncStateChange } from "../lib/sync";
 import type { SyncState } from "../lib/sync";
+import { Link } from "react-router-dom";
 
 export function SyncBadge() {
   const [online, setOnline] = useState(navigator.onLine);
@@ -32,11 +33,11 @@ export function SyncBadge() {
   }
 
   if (syncState.conflicts > 0) {
-    return <span className="badge badge-offline" title="Saved locally; review is required before synchronization can continue">{syncState.conflicts} conflict{syncState.conflicts === 1 ? "" : "s"}</span>;
+    return <Link to="/sync-issues" className="badge badge-offline" title="Saved locally; review is required before synchronization can continue">{syncState.conflicts} conflict{syncState.conflicts === 1 ? "" : "s"}</Link>;
   }
 
   if (syncState.failed > 0) {
-    return <span className="badge badge-offline" title="Saved locally; synchronization will retry">{syncState.failed} retrying</span>;
+    return <Link to="/sync-issues" className="badge badge-offline" title="Saved locally; synchronization will retry">{syncState.failed} retrying</Link>;
   }
 
   if (syncState.pending > 0) {

@@ -8,8 +8,9 @@ Authoritative base: `feat/paired-opening-data-model` at
 - Frames, door leaves, installed components, opening completion, service events,
   inspection events, and photographs are written to IndexedDB before network work.
 - Mutations carry stable client operation IDs and flush in capture order.
-- New frames and leaves retain immutable client-generated IDs, so components
-  captured offline can reference their parents before either reaches the server.
+- New frames, leaves, and installed components retain immutable client-generated
+  IDs, so dependent components and photographs can reference their parents
+  before either reaches the server.
 - Hardware and photograph confirmation are idempotent at the API/database boundary.
 - Photo object keys reuse the client operation ID, preventing duplicate stored
   objects when presign, upload, or confirmation is retried.

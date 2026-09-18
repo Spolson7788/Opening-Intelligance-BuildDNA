@@ -26,6 +26,21 @@ describe("offline synchronization and photograph retention", () => {
     expect(component.body.door_leaf_id).toBe(leafId);
   });
 
+  it("preserves a client-generated component ID for offline photographs", async () => {
+    const org = await signupTestOrg();
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId);
+    const componentId = randomUUID();
+    const result = await request(app).post("/api/hardware").set("Authorization", `Bearer ${org.token}`).send({
+      id: componentId,
+      opening_id: opening.id,
+      component_type: "closer",
+      client_operation_id: randomUUID(),
+    });
+    expect(result.status).toBe(201);
+    expect(result.body.id).toBe(componentId);
+  });
+
   it("uses a stable client operation id for retry-safe object keys", () => {
     const operationId = randomUUID();
     const first = buildStorageKey("org-a", "opening-a", "image/jpeg", operationId);

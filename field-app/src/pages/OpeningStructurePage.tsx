@@ -64,7 +64,7 @@ export function OpeningStructurePage() {
         <div className="section-label">Frame</div>
         <div className="field"><label htmlFor="frame-material">Material</label><input id="frame-material" value={frameMaterial} onChange={(e) => setFrameMaterial(e.target.value)} /></div>
         <button className="btn btn-secondary" onClick={saveFrame}>Save frame</button>
-        {opening?.frame?.id && <div style={{ marginTop: 10 }}><PhotoCapture openingId={id!} relatedEntityType="frame" relatedEntityId={opening.frame.id} onQueued={() => setMessage("Frame photograph saved locally.")} /></div>}
+        <div style={{ marginTop: 10 }}><PhotoCapture openingId={id!} relatedEntityType="frame" relatedEntityId={frameId} onQueued={() => setMessage("Frame photograph saved locally.")} /></div>
       </div>
       <div className="card">
         <div className="section-label">Door leaf</div>
@@ -72,9 +72,7 @@ export function OpeningStructurePage() {
         <div className="field"><label htmlFor="leaf-material">Material</label><input id="leaf-material" value={leafMaterial} onChange={(e) => setLeafMaterial(e.target.value)} /></div>
         <div className="field"><label htmlFor="handing">Handing</label><input id="handing" value={handing} onChange={(e) => setHanding(e.target.value)} /></div>
         <button className="btn btn-secondary" onClick={saveLeaf}>Save {role} leaf</button>
-        {opening?.door_leaves?.filter((leaf: any) => leaf.leaf_role === role).map((leaf: any) => (
-          <div key={leaf.id} style={{ marginTop: 10 }}><PhotoCapture openingId={id!} relatedEntityType="door_leaf" relatedEntityId={leaf.id} onQueued={() => setMessage(`${role} leaf photograph saved locally.`)} /></div>
-        ))}
+        <div style={{ marginTop: 10 }}><PhotoCapture openingId={id!} relatedEntityType="door_leaf" relatedEntityId={leafIds[role]} onQueued={() => setMessage(`${role} leaf photograph saved locally.`)} /></div>
       </div>
       {message && <p>{message}</p>}
     </div>
