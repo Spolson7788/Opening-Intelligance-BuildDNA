@@ -12,6 +12,9 @@ Branch: `feat/offline-sync-photo-retention`
   screen with an explicit retry-after-review action.
 - The server continues to validate that every frame, leaf, component, photo,
   and storage key belongs to the authenticated opening and organization.
+- Supabase Data API access is denied by enabling RLS on all 17 application
+  tables without granting direct browser policies; OI continues to enforce
+  tenant scope through its authenticated server API.
 
 ## Automated verification
 
