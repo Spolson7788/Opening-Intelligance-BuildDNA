@@ -2,10 +2,10 @@
  "generated": "2026-09-18",
  "video_version": "0.42.0",
  "voice": {
-  "_status": "LOCKED. Validation sample approved by Michelle on 2026-09-14; voice ID and settings locked for the OI Modular Video Production System. Every narration clip in every chapter \u2014 Trial 1 and everything after it \u2014 is generated at exactly these values. Changing any one of them invalidates every existing clip and requires regenerating all of them in a single session, plus a minor version bump on the video system.",
+  "_status": "LOCKED. Validation sample approved by Michelle on 2026-09-14; voice ID and settings locked for the OI Modular Video Production System. Every narration clip in every chapter — Trial 1 and everything after it — is generated at exactly these values. Changing any one of them invalidates every existing clip and requires regenerating all of them in a single session, plus a minor version bump on the video system.",
   "voice_name": "Amy - Natural and Sweet",
   "voice_id": "OZxMHsGaBmV5pjMIDIn0",
-  "voice_kind": "pvc (professional voice clone) \u2014 from the sample filename",
+  "voice_kind": "pvc (professional voice clone) — from the sample filename",
   "model_id": "eleven_multilingual_v2",
   "settings": {
    "speed": 0.72,
@@ -16,7 +16,7 @@
   },
   "_settings_provenance": {
    "source": "the sample filename ElevenLabs_2026-09-14T21_35_46_Amy_-_Natural_and_Sweet_pvc_sp72_s60_sb75_se0_b_m2.mp3, cross-checked against the settings screenshot",
-   "sp72_s60_sb75_se0": "speed 0.72 \u00b7 stability 0.60 \u00b7 similarity_boost 0.75 \u00b7 style 0.0 \u2014 each written as a percentage in the filename",
+   "sp72_s60_sb75_se0": "speed 0.72 · stability 0.60 · similarity_boost 0.75 · style 0.0 — each written as a percentage in the filename",
    "screenshot_agrees": "Speed near the left of its 0.7-1.2 track, Stability just past the middle, Similarity high, Style Exaggeration at None",
    "use_speaker_boost": "USER-APPROVED PRODUCTION SETTING. Michelle approved speaker boost ON for all Trial 1 narration on 2026-09-14: 'Speaker boost is explicitly approved on for all Trial 1 narration. Treat this as the production setting, not an inference from the reference filename.' It is no longer inferred from the `_b_` token in the reference sample's filename; that token is now corroboration, not the basis. The VALUE is unchanged (true), so the lock fingerprint is unchanged.",
    "m2": "eleven_multilingual_v2"
@@ -33,11 +33,11 @@
     "bit_rate_bps": 193908
    },
    "sha256": "a6e788c64907c6b5bf34216fa09726791100dcb248f1996d3ce40dcf85bdd8b7",
-   "verified": "Probed with ffprobe rather than taken on trust \u2014 every stated value matches.",
+   "verified": "Probed with ffprobe rather than taken on trust — every stated value matches.",
    "status": "APPROVED on 2026-09-14 and preserved as the voice reference for the OI Modular Video Production System. Any future question about whether a clip matches the approved voice is answered against this file.",
    "not": "This is NOT Trial 1 narration. It is a terminology and delivery test, and it is never cut into the video.",
-   "previous_filename": "VALIDATION_SAMPLE_pending_approval.mp3 \u2014 renamed once Michelle designated it the voice-reference sample. Same file; sha256 verified identical across the rename.",
-   "approved_by": "Michelle \u2014 'The validation sample is approved.'"
+   "previous_filename": "VALIDATION_SAMPLE_pending_approval.mp3 — renamed once Michelle designated it the voice-reference sample. Same file; sha256 verified identical across the rename.",
+   "approved_by": "Michelle — 'The validation sample is approved.'"
   },
   "output_format": {
    "preferred": {
@@ -46,7 +46,7 @@
     "sample_rate": 44100,
     "bit_rate_kbps": 128,
     "channels": 1,
-    "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+    "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
     "lossy": true,
     "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
    },
@@ -69,12 +69,12 @@
    "effect": "The old figure ran 5.1% fast. Every scene estimate is now derived from this measurement.",
    "note": "Re-measure if the voice, model or speed setting changes. Speed 0.72 is well below the 1.0 default and is a large part of why."
   },
-  "delivery_naming": "elevenlabs/audio/<SCENE_ID>.wav (or .mp3) \u2014 for example elevenlabs/audio/S130.wav",
+  "delivery_naming": "elevenlabs/audio/<SCENE_ID>.wav (or .mp3) — for example elevenlabs/audio/S130.wav",
   "generation_rules": [
    "Generate the validation sample first and get it approved. Nothing else until then.",
    "Use the exact same voice, model and settings for every scene clip. No per-scene adjustment, for any reason.",
    "Generate every clip in one session with identical settings. Clips generated weeks apart drift in tone and the cut hears it.",
-   "One clip per scene. Never one long read sliced afterwards \u2014 that is what makes a one-line correction expensive.",
+   "One clip per scene. Never one long read sliced afterwards — that is what makes a one-line correction expensive.",
    "Never speed the voice up to fit a picture. The picture is cut to the speech.",
    "Never change settings to make a clip louder. Normalise at assembly.",
    "Model, settings and format are written into elevenlabs/generation_manifest.json on every `scripts` run, so any clip can be reproduced exactly."
@@ -84,7 +84,7 @@
   "lock": {
    "state": "LOCKED",
    "locked_on": "2026-09-14",
-   "locked_by": "Michelle \u2014 'The validation sample is approved. Lock this voice ID and these settings for the OI modular video system.'",
+   "locked_by": "Michelle — 'The validation sample is approved. Lock this voice ID and these settings for the OI modular video system.'",
    "scope": "The whole OI Modular Video Production System, not Trial 1 alone.",
    "fingerprint_sha256": "6de1f549a5cca453b174c9d6a5527a723e5e64185ed175ba17d111952b44ecb2",
    "fingerprint_covers": [
@@ -95,7 +95,7 @@
    "how_to_verify": "python system/oi_video.py voicecheck",
    "change_procedure": [
     "A change to any locked value is a system-level change, not a scene edit.",
-    "Every clip already generated becomes invalid \u2014 tone drifts audibly between settings, and a half-regenerated cut is worse than either.",
+    "Every clip already generated becomes invalid — tone drifts audibly between settings, and a half-regenerated cut is worse than either.",
     "Re-measure words-per-second from a new validation sample; every scene duration estimate is derived from it.",
     "Regenerate all clips in one session, then rebuild every scene."
    ]
@@ -127,7 +127,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -168,7 +168,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -209,7 +209,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -250,7 +250,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -291,7 +291,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -332,7 +332,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -373,7 +373,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -414,7 +414,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -455,7 +455,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -496,7 +496,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -537,7 +537,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -578,7 +578,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -619,7 +619,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -634,7 +634,7 @@
    "in_master": true,
    "narration_provisional": true,
    "provisional_reason": "Asserts the recognition RESULT: manufacturer Cal-Royal, family CR441, model not established. Three narration variants exist; the controlled recognition test (PC-7) selects which is spoken.",
-   "provisional_depends_on": "PC-7 \u2014 controlled recognition test (not run)"
+   "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
   },
   {
    "scene_id": "S130A",
@@ -660,7 +660,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -675,7 +675,7 @@
    "in_master": true,
    "narration_provisional": true,
    "provisional_reason": "Describes the specific evidence OI asks for, which only exists if the result lands at family level. Follows whichever variant S130 takes.",
-   "provisional_depends_on": "PC-7 \u2014 controlled recognition test (not run)"
+   "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
   },
   {
    "scene_id": "S130B",
@@ -701,7 +701,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -742,7 +742,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -783,7 +783,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -798,7 +798,7 @@
    "in_master": true,
    "narration_provisional": true,
    "provisional_reason": "Framed on the closer resolving at FAMILY level ('even before the exact model is pinned down'). If the test establishes the model, the framing changes.",
-   "provisional_depends_on": "PC-7 \u2014 controlled recognition test (not run)"
+   "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
   },
   {
    "scene_id": "S150",
@@ -824,7 +824,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -865,7 +865,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -906,7 +906,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -947,7 +947,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -970,8 +970,8 @@
    "audio": "elevenlabs/audio/S180.mp3",
    "audio_present": false,
    "renarrate_required": true,
-   "words": 97,
-   "estimated_seconds": 46.7,
+   "words": 90,
+   "estimated_seconds": 47.39,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -988,7 +988,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1003,7 +1003,9 @@
    "in_master": true,
    "narration_provisional": false,
    "provisional_reason": "Asserts the device result: Cal-Royal established, family and model not established, eight unresolved candidates. Subject to what the deployed recognition service returns.",
-   "provisional_depends_on": "PC-7 \u2014 controlled recognition test (not run)"
+   "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
+   "script_sha256_frozen": "c97621be7ed0241a37f69a844b5ff8dfad0acd2fa83dbc09f4e23f4d61d9120a",
+   "characters_frozen": 514
   },
   {
    "scene_id": "S190",
@@ -1029,7 +1031,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1070,7 +1072,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1085,7 +1087,7 @@
    "in_master": true,
    "narration_provisional": false,
    "provisional_reason": "Rests on the AF7700 being technician-selected rather than recognized. Acceptance criterion requires re-review if the test later establishes it from the photographs.",
-   "provisional_depends_on": "PC-7 \u2014 controlled recognition test (not run)"
+   "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
   },
   {
    "scene_id": "S200",
@@ -1111,7 +1113,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1152,7 +1154,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1166,8 +1168,8 @@
    "status": "Draft",
    "in_master": true,
    "narration_provisional": false,
-   "provisional_reason": "Characterises the hinge outcome ('hinges are hard from a photograph alone\u2026 it tells us where it lands'). Subject to the recorded result.",
-   "provisional_depends_on": "PC-7 \u2014 controlled recognition test (not run)"
+   "provisional_reason": "Characterises the hinge outcome ('hinges are hard from a photograph alone… it tells us where it lands'). Subject to the recorded result.",
+   "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
   },
   {
    "scene_id": "S220",
@@ -1193,7 +1195,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1207,8 +1209,8 @@
    "status": "Draft",
    "in_master": true,
    "narration_provisional": false,
-   "provisional_reason": "Wording is approved. Held for two reasons: the measured ElevenLabs duration must be fitted to the extended picture before the scene is approved, and the approved opening states what OI has NOT established \u2014 itself a recognition outcome, subject to PC-7.",
-   "provisional_depends_on": "the measured S220 clip duration (voice ID still required), and PC-7 \u2014 controlled recognition test (not run)"
+   "provisional_reason": "Wording is approved. Held for two reasons: the measured ElevenLabs duration must be fitted to the extended picture before the scene is approved, and the approved opening states what OI has NOT established — itself a recognition outcome, subject to PC-7.",
+   "provisional_depends_on": "the measured S220 clip duration (voice ID still required), and PC-7 — controlled recognition test (not run)"
   },
   {
    "scene_id": "S230",
@@ -1234,7 +1236,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1275,7 +1277,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1316,7 +1318,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1357,7 +1359,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1398,7 +1400,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1439,7 +1441,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1480,7 +1482,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1521,7 +1523,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1562,7 +1564,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1603,7 +1605,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1644,7 +1646,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1685,7 +1687,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1726,7 +1728,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1767,7 +1769,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1808,7 +1810,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1831,8 +1833,8 @@
    "audio": "elevenlabs/audio/S303.mp3",
    "audio_present": false,
    "renarrate_required": true,
-   "words": 57,
-   "estimated_seconds": 27.4,
+   "words": 55,
+   "estimated_seconds": 28.96,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -1849,7 +1851,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1865,20 +1867,19 @@
    "narration_provisional": false,
    "provisional_reason": null,
    "provisional_depends_on": null,
+   "script_sha256_frozen": "4e830b068a26084dd7b112edf0c6eea37c396c5ed483c3deeb159349afe874f8",
+   "characters_frozen": 326,
    "pronunciation_overrides": [
     {
      "find": "Schlage",
      "replace": "Shlayg",
      "occurrences_expected": 1,
-     "why": "Schlage is said SHLAYG, one syllable. A constrained-choice probe on the run-16 master preferred a two-syllable reading at 0.894 with three controls passing. Phoneme tags are not supported on eleven_multilingual_v2 (eleven_flash_v2 / eleven_v3 only), and the model is inside the voice lock, so the substitution is made in the REQUEST TEXT only.",
-     "approved_by": "PENDING - Stephan"
+     "why": "Schlage is said SHLAYG, one syllable. eleven_multilingual_v2 ignores phoneme tags, so the correction is made in the request text only; the frozen script is never altered.",
+     "approved_by": "Stephan - pronunciation approved 18 Sep 2026"
     }
    ],
-   "script_sha256_frozen": "5033bc0ba2973b76aa8f452e568731b7db472b6401014e7415333d0f1e1b7d8a",
-   "submitted_sha256_expected": "d2250948c7a9b73fa3046236c735716c5ba3880206ff09d8514797d82e143951",
-   "characters_frozen": 347,
-   "characters_submitted_expected": 346,
-   "output_note": "Default run path. The GitHub runner's checkout is EMPTY of audio - the repository does not track elevenlabs/audio/ - so nothing is overwritten there. The original master is preserved separately on the video side at masters_run16/S303.mp3 (read-only) and is never touched by a workflow run. Using the default path avoids editing three working workflow steps: the upload file list, ALLOWED_UNTRACKED in the cleanliness gate, and verify_clips.py's glob."
+   "submitted_sha256_expected": "a685b14d080dcc45120db22b509d793f59c02c21e4500c2c1bb46634265e14fd",
+   "characters_submitted_expected": 325
   },
   {
    "scene_id": "S304",
@@ -1904,7 +1905,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1945,7 +1946,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -1986,7 +1987,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -2027,7 +2028,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -2068,7 +2069,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -2109,7 +2110,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -2150,7 +2151,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -2191,7 +2192,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -2232,7 +2233,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -2255,8 +2256,8 @@
    "audio": "elevenlabs/audio/S311.mp3",
    "audio_present": false,
    "renarrate_required": true,
-   "words": 51,
-   "estimated_seconds": 24.5,
+   "words": 30,
+   "estimated_seconds": 15.8,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -2273,7 +2274,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -2286,9 +2287,15 @@
    },
    "status": "Draft",
    "in_master": true,
-   "narration_provisional": true,
-   "provisional_reason": "Describes the corrected AF7700 search and the family resolving to AF7700 in the saved record. Neither exists in the build yet.",
-   "provisional_depends_on": "Verified against the working development build before generation. Not in run 16."
+   "narration_provisional": false,
+   "provisional_depends_on": "Verified against the working development build before generation. Not in run 16.",
+   "script_sha256_frozen": "485e77ae2a86b6b97247d0bbe7b771e661e1d120f8d1ee25cb786572deb522e4",
+   "characters_frozen": 160,
+   "provisional_hold_released": {
+    "was_provisional": true,
+    "previous_reason": "Describes the corrected AF7700 search and the family resolving to AF7700 in the saved record. Neither exists in the build yet.",
+    "released_by": "Stephan - batch 18 approved 18 Sep 2026"
+   }
   },
   {
    "scene_id": "S314",
@@ -2296,8 +2303,8 @@
    "audio": "elevenlabs/audio/S314.mp3",
    "audio_present": false,
    "renarrate_required": true,
-   "words": 29,
-   "estimated_seconds": 13.9,
+   "words": 47,
+   "estimated_seconds": 24.75,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -2314,7 +2321,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -2327,9 +2334,15 @@
    },
    "status": "Draft",
    "in_master": true,
-   "narration_provisional": true,
-   "provisional_reason": "Describes the provider mapping loaded with its revision and effective date. The import capability does not exist yet.",
-   "provisional_depends_on": "Verified against the working development build before generation. Not in run 16."
+   "narration_provisional": false,
+   "provisional_depends_on": "Verified against the working development build before generation. Not in run 16.",
+   "script_sha256_frozen": "e72e45e23fac5b4bc5a7b002477d6bcc0b16a57926b99984efd0a653c09c5045",
+   "characters_frozen": 290,
+   "provisional_hold_released": {
+    "was_provisional": true,
+    "previous_reason": "Describes the provider mapping loaded with its revision and effective date. The import capability does not exist yet.",
+    "released_by": "Stephan - batch 18 approved 18 Sep 2026"
+   }
   },
   {
    "scene_id": "S315",
@@ -2337,8 +2350,8 @@
    "audio": "elevenlabs/audio/S315.mp3",
    "audio_present": false,
    "renarrate_required": true,
-   "words": 38,
-   "estimated_seconds": 18.3,
+   "words": 47,
+   "estimated_seconds": 24.75,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -2355,7 +2368,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -2368,9 +2381,15 @@
    },
    "status": "Draft",
    "in_master": true,
-   "narration_provisional": true,
-   "provisional_reason": "Describes SWFD-10183 on the purchasing review beside the product and opening. That line does not exist yet.",
-   "provisional_depends_on": "Verified against the working development build before generation. Not in run 16."
+   "narration_provisional": false,
+   "provisional_depends_on": "Verified against the working development build before generation. Not in run 16.",
+   "script_sha256_frozen": "ba03c4f0b540cf4e24ab5931e6bf02788d67930a2c1f1326ccdfc760ac829b9e",
+   "characters_frozen": 230,
+   "provisional_hold_released": {
+    "was_provisional": true,
+    "previous_reason": "Describes SWFD-10183 on the purchasing review beside the product and opening. That line does not exist yet.",
+    "released_by": "Stephan - batch 18 approved 18 Sep 2026"
+   }
   },
   {
    "scene_id": "S316",
@@ -2379,7 +2398,7 @@
    "audio_present": false,
    "renarrate_required": true,
    "words": 41,
-   "estimated_seconds": 19.7,
+   "estimated_seconds": 21.59,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -2396,7 +2415,7 @@
      "sample_rate": 44100,
      "bit_rate_kbps": 128,
      "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns \u2014 they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
      "lossy": true,
      "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
     },
@@ -2409,10 +2428,16 @@
    },
    "status": "Draft",
    "in_master": true,
-   "narration_provisional": true,
-   "provisional_reason": "Its combined-request claim is verified in source but has never been observed on a screen.",
-   "provisional_depends_on": "Verified against the working development build before generation. Not in run 16."
+   "narration_provisional": false,
+   "provisional_depends_on": "Verified against the working development build before generation. Not in run 16.",
+   "script_sha256_frozen": "8d88c4d2ae8eaae6fbf37966b79f9d7166f1269206b1e638ba1a6dead80ba64d",
+   "characters_frozen": 242,
+   "provisional_hold_released": {
+    "was_provisional": true,
+    "previous_reason": "Its combined-request claim is verified in source but has never been observed on a screen.",
+    "released_by": "Stephan - batch 18 approved 18 Sep 2026"
+   }
   }
  ],
- "run_name": "run17a-s303-pronunciation"
+ "run_name": "run18-batch18-approved"
 }

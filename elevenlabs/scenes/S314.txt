@@ -1,1 +1,1 @@
-The service provider has given us a cross-reference from a manufacturer's product to their own ordering number, loaded here with its revision and the date it applies from.
+The service provider gives us a cross-reference from a manufacturer's product to their own ordering number. I import it here as a file: manufacturer, product model, provider S K U. Two mappings saved. The card states the limit itself: a mapping never establishes installed-product identity.
