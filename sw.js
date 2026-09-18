@@ -4,7 +4,7 @@
  * BUMP THIS ON EVERY DEPLOY. Changing the string is what discards the old
  * cache. Leaving it alone is why a deploy can appear not to take effect.
  */
-const CACHE = 'oi-v57';
+const CACHE = 'oi-v58';
 
 /* Precached so the app opens with no network at all. portal.html is included
  * now — it was missing from v51, which is why the dashboard always came from
@@ -17,6 +17,7 @@ const ASSETS = [
   './accuracy.html',
   './manifest.json',
   './oi-local-backend.js',
+  './oi-provider-mappings.js',
   './oi-bounded-workflow.js',
   './icon-192.png',
   './icon-512.png'

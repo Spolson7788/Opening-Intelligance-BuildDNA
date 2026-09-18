@@ -40,13 +40,13 @@ small{color:var(--muted)}
   <details class="card" style="padding:12px">
     <summary style="font-weight:700;color:var(--navy);cursor:pointer;font-size:14px">How to use — tap to expand</summary>
     <ol style="margin:10px 0 0;padding-left:18px;font-size:14px;line-height:1.6">
-      <li><b>Sign in</b> and pick your <b>Facility</b> up top — or tap <b>&#65291; Add</b> to set up a new one and choose its type.</li>
+      <li>Pick your <b>Facility</b> up top — or tap <b>&#65291; Add</b> to set up a new one. Cloud mode requires sign-in; local mode keeps records only in this browser on this device.</li>
       <li>Enter the <b>Location</b> and <b>Opening #</b> for the door you're at.</li>
       <li>Choose <b>1 · What kind of part</b> it is. The app then walks you through the <b>photos to take</b> — for a lock: the whole lock + cylinder, the inside trim, then the stamp.</li>
       <li>Tap <b>Identify</b>. Review the ranked shortlist and the confidence badge — a <b>⚠ needs review</b> flag means read the stamp or shoot another angle.</li>
-      <li>Tap <b>📄 View Cut Sheet</b> to confirm finish &amp; handing, and <b>📤 Send to Purchasing</b> to fire off an order-ready packet (location, opening #, model, condition, photo, cut sheet).</li>
-      <li>Tap <b>Save &amp; next opening →</b>. The opening # steps up automatically; location and facility stay put, and everything syncs to the facility record.</li>
-      <li>Facility managers see every opening, photo, and a condition-based <b>health score</b> in the desktop dashboard; identification accuracy is tracked in the <b>Testing</b> panel.</li>
+      <li>Tap <b>📄 View Cut Sheet</b> to confirm finish &amp; handing. Purchasing remains locked until identity, condition, saved records and the finished opening satisfy every gate.</li>
+      <li>Tap <b>Save &amp; next opening →</b>. In cloud mode the record can synchronize; in local mode it stays on this device and must not be represented as shared or dashboard-visible.</li>
+      <li>The dashboard shows synchronized cloud records. Local-only records do not appear there unless a supported synchronization step is completed later.</li>
     </ol>
   </details>
   <div class="card" id="acct">
@@ -82,6 +82,13 @@ small{color:var(--muted)}
   <details class="card" id="accpanel">
     <summary style="font-weight:700;color:var(--navy);cursor:pointer;font-size:14px">Testing — identification accuracy (tap to load)</summary>
     <div id="accbody" class="hint" style="margin-top:10px;line-height:1.7">Sign in first, then tap to load.</div>
+  </details>
+  <details class="card" id="providerMappingCard">
+    <summary style="font-weight:700;color:var(--navy);cursor:pointer;font-size:14px">The service provider · product mapping import</summary>
+    <div class="hint" style="margin:8px 0">Import a CSV with manufacturer, product_model and provider_sku. Optional: product_description and configuration_details. A mapping never establishes installed-product identity.</div>
+    <input id="providerMappingFile" type="file" accept=".csv,text/csv" style="width:100%">
+    <button class="btn sec" id="providerMappingImport" type="button" style="margin-top:8px">Import mappings</button>
+    <div id="providerMappingMsg" class="hint" style="margin-top:7px"></div>
   </details>
   <div class="card">
     <label>Opening details</label>
@@ -191,9 +198,9 @@ small{color:var(--muted)}
       <label>Door material</label>
       <select id="doorMat"><option value="">— select —</option><option>Hollow Metal</option><option>Wood</option><option>FRP</option><option>Aluminum</option><option>Other</option></select>
       <div style="display:flex;gap:8px;margin-top:8px">
-        <div style="flex:1"><label>Width (in)</label><input id="doorW" type="number" inputmode="decimal" placeholder="36" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px"></div>
-        <div style="flex:1"><label>Height (in)</label><input id="doorH" type="number" inputmode="decimal" placeholder="84" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px"></div>
-        <div style="flex:1"><label>Thick</label><input id="doorT" placeholder="1-3/4&quot;" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px"></div>
+        <div style="flex:1"><label>Width (in)</label><input id="doorW" type="number" inputmode="decimal" placeholder="Width in inches" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px"></div>
+        <div style="flex:1"><label>Height (in)</label><input id="doorH" type="number" inputmode="decimal" placeholder="Height in inches" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px"></div>
+        <div style="flex:1"><label>Thick</label><input id="doorT" placeholder="Thickness in inches" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px"></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:8px">
         <div style="flex:1"><label>Handing</label><select id="doorHand"><option value="">—</option><option>LH</option><option>RH</option><option>LHR</option><option>RHR</option></select></div>
@@ -1333,6 +1340,12 @@ function transmissionReport(records){
     note:'Crops are always taken from the retained original, never from a transmitted copy.'
   };
 }
+
+// Catalog correction: this row represents the exact AF7700 model. The A7700
+// value remains its family/series and is never saved as exact-model identity.
+(DATA.candidates.EXIT_DEVICE||[]).forEach(function(candidate){
+  if(candidate.manufacturer==='Cal-Royal' && candidate.model==='A7700 / AF7700') candidate.model='AF7700';
+});
 
 /* --- guided capture sequence ---------------------------------------------- */
 var CAPTURE_SEQUENCE=[
@@ -3560,7 +3573,7 @@ function run(){if(!CLASS)return;const attrs={};(DATA.attr[CLASS]||[]).forEach(f=
   }
   let h=`<div class="conf"><span class="badge" style="background:${col}">${pct}%</span><span class="note">confidence · ${r.best.length} best-match${r.best.length>1?'es':''}</span></div>`;
   // hierarchical per-level view (manufacturer / family / model), Top-3 each with its own confidence
-  var _lvl=function(name,conf,tops,isDecided){var pc=conf>=0.5?'var(--good)':'var(--warn)';var vals=isDecided?(tops.slice(0,3).map(function(x,i){return (i===0?'<b>':'')+hesc(x.value)+(i===0?'</b>':'');}).join(' · ')||'—'):'<i style="color:var(--muted)">Not established</i>';return '<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0"><span style="min-width:92px;color:var(--ink2);font-size:12px;text-transform:capitalize">'+name+'</span><span style="flex:1;font-size:13px">'+vals+'</span><span style="font-weight:700;color:'+pc+';font-size:12px">'+Math.round(conf*100)+'%</span></div>';};
+  var _lvl=function(name,conf,tops,isDecided){var pc=conf>=0.5?'var(--good)':'var(--warn)';var vals=isDecided?((tops[0]&&('<b>'+hesc(tops[0].value)+'</b>'))||'—'):'<i style="color:var(--muted)">Not established</i>';return '<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0"><span style="min-width:92px;color:var(--ink2);font-size:12px;text-transform:capitalize">'+name+'</span><span style="flex:1;font-size:13px">'+vals+'</span><span style="font-weight:700;color:'+pc+';font-size:12px">'+Math.round(conf*100)+'%</span></div>';};
   h+='<div style="background:#f7f8fa;border:1px solid var(--line);border-radius:9px;padding:8px 10px;margin:8px 0">'+_lvl('manufacturer',H.mfrConf,H.topMfr,H.decided.manufacturer)+_lvl('family',H.famConf,H.topFam,H.decided.family)+_lvl('model',H.modConf,H.topMod,H.decided.model)+'<div style="font-size:11px;color:var(--muted);margin-top:4px">Highest defensible level: <b>'+H.highest_defensible_level+'</b></div></div>';
   if(V){
     var _vc=V.confidence||{};
@@ -3829,7 +3842,7 @@ function _ingestFrame(f){if(!f)return false;if(window._frames.length>=5)return f
 document.getElementById("photo").addEventListener("change",function(e){_ingestFrame(e.target.files[0]);e.target.value="";});
 document.getElementById("photolib").addEventListener("change",function(e){var fs=Array.prototype.slice.call(e.target.files||[]);for(var i=0;i<fs.length;i++){if(!_ingestFrame(fs[i]))break;}e.target.value="";});
 
-function modelLookup(){var q=(document.getElementById('mq').value||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'');var res=document.getElementById('mqres');if(!q){res.textContent='Type a model number.';return;}var hits=[];for(var k in DATA.candidates){DATA.candidates[k].forEach(function(c){var m=String(c.model||'').toLowerCase().replace(/[^a-z0-9]/g,'');var se=String(c.series||'').toLowerCase().replace(/[^a-z0-9]/g,'');if(m===q||se===q||(q.length>=3&&(m.indexOf(q)>=0||(m.length>=3&&q.indexOf(m)>=0)))){hits.push({k:k,c:c});}});}if(!hits.length){res.innerHTML='No catalog match for that model yet. Pick the part type below, or log it with the true model so it can be added.';return;}window._hits=hits.slice(0,8);res.innerHTML=window._hits.map(function(h,i){return '<div style=\'padding:7px 0;border-bottom:1px solid var(--line)\'><b>'+h.c.manufacturer+' '+h.c.model+'</b> <span style=\'color:var(--muted)\'>\u00b7 '+h.k.replace(/_/g,' ').toLowerCase()+'</span> <a href=\'#\' onclick=\'loadHit('+i+');return false\' style=\'color:var(--navy);font-weight:700;margin-left:6px\'>use \u2192</a></div>';}).join('');}
+function modelLookup(){var q=(document.getElementById('mq').value||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'');var res=document.getElementById('mqres');if(!q){res.textContent='Type a model number.';return;}var exact=[],series=[];for(var k in DATA.candidates){DATA.candidates[k].forEach(function(c){var m=String(c.model||'').toLowerCase().replace(/[^a-z0-9]/g,'');var se=String(c.series||'').toLowerCase().replace(/[^a-z0-9]/g,'');if(m===q)exact.push({k:k,c:c});else if(se===q)series.push({k:k,c:c});});}var hits=exact.length?exact:series;if(!hits.length){res.innerHTML='No exact catalog match for that model. Pick the part type below, or record the model for later catalog review.';return;}window._hits=hits.slice(0,8);res.innerHTML=window._hits.map(function(h,i){return '<div style=\'padding:7px 0;border-bottom:1px solid var(--line)\'><b>'+h.c.manufacturer+' '+h.c.model+'</b> <span style=\'color:var(--muted)\'>\u00b7 '+h.k.replace(/_/g,' ').toLowerCase()+'</span> <a href=\'#\' onclick=\'loadHit('+i+');return false\' style=\'color:var(--navy);font-weight:700;margin-left:6px\'>use \u2192</a></div>';}).join('');}
 function loadHit(i){var h=window._hits[i];var _oiPred=oiCapturePrediction();window._techPending=true;try{selectClass(h.k);var m=document.getElementById('mfr');Array.prototype.forEach.call(m.options,function(o){if(o.value.toLowerCase()===String(h.c.manufacturer).toLowerCase())m.value=o.value;});window._tech={selected:true,product:h.c,part_class:h.k,record:technicianSelect({},h.c,null).technician_selection_record,prediction:_oiPred};}finally{window._techPending=false;}oiRenderTechPanel();oiRenderActions();var _lc=document.getElementById('logcard');if(_lc)_lc.style.display='block';var f=document.getElementById('form');if(f)window.scrollTo({top:f.offsetTop-60,behavior:'smooth'});}
 /* ==========================================================================
    Identification gate, technician selection, preserved result, provenance
@@ -6552,13 +6565,26 @@ async function routeByType(session){
 }
 function show(inS){$('acctOut').style.display=inS?'none':'block';$('acctIn').style.display=inS?'block':'none';}
 let MEMBERSHIPS=[];
+function linkedOpeningRoute(){var m=/[#&]o=([^~&]+)~([^&]+)/.exec(location.hash||'');return m?{facility_id:decodeURIComponent(m[1]),opening_no:decodeURIComponent(m[2])}:null;}
+function selectAuthorizedFacility(fid){
+  var membership=(MEMBERSHIPS||[]).find(function(row){return row.facility_id===fid;});
+  if(!membership)return false;
+  var sel=$('facSel');
+  for(var i=0;sel&&i<sel.options.length;i++){if(sel.options[i].value===fid){sel.selectedIndex=i;break;}}
+  facility={id:fid,name:(membership.facilities&&membership.facilities.name)||(sel&&sel.options[sel.selectedIndex]&&sel.options[sel.selectedIndex].textContent)||'facility'};
+  window.OI_ACTIVE_FACILITY=Object.assign({},facility);
+  if(OI_LOCAL_MODE)localStorage.setItem('oi_local_selected_facility_id',fid);
+  loadInstalledBrands();
+  return true;
+}
 async function loadFacility(){
   const {data,error}=await sb.from('memberships').select('facility_id,facilities(name,facility_type)');
   MEMBERSHIPS=(!error&&data)?data:[];
   const sel=$('facSel'); if(sel)sel.innerHTML='';
   if(error||!data||!data.length){facility=null;window.OI_ACTIVE_FACILITY=null;if(sel){const o=document.createElement('option');o.value='';o.textContent='(no facility yet \u2014 tap Add)';sel.appendChild(o);}return;}
   data.forEach(function(row){const o=document.createElement('option');o.value=row.facility_id;o.textContent=row.facilities?row.facilities.name:'facility';if(row.facilities&&row.facilities.facility_type)o.setAttribute('data-type',row.facilities.facility_type);sel.appendChild(o);});
-  var wanted=OI_LOCAL_MODE?localStorage.getItem('oi_local_selected_facility_id'):null;
+  var route=linkedOpeningRoute();
+  var wanted=(route&&route.facility_id)||(OI_LOCAL_MODE?localStorage.getItem('oi_local_selected_facility_id'):null);
   sel.selectedIndex=0;
   if(wanted){for(var wi=0;wi<sel.options.length;wi++){if(sel.options[wi].value===wanted){sel.selectedIndex=wi;break;}}}
   facility={id:sel.options[sel.selectedIndex].value,name:sel.options[sel.selectedIndex].textContent};
@@ -6745,10 +6771,17 @@ function renderOpeningRecord(op,rows,live){
   body.innerHTML=h;ov.style.display='flex';
 }
 async function openOpeningRecord(fid,op){
+  if(!selectAuthorizedFacility(fid)){
+    renderOpeningRecord(op,null,false);
+    var body=_doorEl('recBody');
+    if(body)body.innerHTML='<div style="background:#1F3864;color:#fff;padding:14px 18px;font-weight:800;font-size:16px">Opening access refused</div><div style="padding:16px 18px;color:#16213a;font-size:14px;line-height:1.6">This account is not authorized for the facility named by this link.<div style="margin-top:12px"><button class="btn sec" onclick="closeRecord()">Close</button></div></div>';
+    return false;
+  }
   var rows=null,live=false;
   try{if(sb){var r=await sb.from('openings').select('*').eq('facility_id',fid).eq('opening_no',op);if(!r.error&&r.data&&r.data.length){rows=r.data;live=true;cacheOpening(fid,op,rows);}}}catch(e){}
   if(!rows)rows=getCachedOpening(fid,op);
   renderOpeningRecord(op,rows,live);
+  return true;
 }
 function checkOpeningHash(){var m=/[#&]o=([^~&]+)~([^&]+)/.exec(location.hash||'');if(m){openOpeningRecord(decodeURIComponent(m[1]),decodeURIComponent(m[2]));}}
 window.addEventListener('hashchange',checkOpeningHash);
@@ -6756,6 +6789,7 @@ window.addEventListener('hashchange',checkOpeningHash);
 refresh().then(checkOpeningHash).catch(function(){checkOpeningHash();});
 if(window.OIBounded&&typeof window.OIBounded.rebindOpeningControls==='function')window.OIBounded.rebindOpeningControls();
 </script>
+<script src="oi-provider-mappings.js"></script>
 <script src="oi-bounded-workflow.js"></script>
 <script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}</script>
 <script>/*oi-buildstamp*/try{if(window.caches&&caches.keys){caches.keys().then(function(ks){var vs=ks.map(function(k){var m=/oi-v(\d+)/.exec(k);return m?parseInt(m[1]):0;});var mx=Math.max.apply(null,vs.concat(0));if(mx){var p=document.querySelector('header p');if(p)p.textContent='Field identifier \u00b7 build v'+mx;}});}}catch(e){}

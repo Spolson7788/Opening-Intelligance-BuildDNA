@@ -85,7 +85,13 @@
       manufacturer,
       model,
       cut_sheet_url: String(product.cut_sheet_url || '').trim(),
+      configuration_details: String(product.configuration_details || product.configuration || product.arm_type || '').trim(),
     };
+  }
+
+  function providerLookup(product) {
+    if (!product || !window.OIProviderMappings) return { mapping: null, reason: 'provider mapping service unavailable' };
+    return window.OIProviderMappings.lookup(localStorage, 'service-provider', product);
   }
 
   function productForSavedRecord(record) {
@@ -401,6 +407,9 @@
       if (cost && isFinite(cost)) total += cost;
       lines.push((index + 1) + '. ' + (record.facility_name || 'Local facility') + ' · Opening ' + record.opnum + (record.loc ? ' · ' + record.loc : ''));
       lines.push('   ' + String(record.CLASS || 'part').replace(/_/g, ' ').toLowerCase() + ' — ' + product.manufacturer + ' ' + product.model + ' · ' + record.cond + (cost ? ' · $' + cost : ''));
+      const provider = providerLookup(product);
+      if (provider.mapping) lines.push('   The service provider SKU: ' + provider.mapping.provider_sku);
+      else lines.push('   The service provider SKU: unavailable — ' + provider.reason);
       lines.push('   How established: ' + (record.how_established || item.method));
       if (record.oi_original_result) lines.push("   OI's original result: " + record.oi_original_result);
       lines.push('   Cut sheet: ' + (product.cut_sheet_url || 'not on file — review before ordering'));
@@ -543,6 +552,32 @@
     });
   }
 
+  function installProviderImport() {
+    const button = document.getElementById('providerMappingImport');
+    const input = document.getElementById('providerMappingFile');
+    const message = document.getElementById('providerMappingMsg');
+    if (!button || !input || !message || button.__oiProviderImport) return;
+    button.__oiProviderImport = true;
+    button.addEventListener('click', async function () {
+      const file = input.files && input.files[0];
+      if (!file) { message.textContent = 'Choose a CSV file first.'; message.style.color = 'var(--bad)'; return; }
+      try {
+        const result = window.OIProviderMappings.importCsv(localStorage, 'service-provider', await file.text());
+        if (!result.ok) {
+          message.textContent = 'Import refused — ' + result.errors.join('; ');
+          message.style.color = 'var(--bad)';
+          return;
+        }
+        message.textContent = '✓ ' + result.rows.length + ' mapping' + (result.rows.length === 1 ? '' : 's') + ' saved for the service provider.';
+        message.style.color = 'var(--good)';
+        updatePurchasingUi();
+      } catch (error) {
+        message.textContent = 'Import failed — ' + (error.message || String(error));
+        message.style.color = 'var(--bad)';
+      }
+    });
+  }
+
   function init() {
     if (window.OI_LOCAL_MODE) {
       window.cloudSync = async function () {
@@ -555,12 +590,13 @@
     installOpeningFunctions();
     installPurchasing();
     installNavigationRefresh();
+    installProviderImport();
     renderOpeningReview();
   }
 
   window.OIBounded = Object.freeze({
     readStore, writeStore, openingKey, getOpening, productForSavedRecord,
-    finishReasons, evaluate, payloadFor, hydrateDoorForm, logCounts,
+    finishReasons, evaluate, payloadFor, hydrateDoorForm, logCounts, providerLookup,
     rebindOpeningControls: installOpeningFunctions,
   });
   // Shared facility resolver for app features loaded in later script blocks.
