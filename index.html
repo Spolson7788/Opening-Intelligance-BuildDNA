@@ -3843,7 +3843,22 @@ document.getElementById("photo").addEventListener("change",function(e){_ingestFr
 document.getElementById("photolib").addEventListener("change",function(e){var fs=Array.prototype.slice.call(e.target.files||[]);for(var i=0;i<fs.length;i++){if(!_ingestFrame(fs[i]))break;}e.target.value="";});
 
 function modelLookup(){var q=(document.getElementById('mq').value||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'');var res=document.getElementById('mqres');if(!q){res.textContent='Type a model number.';return;}var exact=[],series=[];for(var k in DATA.candidates){DATA.candidates[k].forEach(function(c){var m=String(c.model||'').toLowerCase().replace(/[^a-z0-9]/g,'');var se=String(c.series||'').toLowerCase().replace(/[^a-z0-9]/g,'');if(m===q)exact.push({k:k,c:c});else if(se===q)series.push({k:k,c:c});});}var hits=exact.length?exact:series;if(!hits.length){res.innerHTML='No exact catalog match for that model. Pick the part type below, or record the model for later catalog review.';return;}window._hits=hits.slice(0,8);res.innerHTML=window._hits.map(function(h,i){return '<div style=\'padding:7px 0;border-bottom:1px solid var(--line)\'><b>'+h.c.manufacturer+' '+h.c.model+'</b> <span style=\'color:var(--muted)\'>\u00b7 '+h.k.replace(/_/g,' ').toLowerCase()+'</span> <a href=\'#\' onclick=\'loadHit('+i+');return false\' style=\'color:var(--navy);font-weight:700;margin-left:6px\'>use \u2192</a></div>';}).join('');}
-function loadHit(i){var h=window._hits[i];var _oiPred=oiCapturePrediction();window._techPending=true;try{selectClass(h.k);var m=document.getElementById('mfr');Array.prototype.forEach.call(m.options,function(o){if(o.value.toLowerCase()===String(h.c.manufacturer).toLowerCase())m.value=o.value;});window._tech={selected:true,product:h.c,part_class:h.k,record:technicianSelect({},h.c,null).technician_selection_record,prediction:_oiPred};}finally{window._techPending=false;}oiRenderTechPanel();oiRenderActions();var _lc=document.getElementById('logcard');if(_lc)_lc.style.display='block';var f=document.getElementById('form');if(f)window.scrollTo({top:f.offsetTop-60,behavior:'smooth'});}
+function loadHit(i){var h=window._hits[i];var _oiPred=oiCapturePrediction();window._techPending=true;try{selectClass(h.k);var m=document.getElementById('mfr');Array.prototype.forEach.call(m.options,function(o){if(o.value.toLowerCase()===String(h.c.manufacturer).toLowerCase())m.value=o.value;});window._tech={selected:true,product:Object.assign({},h.c),part_class:h.k,record:technicianSelect({},h.c,null).technician_selection_record,prediction:_oiPred};}finally{window._techPending=false;}oiRenderTechPanel();oiRenderActions();var _lc=document.getElementById('logcard');if(_lc)_lc.style.display='block';var f=document.getElementById('form');if(f)window.scrollTo({top:f.offsetTop-60,behavior:'smooth'});}
+
+/* A provider mapping may require an observed configuration, but it must never
+   supply that configuration itself. Keep the technician-selected catalogue
+   identity unchanged and attach only the explicit arm selection from the
+   identification form. This makes CR441 + hold_open eligible while the same
+   CR441 record with standard or unknown arm remains blocked. */
+document.getElementById('attrs').addEventListener('change',function(e){
+  if(!window._tech||!window._tech.selected||window._tech.part_class!=='DOOR_CLOSER')return;
+  if(!e.target||e.target.id!=='a_arm_type')return;
+  var observed=String(e.target.value||'').trim();
+  if(observed)window._tech.product.configuration_details=observed;
+  else delete window._tech.product.configuration_details;
+  oiRenderTechPanel();
+  oiRenderActions();
+});
 /* ==========================================================================
    Identification gate, technician selection, preserved result, provenance
    --------------------------------------------------------------------------

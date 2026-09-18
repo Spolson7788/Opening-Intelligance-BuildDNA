@@ -89,6 +89,9 @@ assert.match(html, /var hits=exact\.length\?exact:series/);
 assert.match(html, /candidate\.model='AF7700'/);
 assert.doesNotMatch(html, /tops\.slice\(0,3\).*join\(' · '\)/);
 assert.match(html, /A mapping never establishes installed-product identity/);
+assert.match(html, /e\.target\.id!=='a_arm_type'/);
+assert.match(html, /window\._tech\.product\.configuration_details=observed/);
+assert.match(html, /else delete window\._tech\.product\.configuration_details/);
 
 console.log(JSON.stringify({
   status: 'PASS',
