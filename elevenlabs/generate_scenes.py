@@ -100,6 +100,56 @@ def output_format(v):
     return api, f".{container}"
 
 
+
+# ---------------------------------------------- request-time pronunciation
+def submitted_text(root, clip):
+    """The text actually sent to the API for this clip.
+
+    The committed script is never rewritten. Where a clip carries
+    `pronunciation_overrides`, each one is applied to a COPY of the script to
+    make the request, and the substitution is verified: the expected number of
+    occurrences must be found, or the run stops rather than silently sending
+    the unmodified text.
+
+    Returns (text, record) where record is what gets written to the log, so the
+    frozen-script hash and the actually-submitted hash both survive the run.
+    """
+    import hashlib
+    frozen = (root / clip["script"]).read_text(encoding="utf-8").strip()
+    text = frozen
+    applied = []
+    for ov in clip.get("pronunciation_overrides") or []:
+        find, repl = ov["find"], ov["replace"]
+        n = text.count(find)
+        want = ov.get("occurrences_expected")
+        if want is not None and n != want:
+            sys.exit("PRONUNCIATION OVERRIDE MISMATCH in %s: %r occurs %d time(s), "
+                     "expected %d. Nothing generated."
+                     % (clip["scene_id"], find, n, want))
+        if n == 0:
+            sys.exit("PRONUNCIATION OVERRIDE FOUND NOTHING in %s: %r is not in the "
+                     "script. Nothing generated." % (clip["scene_id"], find))
+        text = text.replace(find, repl)
+        applied.append({"find": find, "replace": repl, "occurrences": n})
+    if applied and text == frozen:
+        sys.exit("PRONUNCIATION OVERRIDE DID NOT CHANGE THE TEXT in %s. Nothing generated."
+                 % clip["scene_id"])
+    rec = {
+        "script_sha256_frozen": hashlib.sha256((frozen + "\n").encode()).hexdigest(),
+        "submitted_sha256": hashlib.sha256((text + "\n").encode()).hexdigest(),
+        "characters_frozen": len(frozen),
+        "characters_submitted": len(text),
+        "overrides_applied": applied,
+    }
+    if clip.get("submitted_sha256_expected") and \
+       rec["submitted_sha256"] != clip["submitted_sha256_expected"]:
+        sys.exit("SUBMITTED TEXT IS NOT WHAT WAS APPROVED for %s.\n  expected %s\n"
+                 "  computed %s\nNothing generated."
+                 % (clip["scene_id"], clip["submitted_sha256_expected"],
+                    rec["submitted_sha256"]))
+    return text, rec
+
+
 # ------------------------------------------------------------------ probing
 def probe(path):
     out = subprocess.run(
@@ -223,13 +273,26 @@ def main():
     total_est = sum(c["estimated_seconds"] for c in todo)
     # ElevenLabs bills per CHARACTER of the submitted text, so the cost is known
     # exactly before anything is spent — it is the scripts, counted.
-    chars = sum(len((ROOT / c["script"]).read_text(encoding="utf-8").strip())
-                for c in todo)
+    subs = {c["scene_id"]: submitted_text(ROOT, c) for c in todo}
+    chars = sum(r["characters_submitted"] for _, r in subs.values())
+    frozen_chars = sum(r["characters_frozen"] for _, r in subs.values())
     words = sum(c["words"] for c in todo)
     print(f"to generate ({len(todo)}): {' '.join(c['scene_id'] for c in todo) or 'none'}")
     print(f"estimated speech {int(total_est)//60}:{int(total_est) % 60:02d}")
     print(f"CREDIT ESTIMATE  {chars:,} characters across {len(todo)} request(s) "
           f"({words:,} words)")
+    for sid, (txt, rec) in sorted(subs.items()):
+        if rec["overrides_applied"]:
+            print(f"  {sid}: request-time substitution APPLIED AND VERIFIED "
+                  f"({rec['characters_frozen']} -> {rec['characters_submitted']} chars)")
+            for ov_a in rec["overrides_applied"]:
+                print(f"      {ov_a['find']!r} -> {ov_a['replace']!r}  x{ov_a['occurrences']}")
+            print(f"      frozen script sha256 {rec['script_sha256_frozen'][:16]}...")
+            print(f"      submitted text sha256 {rec['submitted_sha256'][:16]}...")
+            print(f"      submitted text: {txt}")
+    if frozen_chars != chars:
+        print(f"  (frozen scripts total {frozen_chars:,} characters; "
+              f"{chars:,} is what is billed)")
     print("  ElevenLabs bills per character of submitted text, so this is the whole")
     print("  cost of the run — one request per scene, no retries counted.\n")
 
@@ -255,7 +318,7 @@ def main():
     results, failed = [], []
     for i, c in enumerate(todo, 1):
         sid = c["scene_id"]
-        text = (ROOT / c["script"]).read_text(encoding="utf-8").strip()
+        text, subrec = submitted_text(ROOT, c)
         dest = ROOT / c["audio"]
         if dest.suffix != ext:
             dest = dest.with_suffix(ext)
@@ -305,6 +368,7 @@ def main():
             "codec": p["codec"], "sample_rate": p["sample_rate"],
             "channels": p["channels"],
             "sha256": hashlib.sha256(dest.read_bytes()).hexdigest(),
+            **subrec,
         })
         time.sleep(0.4)
 
