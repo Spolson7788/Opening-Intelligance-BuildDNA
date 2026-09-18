@@ -1,0 +1,154 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Opening Intelligence — Accuracy</title>
+<style>
+:root{--navy:#1F3864;--surface:#fcfcfb;--plane:#f4f4f1;--ink:#0b0b0b;--sec:#52514e;--muted:#898781;--line:#e1e0d9;--ring:rgba(11,11,11,.10);
+--good:#0ca30c;--warn:#fab219;--serious:#ec835a;--critical:#d03b3b;--blue:#2a78d6;}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--plane);color:var(--ink);-webkit-font-smoothing:antialiased}
+.top{background:var(--navy);color:#fff;padding:18px 24px}
+.top .wrap{max-width:1040px;margin:0 auto;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.top h1{margin:0;font-size:20px;font-weight:700}.top .sub{margin:4px 0 0;font-size:13px;opacity:.82}
+.top a{color:#fff;font-size:12px}
+.wrap{max-width:1040px;margin:0 auto;padding:20px 24px 40px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.tile .lab{font-size:12px;font-weight:700;color:var(--sec);text-transform:uppercase;letter-spacing:.03em}
+.tile .val{font-size:32px;font-weight:800;margin-top:6px;line-height:1;font-variant-numeric:tabular-nums}
+.tile .val small{font-size:15px;color:var(--muted);font-weight:600}
+.tile .st{margin-top:8px;font-size:12.5px;font-weight:600;color:var(--sec)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+.card h2{margin:0 0 4px;font-size:15px;color:var(--navy)}
+.card p.hint{margin:0 0 14px;font-size:13px;color:var(--sec)}
+.rowbar{display:flex;align-items:center;gap:10px;margin:7px 0;font-size:13px}
+.rowbar .lab{width:120px;color:var(--sec);font-variant-numeric:tabular-nums}
+.rowbar .track{flex:1;height:16px;background:#ecebe6;border-radius:5px;overflow:hidden}
+.rowbar .fill{height:100%;border-radius:5px}
+.rowbar .n{width:96px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700;padding:0 8px 8px;border-bottom:1px solid var(--line)}
+tbody td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.ok{color:#0a6b0a;font-weight:700}.no{color:var(--critical);font-weight:700}.dash{color:var(--muted)}
+.pill{font-weight:700;font-size:11.5px;padding:1px 8px;border-radius:20px;background:#eef3fb;color:var(--navy)}
+.login{max-width:380px;margin:9vh auto;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:26px}
+.login h1{margin:0 0 2px;font-size:19px;color:var(--navy)}.login p{margin:0 0 18px;font-size:13px;color:var(--sec)}
+.login input{width:100%;padding:12px;font-size:15px;border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
+.btn{width:100%;padding:13px;font-size:15px;font-weight:700;border:none;border-radius:11px;background:var(--navy);color:#fff;cursor:pointer}
+.msg{font-size:13px;margin-top:10px;min-height:18px;color:var(--critical)}
+.foot{max-width:1040px;margin:0 auto;padding:0 24px 30px;font-size:12px;color:var(--muted)}
+.oinav{display:flex;gap:6px;max-width:1140px;margin:0 auto;padding:10px 14px}.oinav a{flex:1;text-align:center;padding:9px 6px;font-size:13px;font-weight:700;color:var(--sec);text-decoration:none;border:1px solid var(--line);border-radius:9px;background:#fff}.oinav a.on{background:var(--navy);color:#fff;border-color:var(--navy)}.expbtn{float:right;padding:7px 12px;font-size:12.5px;font-weight:700;border:1px solid var(--navy);border-radius:8px;background:#fff;color:var(--navy);cursor:pointer}</style></head><body>
+
+<div id="loginView"><div class="login">
+  <h1>Opening Intelligence — Accuracy</h1>
+  <p>Internal testing view. Sign in to see identification accuracy and confidence calibration.</p>
+  <input id="email" type="email" autocomplete="username" placeholder="email">
+  <input id="pass" type="password" autocomplete="current-password" placeholder="password">
+  <button class="btn" id="signin">Sign in</button>
+  <div class="msg" id="msg"></div>
+</div></div>
+
+<div id="appView" style="display:none">
+  <div class="top"><div class="wrap">
+    <div><h1>Identification accuracy</h1><p class="sub" id="sub">loading…</p></div>
+    <div><a href="portal.html">facility portal</a> · <a href="#" id="signout">sign out</a></div>
+  </div></div>
+  <div class="oinav"><a href="./index.html">📷 Scan</a><a class="on" href="./accuracy.html">📊 Accuracy</a><a href="./portal.html">🏢 Facility</a></div>
+  <div class="wrap">
+    <div class="kpis" id="kpis"></div>
+    <div class="card">
+      <h2>Confidence calibration</h2>
+      <p class="hint">For labeled scans, does the confidence match reality? A well-calibrated tool has each bar's accuracy near the middle of its confidence band.</p>
+      <div id="calib"></div>
+    </div>
+    <div class="card">
+      <h2>Accuracy over time</h2>
+      <p class="hint">Correct rate per day (labeled scans). This is the line to watch as the catalog and cues improve.</p>
+      <div id="trend"></div>
+    </div>
+    <div class="card">
+      <h2 style="display:inline-block">Recent scans</h2><button class="expbtn" onclick="exportScans()">Export CSV</button>
+      <table><thead><tr><th>When</th><th>Opening</th><th>Class</th><th>Predicted</th><th>Conf</th><th>True model</th><th>Hit?</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="7" class="dash" style="padding:18px">Loading…</td></tr></tbody></table>
+    </div>
+  </div>
+  <div class="foot">Opening Intelligence™ · Internal accuracy view · reads the scans log written by the field app.</div>
+</div>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+const sb=createClient('https://ytqiulxtiharrplqnuir.supabase.co','sb_publishable_PcN0MDr9GHe20ku7xICZ_g_XhWpLVaF');
+const $=id=>document.getElementById(id);
+$('signin').addEventListener('click',signIn);
+$('pass').addEventListener('keydown',e=>{if(e.key==='Enter')signIn();});
+$('signout').addEventListener('click',async e=>{e.preventDefault();await sb.auth.signOut();location.reload();});
+async function signIn(){$('msg').textContent='Signing in…';const {error}=await sb.auth.signInWithPassword({email:$('email').value.trim(),password:$('pass').value});if(error){$('msg').textContent='Sign-in failed: '+error.message;return;}boot();}
+function pct(x){return (x*100).toFixed(0)+'%';}
+function esc(x){return String(x==null?'':x).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function tile(lab,val,st){return '<div class="tile"><div class="lab">'+lab+'</div><div class="val">'+val+'</div><div class="st">'+(st||'')+'</div></div>';}
+
+async function boot(){
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session){$('loginView').style.display='block';$('appView').style.display='none';return;}
+  $('loginView').style.display='none';$('appView').style.display='block';
+  const {data,error}=await sb.from('scans').select('*').order('scanned_at',{ascending:false}).limit(2000);
+  if(error){$('rows').innerHTML='<tr><td colspan=7 class="no" style="padding:18px">Could not load scans: '+error.message+'</td></tr>';return;}
+  render(data||[]);
+}
+window._scans=[];
+window.exportScans=async function(){
+  var d=window._scans||[];
+  if(!d.length){alert('No scans to export yet.');return;}
+  var cols=['scanned_at','opening_no','component_class','predicted_manufacturer','predicted_model','confidence','needs_review','true_model','correct'];
+  var rows=[cols.join(',')].concat(d.map(function(sc){return cols.map(function(c){return '"'+String(sc[c]==null?'':sc[c]).replace(/"/g,'""')+'"';}).join(',');}));
+  var csv=rows.join('\n');
+  var fname='accuracy_scans_'+new Date().toISOString().slice(0,10)+'.csv';
+  var blob=new Blob([csv],{type:'text/csv'});var file=new File([blob],fname,{type:'text/csv'});
+  try{if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:fname});return;}}catch(x){}
+  try{var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fname;document.body.appendChild(a);a.click();a.remove();return;}catch(x){}
+  var w=window.open('','_blank');if(w){w.document.write('<pre style="white-space:pre-wrap;font:12px monospace">'+csv.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre>');}
+};
+function render(scans){
+  window._scans=scans;
+  const n=scans.length;
+  const labeled=scans.filter(s=>s.true_model!=null && s.true_model!=='');
+  const correct=labeled.filter(s=>s.correct===true).length;
+  const acc=labeled.length?correct/labeled.length:0;
+  const review=scans.filter(s=>s.needs_review).length;
+  const avgc=n?scans.reduce((a,s)=>a+(Number(s.confidence)||0),0)/n:0;
+  $('sub').textContent=n+' scans · '+labeled.length+' labeled with a true model';
+  $('kpis').innerHTML=
+    tile('Scans logged',n,'across your facilities')+
+    tile('Accuracy',labeled.length?pct(acc):'—',correct+' of '+labeled.length+' labeled correct')+
+    tile('Needs-review rate',n?pct(review/n):'—',review+' flagged for a second look')+
+    tile('Avg confidence',n?pct(avgc):'—','mean over all scans');
+  // calibration bins
+  const bins=[[0,.2],[.2,.4],[.4,.6],[.6,.8],[.8,1.01]];
+  let ch='';
+  bins.forEach(([lo,hi])=>{
+    const g=labeled.filter(s=>{const c=Number(s.confidence)||0;return c>=lo&&c<hi;});
+    const a=g.length?g.filter(s=>s.correct===true).length/g.length:0;
+    const col=g.length? (a>=.8?'var(--good)':a>=.5?'var(--warn)':'var(--critical)') : '#ccc';
+    ch+='<div class="rowbar"><span class="lab">conf '+lo.toFixed(1)+'–'+hi.toFixed(1).replace('1.0','1.0')+'</span><span class="track"><span class="fill" style="width:'+(g.length?Math.max(3,a*100):0)+'%;background:'+col+'"></span></span><span class="n">'+(g.length?pct(a)+' ('+g.length+')':'—')+'</span></div>';
+  });
+  $('calib').innerHTML=ch || '<span class="dash">No labeled scans yet.</span>';
+  // trend by day
+  const byday={};
+  labeled.forEach(s=>{const d=(s.scanned_at||'').slice(0,10);(byday[d]=byday[d]||[]).push(s);});
+  const days=Object.keys(byday).sort();
+  let th='';
+  days.slice(-14).forEach(d=>{const g=byday[d];const a=g.filter(s=>s.correct===true).length/g.length;
+    th+='<div class="rowbar"><span class="lab">'+d+'</span><span class="track"><span class="fill" style="width:'+Math.max(3,a*100)+'%;background:var(--blue)"></span></span><span class="n">'+pct(a)+' ('+g.length+')</span></div>';});
+  $('trend').innerHTML=th || '<span class="dash">No labeled scans yet — enter the true model on a few scans to populate this.</span>';
+  // recent
+  if(!n){$('rows').innerHTML='<tr><td colspan=7 class="dash" style="padding:18px">No scans logged yet. Identify a few openings in the app (with a true model where you know it).</td></tr>';return;}
+  $('rows').innerHTML=scans.slice(0,60).map(s=>{
+    const when=(s.scanned_at||'').replace('T',' ').slice(0,16);
+    const conf=s.confidence!=null?pct(Number(s.confidence)):'—';
+    const hit=s.true_model?(s.correct?'<span class="ok">✓</span>':'<span class="no">✕</span>'):'<span class="dash">—</span>';
+    const rv=s.needs_review?' <span class="pill">review</span>':'';
+    return '<tr><td class="dash">'+esc(when)+'</td><td>'+esc(s.opening_no||'')+'</td><td>'+esc((s.component_class||'').replace(/_/g,' ').toLowerCase())+'</td><td>'+esc((s.predicted_manufacturer||'')+' '+(s.predicted_model||''))+rv+'</td><td style="font-variant-numeric:tabular-nums">'+conf+'</td><td>'+esc(s.true_model||'')+'</td><td>'+hit+'</td></tr>';
+  }).join('');
+}
+boot();
+</script>
+</body></html>
