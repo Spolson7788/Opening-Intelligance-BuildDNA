@@ -6713,6 +6713,7 @@ window.saveDoor=async function(){
   if(!mat){alert('Pick the door material.');return;}
   var w=_doorEl('doorW').value,h=_doorEl('doorH').value,t=_doorEl('doorT').value;
   var hand=_doorEl('doorHand').value,frame=_doorEl('doorFrame').value;
+  if(['LH','RH','LHR','RHR'].indexOf(hand)<0){alert('Pick the handing before saving the door and frame.');return;}
   var fire=(_doorEl('fire')&&_doorEl('fire').checked);
   var size=[w?w+'"':null,h?h+'"':null,t?t:null].filter(Boolean).join(' × ');
   var spec=[size,hand,frame?frame+' frame':null].filter(Boolean).join(' · ');

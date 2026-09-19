@@ -231,6 +231,11 @@
     window.saveEntry = wrapped;
   }
 
+  // The handing values the door form offers. A door record without one is not
+  // a complete door record: handing decides which hardware fits, so a blank
+  // handing has to be refused rather than stored.
+  const VALID_HANDING = ['LH', 'RH', 'LHR', 'RHR'];
+
   function doorValues() {
     const value = (id) => { const element = document.getElementById(id); return element ? element.value : ''; };
     return {
@@ -283,6 +288,10 @@
       if (context.error) { if (message) message.textContent = context.error; return; }
       const door = doorValues();
       if (!door.material) { if (message) message.textContent = 'Pick the door material.'; return; }
+      if (!VALID_HANDING.includes(door.handing)) {
+        if (message) message.textContent = 'Pick the handing before saving the door and frame.';
+        return;
+      }
       context.opening.door_frame = door;
       context.opening.area = (document.getElementById('loc') || {}).value || '';
       context.opening.finished = false;
