@@ -1,5 +1,5 @@
 import { Router, Response } from "express";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import QRCode from "qrcode";
 import { z } from "zod";
 import { pool } from "../db/pool";
@@ -67,7 +67,7 @@ openingsRouter.post("/", async (req: AuthedRequest, res) => {
   const parsed = createOpeningSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const body = parsed.data;
-  const qrToken = uuidv4();
+  const qrToken = randomUUID();
   const orgId = req.auth!.organizationId;
 
   try {
@@ -149,7 +149,7 @@ openingsRouter.put("/:id/frame", async (req: AuthedRequest, res) => {
        fire_rated=EXCLUDED.fire_rated, condition=EXCLUDED.condition,
        notes=EXCLUDED.notes, updated_at=now()
      RETURNING *`,
-    [b.id ?? uuidv4(), opening.id, b.material ?? null, b.frame_type ?? null, b.width_in ?? null,
+    [b.id ?? randomUUID(), opening.id, b.material ?? null, b.frame_type ?? null, b.width_in ?? null,
      b.height_in ?? null, b.fire_rated ?? false, b.condition ?? "unverified", b.notes ?? null]
   );
   res.json(result.rows[0]);
@@ -179,7 +179,7 @@ openingsRouter.post("/:id/door-leaves", async (req: AuthedRequest, res) => {
        thickness_in=EXCLUDED.thickness_in, fire_rated=EXCLUDED.fire_rated,
        condition=EXCLUDED.condition, notes=EXCLUDED.notes, updated_at=now()
      RETURNING *`,
-    [b.id ?? uuidv4(), opening.id, b.leaf_role, b.handing ?? null, b.material ?? null, b.width_in ?? null,
+    [b.id ?? randomUUID(), opening.id, b.leaf_role, b.handing ?? null, b.material ?? null, b.width_in ?? null,
      b.height_in ?? null, b.thickness_in ?? null, b.fire_rated ?? false,
      b.condition ?? "unverified", b.notes ?? null]
   );
@@ -283,7 +283,7 @@ openingsRouter.post("/bulk-import", async (req: AuthedRequest, res) => {
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     try {
-      const qrToken = uuidv4();
+      const qrToken = randomUUID();
       const result = await pool.query(
         `INSERT INTO openings
           (opening_code, building_id, floor_label, location_description, opening_type,

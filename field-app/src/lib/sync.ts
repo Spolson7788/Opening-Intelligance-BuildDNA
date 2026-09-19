@@ -1,165 +1,143 @@
-import {
-  getOutbox, removeOutboxItem, updateOutboxItem,
-  getPhotoOutbox, removePhotoOutboxItem, updatePhotoOutboxItem,
-  enqueueOutboxItem,
-} from "./db";
-import type { OutboxItem, PhotoOutboxItem } from "./db";
-import {
-  submitServiceEvent, submitInspectionEvent, ApiError,
-  presignPhotoUpload, uploadToPresignedUrl, confirmPhotoUpload,
-  saveOpeningFrame, saveDoorLeaf, addHardwareComponent, completeOpening,
-} from "./api";
+import { getAllSyncOperations, getOfflineMedia, getOfflineSetting, loadAuth, putOfflineSetting, putSyncConflict, putSyncOperation, putSyncReceipt, saveEntityAndOperation } from "./db";
+import { confirmOfflinePhoto, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, uploadPrivatePhoto, ApiError } from "./api";
+import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
+import type { OfflineEntityEnvelope, OfflineEntityType, SyncConflict, SyncOperation, SyncOperationState, SyncReceipt } from "./offlineTypes";
+import { readyOperations, retryDelayMs } from "./offlineSyncModel";
+import type { OutboxItem } from "./db";
 
 type SyncListener = (state: SyncState) => void;
-
-export interface SyncState {
-  pending: number; // combined: JSON outbox + photo outbox
-  syncing: boolean;
-  failed: number;
-  conflicts: number;
-  lastError?: string;
-}
-
+export interface SyncState { pending: number; syncing: boolean; failed: number; conflicts: number; lastError?: string; }
+const APP_VERSION = "offline-protocol-1";
 let listeners: SyncListener[] = [];
 let currentState: SyncState = { pending: 0, syncing: false, failed: 0, conflicts: 0 };
-
-function notify() {
-  listeners.forEach((l) => l(currentState));
-}
+function notify() { listeners.forEach((listener) => listener(currentState)); }
 
 export function onSyncStateChange(listener: SyncListener) {
-  listeners.push(listener);
-  listener(currentState);
-  return () => {
-    listeners = listeners.filter((l) => l !== listener);
-  };
+  listeners.push(listener); listener(currentState);
+  return () => { listeners = listeners.filter((candidate) => candidate !== listener); };
 }
 
+async function sha256Hex(value: string | Blob): Promise<string> {
+  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : new Uint8Array(await value.arrayBuffer());
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .filter(([, child]) => child !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, canonicalize(child)]));
+  return value;
+}
+export async function getOrCreateDeviceId(): Promise<string> {
+  const existing = await getOfflineSetting("device_id");
+  if (typeof existing?.value === "string") return existing.value;
+  const value = crypto.randomUUID();
+  await putOfflineSetting({ key: "device_id", value, updatedAt: new Date().toISOString() });
+  return value;
+}
 async function refreshPendingCount() {
-  const [events, photos] = await Promise.all([getOutbox(), getPhotoOutbox()]);
-  const all = [...events, ...photos];
-  currentState = {
-    ...currentState,
-    pending: all.filter((item) => item.status === "pending" || item.status === "failed").length,
-    failed: all.filter((item) => item.status === "failed").length,
-    conflicts: all.filter((item) => item.status === "conflict").length,
-  };
+  const operations = await getAllSyncOperations();
+  currentState = { ...currentState,
+    pending: operations.filter((item) => ["local_committed", "queued", "retry_wait", "blocked_dependency", "in_flight", "verifying"].includes(item.state)).length,
+    failed: operations.filter((item) => ["permanent_failure", "auth_required", "storage_pressure", "schema_blocked"].includes(item.state)).length,
+    conflicts: operations.filter((item) => item.state === "conflict").length };
   notify();
 }
-
-async function submitOne(item: OutboxItem) {
-  if (item.kind === "service_event") return submitServiceEvent(item.payload);
-  if (item.kind === "inspection_event") return submitInspectionEvent(item.payload);
-  if (item.kind === "opening_frame") return saveOpeningFrame(item.openingId!, item.payload);
-  if (item.kind === "door_leaf") return saveDoorLeaf(item.openingId!, item.payload);
-  if (item.kind === "hardware_component") return addHardwareComponent(item.payload);
-  return completeOpening(item.openingId!);
+function entityTypeForKind(kind: OutboxItem["kind"]): OfflineEntityType {
+  if (kind === "opening_frame") return "frame";
+  if (kind === "door_leaf") return "door_leaf";
+  if (kind === "hardware_component") return "component";
+  if (kind === "service_event") return "service_event";
+  if (kind === "inspection_event") return "inspection_event";
+  return "completion";
 }
-
-export async function queueOpeningMutation(
-  kind: OutboxItem["kind"], openingId: string, payload: any, id = crypto.randomUUID()
-) {
-  await enqueueOutboxItem({ id, kind, openingId, payload });
-  await refreshPendingCount();
-  void flushOutbox();
-  return id;
+export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: string, payload: any, id = crypto.randomUUID()) {
+  const auth = await loadAuth(); if (!auth) throw new Error("auth_required");
+  const now = new Date().toISOString(); const entityType = entityTypeForKind(kind); const entityId = payload.id ?? id;
+  const deviceId = await getOrCreateDeviceId(); const semanticPayload = { kind, ...payload };
+  const operation: SyncOperation = { operationId: id, operationType: kind === "complete_opening" ? "complete" : "create",
+    entityType, entityId, openingId, organizationId: auth.organizationId, actorUserId: auth.userId, deviceId,
+    baseServerRevision: null, payload: semanticPayload, payloadHash: await sha256Hex(JSON.stringify(canonicalize(semanticPayload))),
+    dependencyOperationIds: [], createdAtLocal: now, state: "queued", attemptCount: 0,
+    schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: APP_VERSION, protocolVersion: SYNC_PROTOCOL_VERSION };
+  const entity: OfflineEntityEnvelope = { key: entityKey(entityType, entityId), id: entityId, entityType,
+    organizationId: auth.organizationId, openingId, parentEntityId: payload.door_leaf_id ?? payload.frame_id,
+    createdByUserId: auth.userId, createdByDeviceId: deviceId, createdAtLocal: now, updatedAtLocal: now,
+    serverRevision: null, baseSnapshotHash: null, schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: APP_VERSION,
+    syncState: "queued", retryCount: 0, payload: semanticPayload };
+  await saveEntityAndOperation(entity, operation); await refreshPendingCount(); void flushOutbox(); return id;
 }
-
-async function flushEventOutbox() {
-  const items = (await getOutbox()).sort((a, b) => a.createdAt - b.createdAt);
-
-  for (const item of items.filter((candidate) => candidate.status !== "conflict")) {
-    try {
-      await submitOne(item);
-      await removeOutboxItem(item.id);
-    } catch (err) {
-      const isClientError = err instanceof ApiError && err.status >= 400 && err.status < 500;
-      const updated: OutboxItem = {
-        ...item,
-        attempts: item.attempts + 1,
-        lastError: err instanceof Error ? err.message : "unknown_error",
-        status: err instanceof ApiError && err.status === 409 ? "conflict" : "failed",
-      };
-      await updateOutboxItem(updated);
-      currentState = { ...currentState, lastError: updated.lastError };
-      if (isClientError) continue;
-      return; // likely connectivity — stop and wait for the next trigger
-    }
-  }
+function receiptFromApi(row: any): SyncReceipt {
+  return { operationId: row.operation_id, entityId: row.entity_id, entityType: row.entity_type,
+    openingId: row.opening_id, organizationId: row.organization_id, serverRevision: Number(row.resulting_server_revision),
+    normalizedRecordHash: row.normalized_record_hash, serverAcceptedAt: row.server_accepted_at, verifiedAt: row.verified_at,
+    mediaObjectVerified: row.media_object_verified === true, authorizedRetrievalVerified: row.authorized_retrieval_verified === true };
 }
-
-async function uploadOnePhoto(item: PhotoOutboxItem) {
-  const { uploadUrl, key } = await presignPhotoUpload(item.openingId, item.contentType, item.id);
-  await uploadToPresignedUrl(uploadUrl, item.blob, item.contentType);
-  await confirmPhotoUpload({
-    opening_id: item.openingId,
-    storage_key: key,
-    content_type: item.contentType,
-    client_operation_id: item.id,
-    related_entity_type: item.relatedEntityType,
-    related_entity_id: item.relatedEntityId,
-    frame_id: item.frameId,
-    door_leaf_id: item.doorLeafId,
-    hardware_component_id: item.hardwareComponentId,
-    latitude: item.latitude,
-    longitude: item.longitude,
+async function submitComponent(operation: SyncOperation) {
+  const { kind: _kind, id: _id, opening_id: _opening, client_operation_id: _client, ...component } = operation.payload as any;
+  return submitOfflineComponent({ operation_id: operation.operationId, entity_id: operation.entityId,
+    opening_id: operation.openingId, device_id: operation.deviceId, base_server_revision: operation.baseServerRevision,
+    schema_version: operation.schemaVersion, app_version: operation.appVersion, protocol_version: operation.protocolVersion,
+    payload: component });
+}
+async function submitPhoto(operation: SyncOperation) {
+  const media = await getOfflineMedia(operation.entityId); if (!media) throw new Error("offline_media_missing");
+  const reservation = await reserveOfflinePhoto({ photo_id: media.photoId, client_operation_id: operation.operationId,
+    opening_id: media.openingId, target_type: media.targetType, target_id: media.targetId,
+    original_filename: media.originalFilename, content_type: media.contentType, byte_size: media.byteSize,
+    sha256_checksum: media.sha256Checksum, device_id: media.capturedByDeviceId });
+  await uploadPrivatePhoto(reservation.upload_url, media.blob, media.contentType, media.sha256Checksum, media.photoId);
+  return confirmOfflinePhoto({ photo_id: media.photoId, client_operation_id: operation.operationId,
+    schema_version: operation.schemaVersion, app_version: operation.appVersion, protocol_version: operation.protocolVersion });
+}
+async function submitGeneralOperation(operation: SyncOperation) {
+  const { kind: _kind, id: _id, opening_id: _opening, client_operation_id: _client, ...payload } = operation.payload as any;
+  return submitOfflineOperation({
+    operation_id: operation.operationId, operation_type: operation.operationType,
+    entity_id: operation.entityId, entity_type: operation.entityType,
+    opening_id: operation.openingId, device_id: operation.deviceId,
+    base_server_revision: operation.baseServerRevision, schema_version: operation.schemaVersion,
+    app_version: operation.appVersion, protocol_version: operation.protocolVersion, payload,
   });
 }
-
-async function flushPhotoOutbox() {
-  const items = (await getPhotoOutbox()).sort((a, b) => a.createdAt - b.createdAt);
-
-  for (const item of items.filter((candidate) => candidate.status !== "conflict")) {
+async function recordFailure(operation: SyncOperation, error: unknown) {
+  const conflict = error instanceof ApiError && error.status === 409;
+  const authRequired = error instanceof ApiError && (error.status === 401 || error.status === 403);
+  const state: SyncOperationState = conflict ? "conflict" : authRequired ? "auth_required" : "retry_wait";
+  const message = error instanceof Error ? error.message : "unknown_error";
+  if (conflict) {
+    const item: SyncConflict = { conflictId: crypto.randomUUID(), operationId: operation.operationId,
+      entityId: operation.entityId, openingId: operation.openingId, organizationId: operation.organizationId,
+      affectedFields: [], baseValues: {}, localValues: operation.payload as Record<string, unknown>, serverValues: {},
+      detectedAt: new Date().toISOString(), resolutionState: "open" };
+    await putSyncConflict(item);
+  } else await putSyncOperation({ ...operation, state, attemptCount: operation.attemptCount + 1,
+    lastAttemptAt: new Date().toISOString(), nextAttemptAt: authRequired ? undefined : new Date(Date.now() + retryDelayMs(operation.attemptCount)).toISOString(),
+    lastErrorCode: message });
+  currentState = { ...currentState, lastError: message };
+}
+async function flushVersionedOperations() {
+  const operations = await getAllSyncOperations();
+  const verified = new Set(operations.filter((item) => item.state === "verified").map((item) => item.operationId));
+  for (const operation of readyOperations(operations, verified, new Date().toISOString())) {
+    await putSyncOperation({ ...operation, state: "in_flight", lastAttemptAt: new Date().toISOString() });
     try {
-      await uploadOnePhoto(item);
-      await removePhotoOutboxItem(item.id);
-    } catch (err) {
-      // Presigned URLs expire in 5 minutes — if this item sat offline for
-      // longer than that, the first attempt after reconnecting will fail
-      // with an expired-URL error from S3, and the retry on the *next* flush
-      // pass will succeed (it re-presigns from scratch each attempt). So a
-      // single failure here is expected and not itself a sign of trouble.
-      const isClientError = err instanceof ApiError && err.status >= 400 && err.status < 500;
-      const updated: PhotoOutboxItem = {
-        ...item,
-        attempts: item.attempts + 1,
-        lastError: err instanceof Error ? err.message : "unknown_error",
-        status: err instanceof ApiError && err.status === 409 ? "conflict" : "failed",
-      };
-      await updatePhotoOutboxItem(updated);
-      currentState = { ...currentState, lastError: updated.lastError };
-      if (isClientError && updated.attempts > 5) continue; // give up on something persistently rejected
-      return; // stop this pass, retry on the next trigger
+      const row = operation.entityType === "photo" ? await submitPhoto(operation)
+        : operation.entityType === "component" ? await submitComponent(operation)
+          : await submitGeneralOperation(operation);
+      await putSyncReceipt(receiptFromApi(row));
     }
+    catch (error) { await recordFailure(operation, error); if (!(error instanceof ApiError) || error.status >= 500) return; }
   }
 }
-
-// Flushes both outboxes. Photos run after events on purpose — event writes
-// are small and should land first; photo uploads are larger and more likely
-// to hit a flaky connection mid-transfer, so we don't want a stalled photo
-// upload to hold up service/inspection records that are ready to go.
 export async function flushOutbox() {
-  if (currentState.syncing) return;
-  if (!navigator.onLine) return;
-
-  currentState = { ...currentState, syncing: true };
-  notify();
-
-  await flushEventOutbox();
-  await flushPhotoOutbox();
-
-  currentState = { ...currentState, syncing: false };
-  await refreshPendingCount();
+  if (currentState.syncing || !navigator.onLine) return;
+  currentState = { ...currentState, syncing: true }; notify();
+  await flushVersionedOperations(); currentState = { ...currentState, syncing: false }; await refreshPendingCount();
 }
-
 export function initSync() {
-  refreshPendingCount();
-  window.addEventListener("online", flushOutbox);
-  // Also try periodically in case 'online' doesn't fire reliably (some mobile browsers).
-  const interval = setInterval(flushOutbox, 30_000);
-  flushOutbox();
-  return () => {
-    window.removeEventListener("online", flushOutbox);
-    clearInterval(interval);
-  };
+  void refreshPendingCount(); window.addEventListener("online", flushOutbox);
+  const interval = setInterval(flushOutbox, 30_000); void flushOutbox();
+  return () => { window.removeEventListener("online", flushOutbox); clearInterval(interval); };
 }
+export async function checksumBlob(blob: Blob) { return sha256Hex(blob); }

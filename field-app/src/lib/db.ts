@@ -211,6 +211,31 @@ export async function putSyncOperation(operation: SyncOperation) {
   await db.put("operations", operation);
 }
 
+export async function getOfflineMedia(photoId: string) {
+  const db = await getDb();
+  return db.get("media", photoId);
+}
+
+export async function getAllOfflineMedia() {
+  const db = await getDb();
+  return db.getAll("media");
+}
+
+export async function removeVerifiedLocalOriginal(photoId: string) {
+  const db = await getDb();
+  const tx = db.transaction(["media", "syncReceipts"], "readwrite");
+  const media = await tx.objectStore("media").get(photoId);
+  if (!media || media.localBlobState !== "verified_cleanup_allowed") {
+    throw new Error("local_original_not_verified_for_cleanup");
+  }
+  const receipts = await tx.objectStore("syncReceipts").index("by-entity").getAll(photoId);
+  if (!receipts.some((receipt) => receipt.mediaObjectVerified && receipt.authorizedRetrievalVerified)) {
+    throw new Error("local_original_receipt_proof_missing");
+  }
+  await tx.objectStore("media").delete(photoId);
+  await tx.done;
+}
+
 export async function putSyncReceipt(receipt: SyncReceipt) {
   const db = await getDb();
   const tx = db.transaction(["syncReceipts", "operations", "entities", "media"], "readwrite");
@@ -226,6 +251,9 @@ export async function putSyncReceipt(receipt: SyncReceipt) {
   if (operation.entityType === "photo") {
     const media = await tx.objectStore("media").get(operation.entityId);
     if (!media) throw new Error("receipt_media_not_found");
+    if (!receipt.mediaObjectVerified || !receipt.authorizedRetrievalVerified) {
+      throw new Error("receipt_media_proof_incomplete");
+    }
     await tx.objectStore("media").put({
       ...media,
       uploadState: "verified",
@@ -278,6 +306,11 @@ export async function putOpeningSnapshot(snapshot: OpeningSnapshot) {
 export async function putOfflineSetting(setting: OfflineSetting) {
   const db = await getDb();
   await db.put("settings", setting);
+}
+
+export async function getOfflineSetting(key: string) {
+  const db = await getDb();
+  return db.get("settings", key);
 }
 
 export async function cacheOpening(opening: any) {

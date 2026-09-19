@@ -2,6 +2,7 @@
 -- has been accepted without first exporting receipts, audit events, media
 -- metadata, and any client-generated identities.
 
+DROP TABLE IF EXISTS photo_deletion_jobs;
 DROP TABLE IF EXISTS photo_upload_reservations;
 DROP TABLE IF EXISTS sync_audit_events;
 DROP TABLE IF EXISTS sync_operation_receipts;

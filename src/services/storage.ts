@@ -45,15 +45,17 @@ const ALLOWED_DOCUMENT_CONTENT_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
 
-// Videos from a phone camera can be large — this is a client-side-only
-// backstop, not an enforced server-side limit. Presigned PUT URLs (unlike
-// presigned POST) don't support a Content-Length-Range condition, so nothing
-// here actually stops a much larger file from being uploaded; a determined
-// or malicious client could bypass this. Worth revisiting (switch to
-// presigned POST with policy conditions, or a server-side HEAD-object size
-// check after upload) before this handles untrusted uploads at real scale.
+// Reservation rejects declared oversize media, and confirmation independently
+// enforces the stored object size before any photo is accepted. Retrieval also
+// stops at the same bound while hashing, so a malicious oversized object is
+// never read fully into process memory.
 export const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100MB
+export const MAX_IMAGE_BYTES = 25 * 1024 * 1024; // 25MB
 export const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024; // 25MB — same client-side-only caveat as above
+
+export function maximumMediaBytes(contentType: string): number {
+  return contentType.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+}
 
 export function extensionForContentType(contentType: string): string {
   const map: Record<string, string> = {
@@ -144,12 +146,32 @@ export async function headPrivatePhoto(key: string): Promise<StoredPhotoMetadata
   };
 }
 
-export async function verifyPrivatePhotoRetrieval(key: string, expectedSha256: string) {
+export async function verifyPrivatePhotoRetrieval(
+  key: string,
+  expectedSha256: string,
+  maximumBytes: number,
+) {
   const client = getClient();
   const result = await client.send(new GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: key }));
   if (!result.Body) return false;
-  const bytes = await result.Body.transformToByteArray();
-  const actual = createHash("sha256").update(bytes).digest("hex");
+  return checksumStreamWithinLimit(
+    result.Body as AsyncIterable<Uint8Array>, expectedSha256, maximumBytes,
+  );
+}
+
+export async function checksumStreamWithinLimit(
+  body: AsyncIterable<Uint8Array>,
+  expectedSha256: string,
+  maximumBytes: number,
+) {
+  const hash = createHash("sha256");
+  let bytesRead = 0;
+  for await (const chunk of body) {
+    bytesRead += chunk.byteLength;
+    if (bytesRead > maximumBytes) return false;
+    hash.update(chunk);
+  }
+  const actual = hash.digest("hex");
   return actual === expectedSha256;
 }
 

@@ -20,15 +20,17 @@ import {
   verifyStoredPhoto,
   verifyPrivatePhotoRetrieval,
   isStorageKeyInOpeningScope,
+  maximumMediaBytes,
 } from "../services/storage";
+import { canonicalPayloadHash } from "../services/syncProtocol";
 
 export const photosRouter = Router();
 photosRouter.use(requireAuth);
 photosRouter.use(enforceRolePermissions);
 photosRouter.use(auditLog);
 
-async function assertOpeningInOrg(openingId: string, orgId: string): Promise<boolean> {
-  const result = await pool.query(
+async function assertOpeningInOrg(openingId: string, orgId: string, queryable: any = pool): Promise<boolean> {
+  const result = await queryable.query(
     `SELECT 1 FROM (${openingsForOrgSubquery(2)}) allowed WHERE allowed.id = $1`,
     [openingId, orgId]
   );
@@ -52,7 +54,7 @@ const reserveOfflinePhotoSchema = z.object({
   device_id: z.string().uuid(),
 });
 
-async function assertPhotoTarget(openingId: string, targetType: z.infer<typeof offlinePhotoTarget>, targetId: string) {
+async function assertPhotoTarget(openingId: string, targetType: z.infer<typeof offlinePhotoTarget>, targetId: string, queryable: any = pool) {
   if (targetType === "opening") return targetId === openingId;
   const tableAndKey: Record<Exclude<z.infer<typeof offlinePhotoTarget>, "opening">, string> = {
     frame: "opening_frames",
@@ -61,14 +63,17 @@ async function assertPhotoTarget(openingId: string, targetType: z.infer<typeof o
     service_event: "service_events",
     inspection_event: "inspection_events",
   };
-  const result = await pool.query(
+  const result = await queryable.query(
     `SELECT 1 FROM ${tableAndKey[targetType]} WHERE id=$1 AND opening_id=$2`,
     [targetId, openingId],
   );
   return result.rows.length > 0;
 }
 
-function reservationMatches(existing: any, requested: z.infer<typeof reserveOfflinePhotoSchema>) {
+function reservationMatches(
+  existing: any,
+  requested: z.infer<typeof reserveOfflinePhotoSchema> & { actor_user_id: string },
+) {
   return existing.photo_id === requested.photo_id &&
     existing.opening_id === requested.opening_id &&
     existing.target_type === requested.target_type &&
@@ -76,7 +81,52 @@ function reservationMatches(existing: any, requested: z.infer<typeof reserveOffl
     existing.content_type === requested.content_type &&
     Number(existing.byte_size) === requested.byte_size &&
     existing.sha256_checksum === requested.sha256_checksum &&
+    existing.original_filename === requested.original_filename &&
+    existing.actor_user_id === requested.actor_user_id &&
     existing.device_id === requested.device_id;
+}
+
+export async function createOrReplayPhotoReservation(
+  organizationId: string,
+  requested: z.infer<typeof reserveOfflinePhotoSchema> & { actor_user_id: string },
+) {
+  const key = buildPrivatePhotoStorageKey(
+    organizationId, requested.opening_id, requested.photo_id, requested.content_type,
+  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const inserted = await client.query(
+      `INSERT INTO photo_upload_reservations
+        (organization_id, opening_id, photo_id, operation_id, target_type, target_id,
+         storage_object_key, original_filename, content_type, byte_size, sha256_checksum,
+         actor_user_id, device_id, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now() + interval '5 minutes')
+       ON CONFLICT DO NOTHING RETURNING *`,
+      [organizationId, requested.opening_id, requested.photo_id, requested.client_operation_id,
+        requested.target_type, requested.target_id, key, requested.original_filename,
+        requested.content_type, requested.byte_size, requested.sha256_checksum,
+        requested.actor_user_id, requested.device_id],
+    );
+    const existing = await client.query(
+      `SELECT * FROM photo_upload_reservations
+       WHERE organization_id=$1 AND operation_id=$2 FOR UPDATE`,
+      [organizationId, requested.client_operation_id],
+    );
+    const reservation = existing.rows[0];
+    if (!reservation) { await client.query("ROLLBACK"); return { conflict: "photo_identity_reused" as const }; }
+    if (!reservationMatches(reservation, requested)) {
+      await client.query("ROLLBACK"); return { conflict: "idempotency_key_reused" as const };
+    }
+    const refreshed = await client.query(
+      `UPDATE photo_upload_reservations SET expires_at=now() + interval '5 minutes' WHERE id=$1 RETURNING *`,
+      [reservation.id],
+    );
+    await client.query("COMMIT");
+    return { reservation: refreshed.rows[0], created: inserted.rows.length === 1, key };
+  } catch (error) {
+    await client.query("ROLLBACK"); throw error;
+  } finally { client.release(); }
 }
 
 // Offline protocol step 1: reserve one immutable private object identity.
@@ -93,23 +143,17 @@ photosRouter.post("/offline/reserve", async (req: AuthedRequest, res) => {
   if (!isAllowedPhotoContentType(b.content_type)) {
     return res.status(400).json({ error: "unsupported_content_type" });
   }
+  if (b.byte_size > maximumMediaBytes(b.content_type)) {
+    return res.status(413).json({ error: "media_too_large" });
+  }
   if (!(await assertOpeningInOrg(b.opening_id, orgId))) return res.status(403).json({ error: "forbidden" });
   if (!(await assertPhotoTarget(b.opening_id, b.target_type, b.target_id))) {
     return res.status(400).json({ error: "photo_target_not_in_opening" });
   }
 
   try {
-    const existing = await pool.query(
-      `SELECT * FROM photo_upload_reservations WHERE organization_id=$1 AND operation_id=$2`,
-      [orgId, b.client_operation_id],
-    );
-    let reservation = existing.rows[0];
-    if (reservation && !reservationMatches(reservation, b)) {
-      return res.status(409).json({ error: "idempotency_key_reused" });
-    }
-
-    const key = reservation?.storage_object_key ??
-      buildPrivatePhotoStorageKey(orgId, b.opening_id, b.photo_id, b.content_type);
+    const requested = { ...b, actor_user_id: userId };
+    const key = buildPrivatePhotoStorageKey(orgId, b.opening_id, b.photo_id, b.content_type);
     const uploadUrl = await getPresignedPrivatePhotoUploadUrl({
       key,
       contentType: b.content_type,
@@ -118,28 +162,11 @@ photosRouter.post("/offline/reserve", async (req: AuthedRequest, res) => {
       photoId: b.photo_id,
     });
 
-    if (!reservation) {
-      const inserted = await pool.query(
-        `INSERT INTO photo_upload_reservations
-          (organization_id, opening_id, photo_id, operation_id, target_type, target_id,
-           storage_object_key, original_filename, content_type, byte_size, sha256_checksum,
-           actor_user_id, device_id, expires_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now() + interval '5 minutes')
-         RETURNING *`,
-        [orgId, b.opening_id, b.photo_id, b.client_operation_id, b.target_type, b.target_id,
-          key, b.original_filename, b.content_type, b.byte_size, b.sha256_checksum, userId, b.device_id],
-      );
-      reservation = inserted.rows[0];
-    } else {
-      const refreshed = await pool.query(
-        `UPDATE photo_upload_reservations SET expires_at=now() + interval '5 minutes'
-         WHERE id=$1 RETURNING *`,
-        [reservation.id],
-      );
-      reservation = refreshed.rows[0];
-    }
+    const result = await createOrReplayPhotoReservation(orgId, requested);
+    if (result.conflict) return res.status(409).json({ error: result.conflict });
+    const { reservation, created } = result;
 
-    return res.status(existing.rows[0] ? 200 : 201).json({
+    return res.status(created ? 201 : 200).json({
       photo_id: reservation.photo_id,
       client_operation_id: reservation.operation_id,
       storage_object_key: reservation.storage_object_key,
@@ -159,7 +186,7 @@ photosRouter.post("/offline/reserve", async (req: AuthedRequest, res) => {
 const confirmOfflinePhotoSchema = z.object({
   photo_id: z.string().uuid(),
   client_operation_id: z.string().uuid(),
-  payload_hash: z.string().regex(/^[0-9a-f]{64}$/),
+  payload_hash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
   schema_version: z.number().int().positive(),
   app_version: z.string().min(1).max(100),
   protocol_version: z.number().int().positive(),
@@ -170,28 +197,62 @@ photosRouter.post("/offline/confirm", async (req: AuthedRequest, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
   const orgId = req.auth!.organizationId;
-
-  const prior = await pool.query(
-    `SELECT * FROM sync_operation_receipts WHERE organization_id=$1 AND operation_id=$2`,
-    [orgId, b.client_operation_id],
-  );
-  if (prior.rows[0]) {
-    if (prior.rows[0].payload_hash !== b.payload_hash || prior.rows[0].entity_id !== b.photo_id) {
-      return res.status(409).json({ error: "idempotency_key_reused" });
-    }
-    return res.json({ ...prior.rows[0], status: "already_applied" });
-  }
-
-  const reserved = await pool.query(
-    `SELECT * FROM photo_upload_reservations
-     WHERE organization_id=$1 AND operation_id=$2 AND photo_id=$3`,
-    [orgId, b.client_operation_id, b.photo_id],
-  );
-  const reservation = reserved.rows[0];
-  if (!reservation) return res.status(404).json({ error: "reservation_not_found" });
-  if (!(await assertOpeningInOrg(reservation.opening_id, orgId))) return res.status(403).json({ error: "forbidden" });
-
+  const client = await pool.connect();
   try {
+    await client.query("BEGIN");
+    const reserved = await client.query(
+      `SELECT * FROM photo_upload_reservations
+       WHERE organization_id=$1 AND operation_id=$2 AND photo_id=$3 FOR UPDATE`,
+      [orgId, b.client_operation_id, b.photo_id],
+    );
+    const reservation = reserved.rows[0];
+    if (!reservation) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "reservation_not_found" });
+    }
+
+    const payloadHash = canonicalPayloadHash({
+      operation_type: "confirm_media",
+      entity_type: "photo",
+      photo_id: reservation.photo_id,
+      opening_id: reservation.opening_id,
+      target_type: reservation.target_type,
+      target_id: reservation.target_id,
+      storage_object_key: reservation.storage_object_key,
+      original_filename: reservation.original_filename,
+      content_type: reservation.content_type,
+      byte_size: Number(reservation.byte_size),
+      sha256_checksum: reservation.sha256_checksum,
+      actor_user_id: reservation.actor_user_id,
+      device_id: reservation.device_id,
+    });
+    const prior = await client.query(
+      `SELECT * FROM sync_operation_receipts WHERE organization_id=$1 AND operation_id=$2`,
+      [orgId, b.client_operation_id],
+    );
+    if (prior.rows[0]) {
+      await client.query("ROLLBACK");
+      if (prior.rows[0].payload_hash !== payloadHash || prior.rows[0].entity_id !== b.photo_id) {
+        return res.status(409).json({ error: "idempotency_key_reused" });
+      }
+      return res.json({ ...prior.rows[0], status: "already_applied" });
+    }
+
+    // Repeat authorization and hierarchy checks while holding the immutable
+    // reservation lock, immediately before accepting the storage object.
+    if (!(await assertOpeningInOrg(reservation.opening_id, orgId, client))) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "forbidden" });
+    }
+    if (!(await assertPhotoTarget(reservation.opening_id, reservation.target_type, reservation.target_id, client))) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "photo_target_no_longer_in_opening" });
+    }
+    if (reservation.actor_user_id !== req.auth!.userId) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "reservation_actor_mismatch" });
+    }
+
     const stored = await headPrivatePhoto(reservation.storage_object_key);
     const failures = verifyStoredPhoto({
       byteSize: Number(reservation.byte_size),
@@ -199,90 +260,91 @@ photosRouter.post("/offline/confirm", async (req: AuthedRequest, res) => {
       sha256Checksum: reservation.sha256_checksum,
       photoId: reservation.photo_id,
     }, stored);
+    if (stored.byteSize > maximumMediaBytes(reservation.content_type)) failures.push("media_too_large");
     if (failures.length) {
-      await pool.query(
+      await client.query(
         `UPDATE photo_upload_reservations SET status='failed', failure_code=$1 WHERE id=$2`,
         [failures.join(","), reservation.id],
       );
+      await client.query("COMMIT");
       return res.status(409).json({ error: "stored_object_verification_failed", failures });
     }
-    if (!(await verifyPrivatePhotoRetrieval(reservation.storage_object_key, reservation.sha256_checksum))) {
-      await pool.query(
+    const retrievalVerified = await verifyPrivatePhotoRetrieval(
+      reservation.storage_object_key,
+      reservation.sha256_checksum,
+      maximumMediaBytes(reservation.content_type),
+    );
+    if (!retrievalVerified) {
+      await client.query(
         `UPDATE photo_upload_reservations SET status='failed', failure_code='authorized_retrieval_checksum_mismatch' WHERE id=$1`,
         [reservation.id],
       );
-      return res.status(409).json({
-        error: "authorized_retrieval_verification_failed",
-        failures: ["checksum_mismatch"],
-      });
+      await client.query("COMMIT");
+      return res.status(409).json({ error: "authorized_retrieval_verification_failed", failures: ["checksum_mismatch"] });
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const targetColumns = {
-        frame_id: reservation.target_type === "frame" ? reservation.target_id : null,
-        door_leaf_id: reservation.target_type === "door_leaf" ? reservation.target_id : null,
-        hardware_component_id: reservation.target_type === "hardware_component" ? reservation.target_id : null,
-      };
-      const photo = await client.query(
-        `INSERT INTO photos
-          (id, opening_id, organization_id, related_entity_type, related_entity_id, storage_url,
-           media_type, taken_at, uploaded_by_user_id, frame_id, door_leaf_id, hardware_component_id,
-           client_operation_id, original_filename, content_type, byte_size, sha256_checksum,
-           storage_object_key, upload_state, storage_verified_at, authorized_retrieval_verified_at,
-           captured_by_device_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,now(),$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'verified',now(),now(),$18)
-         ON CONFLICT (opening_id, client_operation_id) WHERE client_operation_id IS NOT NULL
-         DO UPDATE SET opening_id=EXCLUDED.opening_id
-         RETURNING *`,
-        [reservation.photo_id, reservation.opening_id, orgId, reservation.target_type, reservation.target_id,
-          `private:${reservation.storage_object_key}`, mediaTypeForContentType(reservation.content_type),
-          req.auth!.userId, targetColumns.frame_id, targetColumns.door_leaf_id,
-          targetColumns.hardware_component_id, reservation.operation_id, reservation.original_filename,
-          reservation.content_type, reservation.byte_size, reservation.sha256_checksum,
-          reservation.storage_object_key, reservation.device_id],
-      );
-      const normalizedRecordHash = createHash("sha256").update(JSON.stringify(photo.rows[0])).digest("hex");
-      const receipt = await client.query(
-        `INSERT INTO sync_operation_receipts
-          (organization_id, opening_id, operation_id, operation_type, entity_type, entity_id,
-           payload_hash, resulting_server_revision, status, actor_user_id, device_id,
-           schema_version, app_version, protocol_version, normalized_record_hash, response_payload)
-         VALUES ($1,$2,$3,'confirm_media','photo',$4,$5,1,'accepted',$6,$7,$8,$9,$10,$11,$12)
-         RETURNING *`,
-        [orgId, reservation.opening_id, reservation.operation_id, reservation.photo_id, b.payload_hash,
-          req.auth!.userId, reservation.device_id, b.schema_version, b.app_version,
-          b.protocol_version, normalizedRecordHash, JSON.stringify(photo.rows[0])],
-      );
-      await client.query(
-        `INSERT INTO sync_audit_events
-          (organization_id, opening_id, operation_id, entity_type, entity_id, action,
-           resulting_server_revision, actor_user_id, device_id, changed_fields)
-         VALUES ($1,$2,$3,'photo',$4,'photo_verified',1,$5,$6,$7)`,
-        [orgId, reservation.opening_id, reservation.operation_id, reservation.photo_id,
-          req.auth!.userId, reservation.device_id,
-          ["storage_object_key", "sha256_checksum", "upload_state"]],
-      );
-      await client.query(
-        `UPDATE photo_upload_reservations SET status='verified', uploaded_at=COALESCE(uploaded_at,now()),
-         verified_at=now(), failure_code=NULL WHERE id=$1`,
-        [reservation.id],
-      );
-      await client.query("COMMIT");
-      return res.status(201).json(receipt.rows[0]);
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
-    }
+    const targetColumns = {
+      frame_id: reservation.target_type === "frame" ? reservation.target_id : null,
+      door_leaf_id: reservation.target_type === "door_leaf" ? reservation.target_id : null,
+      hardware_component_id: reservation.target_type === "hardware_component" ? reservation.target_id : null,
+    };
+    const photo = await client.query(
+      `INSERT INTO photos
+        (id, opening_id, organization_id, related_entity_type, related_entity_id, storage_url,
+         media_type, taken_at, uploaded_by_user_id, frame_id, door_leaf_id, hardware_component_id,
+         client_operation_id, original_filename, content_type, byte_size, sha256_checksum,
+         storage_object_key, upload_state, storage_verified_at, authorized_retrieval_verified_at,
+         captured_by_device_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,now(),$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'verified',now(),now(),$18)
+       RETURNING *`,
+      [reservation.photo_id, reservation.opening_id, orgId, reservation.target_type, reservation.target_id,
+        `private:${reservation.storage_object_key}`, mediaTypeForContentType(reservation.content_type),
+        req.auth!.userId, targetColumns.frame_id, targetColumns.door_leaf_id,
+        targetColumns.hardware_component_id, reservation.operation_id, reservation.original_filename,
+        reservation.content_type, reservation.byte_size, reservation.sha256_checksum,
+        reservation.storage_object_key, reservation.device_id],
+    );
+    const normalizedRecordHash = createHash("sha256").update(JSON.stringify(photo.rows[0])).digest("hex");
+    const receipt = await client.query(
+      `INSERT INTO sync_operation_receipts
+        (organization_id, opening_id, operation_id, operation_type, entity_type, entity_id,
+         payload_hash, resulting_server_revision, status, actor_user_id, device_id,
+         schema_version, app_version, protocol_version, normalized_record_hash,
+         media_object_verified, authorized_retrieval_verified, response_payload)
+       VALUES ($1,$2,$3,'confirm_media','photo',$4,$5,1,'accepted',$6,$7,$8,$9,$10,$11,true,true,$12)
+       RETURNING *`,
+      [orgId, reservation.opening_id, reservation.operation_id, reservation.photo_id, payloadHash,
+        req.auth!.userId, reservation.device_id, b.schema_version, b.app_version,
+        b.protocol_version, normalizedRecordHash, JSON.stringify(photo.rows[0])],
+    );
+    await client.query(
+      `INSERT INTO sync_audit_events
+        (organization_id, opening_id, operation_id, entity_type, entity_id, action,
+         resulting_server_revision, actor_user_id, device_id, changed_fields)
+       VALUES ($1,$2,$3,'photo',$4,'photo_verified',1,$5,$6,$7)`,
+      [orgId, reservation.opening_id, reservation.operation_id, reservation.photo_id,
+        req.auth!.userId, reservation.device_id,
+        ["storage_object_key", "sha256_checksum", "upload_state"]],
+    );
+    await client.query(
+      `UPDATE photo_upload_reservations SET status='verified', uploaded_at=COALESCE(uploaded_at,now()),
+       verified_at=now(), failure_code=NULL WHERE id=$1`,
+      [reservation.id],
+    );
+    await client.query("COMMIT");
+    return res.status(201).json(receipt.rows[0]);
   } catch (err: any) {
+    await client.query("ROLLBACK").catch(() => undefined);
     if (err.message?.startsWith("Photo storage is not configured")) {
       return res.status(503).json({ error: "storage_not_configured" });
     }
+    if (err.code === "23505") {
+      return res.status(409).json({ error: "idempotency_conflict" });
+    }
     console.error(err);
     return res.status(500).json({ error: "internal_error" });
+  } finally {
+    client.release();
   }
 });
 
@@ -348,7 +410,7 @@ photosRouter.post("/presign", async (req: AuthedRequest, res) => {
 
 const createPhotoSchema = z.object({
   opening_id: z.string().uuid(),
-  storage_key: z.string().optional(),
+  storage_object_key: z.string().optional(),
   storage_url: z.string().url().optional(),
   content_type: z.string(),
   related_entity_type: z.enum(["opening", "frame", "door_leaf", "hardware_component", "service_event", "inspection_event"]).optional(),
@@ -360,7 +422,7 @@ const createPhotoSchema = z.object({
   latitude: z.number().optional(),
   longitude: z.number().optional(),
   taken_at: z.string().optional(),
-}).refine((value) => value.storage_key || value.storage_url, { message: "storage_key_required" });
+}).refine((value) => value.storage_object_key || value.storage_url, { message: "storage_object_key_required" });
 
 // Step 2: client confirms the upload succeeded and we record it. New clients
 // send the server-issued storage key; the server validates its tenant/opening
@@ -396,20 +458,20 @@ photosRouter.post("/", async (req: AuthedRequest, res) => {
       if (!target.rows.length) return res.status(400).json({ error: "hardware_not_in_opening" });
     }
 
-    if (b.storage_key && !isStorageKeyInOpeningScope(b.storage_key, orgId, b.opening_id)) {
-      return res.status(400).json({ error: "storage_key_outside_opening_scope" });
+    if (b.storage_object_key && !isStorageKeyInOpeningScope(b.storage_object_key, orgId, b.opening_id)) {
+      return res.status(400).json({ error: "storage_object_key_outside_opening_scope" });
     }
-    const storageUrl = b.storage_key ? buildPublicUrl(b.storage_key) : b.storage_url!;
+    const storageUrl = b.storage_object_key ? buildPublicUrl(b.storage_object_key) : b.storage_url!;
     const result = await pool.query(
       `INSERT INTO photos
-        (opening_id, related_entity_type, related_entity_id, storage_url, storage_key, media_type, latitude, longitude,
+        (opening_id, related_entity_type, related_entity_id, storage_url, storage_object_key, media_type, latitude, longitude,
          taken_at, uploaded_by_user_id, frame_id, door_leaf_id, hardware_component_id, client_operation_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        ON CONFLICT (opening_id, client_operation_id) WHERE client_operation_id IS NOT NULL
        DO UPDATE SET opening_id=EXCLUDED.opening_id RETURNING *`,
       [
         b.opening_id, b.related_entity_type ?? "opening", b.related_entity_id ?? null,
-        storageUrl, b.storage_key ?? null, mediaType, b.latitude ?? null, b.longitude ?? null, b.taken_at ?? null, userId,
+        storageUrl, b.storage_object_key ?? null, mediaType, b.latitude ?? null, b.longitude ?? null, b.taken_at ?? null, userId,
         b.frame_id ?? null, b.door_leaf_id ?? null, b.hardware_component_id ?? null,
         b.client_operation_id ?? null,
       ]
@@ -450,19 +512,49 @@ photosRouter.delete("/:id", async (req: AuthedRequest, res) => {
     if (photoResult.rows.length === 0) return res.status(404).json({ error: "not_found" });
 
     const photo = photoResult.rows[0];
-    await pool.query("DELETE FROM photos WHERE id = $1", [id]);
+    const key = photo.storage_object_key as string | null;
 
-    // Best-effort cleanup of the underlying object — don't fail the request if this errors,
-    // the DB record is already gone which is what the client cares about.
-    try {
-      const url = new URL(photo.storage_url);
-      const key = url.pathname.replace(/^\//, "");
-      await deleteObject(key);
-    } catch (cleanupErr) {
-      console.error("Failed to delete underlying storage object:", cleanupErr);
+    // Legacy rows without a private-object identity have no managed private
+    // object to finalize. Private rows are retained until storage deletion is
+    // confirmed, so a failed delete can never create an untracked object.
+    if (!key) {
+      await pool.query("DELETE FROM photos WHERE id=$1", [id]);
+      return res.status(204).send();
     }
 
-    res.status(204).send();
+    await pool.query(
+      `INSERT INTO photo_deletion_jobs
+        (photo_id, organization_id, opening_id, storage_object_key, requested_by_user_id)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (photo_id) DO NOTHING`,
+      [photo.id, orgId, photo.opening_id, key, req.auth!.userId],
+    );
+
+    try {
+      await deleteObject(key);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("DELETE FROM photos WHERE id=$1", [id]);
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+      return res.status(204).send();
+    } catch (cleanupErr) {
+      await pool.query(
+        `UPDATE photo_deletion_jobs
+         SET status='retry_wait', attempt_count=attempt_count+1,
+             last_attempt_at=now(), last_error_code='object_delete_failed'
+         WHERE photo_id=$1`,
+        [id],
+      );
+      console.error("Private photo deletion deferred", { photoId: id });
+      return res.status(202).json({ status: "deletion_pending", photo_id: id });
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal_error" });

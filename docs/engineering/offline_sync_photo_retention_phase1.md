@@ -24,8 +24,8 @@ Authoritative base: `feat/paired-opening-data-model` at
 
 ## Migration and rollback
 
-- Migration: `migrations/014_offline_sync_photo_retention.sql`
-- Rollback: `docs/rollback/014_offline_sync_photo_retention_rollback.sql`
+- Migration: `migrations/014_offline_sync_foundation.sql`
+- Rollback: `docs/rollback/014_offline_sync_foundation_rollback.sql`
 
 The migration stores the provider-independent storage object key alongside the
 delivery URL. Existing rows are backfilled from their current URL when possible.

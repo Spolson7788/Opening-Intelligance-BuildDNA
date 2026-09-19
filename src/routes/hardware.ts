@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { randomBytes } from "node:crypto";
-import { v4 as uuidv4 } from "uuid";
+import { randomBytes, randomUUID } from "node:crypto";
 import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
@@ -121,7 +120,7 @@ hardwareRouter.post("/", async (req: AuthedRequest, res) => {
        ON CONFLICT (opening_id, client_operation_id) WHERE client_operation_id IS NOT NULL
        DO UPDATE SET opening_id=EXCLUDED.opening_id RETURNING *`,
       [
-        b.id ?? uuidv4(), b.opening_id, b.component_type, b.manufacturer ?? null, b.model_number ?? null,
+        b.id ?? randomUUID(), b.opening_id, b.component_type, b.manufacturer ?? null, b.model_number ?? null,
         b.finish ?? null, b.install_date ?? null, b.warranty_expiration ?? null, b.notes ?? null,
         b.unit_cost ?? null, b.supplier_name ?? null, b.supplier_contact ?? null,
         trackerId, b.serial_number ?? null, b.carrier ?? null, b.tracking_number ?? null,

@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { enqueuePhotoOutboxItem } from "../lib/db";
-import { flushOutbox } from "../lib/sync";
+import { loadAuth, saveMediaAndOperation } from "../lib/db";
+import { checksumBlob, flushOutbox, getOrCreateDeviceId } from "../lib/sync";
+import { OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "../lib/offlineTypes";
+import type { OfflineMediaRecord, SyncOperation } from "../lib/offlineTypes";
 
 interface Props {
   openingId: string;
@@ -15,6 +17,7 @@ interface Props {
 // 400 back after already being queued locally (still safe, just a wasted
 // round trip surfaced as an error later rather than caught at capture time).
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100MB, matches the server-side constant
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 
 export function PhotoCapture({ openingId, relatedEntityType = "opening", relatedEntityId, onQueued }: Props) {
   const [saving, setSaving] = useState(false);
@@ -42,6 +45,10 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
       setError(`That video is too large (${Math.round(file.size / 1024 / 1024)}MB) — 100MB max. Try a shorter clip.`);
       return;
     }
+    if (!isVideo && file.size > MAX_IMAGE_BYTES) {
+      setError(`That photograph is too large (${Math.round(file.size / 1024 / 1024)}MB) — 25MB max.`);
+      return;
+    }
 
     setSaving(true);
     try {
@@ -50,19 +57,33 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
       // inspection events, so this button behaves consistently with the rest
       // of the app regardless of connectivity, and regardless of whether it's
       // a photo or a video.
-      const location = await getLocation();
-      await enqueuePhotoOutboxItem({
-        id: crypto.randomUUID(),
-        openingId,
-        blob: file,
-        contentType: file.type,
-        relatedEntityType,
-        relatedEntityId,
-        frameId: relatedEntityType === "frame" ? relatedEntityId : undefined,
-        doorLeafId: relatedEntityType === "door_leaf" ? relatedEntityId : undefined,
-        hardwareComponentId: relatedEntityType === "hardware_component" ? relatedEntityId : undefined,
-        ...location,
-      });
+      await getLocation();
+      const auth = await loadAuth();
+      if (!auth) throw new Error("auth_required");
+      const now = new Date().toISOString();
+      const photoId = crypto.randomUUID();
+      const operationId = crypto.randomUUID();
+      const deviceId = await getOrCreateDeviceId();
+      const checksum = await checksumBlob(file);
+      const targetId = relatedEntityId ?? openingId;
+      const media: OfflineMediaRecord = {
+        photoId, openingId, organizationId: auth.organizationId,
+        targetType: relatedEntityType, targetId, capturedAtDevice: now,
+        capturedByUserId: auth.userId, capturedByDeviceId: deviceId,
+        originalFilename: file.name, generatedCaptureName: `${photoId}.${file.type.split("/")[1] || "bin"}`,
+        contentType: file.type, byteSize: file.size, sha256Checksum: checksum, blob: file,
+        localBlobState: "retained", uploadState: "queued", provenanceState: "original",
+        reviewState: "pending", createdAtLocal: now, updatedAtLocal: now,
+      };
+      const operation: SyncOperation = {
+        operationId, operationType: "confirm_media", entityType: "photo", entityId: photoId,
+        openingId, organizationId: auth.organizationId, actorUserId: auth.userId, deviceId,
+        baseServerRevision: null, payload: { target_type: relatedEntityType, target_id: targetId,
+          original_filename: file.name, content_type: file.type, byte_size: file.size, sha256_checksum: checksum },
+        payloadHash: checksum, dependencyOperationIds: [], createdAtLocal: now, state: "queued", attemptCount: 0,
+        schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: "offline-protocol-1", protocolVersion: SYNC_PROTOCOL_VERSION,
+      };
+      await saveMediaAndOperation(media, operation);
       onQueued();
       flushOutbox(); // fire-and-forget: uploads now if online, otherwise sits queued
     } finally {

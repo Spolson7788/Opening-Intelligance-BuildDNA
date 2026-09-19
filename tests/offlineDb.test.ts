@@ -6,10 +6,13 @@ import {
   getOfflineEntitiesForOpening,
   getSyncOperationsForOpening,
   putSyncReceipt,
+  getOfflineMedia,
+  removeVerifiedLocalOriginal,
   saveEntityAndOperation,
+  saveMediaAndOperation,
 } from "../field-app/src/lib/db";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "../field-app/src/lib/offlineTypes";
-import type { OfflineEntityEnvelope, SyncOperation, SyncReceipt } from "../field-app/src/lib/offlineTypes";
+import type { OfflineEntityEnvelope, OfflineMediaRecord, SyncOperation, SyncReceipt } from "../field-app/src/lib/offlineTypes";
 
 const ids = {
   operation: "11111111-1111-4111-8111-111111111111",
@@ -116,5 +119,29 @@ describe("versioned offline database", () => {
     const [savedEntity] = await getOfflineEntitiesForOpening(ids.opening);
     expect(savedEntity.syncState).toBe("verified");
     expect(savedEntity.serverRevision).toBe(1);
+  });
+
+  it("retains a local original until both media proofs are recorded", async () => {
+    const photoId = ids.entity;
+    const media: OfflineMediaRecord = {
+      photoId, openingId: ids.opening, organizationId: ids.organization, targetType: "opening", targetId: ids.opening,
+      capturedAtDevice: "2026-09-18T12:00:00.000Z", capturedByUserId: ids.user, capturedByDeviceId: ids.device,
+      originalFilename: "capture.jpg", generatedCaptureName: "capture.jpg", contentType: "image/jpeg", byteSize: 3,
+      sha256Checksum: "a".repeat(64), blob: new Blob(["abc"], { type: "image/jpeg" }), localBlobState: "retained",
+      uploadState: "queued", provenanceState: "original", reviewState: "pending",
+      createdAtLocal: "2026-09-18T12:00:00.000Z", updatedAtLocal: "2026-09-18T12:00:00.000Z",
+    };
+    const operation: SyncOperation = { ...record().operation, entityId: photoId, entityType: "photo", operationType: "confirm_media" };
+    await saveMediaAndOperation(media, operation);
+    const receipt: SyncReceipt = { operationId: ids.operation, entityId: photoId, entityType: "photo",
+      openingId: ids.opening, organizationId: ids.organization, serverRevision: 1, normalizedRecordHash: "b".repeat(64),
+      serverAcceptedAt: "2026-09-18T12:01:00.000Z", verifiedAt: "2026-09-18T12:01:01.000Z",
+      mediaObjectVerified: true, authorizedRetrievalVerified: false };
+    await expect(putSyncReceipt(receipt)).rejects.toThrow("receipt_media_proof_incomplete");
+    await expect(removeVerifiedLocalOriginal(photoId)).rejects.toThrow("local_original_not_verified_for_cleanup");
+    await putSyncReceipt({ ...receipt, authorizedRetrievalVerified: true });
+    expect((await getOfflineMedia(photoId))?.localBlobState).toBe("verified_cleanup_allowed");
+    await removeVerifiedLocalOriginal(photoId);
+    expect(await getOfflineMedia(photoId)).toBeUndefined();
   });
 });

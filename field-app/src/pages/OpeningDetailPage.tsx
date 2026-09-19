@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto } from "../lib/api";
-import { getPhotoOutboxForOpening, updateCachedOpening } from "../lib/db";
-import type { PhotoOutboxItem } from "../lib/db";
+import { getAllOfflineMedia, updateCachedOpening } from "../lib/db";
+import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
 import { SyncBadge } from "../components/SyncBadge";
 import { PhotoCapture } from "../components/PhotoCapture";
@@ -21,7 +21,7 @@ export function OpeningDetailPage() {
   const [fromCache, setFromCache] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [queuedPhotos, setQueuedPhotos] = useState<(PhotoOutboxItem & { previewUrl: string })[]>([]);
+  const [queuedPhotos, setQueuedPhotos] = useState<(OfflineMediaRecord & { previewUrl: string })[]>([]);
   const openingIdRef = useRef<string | null>(id ?? null);
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export function OpeningDetailPage() {
   async function loadQueuedPhotos() {
     const openingId = openingIdRef.current;
     if (!openingId) return;
-    const items = await getPhotoOutboxForOpening(openingId);
+    const items = (await getAllOfflineMedia()).filter((item) => item.openingId === openingId && item.uploadState !== "verified");
     setQueuedPhotos((prev) => {
       prev.forEach((p) => URL.revokeObjectURL(p.previewUrl)); // avoid leaking object URLs
       return items.map((item) => ({ ...item, previewUrl: URL.createObjectURL(item.blob) }));
@@ -168,7 +168,7 @@ export function OpeningDetailPage() {
         {((opening.photos && opening.photos.length > 0) || queuedPhotos.length > 0) && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 10 }}>
             {queuedPhotos.map((p) => (
-              <div key={p.id} style={{ position: "relative" }}>
+              <div key={p.photoId} style={{ position: "relative" }}>
                 {p.contentType.startsWith("video/") ? (
                   <video
                     src={p.previewUrl}
@@ -186,7 +186,7 @@ export function OpeningDetailPage() {
                   className="badge badge-offline"
                   style={{ position: "absolute", bottom: 4, left: 4, fontSize: 10, padding: "2px 6px" }}
                 >
-                  {p.attempts > 0 ? "Retrying…" : "Queued"}
+                  {p.uploadState === "retry_wait" ? "Retrying…" : p.uploadState === "conflict" ? "Conflict" : "Queued"}
                 </span>
               </div>
             ))}

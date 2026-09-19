@@ -69,6 +69,14 @@ CREATE UNIQUE INDEX uq_photos_storage_object_key
 CREATE INDEX idx_photos_organization ON photos(organization_id);
 CREATE INDEX idx_photos_upload_state ON photos(upload_state);
 
+-- One canonical private-object identity. Legacy URL-derived values are copied
+-- only when present; new private media never relies on a delivery URL.
+UPDATE photos
+SET storage_object_key = regexp_replace(storage_url, '^https?://[^/]+/', '')
+WHERE storage_object_key IS NULL
+  AND storage_url IS NOT NULL
+  AND storage_url ~ '^https?://';
+
 CREATE TABLE sync_operation_receipts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   organization_id UUID NOT NULL REFERENCES organizations(id),
@@ -94,6 +102,8 @@ CREATE TABLE sync_operation_receipts (
   app_version TEXT NOT NULL,
   protocol_version INTEGER NOT NULL CHECK (protocol_version > 0),
   normalized_record_hash TEXT NOT NULL CHECK (normalized_record_hash ~ '^[0-9a-f]{64}$'),
+  media_object_verified BOOLEAN NOT NULL DEFAULT false,
+  authorized_retrieval_verified BOOLEAN NOT NULL DEFAULT false,
   response_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   server_accepted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   verified_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -160,6 +170,22 @@ CREATE INDEX idx_photo_reservations_expiry
   ON photo_upload_reservations(expires_at)
   WHERE status = 'reserved';
 
+CREATE TABLE photo_deletion_jobs (
+  photo_id UUID PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+  organization_id UUID NOT NULL REFERENCES organizations(id),
+  opening_id UUID NOT NULL REFERENCES openings(id) ON DELETE CASCADE,
+  storage_object_key TEXT NOT NULL,
+  requested_by_user_id UUID NOT NULL REFERENCES users(id),
+  attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'retry_wait')),
+  last_error_code TEXT,
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_attempt_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_photo_deletion_jobs_retry
+  ON photo_deletion_jobs(status, last_attempt_at);
+
 -- These tables are internal to the API server until a separately reviewed
 -- Supabase Data API contract exists. RLS plus explicit revoked grants prevents
 -- accidental direct-browser exposure; the application server's direct
@@ -167,19 +193,21 @@ CREATE INDEX idx_photo_reservations_expiry
 ALTER TABLE sync_operation_receipts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sync_audit_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE photo_upload_reservations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE photo_deletion_jobs ENABLE ROW LEVEL SECURITY;
 
 REVOKE ALL ON sync_operation_receipts FROM PUBLIC;
 REVOKE ALL ON sync_audit_events FROM PUBLIC;
 REVOKE ALL ON photo_upload_reservations FROM PUBLIC;
+REVOKE ALL ON photo_deletion_jobs FROM PUBLIC;
 
 -- Supabase projects may have explicit default grants for these roles. Keep the
 -- migration portable to ordinary Postgres/PGlite, where the roles do not exist.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-    REVOKE ALL ON sync_operation_receipts, sync_audit_events, photo_upload_reservations FROM anon;
+    REVOKE ALL ON sync_operation_receipts, sync_audit_events, photo_upload_reservations, photo_deletion_jobs FROM anon;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
-    REVOKE ALL ON sync_operation_receipts, sync_audit_events, photo_upload_reservations FROM authenticated;
+    REVOKE ALL ON sync_operation_receipts, sync_audit_events, photo_upload_reservations, photo_deletion_jobs FROM authenticated;
   END IF;
 END $$;

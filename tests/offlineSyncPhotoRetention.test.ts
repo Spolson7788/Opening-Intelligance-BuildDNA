@@ -63,7 +63,7 @@ describe("offline synchronization and photograph retention", () => {
     const storageKey = buildStorageKey(org.organizationId, opening.id, "image/jpeg", operationId);
     const payload = {
       opening_id: opening.id,
-      storage_key: storageKey,
+      storage_object_key: storageKey,
       content_type: "image/jpeg",
       client_operation_id: operationId,
       related_entity_type: "opening",
@@ -73,7 +73,7 @@ describe("offline synchronization and photograph retention", () => {
     expect(first.status).toBe(201);
     expect(retry.status).toBe(201);
     expect(retry.body.id).toBe(first.body.id);
-    expect(retry.body.storage_key).toBe(storageKey);
+    expect(retry.body.storage_object_key).toBe(storageKey);
   });
 
   it("denies confirmation for a storage key outside the authenticated tenant", async () => {
@@ -82,11 +82,11 @@ describe("offline synchronization and photograph retention", () => {
     const opening = await createTestOpening(org.token, buildingId);
     const result = await request(app).post("/api/photos").set("Authorization", `Bearer ${org.token}`).send({
       opening_id: opening.id,
-      storage_key: buildStorageKey("another-org", opening.id, "image/jpeg", randomUUID()),
+      storage_object_key: buildStorageKey("another-org", opening.id, "image/jpeg", randomUUID()),
       content_type: "image/jpeg",
       client_operation_id: randomUUID(),
     });
     expect(result.status).toBe(400);
-    expect(result.body.error).toBe("storage_key_outside_opening_scope");
+    expect(result.body.error).toBe("storage_object_key_outside_opening_scope");
   });
 });

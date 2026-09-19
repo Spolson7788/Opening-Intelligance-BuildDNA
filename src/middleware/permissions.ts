@@ -40,6 +40,7 @@ const FIELD_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp }> = [
   { method: "POST", pattern: /^\/api\/work-orders\/[^/]+\/status$/ },
   { method: "POST", pattern: /^\/api\/openings\/[^/]+\/recompute-health-score$/ },
   { method: "POST", pattern: /^\/api\/sync\/components$/ },
+  { method: "POST", pattern: /^\/api\/sync\/operations$/ },
 ];
 
 const WRITE_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);

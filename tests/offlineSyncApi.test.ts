@@ -7,6 +7,7 @@ import {
   verifyStoredPhoto,
 } from "../src/services/storage";
 import { app, createPortfolioHierarchy, createTestOpening, signupTestOrg } from "./helpers";
+import { createOrReplayPhotoReservation } from "../src/routes/photos";
 
 const photoId = "11111111-1111-4111-8111-111111111111";
 const operationId = "22222222-2222-4222-8222-222222222222";
@@ -119,6 +120,17 @@ describe("offline synchronization API foundation", () => {
     expect(response.body.error).toBe("photo_target_not_in_opening");
   });
 
+  it("rejects declared media larger than the server-side limit before storage access", async () => {
+    const org = await signupTestOrg();
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId);
+    const response = await request(app).post("/api/photos/offline/reserve")
+      .set("Authorization", `Bearer ${org.token}`)
+      .send(reservation(opening.id, { byte_size: 25 * 1024 * 1024 + 1 }));
+    expect(response.status).toBe(413);
+    expect(response.body.error).toBe("media_too_large");
+  });
+
   it("does not persist a reservation when private storage is not configured", async () => {
     const org = await signupTestOrg();
     const { buildingId } = await createPortfolioHierarchy(org.token);
@@ -144,6 +156,28 @@ describe("offline synchronization API foundation", () => {
         else process.env[key] = prior[key];
       }
     }
+  });
+
+  it("returns one immutable reservation for concurrent identical retries", async () => {
+    const org = await signupTestOrg();
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId);
+    const user = await pool.query("SELECT id FROM users WHERE email=$1", [org.email]);
+    const concurrentOperationId = randomUUID();
+    const requested = { ...reservation(opening.id, { photo_id: randomUUID(), client_operation_id: concurrentOperationId }), actor_user_id: user.rows[0].id } as any;
+    const [left, right] = await Promise.all([
+      createOrReplayPhotoReservation(org.organizationId, requested),
+      createOrReplayPhotoReservation(org.organizationId, requested),
+    ]);
+    expect(left.conflict).toBeUndefined();
+    expect(right.conflict).toBeUndefined();
+    expect(left.reservation.id).toBe(right.reservation.id);
+    expect([left.created, right.created].sort()).toEqual([false, true]);
+    const rows = await pool.query("SELECT * FROM photo_upload_reservations WHERE operation_id=$1", [concurrentOperationId]);
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0].original_filename).toBe(requested.original_filename);
+    expect(rows.rows[0].actor_user_id).toBe(requested.actor_user_id);
+    expect(rows.rows[0].device_id).toBe(requested.device_id);
   });
 
   it("does not confirm a photo without an owned reservation", async () => {
@@ -200,6 +234,37 @@ describe("offline synchronization API foundation", () => {
     expect(count.rows[0].count).toBe(1);
   });
 
+  it("computes the semantic payload hash on the server and ignores a forged client hash", async () => {
+    const org = await signupTestOrg();
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId);
+    const body = componentOperation(opening.id, { payload_hash: "0".repeat(64) });
+    const response = await request(app).post("/api/sync/components").set("Authorization", `Bearer ${org.token}`).send(body);
+    expect(response.status).toBe(201);
+    expect(response.body.payload_hash).not.toBe(body.payload_hash);
+  });
+
+  it("routes frame capture through the versioned endpoint with exactly-idempotent replay", async () => {
+    const org = await signupTestOrg();
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId);
+    const body = {
+      operation_id: randomUUID(), operation_type: "create", entity_id: randomUUID(), entity_type: "frame",
+      opening_id: opening.id, device_id: deviceId, base_server_revision: null, schema_version: 3,
+      app_version: "phase-2-test", protocol_version: 1, payload: { material: "Steel", condition: "good" },
+    };
+    const [first, replay] = [
+      await request(app).post("/api/sync/operations").set("Authorization", `Bearer ${org.token}`).send(body),
+      await request(app).post("/api/sync/operations").set("Authorization", `Bearer ${org.token}`).send(body),
+    ];
+    expect(first.status).toBe(201);
+    expect(replay.status).toBe(200);
+    expect(replay.body.status).toBe("already_applied");
+    const rows = await pool.query("SELECT * FROM opening_frames WHERE opening_id=$1", [opening.id]);
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0].client_operation_id).toBe(body.operation_id);
+  });
+
   it("rejects reuse of an operation ID for a different entity", async () => {
     const org = await signupTestOrg();
     const { buildingId } = await createPortfolioHierarchy(org.token);
@@ -243,5 +308,30 @@ describe("offline synchronization API foundation", () => {
       .set("Authorization", `Bearer ${outsider.token}`)
       .send(componentOperation(opening.id));
     expect(response.status).toBe(403);
+  });
+
+  it("retains a private photo and a retryable tombstone when object deletion fails", async () => {
+    const org = await signupTestOrg();
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId);
+    const user = await pool.query("SELECT id FROM users WHERE email=$1", [org.email]);
+    const id = randomUUID();
+    const key = buildPrivatePhotoStorageKey(org.organizationId, opening.id, id, "image/jpeg");
+    await pool.query(`INSERT INTO photos
+      (id,opening_id,organization_id,related_entity_type,related_entity_id,storage_url,storage_object_key,
+       media_type,uploaded_by_user_id,upload_state,revision)
+      VALUES ($1,$2,$3,'opening',$2,$4,$5,'photo',$6,'verified',1)`,
+    [id, opening.id, org.organizationId, `private:${key}`, key, user.rows[0].id]);
+    const envKeys = ["S3_BUCKET", "S3_REGION", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"];
+    envKeys.forEach((name) => delete process.env[name]);
+    const first = await request(app).delete(`/api/photos/${id}`).set("Authorization", `Bearer ${org.token}`);
+    const retry = await request(app).delete(`/api/photos/${id}`).set("Authorization", `Bearer ${org.token}`);
+    expect(first.status).toBe(202);
+    expect(retry.status).toBe(202);
+    expect((await pool.query("SELECT 1 FROM photos WHERE id=$1", [id])).rows).toHaveLength(1);
+    const job = await pool.query("SELECT * FROM photo_deletion_jobs WHERE photo_id=$1", [id]);
+    expect(job.rows[0].status).toBe("retry_wait");
+    expect(job.rows[0].attempt_count).toBe(2);
+    expect(job.rows[0].storage_object_key).toBe(key);
   });
 });

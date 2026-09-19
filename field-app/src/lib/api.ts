@@ -99,7 +99,7 @@ export async function presignPhotoUpload(openingId: string, contentType: string,
 
 export async function confirmPhotoUpload(payload: {
   opening_id: string;
-  storage_key: string;
+  storage_object_key: string;
   content_type: string;
   client_operation_id: string;
   related_entity_type?: "opening" | "frame" | "door_leaf" | "hardware_component";
@@ -126,6 +126,58 @@ export async function uploadToPresignedUrl(uploadUrl: string, blob: Blob, conten
     body: blob,
   });
   if (!res.ok) throw new Error(`upload_failed_${res.status}`);
+}
+
+export async function reserveOfflinePhoto(payload: {
+  photo_id: string;
+  client_operation_id: string;
+  opening_id: string;
+  target_type: "opening" | "frame" | "door_leaf" | "hardware_component" | "service_event" | "inspection_event";
+  target_id: string;
+  original_filename: string;
+  content_type: string;
+  byte_size: number;
+  sha256_checksum: string;
+  device_id: string;
+}) {
+  return authedFetch("/photos/offline/reserve", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function uploadPrivatePhoto(
+  uploadUrl: string,
+  blob: Blob,
+  contentType: string,
+  checksum: string,
+  photoId: string,
+) {
+  const res = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": contentType,
+      "x-amz-meta-oi-sha256": checksum,
+      "x-amz-meta-oi-photo-id": photoId,
+    },
+    body: blob,
+  });
+  if (!res.ok) throw new Error(`upload_failed_${res.status}`);
+}
+
+export async function confirmOfflinePhoto(payload: {
+  photo_id: string;
+  client_operation_id: string;
+  schema_version: number;
+  app_version: string;
+  protocol_version: number;
+}) {
+  return authedFetch("/photos/offline/confirm", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function submitOfflineComponent(payload: Record<string, unknown>) {
+  return authedFetch("/sync/components", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function submitOfflineOperation(payload: Record<string, unknown>) {
+  return authedFetch("/sync/operations", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export async function fetchHardwareForOpening(openingId: string) {
