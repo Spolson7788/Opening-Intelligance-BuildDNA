@@ -83,13 +83,11 @@ small{color:var(--muted)}
     <summary style="font-weight:700;color:var(--navy);cursor:pointer;font-size:14px">Testing — identification accuracy (tap to load)</summary>
     <div id="accbody" class="hint" style="margin-top:10px;line-height:1.7">Sign in first, then tap to load.</div>
   </details>
-  <details class="card" id="providerMappingCard">
-    <summary style="font-weight:700;color:var(--navy);cursor:pointer;font-size:14px">The service provider · product mapping import</summary>
-    <div class="hint" style="margin:8px 0">Import a CSV with manufacturer, product_model and provider_sku. Optional: product_description and configuration_details. A mapping never establishes installed-product identity.</div>
-    <input id="providerMappingFile" type="file" accept=".csv,text/csv" style="width:100%">
-    <button class="btn sec" id="providerMappingImport" type="button" style="margin-top:8px">Import mappings</button>
-    <div id="providerMappingMsg" class="hint" style="margin-top:7px"></div>
-  </details>
+  <!-- Provider mapping import is administrator / onboarding work and has moved
+       to provider-admin.html. It is deliberately absent from the technician
+       workflow: a technician neither imports mappings nor chooses a file, and
+       sees only the resulting provider SKU where purchasing review uses it.
+       The import capability itself is unchanged - see provider-admin.html. -->
   <div class="card">
     <label>Opening details</label>
     <input id="loc" placeholder="Location — site / building / area (e.g. Phoenix VA — Bldg 3, 2nd flr)" style="width:100%;padding:11px;font-size:15px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px">

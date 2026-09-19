@@ -594,32 +594,6 @@
     });
   }
 
-  function installProviderImport() {
-    const button = document.getElementById('providerMappingImport');
-    const input = document.getElementById('providerMappingFile');
-    const message = document.getElementById('providerMappingMsg');
-    if (!button || !input || !message || button.__oiProviderImport) return;
-    button.__oiProviderImport = true;
-    button.addEventListener('click', async function () {
-      const file = input.files && input.files[0];
-      if (!file) { message.textContent = 'Choose a CSV file first.'; message.style.color = 'var(--bad)'; return; }
-      try {
-        const result = window.OIProviderMappings.importCsv(localStorage, 'service-provider', await file.text());
-        if (!result.ok) {
-          message.textContent = 'Import refused — ' + result.errors.join('; ');
-          message.style.color = 'var(--bad)';
-          return;
-        }
-        message.textContent = '✓ ' + result.rows.length + ' mapping' + (result.rows.length === 1 ? '' : 's') + ' saved for the service provider.';
-        message.style.color = 'var(--good)';
-        updatePurchasingUi();
-      } catch (error) {
-        message.textContent = 'Import failed — ' + (error.message || String(error));
-        message.style.color = 'var(--bad)';
-      }
-    });
-  }
-
   function init() {
     if (window.OI_LOCAL_MODE) {
       window.cloudSync = async function () {
@@ -632,7 +606,6 @@
     installOpeningFunctions();
     installPurchasing();
     installNavigationRefresh();
-    installProviderImport();
     renderOpeningReview();
   }
 

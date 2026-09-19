@@ -118,7 +118,19 @@ assert.match(html, /This account is not authorized for the facility named by thi
 assert.match(html, /var hits=exact\.length\?exact:series/);
 assert.match(html, /candidate\.model='AF7700'/);
 assert.doesNotMatch(html, /tops\.slice\(0,3\).*join\(' · '\)/);
-assert.match(html, /A mapping never establishes installed-product identity/);
+// The limit statement moved with the import control: provider mapping import
+// is administrator/onboarding work and no longer appears in the technician
+// page. The statement is still required, and is now required in BOTH places it
+// can be made - on the administrator interface that performs the import, and
+// in the module that performs it - and it must be GONE from the technician page.
+assert.doesNotMatch(html, /A mapping never establishes installed-product identity/,
+  'the technician page still carries the provider-mapping import card');
+assert.doesNotMatch(html, /providerMapping/,
+  'the technician page still carries provider-mapping import controls');
+const adminHtml = fs.readFileSync(path.join(root, 'provider-admin.html'), 'utf8');
+assert.match(adminHtml, /A mapping never establishes\s+installed-product identity/);
+assert.match(adminHtml, /it never establishes what is installed on a\s+door/);
+assert.match(adminHtml, /id="providerMappingImport"/);
 assert.match(html, /e\.target\.id!=='a_arm_type'/);
 assert.match(html, /window\._tech\.product\.configuration_details=observed/);
 assert.match(html, /else delete window\._tech\.product\.configuration_details/);
