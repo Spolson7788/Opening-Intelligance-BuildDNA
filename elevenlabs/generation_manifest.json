@@ -2397,8 +2397,8 @@
    "audio": "elevenlabs/audio/S316.mp3",
    "audio_present": false,
    "renarrate_required": true,
-   "words": 41,
-   "estimated_seconds": 21.59,
+   "words": 58,
+   "estimated_seconds": 30.54,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -2430,13 +2430,22 @@
    "in_master": true,
    "narration_provisional": false,
    "provisional_depends_on": "Verified against the working development build before generation. Not in run 16.",
-   "script_sha256_frozen": "8d88c4d2ae8eaae6fbf37966b79f9d7166f1269206b1e638ba1a6dead80ba64d",
-   "characters_frozen": 242,
+   "script_sha256_frozen": "648e63ac6b3694b3c806a222b34c22e961e4590498443e1fdd4c62c15932822e",
+   "characters_frozen": 323,
    "provisional_hold_released": {
     "was_provisional": true,
     "previous_reason": "Its combined-request claim is verified in source but has never been observed on a screen.",
     "released_by": "Stephan - batch 18 approved 18 Sep 2026"
-   }
+   },
+   "supersedes": {
+    "previous_script_sha256": "8d88c4d2ae8eaae6fbf37966b79f9d7166f1269206b1e638ba1a6dead80ba64d",
+    "previous_characters": 242,
+    "previous_master_sha256": "87dca94275be7898",
+    "why": "The run-18 master closes by saying the combined request across every opening is refused. At 46a5d9ff2823686567d8300a9be6a751529fcf4f the eligible 310C request proceeds once the technician acknowledges the 205A exclusion, so that sentence is no longer true. Wording approved by Stephan on 19 Sep 2026 subject to the 46a5d9f verification, which passed."
+   },
+   "submitted_sha256_expected": "648e63ac6b3694b3c806a222b34c22e961e4590498443e1fdd4c62c15932822e",
+   "characters_submitted_expected": 323,
+   "_expected_hash_note": "S316 carries no pronunciation override, so the submitted text is the frozen text and this hash equals script_sha256_frozen. It is pinned so the generator refuses the run if the script file on the branch is not the approved 323-character wording. Added by Claude, 19 Sep 2026; it changes no narration, no setting and no scene scope."
   }
  ],
  "run_name": "run18-batch18-approved"
