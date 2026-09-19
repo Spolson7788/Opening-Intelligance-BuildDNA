@@ -7,7 +7,7 @@ import {
   verifyStoredPhoto,
 } from "../src/services/storage";
 import { app, createPortfolioHierarchy, createTestOpening, signupTestOrg } from "./helpers";
-import { createOrReplayPhotoReservation } from "../src/routes/photos";
+import { createOrReplayPhotoReservation, processPhotoDeletionJobs } from "../src/routes/photos";
 
 const photoId = "11111111-1111-4111-8111-111111111111";
 const operationId = "22222222-2222-4222-8222-222222222222";
@@ -180,6 +180,20 @@ describe("offline synchronization API foundation", () => {
     expect(rows.rows[0].device_id).toBe(requested.device_id);
   });
 
+  it("immutably retains photograph geolocation in its reservation", async () => {
+    const org = await signupTestOrg();
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId);
+    const user = await pool.query("SELECT id FROM users WHERE email=$1", [org.email]);
+    const requested = { ...reservation(opening.id, { photo_id: randomUUID(), client_operation_id: randomUUID(),
+      latitude: 33.4484, longitude: -112.074 }), actor_user_id: user.rows[0].id } as any;
+    const result = await createOrReplayPhotoReservation(org.organizationId, requested);
+    expect(Number(result.reservation.latitude)).toBe(33.4484);
+    expect(Number(result.reservation.longitude)).toBe(-112.074);
+    const conflict = await createOrReplayPhotoReservation(org.organizationId, { ...requested, latitude: 33.5 });
+    expect(conflict.conflict).toBe("idempotency_key_reused");
+  });
+
   it("does not confirm a photo without an owned reservation", async () => {
     const org = await signupTestOrg();
     const response = await request(app)
@@ -265,6 +279,59 @@ describe("offline synchronization API foundation", () => {
     expect(rows.rows[0].client_operation_id).toBe(body.operation_id);
   });
 
+  it("rejects a different client identity for an existing permanent frame", async () => {
+    const org = await signupTestOrg();
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId);
+    const firstId = randomUUID();
+    await request(app).post("/api/sync/operations").set("Authorization", `Bearer ${org.token}`).send({
+      operation_id: randomUUID(), operation_type: "create", entity_id: firstId, entity_type: "frame",
+      opening_id: opening.id, device_id: deviceId, base_server_revision: null, schema_version: 3,
+      app_version: "phase-2-test", protocol_version: 1, payload: { material: "Steel" },
+    });
+    const conflict = await request(app).post("/api/sync/operations").set("Authorization", `Bearer ${org.token}`).send({
+      operation_id: randomUUID(), operation_type: "create", entity_id: randomUUID(), entity_type: "frame",
+      opening_id: opening.id, device_id: deviceId, base_server_revision: null, schema_version: 3,
+      app_version: "phase-2-test", protocol_version: 1, payload: { material: "Aluminum" },
+    });
+    expect(conflict.status).toBe(409);
+    expect(conflict.body).toMatchObject({ error: "permanent_entity_identity_conflict", entity_id: firstId });
+  });
+
+  it("rejects a different client identity for an existing permanent door leaf", async () => {
+    const org = await signupTestOrg();
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId);
+    const firstId = randomUUID();
+    await request(app).post("/api/sync/operations").set("Authorization", `Bearer ${org.token}`).send({
+      operation_id: randomUUID(), operation_type: "create", entity_id: firstId, entity_type: "door_leaf",
+      opening_id: opening.id, device_id: deviceId, base_server_revision: null, schema_version: 3,
+      app_version: "phase-2-test", protocol_version: 1, payload: { leaf_role: "single", material: "Steel" },
+    });
+    const conflict = await request(app).post("/api/sync/operations").set("Authorization", `Bearer ${org.token}`).send({
+      operation_id: randomUUID(), operation_type: "create", entity_id: randomUUID(), entity_type: "door_leaf",
+      opening_id: opening.id, device_id: deviceId, base_server_revision: null, schema_version: 3,
+      app_version: "phase-2-test", protocol_version: 1, payload: { leaf_role: "single", material: "Wood" },
+    });
+    expect(conflict.status).toBe(409);
+    expect(conflict.body).toMatchObject({ error: "permanent_entity_identity_conflict", entity_id: firstId });
+  });
+
+  it("rejects cross-organization service-event attribution", async () => {
+    const owner = await signupTestOrg("Service owner");
+    const outsider = await signupTestOrg("Unrelated provider");
+    const { buildingId } = await createPortfolioHierarchy(owner.token);
+    const opening = await createTestOpening(owner.token, buildingId);
+    const response = await request(app).post("/api/sync/operations").set("Authorization", `Bearer ${owner.token}`).send({
+      operation_id: randomUUID(), operation_type: "create", entity_id: randomUUID(), entity_type: "service_event",
+      opening_id: opening.id, device_id: deviceId, base_server_revision: null, schema_version: 3,
+      app_version: "phase-2-test", protocol_version: 1,
+      payload: { event_date: "2026-09-19", work_performed: "Adjusted closer", performed_by_org_id: outsider.organizationId },
+    });
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("service_provider_organization_forbidden");
+  });
+
   it("rejects reuse of an operation ID for a different entity", async () => {
     const org = await signupTestOrg();
     const { buildingId } = await createPortfolioHierarchy(org.token);
@@ -333,5 +400,14 @@ describe("offline synchronization API foundation", () => {
     expect(job.rows[0].status).toBe("retry_wait");
     expect(job.rows[0].attempt_count).toBe(2);
     expect(job.rows[0].storage_object_key).toBe(key);
+    await pool.query("UPDATE photo_deletion_jobs SET last_attempt_at=now() - interval '2 minutes' WHERE photo_id=$1", [id]);
+    const processed = await processPhotoDeletionJobs({
+      deletePrivateObject: async (objectKey) => { expect(objectKey).toBe(key); },
+    });
+    expect(processed).toEqual({ claimed: 1, finalized: 1, retrying: 0 });
+    expect((await pool.query("SELECT 1 FROM photos WHERE id=$1", [id])).rows).toHaveLength(0);
+    expect((await pool.query("SELECT 1 FROM photo_deletion_jobs WHERE photo_id=$1", [id])).rows).toHaveLength(0);
+    const audit = await pool.query("SELECT * FROM audit_log WHERE action='Finalized private photo deletion' AND user_id=$1", [user.rows[0].id]);
+    expect(audit.rows).toHaveLength(1);
   });
 });

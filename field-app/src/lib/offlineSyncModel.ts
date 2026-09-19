@@ -69,7 +69,7 @@ export function readyOperations(
 ): SyncOperation[] {
   const now = Date.parse(nowIso);
   return operations
-    .filter((operation) => operation.state === "queued" || operation.state === "retry_wait")
+    .filter((operation) => operation.state === "queued" || operation.state === "retry_wait" || operation.state === "blocked_dependency")
     .filter((operation) => !operation.nextAttemptAt || Date.parse(operation.nextAttemptAt) <= now)
     .filter((operation) => operation.dependencyOperationIds.every((id) => verifiedOperationIds.has(id)))
     .sort((a, b) => a.createdAtLocal.localeCompare(b.createdAtLocal));

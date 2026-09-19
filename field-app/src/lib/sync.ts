@@ -55,10 +55,12 @@ export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: 
   const auth = await loadAuth(); if (!auth) throw new Error("auth_required");
   const now = new Date().toISOString(); const entityType = entityTypeForKind(kind); const entityId = payload.id ?? id;
   const deviceId = await getOrCreateDeviceId(); const semanticPayload = { kind, ...payload };
+  const existingOperations = await getAllSyncOperations();
+  const dependencyOperationIds = dependencyIdsForOperation(existingOperations, entityType, openingId, payload);
   const operation: SyncOperation = { operationId: id, operationType: kind === "complete_opening" ? "complete" : "create",
     entityType, entityId, openingId, organizationId: auth.organizationId, actorUserId: auth.userId, deviceId,
     baseServerRevision: null, payload: semanticPayload, payloadHash: await sha256Hex(JSON.stringify(canonicalize(semanticPayload))),
-    dependencyOperationIds: [], createdAtLocal: now, state: "queued", attemptCount: 0,
+    dependencyOperationIds, createdAtLocal: now, state: dependencyOperationIds.length ? "blocked_dependency" : "queued", attemptCount: 0,
     schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: APP_VERSION, protocolVersion: SYNC_PROTOCOL_VERSION };
   const entity: OfflineEntityEnvelope = { key: entityKey(entityType, entityId), id: entityId, entityType,
     organizationId: auth.organizationId, openingId, parentEntityId: payload.door_leaf_id ?? payload.frame_id,
@@ -66,6 +68,32 @@ export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: 
     serverRevision: null, baseSnapshotHash: null, schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: APP_VERSION,
     syncState: "queued", retryCount: 0, payload: semanticPayload };
   await saveEntityAndOperation(entity, operation); await refreshPendingCount(); void flushOutbox(); return id;
+}
+export function dependencyIdsForOperation(
+  operations: SyncOperation[], entityType: OfflineEntityType, openingId: string, payload: Record<string, any>,
+): string[] {
+  const ids = new Set<string>();
+  const addEntityDependency = (entityId?: string) => {
+    if (!entityId) return;
+    for (const parent of operations) {
+      if (parent.openingId === openingId && parent.entityId === entityId && parent.state !== "verified") {
+        ids.add(parent.operationId);
+      }
+    }
+  };
+  if (entityType === "component") {
+    addEntityDependency(payload.door_leaf_id);
+    addEntityDependency(payload.frame_id);
+  } else if (entityType === "photo") {
+    if (payload.target_type !== "opening") addEntityDependency(payload.target_id);
+  } else if (entityType === "completion") {
+    for (const candidate of operations) {
+      if (candidate.openingId === openingId && ["frame", "door_leaf", "component"].includes(candidate.entityType) && candidate.state !== "verified") {
+        ids.add(candidate.operationId);
+      }
+    }
+  }
+  return [...ids];
 }
 function receiptFromApi(row: any): SyncReceipt {
   return { operationId: row.operation_id, entityId: row.entity_id, entityType: row.entity_type,
@@ -85,7 +113,8 @@ async function submitPhoto(operation: SyncOperation) {
   const reservation = await reserveOfflinePhoto({ photo_id: media.photoId, client_operation_id: operation.operationId,
     opening_id: media.openingId, target_type: media.targetType, target_id: media.targetId,
     original_filename: media.originalFilename, content_type: media.contentType, byte_size: media.byteSize,
-    sha256_checksum: media.sha256Checksum, device_id: media.capturedByDeviceId });
+    sha256_checksum: media.sha256Checksum, device_id: media.capturedByDeviceId,
+    latitude: media.latitude, longitude: media.longitude });
   await uploadPrivatePhoto(reservation.upload_url, media.blob, media.contentType, media.sha256Checksum, media.photoId);
   return confirmOfflinePhoto({ photo_id: media.photoId, client_operation_id: operation.operationId,
     schema_version: operation.schemaVersion, app_version: operation.appVersion, protocol_version: operation.protocolVersion });
@@ -119,15 +148,23 @@ async function recordFailure(operation: SyncOperation, error: unknown) {
 async function flushVersionedOperations() {
   const operations = await getAllSyncOperations();
   const verified = new Set(operations.filter((item) => item.state === "verified").map((item) => item.operationId));
-  for (const operation of readyOperations(operations, verified, new Date().toISOString())) {
+  const remaining = new Map(operations.filter((item) => item.state !== "verified").map((item) => [item.operationId, item]));
+  while (remaining.size) {
+    const [operation] = readyOperations([...remaining.values()], verified, new Date().toISOString());
+    if (!operation) break;
     await putSyncOperation({ ...operation, state: "in_flight", lastAttemptAt: new Date().toISOString() });
     try {
       const row = operation.entityType === "photo" ? await submitPhoto(operation)
         : operation.entityType === "component" ? await submitComponent(operation)
           : await submitGeneralOperation(operation);
       await putSyncReceipt(receiptFromApi(row));
+      verified.add(operation.operationId);
+      remaining.delete(operation.operationId);
     }
-    catch (error) { await recordFailure(operation, error); if (!(error instanceof ApiError) || error.status >= 500) return; }
+    catch (error) {
+      await recordFailure(operation, error); remaining.delete(operation.operationId);
+      if (!(error instanceof ApiError) || error.status >= 500) return;
+    }
   }
 }
 export async function flushOutbox() {

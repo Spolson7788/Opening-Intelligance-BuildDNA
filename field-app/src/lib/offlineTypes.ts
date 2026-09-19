@@ -113,6 +113,8 @@ export interface OfflineMediaRecord {
   sha256Checksum: string;
   widthPixels?: number;
   heightPixels?: number;
+  latitude?: number;
+  longitude?: number;
   blob: Blob;
   localBlobState: "retained" | "verified_cleanup_allowed";
   uploadState: SyncOperationState;

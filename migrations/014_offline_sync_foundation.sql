@@ -151,6 +151,8 @@ CREATE TABLE photo_upload_reservations (
   content_type TEXT NOT NULL,
   byte_size BIGINT NOT NULL CHECK (byte_size > 0),
   sha256_checksum TEXT NOT NULL CHECK (sha256_checksum ~ '^[0-9a-f]{64}$'),
+  latitude NUMERIC(9,6),
+  longitude NUMERIC(9,6),
   actor_user_id UUID NOT NULL REFERENCES users(id),
   device_id UUID NOT NULL,
   status TEXT NOT NULL DEFAULT 'reserved'
@@ -177,7 +179,7 @@ CREATE TABLE photo_deletion_jobs (
   storage_object_key TEXT NOT NULL,
   requested_by_user_id UUID NOT NULL REFERENCES users(id),
   attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'retry_wait')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'retry_wait')),
   last_error_code TEXT,
   requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_attempt_at TIMESTAMPTZ

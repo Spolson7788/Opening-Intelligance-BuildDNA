@@ -52,6 +52,8 @@ const reserveOfflinePhotoSchema = z.object({
   byte_size: z.number().int().positive(),
   sha256_checksum: z.string().regex(/^[0-9a-f]{64}$/),
   device_id: z.string().uuid(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
 });
 
 async function assertPhotoTarget(openingId: string, targetType: z.infer<typeof offlinePhotoTarget>, targetId: string, queryable: any = pool) {
@@ -83,7 +85,9 @@ function reservationMatches(
     existing.sha256_checksum === requested.sha256_checksum &&
     existing.original_filename === requested.original_filename &&
     existing.actor_user_id === requested.actor_user_id &&
-    existing.device_id === requested.device_id;
+    existing.device_id === requested.device_id &&
+    (existing.latitude === null ? requested.latitude === undefined : Number(existing.latitude) === requested.latitude) &&
+    (existing.longitude === null ? requested.longitude === undefined : Number(existing.longitude) === requested.longitude);
 }
 
 export async function createOrReplayPhotoReservation(
@@ -100,13 +104,13 @@ export async function createOrReplayPhotoReservation(
       `INSERT INTO photo_upload_reservations
         (organization_id, opening_id, photo_id, operation_id, target_type, target_id,
          storage_object_key, original_filename, content_type, byte_size, sha256_checksum,
-         actor_user_id, device_id, expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now() + interval '5 minutes')
+         actor_user_id, device_id, latitude, longitude, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now() + interval '5 minutes')
        ON CONFLICT DO NOTHING RETURNING *`,
       [organizationId, requested.opening_id, requested.photo_id, requested.client_operation_id,
         requested.target_type, requested.target_id, key, requested.original_filename,
         requested.content_type, requested.byte_size, requested.sha256_checksum,
-        requested.actor_user_id, requested.device_id],
+        requested.actor_user_id, requested.device_id, requested.latitude ?? null, requested.longitude ?? null],
     );
     const existing = await client.query(
       `SELECT * FROM photo_upload_reservations
@@ -225,6 +229,8 @@ photosRouter.post("/offline/confirm", async (req: AuthedRequest, res) => {
       sha256_checksum: reservation.sha256_checksum,
       actor_user_id: reservation.actor_user_id,
       device_id: reservation.device_id,
+      latitude: reservation.latitude === null ? null : Number(reservation.latitude),
+      longitude: reservation.longitude === null ? null : Number(reservation.longitude),
     });
     const prior = await client.query(
       `SELECT * FROM sync_operation_receipts WHERE organization_id=$1 AND operation_id=$2`,
@@ -291,15 +297,15 @@ photosRouter.post("/offline/confirm", async (req: AuthedRequest, res) => {
     const photo = await client.query(
       `INSERT INTO photos
         (id, opening_id, organization_id, related_entity_type, related_entity_id, storage_url,
-         media_type, taken_at, uploaded_by_user_id, frame_id, door_leaf_id, hardware_component_id,
+         media_type, latitude, longitude, taken_at, uploaded_by_user_id, frame_id, door_leaf_id, hardware_component_id,
          client_operation_id, original_filename, content_type, byte_size, sha256_checksum,
          storage_object_key, upload_state, storage_verified_at, authorized_retrieval_verified_at,
          captured_by_device_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,now(),$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'verified',now(),now(),$18)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'verified',now(),now(),$20)
        RETURNING *`,
       [reservation.photo_id, reservation.opening_id, orgId, reservation.target_type, reservation.target_id,
         `private:${reservation.storage_object_key}`, mediaTypeForContentType(reservation.content_type),
-        req.auth!.userId, targetColumns.frame_id, targetColumns.door_leaf_id,
+        reservation.latitude, reservation.longitude, req.auth!.userId, targetColumns.frame_id, targetColumns.door_leaf_id,
         targetColumns.hardware_component_id, reservation.operation_id, reservation.original_filename,
         reservation.content_type, reservation.byte_size, reservation.sha256_checksum,
         reservation.storage_object_key, reservation.device_id],
@@ -499,6 +505,72 @@ photosRouter.get("/by-opening/:openingId", async (req: AuthedRequest, res) => {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
   }
+});
+
+export async function processPhotoDeletionJobs(input: {
+  organizationId?: string;
+  operatorUserId?: string;
+  limit?: number;
+  deletePrivateObject?: (key: string) => Promise<void>;
+}) {
+  const limit = Math.max(1, Math.min(input.limit ?? 10, 25));
+  const deleter = input.deletePrivateObject ?? deleteObject;
+  const claimed = await pool.query(
+    `WITH candidates AS (
+       SELECT photo_id FROM photo_deletion_jobs
+       WHERE ($1::uuid IS NULL OR organization_id=$1) AND attempt_count < 8
+         AND (status='pending'
+           OR (status='retry_wait' AND (last_attempt_at IS NULL OR last_attempt_at < now() - interval '1 minute'))
+           OR (status='processing' AND last_attempt_at < now() - interval '5 minutes'))
+       ORDER BY requested_at
+       FOR UPDATE SKIP LOCKED LIMIT $2
+     )
+     UPDATE photo_deletion_jobs jobs
+     SET status='processing', attempt_count=attempt_count+1, last_attempt_at=now(), last_error_code=NULL
+     FROM candidates WHERE jobs.photo_id=candidates.photo_id RETURNING jobs.*`,
+    [input.organizationId, limit],
+  );
+  let finalized = 0;
+  let retrying = 0;
+  for (const job of claimed.rows) {
+    try {
+      await deleter(job.storage_object_key);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(
+          `INSERT INTO audit_log (organization_id,user_id,action,method,path,request_body,status_code)
+           VALUES ($1,$2,'Finalized private photo deletion','WORKER','photo-deletion-jobs',
+             jsonb_build_object('photo_id',$3::text,'attempt_count',$4::int),204)`,
+          [job.organization_id, input.operatorUserId ?? job.requested_by_user_id, job.photo_id, job.attempt_count],
+        );
+        await client.query("DELETE FROM photos WHERE id=$1 AND organization_id=$2", [job.photo_id, job.organization_id]);
+        await client.query("COMMIT");
+        finalized += 1;
+      } catch (error) {
+        await client.query("ROLLBACK"); throw error;
+      } finally { client.release(); }
+    } catch (error) {
+      await pool.query(
+        `UPDATE photo_deletion_jobs SET status='retry_wait', last_error_code='object_delete_failed'
+         WHERE photo_id=$1 AND organization_id=$2`, [job.photo_id, job.organization_id],
+      );
+      retrying += 1;
+    }
+  }
+  return { claimed: claimed.rows.length, finalized, retrying };
+}
+
+photosRouter.post("/deletion-jobs/process", async (req: AuthedRequest, res) => {
+  if (!new Set(["admin", "facilities_manager"]).has(req.auth!.role)) {
+    return res.status(403).json({ error: "forbidden" });
+  }
+  const parsed = z.object({ limit: z.number().int().min(1).max(25).optional() }).safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const result = await processPhotoDeletionJobs({
+    organizationId: req.auth!.organizationId, operatorUserId: req.auth!.userId, limit: parsed.data.limit,
+  });
+  return res.json(result);
 });
 
 photosRouter.delete("/:id", async (req: AuthedRequest, res) => {

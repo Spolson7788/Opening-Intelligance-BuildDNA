@@ -16,6 +16,7 @@
     "orchestrator:validate-diff": "tsx src/orchestrator/validateLaneDiffCli.ts",
     "orchestrator:image-generate": "tsx src/orchestrator/imageCandidateCli.ts",
     "orchestrator:image-qa": "tsx src/orchestrator/imageQaCli.ts",
+    "photos:process-deletions": "tsx src/workers/photoDeletionRetry.ts",
     "test": "vitest run",
     "test:offline-sync": "vitest run --config vitest.offline.config.ts",
     "test:watch": "vitest"

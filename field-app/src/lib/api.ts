@@ -139,6 +139,8 @@ export async function reserveOfflinePhoto(payload: {
   byte_size: number;
   sha256_checksum: string;
   device_id: string;
+  latitude?: number;
+  longitude?: number;
 }) {
   return authedFetch("/photos/offline/reserve", { method: "POST", body: JSON.stringify(payload) });
 }

@@ -229,6 +229,11 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
     }
     let record: any;
     if (b.entity_type === "frame") {
+      const permanent = await client.query("SELECT id FROM opening_frames WHERE opening_id=$1", [b.opening_id]);
+      if (permanent.rows[0] && permanent.rows[0].id !== b.entity_id) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "permanent_entity_identity_conflict", entity_id: permanent.rows[0].id });
+      }
       const result = await client.query(`INSERT INTO opening_frames
         (id,opening_id,material,frame_type,width_in,height_in,fire_rated,condition,notes,client_operation_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
@@ -242,6 +247,13 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       if ((opening.opening_configuration === "single") !== (payload.leaf_role === "single")) {
         await client.query("ROLLBACK"); return res.status(409).json({ error: "leaf_role_configuration_mismatch" });
       }
+      const permanent = await client.query(
+        "SELECT id FROM door_leaves WHERE opening_id=$1 AND leaf_role=$2", [b.opening_id, payload.leaf_role],
+      );
+      if (permanent.rows[0] && permanent.rows[0].id !== b.entity_id) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "permanent_entity_identity_conflict", entity_id: permanent.rows[0].id });
+      }
       const result=await client.query(`INSERT INTO door_leaves
         (id,opening_id,leaf_role,handing,material,width_in,height_in,thickness_in,fire_rated,condition,notes,client_operation_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
@@ -252,6 +264,10 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       [b.entity_id,b.opening_id,payload.leaf_role,payload.handing??null,payload.material??null,payload.width_in??null,
         payload.height_in??null,payload.thickness_in??null,payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id]); record=result.rows[0];
     } else if (b.entity_type === "service_event") {
+      if (payload.performed_by_org_id && payload.performed_by_org_id !== orgId) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ error:"service_provider_organization_forbidden" });
+      }
       if (payload.hardware_component_id) {
         const target=await client.query("SELECT 1 FROM hardware_components WHERE id=$1 AND opening_id=$2",[payload.hardware_component_id,b.opening_id]);
         if (!target.rows[0]) { await client.query("ROLLBACK"); return res.status(409).json({ error:"component_not_in_opening" }); }
@@ -259,7 +275,7 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       const result=await client.query(`INSERT INTO service_events
         (id,opening_id,hardware_component_id,performed_by_org_id,performed_by_user_id,event_date,work_performed,parts_used,cost,client_operation_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [b.entity_id,b.opening_id,payload.hardware_component_id??null,payload.performed_by_org_id??null,userId,payload.event_date,
+      [b.entity_id,b.opening_id,payload.hardware_component_id??null,orgId,userId,payload.event_date,
         payload.work_performed,payload.parts_used??[],payload.cost??null,b.operation_id]); record=result.rows[0];
       await client.query(`UPDATE openings SET last_service_date=GREATEST(COALESCE(last_service_date,$1),$1) WHERE id=$2`,[payload.event_date,b.opening_id]);
     } else if (b.entity_type === "inspection_event") {

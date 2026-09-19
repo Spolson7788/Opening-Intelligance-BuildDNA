@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { loadAuth, saveMediaAndOperation } from "../lib/db";
-import { checksumBlob, flushOutbox, getOrCreateDeviceId } from "../lib/sync";
+import { getAllSyncOperations, loadAuth, saveMediaAndOperation } from "../lib/db";
+import { checksumBlob, dependencyIdsForOperation, flushOutbox, getOrCreateDeviceId } from "../lib/sync";
 import { OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "../lib/offlineTypes";
 import type { OfflineMediaRecord, SyncOperation } from "../lib/offlineTypes";
 
@@ -57,7 +57,7 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
       // inspection events, so this button behaves consistently with the rest
       // of the app regardless of connectivity, and regardless of whether it's
       // a photo or a video.
-      await getLocation();
+      const location = await getLocation();
       const auth = await loadAuth();
       if (!auth) throw new Error("auth_required");
       const now = new Date().toISOString();
@@ -66,12 +66,16 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
       const deviceId = await getOrCreateDeviceId();
       const checksum = await checksumBlob(file);
       const targetId = relatedEntityId ?? openingId;
+      const dependencies = dependencyIdsForOperation(await getAllSyncOperations(), "photo", openingId, {
+        target_type: relatedEntityType, target_id: targetId,
+      });
       const media: OfflineMediaRecord = {
         photoId, openingId, organizationId: auth.organizationId,
         targetType: relatedEntityType, targetId, capturedAtDevice: now,
         capturedByUserId: auth.userId, capturedByDeviceId: deviceId,
         originalFilename: file.name, generatedCaptureName: `${photoId}.${file.type.split("/")[1] || "bin"}`,
         contentType: file.type, byteSize: file.size, sha256Checksum: checksum, blob: file,
+        latitude: location.latitude, longitude: location.longitude,
         localBlobState: "retained", uploadState: "queued", provenanceState: "original",
         reviewState: "pending", createdAtLocal: now, updatedAtLocal: now,
       };
@@ -79,8 +83,10 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
         operationId, operationType: "confirm_media", entityType: "photo", entityId: photoId,
         openingId, organizationId: auth.organizationId, actorUserId: auth.userId, deviceId,
         baseServerRevision: null, payload: { target_type: relatedEntityType, target_id: targetId,
-          original_filename: file.name, content_type: file.type, byte_size: file.size, sha256_checksum: checksum },
-        payloadHash: checksum, dependencyOperationIds: [], createdAtLocal: now, state: "queued", attemptCount: 0,
+          original_filename: file.name, content_type: file.type, byte_size: file.size, sha256_checksum: checksum,
+          latitude: location.latitude, longitude: location.longitude },
+        payloadHash: checksum, dependencyOperationIds: dependencies, createdAtLocal: now,
+        state: dependencies.length ? "blocked_dependency" : "queued", attemptCount: 0,
         schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: "offline-protocol-1", protocolVersion: SYNC_PROTOCOL_VERSION,
       };
       await saveMediaAndOperation(media, operation);
