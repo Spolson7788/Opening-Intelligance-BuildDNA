@@ -1,0 +1,14 @@
+{
+  "repository": "Spolson7788/Opening-Intelligance-BuildDNA",
+  "branch": "oi-hager-evidence",
+  "checkpoint_commit": "0000000000000000000000000000000000000000",
+  "authorized_manufacturer_group": "HAGER",
+  "execution_owner": "HAGER_LANE",
+  "active_source_row_ref": "EXAMPLE!1",
+  "canonical_product_id": "HAGER-EXAMPLE-PLATFORM-LIMIT",
+  "active_stage": "SIMULATED_PLATFORM_LIMIT_RESUME",
+  "first_unfinished_task": "Simulate the next authorized checkpoint task.",
+  "completed_task_keys": [
+    "example-prerequisite-complete"
+  ]
+}

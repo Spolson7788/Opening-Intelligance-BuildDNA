@@ -90,17 +90,23 @@ export async function listOpenings(params: Record<string, string> = {}) {
   return authedFetch(`/openings${qs ? `?${qs}` : ""}`);
 }
 
-export async function presignPhotoUpload(openingId: string, contentType: string) {
+export async function presignPhotoUpload(openingId: string, contentType: string, clientOperationId: string) {
   return authedFetch("/photos/presign", {
     method: "POST",
-    body: JSON.stringify({ opening_id: openingId, content_type: contentType }),
+    body: JSON.stringify({ opening_id: openingId, content_type: contentType, client_operation_id: clientOperationId }),
   });
 }
 
 export async function confirmPhotoUpload(payload: {
   opening_id: string;
-  storage_url: string;
+  storage_key: string;
   content_type: string;
+  client_operation_id: string;
+  related_entity_type?: "opening" | "frame" | "door_leaf" | "hardware_component";
+  related_entity_id?: string;
+  frame_id?: string;
+  door_leaf_id?: string;
+  hardware_component_id?: string;
   latitude?: number;
   longitude?: number;
 }) {
@@ -136,6 +142,18 @@ export async function deleteHardwareComponent(id: string) {
 
 export async function addHardwareComponent(payload: any) {
   return authedFetch("/hardware", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function saveOpeningFrame(openingId: string, payload: any) {
+  return authedFetch(`/openings/${openingId}/frame`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export async function saveDoorLeaf(openingId: string, payload: any) {
+  return authedFetch(`/openings/${openingId}/door-leaves`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function completeOpening(openingId: string) {
+  return authedFetch(`/openings/${openingId}/complete`, { method: "POST" });
 }
 
 export async function submitServiceEvent(payload: any) {

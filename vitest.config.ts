@@ -19,5 +19,6 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 15000,
     hookTimeout: 20000,
+    exclude: ["**/node_modules/**", "**/.git/**", "dist/**"],
   },
 });

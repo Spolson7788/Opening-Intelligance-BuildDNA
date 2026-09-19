@@ -31,6 +31,7 @@ const FIELD_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp }> = [
   { method: "PATCH", pattern: /^\/api\/hardware\/[^/]+$/ },
   { method: "DELETE", pattern: /^\/api\/hardware\/[^/]+$/ },
   { method: "POST", pattern: /^\/api\/photos\/presign$/ },
+  { method: "POST", pattern: /^\/api\/photos\/offline\/(reserve|confirm)$/ },
   { method: "POST", pattern: /^\/api\/photos$/ },
   { method: "DELETE", pattern: /^\/api\/photos\/[^/]+$/ },
   { method: "POST", pattern: /^\/api\/documents\/presign$/ },
@@ -38,6 +39,7 @@ const FIELD_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp }> = [
   { method: "DELETE", pattern: /^\/api\/documents\/[^/]+$/ },
   { method: "POST", pattern: /^\/api\/work-orders\/[^/]+\/status$/ },
   { method: "POST", pattern: /^\/api\/openings\/[^/]+\/recompute-health-score$/ },
+  { method: "POST", pattern: /^\/api\/sync\/components$/ },
 ];
 
 const WRITE_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);

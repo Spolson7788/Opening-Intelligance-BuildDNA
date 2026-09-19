@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
+import { v4 as uuidv4 } from "uuid";
 import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
@@ -40,6 +41,7 @@ async function assertHardwareInOrg(hardwareId: string, orgId: string): Promise<s
 }
 
 const createHardwareSchema = z.object({
+  id: z.string().uuid().optional(),
   opening_id: z.string().uuid(),
   component_type: z.enum([
     "lockset", "cylinder", "closer", "exit_device", "hinge",
@@ -63,7 +65,36 @@ const createHardwareSchema = z.object({
   expected_delivery_date: z.string().optional(),
   shipped_date: z.string().optional(),
   delivered_date: z.string().optional(),
+  mounting_scope: z.enum(["opening", "frame", "door_leaf"]).optional(),
+  door_leaf_id: z.string().uuid().optional(),
+  frame_id: z.string().uuid().optional(),
+  position_label: z.string().optional(),
+  client_operation_id: z.string().uuid().optional(),
+  condition: z.enum(["good", "worn", "failed", "unverified"]).optional(),
+  identity_status: z.enum(["established", "unresolved"]).optional(),
+  review_state: z.enum(["pending", "reviewed"]).optional(),
+  replacement_required: z.boolean().optional(),
 });
+
+async function validateMountingTarget(
+  openingId: string,
+  mountingScope: "opening" | "frame" | "door_leaf",
+  doorLeafId?: string,
+  frameId?: string
+): Promise<string | null> {
+  if (mountingScope === "door_leaf") {
+    if (!doorLeafId || frameId) return "door_leaf_target_required";
+    const leaf = await pool.query("SELECT 1 FROM door_leaves WHERE id=$1 AND opening_id=$2", [doorLeafId, openingId]);
+    if (!leaf.rows.length) return "door_leaf_not_in_opening";
+  } else if (mountingScope === "frame") {
+    if (!frameId || doorLeafId) return "frame_target_required";
+    const frame = await pool.query("SELECT 1 FROM opening_frames WHERE id=$1 AND opening_id=$2", [frameId, openingId]);
+    if (!frame.rows.length) return "frame_not_in_opening";
+  } else if (doorLeafId || frameId) {
+    return "opening_scope_cannot_have_leaf_or_frame";
+  }
+  return null;
+}
 
 hardwareRouter.post("/", async (req: AuthedRequest, res) => {
   const parsed = createHardwareSchema.safeParse(req.body);
@@ -75,20 +106,31 @@ hardwareRouter.post("/", async (req: AuthedRequest, res) => {
     if (!(await assertOpeningInOrg(b.opening_id, orgId))) {
       return res.status(403).json({ error: "forbidden" });
     }
+    const mountingScope = b.mounting_scope ?? "opening";
+    const targetError = await validateMountingTarget(b.opening_id, mountingScope, b.door_leaf_id, b.frame_id);
+    if (targetError) return res.status(400).json({ error: targetError });
     const trackerId = generateTrackerId();
     const result = await pool.query(
       `INSERT INTO hardware_components
-        (opening_id, component_type, manufacturer, model_number, finish, install_date, warranty_expiration, notes,
+        (id, opening_id, component_type, manufacturer, model_number, finish, install_date, warranty_expiration, notes,
          unit_cost, supplier_name, supplier_contact, tracker_id, serial_number, carrier, tracking_number,
-         shipment_status, expected_delivery_date, shipped_date, delivered_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
+         shipment_status, expected_delivery_date, shipped_date, delivered_date,
+         mounting_scope, door_leaf_id, frame_id, position_label, client_operation_id,
+         condition, identity_status, review_state, replacement_required)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
+       ON CONFLICT (opening_id, client_operation_id) WHERE client_operation_id IS NOT NULL
+       DO UPDATE SET opening_id=EXCLUDED.opening_id RETURNING *`,
       [
-        b.opening_id, b.component_type, b.manufacturer ?? null, b.model_number ?? null,
+        b.id ?? uuidv4(), b.opening_id, b.component_type, b.manufacturer ?? null, b.model_number ?? null,
         b.finish ?? null, b.install_date ?? null, b.warranty_expiration ?? null, b.notes ?? null,
         b.unit_cost ?? null, b.supplier_name ?? null, b.supplier_contact ?? null,
         trackerId, b.serial_number ?? null, b.carrier ?? null, b.tracking_number ?? null,
         b.shipment_status ?? "not_shipped", b.expected_delivery_date ?? null,
         b.shipped_date ?? null, b.delivered_date ?? null,
+        mountingScope, b.door_leaf_id ?? null, b.frame_id ?? null,
+        b.position_label ?? null, b.client_operation_id ?? null,
+        b.condition ?? "unverified", b.identity_status ?? "unresolved",
+        b.review_state ?? "pending", b.replacement_required ?? false,
       ]
     );
     res.status(201).json(result.rows[0]);
@@ -160,7 +202,7 @@ hardwareRouter.get("/", async (req: AuthedRequest, res) => {
   }
 });
 
-const updateHardwareSchema = createHardwareSchema.partial().omit({ opening_id: true });
+const updateHardwareSchema = createHardwareSchema.partial().omit({ id: true, opening_id: true });
 
 hardwareRouter.patch("/:id", async (req: AuthedRequest, res) => {
   const { id } = req.params;
@@ -171,6 +213,21 @@ hardwareRouter.patch("/:id", async (req: AuthedRequest, res) => {
   try {
     const openingId = await assertHardwareInOrg(id, orgId);
     if (!openingId) return res.status(404).json({ error: "not_found" });
+
+    if (parsed.data.mounting_scope !== undefined || parsed.data.door_leaf_id !== undefined || parsed.data.frame_id !== undefined) {
+      const current = await pool.query(
+        "SELECT mounting_scope, door_leaf_id, frame_id FROM hardware_components WHERE id=$1",
+        [id]
+      );
+      const merged = { ...current.rows[0], ...parsed.data };
+      const targetError = await validateMountingTarget(
+        openingId,
+        merged.mounting_scope,
+        merged.door_leaf_id ?? undefined,
+        merged.frame_id ?? undefined
+      );
+      if (targetError) return res.status(400).json({ error: targetError });
+    }
 
     const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined);
     if (fields.length === 0) return res.status(400).json({ error: "no_fields_to_update" });
