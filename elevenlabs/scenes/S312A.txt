@@ -1,1 +1,1 @@
-The opening also needs its door and frame: width, height, thickness, material, frame. I save that record.
+The opening also needs its door and frame record: door material, width, height, thickness, handing and frame material. I save that record.

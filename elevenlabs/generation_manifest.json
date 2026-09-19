@@ -2010,8 +2010,8 @@
    "audio": "elevenlabs/audio/S312A.mp3",
    "audio_present": false,
    "renarrate_required": true,
-   "words": 17,
-   "estimated_seconds": 8.2,
+   "words": 22,
+   "estimated_seconds": 11.59,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -2043,7 +2043,17 @@
    "in_master": true,
    "narration_provisional": false,
    "provisional_reason": null,
-   "provisional_depends_on": null
+   "provisional_depends_on": null,
+   "script_sha256_frozen": "611610be19ccd79c828cc79434de6b99b09f1a0820fe343bdbf451a50c5d5c64",
+   "characters_frozen": 138,
+   "submitted_sha256_expected": "611610be19ccd79c828cc79434de6b99b09f1a0820fe343bdbf451a50c5d5c64",
+   "characters_submitted_expected": 138,
+   "_expected_hash_note": "No pronunciation override, so the submitted text is the frozen text. Pinned so the generator refuses the run if the script file on the branch is not the approved wording.",
+   "supersedes": {
+    "previous_script_sha256": "b200420d757f467078bddd621429283bd08e3ee149fe25a2544e0afa53bb9055",
+    "previous_characters": 105,
+    "approved_by": "Stephan - 19 Sep 2026"
+   }
   },
   {
    "scene_id": "S313",
@@ -2303,8 +2313,8 @@
    "audio": "elevenlabs/audio/S314.mp3",
    "audio_present": false,
    "renarrate_required": true,
-   "words": 47,
-   "estimated_seconds": 24.75,
+   "words": 53,
+   "estimated_seconds": 27.91,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -2336,12 +2346,20 @@
    "in_master": true,
    "narration_provisional": false,
    "provisional_depends_on": "Verified against the working development build before generation. Not in run 16.",
-   "script_sha256_frozen": "e72e45e23fac5b4bc5a7b002477d6bcc0b16a57926b99984efd0a653c09c5045",
-   "characters_frozen": 290,
+   "script_sha256_frozen": "3e4cd13e05fcdd2853aa1f34ad27eea29474c5d02465920145b0d071a51ac7f6",
+   "characters_frozen": 325,
    "provisional_hold_released": {
     "was_provisional": true,
     "previous_reason": "Describes the provider mapping loaded with its revision and effective date. The import capability does not exist yet.",
     "released_by": "Stephan - batch 18 approved 18 Sep 2026"
+   },
+   "submitted_sha256_expected": "3e4cd13e05fcdd2853aa1f34ad27eea29474c5d02465920145b0d071a51ac7f6",
+   "characters_submitted_expected": 325,
+   "_expected_hash_note": "No pronunciation override, so the submitted text is the frozen text. Pinned so the generator refuses the run if the script file on the branch is not the approved wording.",
+   "supersedes": {
+    "previous_script_sha256": "e72e45e23fac5b4bc5a7b002477d6bcc0b16a57926b99984efd0a653c09c5045",
+    "previous_characters": 290,
+    "approved_by": "Stephan - 19 Sep 2026"
    }
   },
   {
