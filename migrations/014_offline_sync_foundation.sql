@@ -146,6 +146,7 @@ CREATE TABLE photo_upload_reservations (
     target_type IN ('opening', 'frame', 'door_leaf', 'hardware_component', 'service_event', 'inspection_event')
   ),
   target_id UUID NOT NULL,
+  upload_object_key TEXT NOT NULL UNIQUE,
   storage_object_key TEXT NOT NULL UNIQUE,
   original_filename TEXT NOT NULL,
   content_type TEXT NOT NULL,

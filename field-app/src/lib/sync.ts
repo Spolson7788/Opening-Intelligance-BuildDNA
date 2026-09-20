@@ -1,5 +1,5 @@
-import { getAllSyncOperations, getOfflineMedia, getOfflineSetting, loadAuth, putOfflineSetting, putSyncConflict, putSyncOperation, putSyncReceipt, saveEntityAndOperation } from "./db";
-import { confirmOfflinePhoto, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, uploadPrivatePhoto, ApiError } from "./api";
+import { claimSyncOperation, getAllSyncOperations, getOfflineMedia, getOfflineSetting, getSyncOperationsForPrincipal, loadAuth, putOfflineSetting, putSyncConflict, putSyncOperation, putSyncReceipt, reconcileRecoveredMediaOperationId, saveEntityAndOperation } from "./db";
+import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, uploadPrivatePhoto, ApiError } from "./api";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
 import type { OfflineEntityEnvelope, OfflineEntityType, SyncConflict, SyncOperation, SyncOperationState, SyncReceipt } from "./offlineTypes";
 import { readyOperations, retryDelayMs } from "./offlineSyncModel";
@@ -8,6 +8,8 @@ import type { OutboxItem } from "./db";
 type SyncListener = (state: SyncState) => void;
 export interface SyncState { pending: number; syncing: boolean; failed: number; conflicts: number; lastError?: string; }
 const APP_VERSION = "offline-protocol-1";
+const DISPATCH_LEASE_MS = 2 * 60_000;
+const dispatchLeaseId = crypto.randomUUID();
 let listeners: SyncListener[] = [];
 let currentState: SyncState = { pending: 0, syncing: false, failed: 0, conflicts: 0 };
 function notify() { listeners.forEach((listener) => listener(currentState)); }
@@ -36,7 +38,8 @@ export async function getOrCreateDeviceId(): Promise<string> {
   return value;
 }
 async function refreshPendingCount() {
-  const operations = await getAllSyncOperations();
+  const auth = await loadAuth();
+  const operations = auth ? await getSyncOperationsForPrincipal(auth.userId, auth.organizationId) : [];
   currentState = { ...currentState,
     pending: operations.filter((item) => ["local_committed", "queued", "retry_wait", "blocked_dependency", "in_flight", "verifying"].includes(item.state)).length,
     failed: operations.filter((item) => ["permanent_failure", "auth_required", "storage_pressure", "schema_blocked"].includes(item.state)).length,
@@ -101,25 +104,54 @@ function receiptFromApi(row: any): SyncReceipt {
     normalizedRecordHash: row.normalized_record_hash, serverAcceptedAt: row.server_accepted_at, verifiedAt: row.verified_at,
     mediaObjectVerified: row.media_object_verified === true, authorizedRetrievalVerified: row.authorized_retrieval_verified === true };
 }
-async function submitComponent(operation: SyncOperation) {
+type Principal = { userId: string; organizationId: string };
+async function assertPrincipal(principal: Principal) {
+  const auth = await loadAuth();
+  if (!auth || auth.userId !== principal.userId || auth.organizationId !== principal.organizationId) {
+    throw new ApiError(401, "active_principal_changed");
+  }
+}
+async function submitComponent(operation: SyncOperation, principal: Principal) {
   const { kind: _kind, id: _id, opening_id: _opening, client_operation_id: _client, ...component } = operation.payload as any;
   return submitOfflineComponent({ operation_id: operation.operationId, entity_id: operation.entityId,
     opening_id: operation.openingId, device_id: operation.deviceId, base_server_revision: operation.baseServerRevision,
     schema_version: operation.schemaVersion, app_version: operation.appVersion, protocol_version: operation.protocolVersion,
-    payload: component });
+    payload: component }, principal);
 }
-async function submitPhoto(operation: SyncOperation) {
+async function submitPhoto(operation: SyncOperation, principal: Principal) {
   const media = await getOfflineMedia(operation.entityId); if (!media) throw new Error("offline_media_missing");
+  if ((operation.payload as Record<string, unknown>).legacy_identity_recovery === true) {
+    try {
+      const recovered = await recoverOfflinePhotoReservation({ photo_id: media.photoId,
+        opening_id: media.openingId, target_type: media.targetType, target_id: media.targetId,
+        original_filename: media.originalFilename, content_type: media.contentType, byte_size: media.byteSize,
+        sha256_checksum: media.sha256Checksum, device_id: media.capturedByDeviceId,
+        latitude: media.latitude, longitude: media.longitude }, principal);
+      const reconciled = await reconcileRecoveredMediaOperationId(operation.operationId, recovered.client_operation_id);
+      if (!reconciled) throw new Error("recovered_operation_not_found");
+      Object.assign(operation, reconciled);
+    } catch (error) {
+      // A 404 proves there is no existing reservation, so the deterministic
+      // fallback ID may safely create the first one. All other responses stop
+      // and preserve the retained original for review.
+      if (!(error instanceof ApiError) || error.status !== 404) throw error;
+    }
+  }
   const reservation = await reserveOfflinePhoto({ photo_id: media.photoId, client_operation_id: operation.operationId,
     opening_id: media.openingId, target_type: media.targetType, target_id: media.targetId,
     original_filename: media.originalFilename, content_type: media.contentType, byte_size: media.byteSize,
     sha256_checksum: media.sha256Checksum, device_id: media.capturedByDeviceId,
-    latitude: media.latitude, longitude: media.longitude });
-  await uploadPrivatePhoto(reservation.upload_url, media.blob, media.contentType, media.sha256Checksum, media.photoId);
+    latitude: media.latitude, longitude: media.longitude }, principal);
+  await assertPrincipal(principal);
+  if (reservation.status !== "verified") {
+    if (!reservation.upload_url) throw new Error("photo_upload_authority_missing");
+    await uploadPrivatePhoto(reservation.upload_url, media.blob, media.contentType, media.sha256Checksum, media.photoId);
+  }
+  await assertPrincipal(principal);
   return confirmOfflinePhoto({ photo_id: media.photoId, client_operation_id: operation.operationId,
-    schema_version: operation.schemaVersion, app_version: operation.appVersion, protocol_version: operation.protocolVersion });
+    schema_version: operation.schemaVersion, app_version: operation.appVersion, protocol_version: operation.protocolVersion }, principal);
 }
-async function submitGeneralOperation(operation: SyncOperation) {
+async function submitGeneralOperation(operation: SyncOperation, principal: Principal) {
   const { kind: _kind, id: _id, opening_id: _opening, client_operation_id: _client, ...payload } = operation.payload as any;
   return submitOfflineOperation({
     operation_id: operation.operationId, operation_type: operation.operationType,
@@ -127,7 +159,7 @@ async function submitGeneralOperation(operation: SyncOperation) {
     opening_id: operation.openingId, device_id: operation.deviceId,
     base_server_revision: operation.baseServerRevision, schema_version: operation.schemaVersion,
     app_version: operation.appVersion, protocol_version: operation.protocolVersion, payload,
-  });
+  }, principal);
 }
 async function recordFailure(operation: SyncOperation, error: unknown) {
   const conflict = error instanceof ApiError && error.status === 409;
@@ -142,27 +174,30 @@ async function recordFailure(operation: SyncOperation, error: unknown) {
     await putSyncConflict(item);
   } else await putSyncOperation({ ...operation, state, attemptCount: operation.attemptCount + 1,
     lastAttemptAt: new Date().toISOString(), nextAttemptAt: authRequired ? undefined : new Date(Date.now() + retryDelayMs(operation.attemptCount)).toISOString(),
-    lastErrorCode: message });
+    dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined, lastErrorCode: message });
   currentState = { ...currentState, lastError: message };
 }
-async function flushVersionedOperations() {
-  const operations = await getAllSyncOperations();
-  const verified = new Set(operations.filter((item) => item.state === "verified").map((item) => item.operationId));
-  const remaining = new Map(operations.filter((item) => item.state !== "verified").map((item) => [item.operationId, item]));
-  while (remaining.size) {
-    const [operation] = readyOperations([...remaining.values()], verified, new Date().toISOString());
-    if (!operation) break;
-    await putSyncOperation({ ...operation, state: "in_flight", lastAttemptAt: new Date().toISOString() });
+export async function flushVersionedOperations() {
+  const auth = await loadAuth();
+  if (!auth) return;
+  const principal = { userId: auth.userId, organizationId: auth.organizationId };
+  while (true) {
+    await assertPrincipal(principal);
+    const operations = await getSyncOperationsForPrincipal(principal.userId, principal.organizationId);
+    const verified = new Set(operations.filter((item) => item.state === "verified").map((item) => item.operationId));
+    const [candidate] = readyOperations(operations.filter((item) => item.state !== "verified"), verified, new Date().toISOString());
+    if (!candidate) break;
+    const operation = await claimSyncOperation({ operationId: candidate.operationId, ...principal,
+      leaseId: dispatchLeaseId, nowIso: new Date().toISOString(), leaseDurationMs: DISPATCH_LEASE_MS });
+    if (!operation) continue;
     try {
-      const row = operation.entityType === "photo" ? await submitPhoto(operation)
-        : operation.entityType === "component" ? await submitComponent(operation)
-          : await submitGeneralOperation(operation);
+      const row = operation.entityType === "photo" ? await submitPhoto(operation, principal)
+        : operation.entityType === "component" ? await submitComponent(operation, principal)
+          : await submitGeneralOperation(operation, principal);
       await putSyncReceipt(receiptFromApi(row));
-      verified.add(operation.operationId);
-      remaining.delete(operation.operationId);
     }
     catch (error) {
-      await recordFailure(operation, error); remaining.delete(operation.operationId);
+      await recordFailure(operation, error);
       if (!(error instanceof ApiError) || error.status >= 500) return;
     }
   }
@@ -170,7 +205,8 @@ async function flushVersionedOperations() {
 export async function flushOutbox() {
   if (currentState.syncing || !navigator.onLine) return;
   currentState = { ...currentState, syncing: true }; notify();
-  await flushVersionedOperations(); currentState = { ...currentState, syncing: false }; await refreshPendingCount();
+  try { await flushVersionedOperations(); }
+  finally { currentState = { ...currentState, syncing: false }; await refreshPendingCount(); }
 }
 export function initSync() {
   void refreshPendingCount(); window.addEventListener("online", flushOutbox);

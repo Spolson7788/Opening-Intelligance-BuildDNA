@@ -83,6 +83,8 @@ export interface SyncOperation<TPayload = Record<string, unknown>> {
   attemptCount: number;
   nextAttemptAt?: string;
   lastAttemptAt?: string;
+  dispatchLeaseId?: string;
+  dispatchLeaseExpiresAt?: string;
   lastErrorCode?: string;
   schemaVersion: number;
   appVersion: string;
@@ -99,6 +101,7 @@ export type MediaTargetType =
 
 export interface OfflineMediaRecord {
   photoId: string;
+  operationId?: string;
   openingId: string;
   organizationId: string;
   targetType: MediaTargetType;

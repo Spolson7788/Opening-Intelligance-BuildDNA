@@ -4,6 +4,7 @@ import {
   DeleteObjectCommand,
   HeadObjectCommand,
   GetObjectCommand,
+  CopyObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createHash, randomUUID } from "node:crypto";
@@ -14,7 +15,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 const REQUIRED_ENV = ["S3_BUCKET", "S3_REGION", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"];
 
-function assertStorageConfigured() {
+export function assertStorageConfigured() {
   const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
   if (missing.length > 0) {
     throw new Error(`Photo storage is not configured — missing env vars: ${missing.join(", ")}`);
@@ -133,6 +134,7 @@ export interface StoredPhotoMetadata {
   contentType: string;
   sha256Checksum?: string;
   photoId?: string;
+  etag?: string;
 }
 
 export async function headPrivatePhoto(key: string): Promise<StoredPhotoMetadata> {
@@ -143,6 +145,7 @@ export async function headPrivatePhoto(key: string): Promise<StoredPhotoMetadata
     contentType: result.ContentType ?? "",
     sha256Checksum: result.Metadata?.["oi-sha256"],
     photoId: result.Metadata?.["oi-photo-id"],
+    etag: result.ETag,
   };
 }
 
@@ -204,6 +207,33 @@ export function buildPrivatePhotoStorageKey(
 ): string {
   const ext = extensionForContentType(contentType);
   return `private/org/${orgId}/opening/${openingId}/photo/${photoId}.${ext}`;
+}
+
+export function buildPrivatePhotoUploadKey(
+  orgId: string,
+  openingId: string,
+  operationId: string,
+  contentType: string,
+): string {
+  const ext = extensionForContentType(contentType);
+  return `private-upload/org/${orgId}/opening/${openingId}/operation/${operationId}.${ext}`;
+}
+
+export async function promotePrivatePhotoObject(input: {
+  uploadKey: string;
+  finalKey: string;
+  sourceEtag: string;
+}) {
+  const client = getClient();
+  const bucket = process.env.S3_BUCKET as string;
+  const copySource = encodeURIComponent(`${bucket}/${input.uploadKey}`).replace(/%2F/g, "/");
+  await client.send(new CopyObjectCommand({
+    Bucket: bucket,
+    Key: input.finalKey,
+    CopySource: copySource,
+    CopySourceIfMatch: input.sourceEtag,
+    MetadataDirective: "COPY",
+  }));
 }
 
 // Documents can attach to a property alone (a property-wide insurance

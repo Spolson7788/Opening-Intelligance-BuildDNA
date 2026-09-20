@@ -70,6 +70,26 @@ describe("offline synchronization contract", () => {
     expect(readyOperations([later, delayed], new Set(), "2026-09-18T12:03:00.000Z")).toEqual([later]);
   });
 
+  it("recovers abandoned dispatch leases without releasing live or authorization-blocked work", () => {
+    const stale = operation({ state: "in_flight", dispatchLeaseId: "old-tab",
+      dispatchLeaseExpiresAt: "2026-09-18T12:01:00.000Z" });
+    const live = operation({ operationId: "77777777-7777-4777-8777-777777777777", state: "verifying",
+      dispatchLeaseId: "live-tab", dispatchLeaseExpiresAt: "2026-09-18T12:10:00.000Z" });
+    const authorizationBlocked = operation({ operationId: "88888888-8888-4888-8888-888888888888",
+      state: "auth_required" });
+    expect(readyOperations([stale, live, authorizationBlocked], new Set(), "2026-09-18T12:02:00.000Z"))
+      .toEqual([stale]);
+  });
+
+  it("recovers pre-lease interrupted records after a bounded grace period", () => {
+    const abandoned = operation({ state: "in_flight", lastAttemptAt: "2026-09-18T11:59:00.000Z" });
+    const recent = operation({ operationId: "77777777-7777-4777-8777-777777777777", state: "verifying",
+      lastAttemptAt: "2026-09-18T12:01:30.000Z" });
+    const noTimestamp = operation({ operationId: "88888888-8888-4888-8888-888888888888", state: "in_flight" });
+    expect(readyOperations([recent, abandoned, noTimestamp], new Set(), "2026-09-18T12:02:00.000Z"))
+      .toEqual([abandoned, noTimestamp]);
+  });
+
   it("rejects malformed identity and dependency envelopes", () => {
     expect(validateSyncOperation(operation({ operationId: "bad", dependencyOperationIds: ["bad", "bad"] }))).toEqual(
       expect.arrayContaining(["invalid_operation_id", "duplicate_dependency"]),

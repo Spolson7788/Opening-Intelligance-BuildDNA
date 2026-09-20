@@ -1,0 +1,14 @@
+[build]
+  command = "npm run build"
+  publish = "netlify/public"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  external_node_modules = ["express"]
+
+[context.production.environment]
+  NODE_ENV = "production"

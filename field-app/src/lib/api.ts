@@ -12,8 +12,13 @@ export class ApiError extends Error {
   }
 }
 
-async function authedFetch(path: string, options: RequestInit = {}) {
+export interface ExpectedPrincipal { userId: string; organizationId: string }
+
+async function authedFetch(path: string, options: RequestInit = {}, expectedPrincipal?: ExpectedPrincipal) {
   const auth = await loadAuth();
+  if (expectedPrincipal && (!auth || auth.userId !== expectedPrincipal.userId || auth.organizationId !== expectedPrincipal.organizationId)) {
+    throw new ApiError(401, "active_principal_changed");
+  }
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string> | undefined),
@@ -141,8 +146,25 @@ export async function reserveOfflinePhoto(payload: {
   device_id: string;
   latitude?: number;
   longitude?: number;
-}) {
-  return authedFetch("/photos/offline/reserve", { method: "POST", body: JSON.stringify(payload) });
+}, expectedPrincipal?: ExpectedPrincipal) {
+  return authedFetch("/photos/offline/reserve", { method: "POST", body: JSON.stringify(payload) }, expectedPrincipal);
+}
+
+export async function recoverOfflinePhotoReservation(payload: {
+  photo_id: string;
+  opening_id: string;
+  target_type: "opening" | "frame" | "door_leaf" | "hardware_component" | "service_event" | "inspection_event";
+  target_id: string;
+  original_filename: string;
+  content_type: string;
+  byte_size: number;
+  sha256_checksum: string;
+  device_id: string;
+  latitude?: number;
+  longitude?: number;
+}, expectedPrincipal?: ExpectedPrincipal) {
+  return authedFetch("/photos/offline/recover-reservation",
+    { method: "POST", body: JSON.stringify(payload) }, expectedPrincipal);
 }
 
 export async function uploadPrivatePhoto(
@@ -170,16 +192,16 @@ export async function confirmOfflinePhoto(payload: {
   schema_version: number;
   app_version: string;
   protocol_version: number;
-}) {
-  return authedFetch("/photos/offline/confirm", { method: "POST", body: JSON.stringify(payload) });
+}, expectedPrincipal?: ExpectedPrincipal) {
+  return authedFetch("/photos/offline/confirm", { method: "POST", body: JSON.stringify(payload) }, expectedPrincipal);
 }
 
-export async function submitOfflineComponent(payload: Record<string, unknown>) {
-  return authedFetch("/sync/components", { method: "POST", body: JSON.stringify(payload) });
+export async function submitOfflineComponent(payload: Record<string, unknown>, expectedPrincipal?: ExpectedPrincipal) {
+  return authedFetch("/sync/components", { method: "POST", body: JSON.stringify(payload) }, expectedPrincipal);
 }
 
-export async function submitOfflineOperation(payload: Record<string, unknown>) {
-  return authedFetch("/sync/operations", { method: "POST", body: JSON.stringify(payload) });
+export async function submitOfflineOperation(payload: Record<string, unknown>, expectedPrincipal?: ExpectedPrincipal) {
+  return authedFetch("/sync/operations", { method: "POST", body: JSON.stringify(payload) }, expectedPrincipal);
 }
 
 export async function fetchHardwareForOpening(openingId: string) {

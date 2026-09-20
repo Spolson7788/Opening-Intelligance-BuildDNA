@@ -20,6 +20,16 @@ const ATTENTION_STATES = new Set<SyncOperationState>([
   "schema_blocked",
 ]);
 
+export const INTERRUPTED_OPERATION_GRACE_MS = 2 * 60_000;
+
+export function interruptedOperationIsRecoverable(operation: SyncOperation, nowIso: string): boolean {
+  if (operation.state !== "in_flight" && operation.state !== "verifying") return false;
+  const now = Date.parse(nowIso);
+  if (operation.dispatchLeaseExpiresAt) return Date.parse(operation.dispatchLeaseExpiresAt) <= now;
+  if (!operation.lastAttemptAt) return true;
+  return Date.parse(operation.lastAttemptAt) + INTERRUPTED_OPERATION_GRACE_MS <= now;
+}
+
 export function validateOfflineEntity(entity: OfflineEntityEnvelope): string[] {
   const errors: string[] = [];
   if (!UUID_PATTERN.test(entity.id)) errors.push("invalid_entity_id");
@@ -69,7 +79,8 @@ export function readyOperations(
 ): SyncOperation[] {
   const now = Date.parse(nowIso);
   return operations
-    .filter((operation) => operation.state === "queued" || operation.state === "retry_wait" || operation.state === "blocked_dependency")
+    .filter((operation) => operation.state === "queued" || operation.state === "retry_wait" || operation.state === "blocked_dependency" ||
+      interruptedOperationIsRecoverable(operation, nowIso))
     .filter((operation) => !operation.nextAttemptAt || Date.parse(operation.nextAttemptAt) <= now)
     .filter((operation) => operation.dependencyOperationIds.every((id) => verifiedOperationIds.has(id)))
     .sort((a, b) => a.createdAtLocal.localeCompare(b.createdAtLocal));

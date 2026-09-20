@@ -1,6 +1,6 @@
 import { openDB } from "idb";
 import type { DBSchema, IDBPDatabase } from "idb";
-import { entityKey, OFFLINE_SCHEMA_VERSION } from "./offlineTypes";
+import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
 import type {
   OfflineEntityEnvelope,
   OfflineMediaRecord,
@@ -10,6 +10,7 @@ import type {
   SyncOperation,
   SyncReceipt,
 } from "./offlineTypes";
+import { interruptedOperationIsRecoverable } from "./offlineSyncModel";
 
 interface FieldAppDB extends DBSchema {
   // Local cache of the last-seen version of each opening, so a technician can
@@ -185,7 +186,7 @@ export async function saveMediaAndOperation(media: OfflineMediaRecord, operation
   const db = await getDb();
   const tx = db.transaction(["media", "operations"], "readwrite");
   await Promise.all([
-    tx.objectStore("media").put(media),
+    tx.objectStore("media").put({ ...media, operationId: operation.operationId }),
     tx.objectStore("operations").put(operation),
     tx.done,
   ]);
@@ -204,6 +205,189 @@ export async function getSyncOperationsForOpening(openingId: string) {
 export async function getAllSyncOperations() {
   const db = await getDb();
   return db.getAll("operations");
+}
+
+export async function getSyncOperationsForPrincipal(userId: string, organizationId: string) {
+  return (await getAllSyncOperations()).filter(
+    (operation) => operation.actorUserId === userId && operation.organizationId === organizationId,
+  );
+}
+
+export async function getOpenConflictsForPrincipal(userId: string, organizationId: string) {
+  const db = await getDb();
+  const conflicts = await db.getAll("conflicts");
+  const operations = await db.getAll("operations");
+  const owned = new Set(operations.filter((operation) =>
+    operation.actorUserId === userId && operation.organizationId === organizationId).map((operation) => operation.operationId));
+  return conflicts.filter((conflict) => conflict.resolutionState === "open" && owned.has(conflict.operationId));
+}
+
+export async function getOfflineMediaForPrincipal(userId: string, organizationId: string) {
+  const db = await getDb();
+  return (await db.getAll("media")).filter(
+    (media) => media.capturedByUserId === userId && media.organizationId === organizationId,
+  );
+}
+
+export async function claimSyncOperation(input: {
+  operationId: string;
+  userId: string;
+  organizationId: string;
+  leaseId: string;
+  nowIso: string;
+  leaseDurationMs: number;
+}) {
+  const db = await getDb();
+  const tx = db.transaction(["auth", "operations", "syncReceipts"], "readwrite");
+  const auth = await tx.objectStore("auth").get("current");
+  const operation = await tx.objectStore("operations").get(input.operationId);
+  if (!auth || auth.userId !== input.userId || auth.organizationId !== input.organizationId ||
+      !operation || operation.actorUserId !== input.userId || operation.organizationId !== input.organizationId) {
+    await tx.done;
+    return undefined;
+  }
+  const now = Date.parse(input.nowIso);
+  const staleLease = interruptedOperationIsRecoverable(operation, input.nowIso);
+  if (!["queued", "retry_wait", "blocked_dependency"].includes(operation.state) && !staleLease) {
+    await tx.done;
+    return undefined;
+  }
+  if (operation.nextAttemptAt && Date.parse(operation.nextAttemptAt) > now) {
+    await tx.done;
+    return undefined;
+  }
+  for (const dependencyId of operation.dependencyOperationIds) {
+    if (!(await tx.objectStore("syncReceipts").get(dependencyId))) {
+      await tx.done;
+      return undefined;
+    }
+  }
+  const claimed = { ...operation, state: "in_flight" as const, lastAttemptAt: input.nowIso,
+    dispatchLeaseId: input.leaseId,
+    dispatchLeaseExpiresAt: new Date(now + input.leaseDurationMs).toISOString() };
+  await tx.objectStore("operations").put(claimed);
+  await tx.done;
+  return claimed;
+}
+
+export async function retrySyncOperationAfterReview(
+  operationId: string,
+  resolveConflict = false,
+  nowIso = new Date().toISOString(),
+) {
+  const db = await getDb();
+  const tx = db.transaction(["auth", "operations", "conflicts"], "readwrite");
+  const auth = await tx.objectStore("auth").get("current");
+  const operation = await tx.objectStore("operations").get(operationId);
+  if (!auth || !operation || operation.actorUserId !== auth.userId || operation.organizationId !== auth.organizationId) {
+    throw new Error("operation_principal_mismatch");
+  }
+  if (operation.state === "conflict") {
+    if (!resolveConflict) throw new Error("conflict_review_required");
+    const conflicts = await tx.objectStore("conflicts").getAll();
+    const conflict = conflicts.find((item) => item.operationId === operationId && item.resolutionState === "open");
+    if (!conflict) throw new Error("open_conflict_not_found");
+    await tx.objectStore("conflicts").put({ ...conflict, resolutionState: "resolved",
+      resolvedByUserId: auth.userId, selectedOutcome: "local", resolvedAt: new Date().toISOString() });
+  } else if (!["auth_required", "retry_wait", "permanent_failure"].includes(operation.state) &&
+      !interruptedOperationIsRecoverable(operation, nowIso)) {
+    throw new Error("operation_not_reviewable");
+  }
+  await tx.objectStore("operations").put({ ...operation, state: "queued", nextAttemptAt: undefined,
+    dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined, lastErrorCode: undefined });
+  await tx.done;
+}
+
+export async function recoverOrphanedMediaOperation(photoId: string) {
+  const db = await getDb();
+  const tx = db.transaction(["auth", "media", "operations"], "readwrite");
+  const auth = await tx.objectStore("auth").get("current");
+  const media = await tx.objectStore("media").get(photoId);
+  if (!auth || !media || media.capturedByUserId !== auth.userId || media.organizationId !== auth.organizationId) {
+    throw new Error("media_principal_mismatch");
+  }
+  const operations = await tx.objectStore("operations").getAll();
+  if (operations.some((operation) => operation.entityType === "photo" && operation.entityId === photoId)) {
+    throw new Error("media_operation_already_exists");
+  }
+  const operationId = media.operationId ?? media.photoId;
+  if (operations.some((operation) => operation.operationId === operationId)) {
+    throw new Error("media_operation_identity_conflict");
+  }
+  const dependencies = media.targetType === "opening" ? [] : operations
+    .filter((operation) => operation.openingId === media.openingId && operation.entityId === media.targetId &&
+      operation.state !== "verified")
+    .map((operation) => operation.operationId);
+  const legacyIdentityRecovery = !media.operationId;
+  const operation: SyncOperation = {
+    operationId,
+    operationType: "confirm_media",
+    entityType: "photo",
+    entityId: media.photoId,
+    openingId: media.openingId,
+    organizationId: media.organizationId,
+    actorUserId: media.capturedByUserId,
+    deviceId: media.capturedByDeviceId,
+    baseServerRevision: null,
+    payload: {
+      target_type: media.targetType,
+      target_id: media.targetId,
+      original_filename: media.originalFilename,
+      content_type: media.contentType,
+      byte_size: media.byteSize,
+      sha256_checksum: media.sha256Checksum,
+      latitude: media.latitude,
+      longitude: media.longitude,
+      legacy_identity_recovery: legacyIdentityRecovery,
+    },
+    payloadHash: media.sha256Checksum,
+    dependencyOperationIds: [...new Set(dependencies)],
+    createdAtLocal: media.createdAtLocal,
+    state: dependencies.length ? "blocked_dependency" : "queued",
+    attemptCount: 0,
+    schemaVersion: OFFLINE_SCHEMA_VERSION,
+    appVersion: "offline-protocol-1",
+    protocolVersion: SYNC_PROTOCOL_VERSION,
+  };
+  await tx.objectStore("operations").put(operation);
+  await tx.objectStore("media").put({ ...media, operationId: operation.operationId,
+    uploadState: operation.state, updatedAtLocal: new Date().toISOString() });
+  await tx.done;
+  return operation;
+}
+
+export async function reconcileRecoveredMediaOperationId(oldOperationId: string, recoveredOperationId: string) {
+  if (oldOperationId === recoveredOperationId) {
+    const db = await getDb();
+    return db.get("operations", oldOperationId);
+  }
+  const db = await getDb();
+  const tx = db.transaction(["auth", "media", "operations"], "readwrite");
+  const auth = await tx.objectStore("auth").get("current");
+  const operation = await tx.objectStore("operations").get(oldOperationId);
+  if (!auth || !operation || operation.entityType !== "photo" ||
+      operation.actorUserId !== auth.userId || operation.organizationId !== auth.organizationId) {
+    throw new Error("operation_principal_mismatch");
+  }
+  if (await tx.objectStore("operations").get(recoveredOperationId)) {
+    throw new Error("recovered_operation_identity_conflict");
+  }
+  const media = await tx.objectStore("media").get(operation.entityId);
+  if (!media || media.photoId !== operation.entityId) throw new Error("receipt_media_not_found");
+  const reconciled: SyncOperation = { ...operation, operationId: recoveredOperationId,
+    payload: { ...(operation.payload as Record<string, unknown>), legacy_identity_recovery: false } };
+  await tx.objectStore("operations").delete(oldOperationId);
+  await tx.objectStore("operations").put(reconciled);
+  await tx.objectStore("media").put({ ...media, operationId: recoveredOperationId,
+    updatedAtLocal: new Date().toISOString() });
+  const allOperations = await tx.objectStore("operations").getAll();
+  for (const dependent of allOperations) {
+    if (!dependent.dependencyOperationIds.includes(oldOperationId)) continue;
+    await tx.objectStore("operations").put({ ...dependent, dependencyOperationIds:
+      dependent.dependencyOperationIds.map((id) => id === oldOperationId ? recoveredOperationId : id) });
+  }
+  await tx.done;
+  return reconciled;
 }
 
 export async function putSyncOperation(operation: SyncOperation) {
@@ -274,7 +458,8 @@ export async function putSyncReceipt(receipt: SyncReceipt) {
     });
   }
   await tx.objectStore("syncReceipts").put(receipt);
-  await tx.objectStore("operations").put({ ...operation, state: "verified", lastErrorCode: undefined });
+  await tx.objectStore("operations").put({ ...operation, state: "verified", lastErrorCode: undefined,
+    dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined });
   await tx.done;
 }
 
@@ -294,7 +479,8 @@ export async function putSyncConflict(conflict: SyncConflict) {
     await tx.objectStore("entities").put({ ...entity, syncState: "conflict", updatedAtLocal: conflict.detectedAt });
   }
   await tx.objectStore("conflicts").put(conflict);
-  await tx.objectStore("operations").put({ ...operation, state: "conflict" });
+  await tx.objectStore("operations").put({ ...operation, state: "conflict",
+    dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined });
   await tx.done;
 }
 

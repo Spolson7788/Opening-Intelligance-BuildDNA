@@ -2,14 +2,21 @@ import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   closeFieldAppDb,
+  claimSyncOperation,
   getDb,
   getOfflineEntitiesForOpening,
   getSyncOperationsForOpening,
+  getSyncOperationsForPrincipal,
   putSyncReceipt,
   getOfflineMedia,
   removeVerifiedLocalOriginal,
+  recoverOrphanedMediaOperation,
+  reconcileRecoveredMediaOperationId,
   saveEntityAndOperation,
   saveMediaAndOperation,
+  saveAuth,
+  putSyncOperation,
+  retrySyncOperationAfterReview,
 } from "../field-app/src/lib/db";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "../field-app/src/lib/offlineTypes";
 import type { OfflineEntityEnvelope, OfflineMediaRecord, SyncOperation, SyncReceipt } from "../field-app/src/lib/offlineTypes";
@@ -143,5 +150,105 @@ describe("versioned offline database", () => {
     expect((await getOfflineMedia(photoId))?.localBlobState).toBe("verified_cleanup_allowed");
     await removeVerifiedLocalOriginal(photoId);
     expect(await getOfflineMedia(photoId)).toBeUndefined();
+  });
+
+  it("claims work only for the current principal and preserves another account's queue", async () => {
+    const { entity, operation } = record();
+    await saveEntityAndOperation(entity, operation);
+    const otherUser = "77777777-7777-4777-8777-777777777777";
+    await saveAuth({ token: "other-token", userId: otherUser, organizationId: ids.organization, role: "technician" });
+    expect(await claimSyncOperation({ operationId: operation.operationId, userId: ids.user,
+      organizationId: ids.organization, leaseId: "tab-a", nowIso: "2026-09-18T12:01:00.000Z", leaseDurationMs: 60_000 }))
+      .toBeUndefined();
+    expect(await getSyncOperationsForPrincipal(ids.user, ids.organization)).toEqual([operation]);
+    await saveAuth({ token: "owner-token", userId: ids.user, organizationId: ids.organization, role: "technician" });
+    expect((await claimSyncOperation({ operationId: operation.operationId, userId: ids.user,
+      organizationId: ids.organization, leaseId: "tab-a", nowIso: "2026-09-18T12:01:00.000Z", leaseDurationMs: 60_000 }))
+      ?.dispatchLeaseId).toBe("tab-a");
+  });
+
+  it("prevents duplicate live claims and recovers an expired lease", async () => {
+    const { entity, operation } = record();
+    await saveEntityAndOperation(entity, operation);
+    await saveAuth({ token: "owner-token", userId: ids.user, organizationId: ids.organization, role: "technician" });
+    const first = await claimSyncOperation({ operationId: operation.operationId, userId: ids.user,
+      organizationId: ids.organization, leaseId: "tab-a", nowIso: "2026-09-18T12:01:00.000Z", leaseDurationMs: 60_000 });
+    expect(first).toBeDefined();
+    expect(await claimSyncOperation({ operationId: operation.operationId, userId: ids.user,
+      organizationId: ids.organization, leaseId: "tab-b", nowIso: "2026-09-18T12:01:30.000Z", leaseDurationMs: 60_000 }))
+      .toBeUndefined();
+    await putSyncOperation({ ...first!, dispatchLeaseExpiresAt: "2026-09-18T12:01:31.000Z" });
+    expect((await claimSyncOperation({ operationId: operation.operationId, userId: ids.user,
+      organizationId: ids.organization, leaseId: "tab-b", nowIso: "2026-09-18T12:01:32.000Z", leaseDurationMs: 60_000 }))
+      ?.dispatchLeaseId).toBe("tab-b");
+  });
+
+  it("requires the owning principal before retrying authorization-blocked work", async () => {
+    const { entity, operation } = record();
+    await saveEntityAndOperation(entity, { ...operation, state: "auth_required" });
+    await saveAuth({ token: "other-token", userId: "77777777-7777-4777-8777-777777777777",
+      organizationId: ids.organization, role: "technician" });
+    await expect(retrySyncOperationAfterReview(operation.operationId)).rejects.toThrow("operation_principal_mismatch");
+    await saveAuth({ token: "owner-token", userId: ids.user, organizationId: ids.organization, role: "technician" });
+    await retrySyncOperationAfterReview(operation.operationId);
+    expect((await getSyncOperationsForOpening(ids.opening))[0].state).toBe("queued");
+  });
+
+  it("lets the owning principal recover an expired or legacy interrupted operation", async () => {
+    const { entity, operation } = record();
+    await saveEntityAndOperation(entity, { ...operation, state: "in_flight",
+      lastAttemptAt: "2026-09-18T12:00:00.000Z" });
+    await saveAuth({ token: "owner-token", userId: ids.user, organizationId: ids.organization, role: "technician" });
+    await retrySyncOperationAfterReview(operation.operationId, false, "2026-09-18T12:03:00.000Z");
+    expect((await getSyncOperationsForOpening(ids.opening))[0]).toMatchObject({ state: "queued" });
+  });
+
+  it("reconstructs an orphaned photo operation without deleting or replacing the original blob", async () => {
+    const media: OfflineMediaRecord = {
+      photoId: ids.entity, openingId: ids.opening, organizationId: ids.organization, targetType: "opening",
+      targetId: ids.opening, capturedAtDevice: "2026-09-18T12:00:00.000Z", capturedByUserId: ids.user,
+      capturedByDeviceId: ids.device, originalFilename: "capture.jpg", generatedCaptureName: "capture.jpg",
+      contentType: "image/jpeg", byteSize: 3, sha256Checksum: "a".repeat(64),
+      blob: new Blob(["abc"], { type: "image/jpeg" }), localBlobState: "retained", uploadState: "queued",
+      provenanceState: "original", reviewState: "pending", createdAtLocal: "2026-09-18T12:00:00.000Z",
+      updatedAtLocal: "2026-09-18T12:00:00.000Z",
+    };
+    const operation = { ...record().operation, entityId: media.photoId, entityType: "photo" as const,
+      operationType: "confirm_media" as const };
+    await saveMediaAndOperation(media, operation);
+    const db = await getDb();
+    await db.delete("operations", operation.operationId);
+    await saveAuth({ token: "owner-token", userId: ids.user, organizationId: ids.organization, role: "technician" });
+    const recovered = await recoverOrphanedMediaOperation(media.photoId);
+    expect(recovered).toMatchObject({ operationId: operation.operationId, entityId: media.photoId, state: "queued" });
+    const preserved = await getOfflineMedia(media.photoId);
+    expect(await preserved!.blob.text()).toBe("abc");
+    expect(preserved).toMatchObject({ localBlobState: "retained", operationId: operation.operationId });
+  });
+
+  it("reconciles a true legacy orphan fallback with the server reservation operation ID", async () => {
+    const media: OfflineMediaRecord = {
+      photoId: ids.entity, openingId: ids.opening, organizationId: ids.organization, targetType: "opening",
+      targetId: ids.opening, capturedAtDevice: "2026-09-18T12:00:00.000Z", capturedByUserId: ids.user,
+      capturedByDeviceId: ids.device, originalFilename: "legacy.jpg", generatedCaptureName: "legacy.jpg",
+      contentType: "image/jpeg", byteSize: 6, sha256Checksum: "c".repeat(64),
+      blob: new Blob(["legacy"], { type: "image/jpeg" }), localBlobState: "retained", uploadState: "queued",
+      provenanceState: "original", reviewState: "pending", createdAtLocal: "2026-09-18T12:00:00.000Z",
+      updatedAtLocal: "2026-09-18T12:00:00.000Z",
+    };
+    const db = await getDb();
+    await db.put("media", media); // genuine pre-operationId media record
+    await saveAuth({ token: "owner-token", userId: ids.user, organizationId: ids.organization, role: "technician" });
+    const fallback = await recoverOrphanedMediaOperation(media.photoId);
+    expect(fallback.operationId).toBe(media.photoId);
+    expect(fallback.payload).toMatchObject({ legacy_identity_recovery: true });
+
+    const serverReservationOperationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const reconciled = await reconcileRecoveredMediaOperationId(fallback.operationId, serverReservationOperationId);
+    expect(reconciled?.operationId).toBe(serverReservationOperationId);
+    expect((await getOfflineMedia(media.photoId))?.operationId).toBe(serverReservationOperationId);
+    expect(await (await getOfflineMedia(media.photoId))!.blob.text()).toBe("legacy");
+    expect((await getSyncOperationsForOpening(ids.opening)).map((item) => item.operationId))
+      .toEqual([serverReservationOperationId]);
   });
 });

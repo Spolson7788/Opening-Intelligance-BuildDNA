@@ -180,6 +180,34 @@ describe("offline synchronization API foundation", () => {
     expect(rows.rows[0].device_id).toBe(requested.device_id);
   });
 
+  it("recovers the original operation identity for a legacy orphan with an existing reservation", async () => {
+    const org = await signupTestOrg("Legacy orphan owner");
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId);
+    const user = await pool.query("SELECT id FROM users WHERE email=$1", [org.email]);
+    const originalOperationId = randomUUID();
+    const legacyPhotoId = randomUUID();
+    const requested = { ...reservation(opening.id, { photo_id: legacyPhotoId,
+      client_operation_id: originalOperationId }), actor_user_id: user.rows[0].id } as any;
+    const created = await createOrReplayPhotoReservation(org.organizationId, requested);
+    expect(created.created).toBe(true);
+
+    // The legacy local record has only photo_id, so its deterministic fallback
+    // operation ID would be legacyPhotoId. Recovery must return the server's
+    // original ID before reserve/confirm, avoiding photo_identity_reused.
+    expect(legacyPhotoId).not.toBe(originalOperationId);
+    const recovered = await request(app).post("/api/photos/offline/recover-reservation")
+      .set("Authorization", `Bearer ${org.token}`)
+      .send({ photo_id: legacyPhotoId, opening_id: opening.id, target_type: "opening", target_id: opening.id,
+        original_filename: requested.original_filename, content_type: requested.content_type,
+        byte_size: requested.byte_size, sha256_checksum: requested.sha256_checksum, device_id: requested.device_id });
+    expect(recovered.status).toBe(200);
+    expect(recovered.body).toMatchObject({ photo_id: legacyPhotoId, client_operation_id: originalOperationId,
+      status: "reserved" });
+    const rows = await pool.query("SELECT operation_id FROM photo_upload_reservations WHERE photo_id=$1", [legacyPhotoId]);
+    expect(rows.rows).toEqual([{ operation_id: originalOperationId }]);
+  });
+
   it("immutably retains photograph geolocation in its reservation", async () => {
     const org = await signupTestOrg();
     const { buildingId } = await createPortfolioHierarchy(org.token);

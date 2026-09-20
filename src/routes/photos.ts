@@ -14,6 +14,7 @@ import {
   mediaTypeForContentType,
   deleteObject,
   buildPrivatePhotoStorageKey,
+  buildPrivatePhotoUploadKey,
   getPresignedPrivatePhotoUploadUrl,
   getPresignedPrivatePhotoReadUrl,
   headPrivatePhoto,
@@ -21,6 +22,8 @@ import {
   verifyPrivatePhotoRetrieval,
   isStorageKeyInOpeningScope,
   maximumMediaBytes,
+  promotePrivatePhotoObject,
+  assertStorageConfigured,
 } from "../services/storage";
 import { canonicalPayloadHash } from "../services/syncProtocol";
 
@@ -55,6 +58,7 @@ const reserveOfflinePhotoSchema = z.object({
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
 });
+const recoverOfflinePhotoReservationSchema = reserveOfflinePhotoSchema.omit({ client_operation_id: true });
 
 async function assertPhotoTarget(openingId: string, targetType: z.infer<typeof offlinePhotoTarget>, targetId: string, queryable: any = pool) {
   if (targetType === "opening") return targetId === openingId;
@@ -97,18 +101,21 @@ export async function createOrReplayPhotoReservation(
   const key = buildPrivatePhotoStorageKey(
     organizationId, requested.opening_id, requested.photo_id, requested.content_type,
   );
+  const uploadKey = buildPrivatePhotoUploadKey(
+    organizationId, requested.opening_id, requested.client_operation_id, requested.content_type,
+  );
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     const inserted = await client.query(
       `INSERT INTO photo_upload_reservations
         (organization_id, opening_id, photo_id, operation_id, target_type, target_id,
-         storage_object_key, original_filename, content_type, byte_size, sha256_checksum,
+         storage_object_key, upload_object_key, original_filename, content_type, byte_size, sha256_checksum,
          actor_user_id, device_id, latitude, longitude, expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now() + interval '5 minutes')
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,now() + interval '5 minutes')
        ON CONFLICT DO NOTHING RETURNING *`,
       [organizationId, requested.opening_id, requested.photo_id, requested.client_operation_id,
-        requested.target_type, requested.target_id, key, requested.original_filename,
+        requested.target_type, requested.target_id, key, uploadKey, requested.original_filename,
         requested.content_type, requested.byte_size, requested.sha256_checksum,
         requested.actor_user_id, requested.device_id, requested.latitude ?? null, requested.longitude ?? null],
     );
@@ -122,7 +129,7 @@ export async function createOrReplayPhotoReservation(
     if (!reservationMatches(reservation, requested)) {
       await client.query("ROLLBACK"); return { conflict: "idempotency_key_reused" as const };
     }
-    const refreshed = await client.query(
+    const refreshed = reservation.status === "verified" ? { rows: [reservation] } : await client.query(
       `UPDATE photo_upload_reservations SET expires_at=now() + interval '5 minutes' WHERE id=$1 RETURNING *`,
       [reservation.id],
     );
@@ -132,6 +139,37 @@ export async function createOrReplayPhotoReservation(
     await client.query("ROLLBACK"); throw error;
   } finally { client.release(); }
 }
+
+// Legacy clients did not persist the operation ID beside the retained media
+// blob. This read-only recovery endpoint lets the authenticated original actor
+// recover an existing immutable reservation by permanent photo identity and
+// exact metadata before the client creates or sends a replacement operation.
+photosRouter.post("/offline/recover-reservation", async (req: AuthedRequest, res) => {
+  const parsed = recoverOfflinePhotoReservationSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const b = parsed.data;
+  const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
+  if (!(await assertOpeningInOrg(b.opening_id, orgId))) return res.status(403).json({ error: "forbidden" });
+  if (!(await assertPhotoTarget(b.opening_id, b.target_type, b.target_id))) {
+    return res.status(400).json({ error: "photo_target_not_in_opening" });
+  }
+  const result = await pool.query(
+    `SELECT * FROM photo_upload_reservations WHERE organization_id=$1 AND photo_id=$2`,
+    [orgId, b.photo_id],
+  );
+  const reservation = result.rows[0];
+  if (!reservation) return res.status(404).json({ error: "reservation_not_found" });
+  if (!reservationMatches(reservation, { ...b, client_operation_id: reservation.operation_id,
+    actor_user_id: userId })) {
+    return res.status(409).json({ error: "legacy_reservation_identity_conflict" });
+  }
+  return res.json({
+    photo_id: reservation.photo_id,
+    client_operation_id: reservation.operation_id,
+    status: reservation.status,
+  });
+});
 
 // Offline protocol step 1: reserve one immutable private object identity.
 // Replaying the same operation returns the same reservation and a fresh
@@ -156,19 +194,21 @@ photosRouter.post("/offline/reserve", async (req: AuthedRequest, res) => {
   }
 
   try {
+    // Fail before creating an immutable reservation when no private storage
+    // backend exists. A configuration error must not strand a database row
+    // that never had an upload authorization.
+    assertStorageConfigured();
     const requested = { ...b, actor_user_id: userId };
-    const key = buildPrivatePhotoStorageKey(orgId, b.opening_id, b.photo_id, b.content_type);
-    const uploadUrl = await getPresignedPrivatePhotoUploadUrl({
-      key,
+    const result = await createOrReplayPhotoReservation(orgId, requested);
+    if (result.conflict) return res.status(409).json({ error: result.conflict });
+    const { reservation, created } = result;
+    const uploadUrl = reservation.status === "verified" ? undefined : await getPresignedPrivatePhotoUploadUrl({
+      key: reservation.upload_object_key,
       contentType: b.content_type,
       byteSize: b.byte_size,
       sha256Checksum: b.sha256_checksum,
       photoId: b.photo_id,
     });
-
-    const result = await createOrReplayPhotoReservation(orgId, requested);
-    if (result.conflict) return res.status(409).json({ error: result.conflict });
-    const { reservation, created } = result;
 
     return res.status(created ? 201 : 200).json({
       photo_id: reservation.photo_id,
@@ -236,14 +276,6 @@ photosRouter.post("/offline/confirm", async (req: AuthedRequest, res) => {
       `SELECT * FROM sync_operation_receipts WHERE organization_id=$1 AND operation_id=$2`,
       [orgId, b.client_operation_id],
     );
-    if (prior.rows[0]) {
-      await client.query("ROLLBACK");
-      if (prior.rows[0].payload_hash !== payloadHash || prior.rows[0].entity_id !== b.photo_id) {
-        return res.status(409).json({ error: "idempotency_key_reused" });
-      }
-      return res.json({ ...prior.rows[0], status: "already_applied" });
-    }
-
     // Repeat authorization and hierarchy checks while holding the immutable
     // reservation lock, immediately before accepting the storage object.
     if (!(await assertOpeningInOrg(reservation.opening_id, orgId, client))) {
@@ -259,7 +291,23 @@ photosRouter.post("/offline/confirm", async (req: AuthedRequest, res) => {
       return res.status(403).json({ error: "reservation_actor_mismatch" });
     }
 
-    const stored = await headPrivatePhoto(reservation.storage_object_key);
+    if (prior.rows[0]) {
+      if (prior.rows[0].payload_hash !== payloadHash || prior.rows[0].entity_id !== b.photo_id) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ error: "idempotency_key_reused" });
+      }
+      const finalStored = await headPrivatePhoto(reservation.storage_object_key);
+      const finalFailures = verifyStoredPhoto({ byteSize: Number(reservation.byte_size),
+        contentType: reservation.content_type, sha256Checksum: reservation.sha256_checksum,
+        photoId: reservation.photo_id }, finalStored);
+      const finalRetrieval = finalFailures.length === 0 && await verifyPrivatePhotoRetrieval(
+        reservation.storage_object_key, reservation.sha256_checksum, maximumMediaBytes(reservation.content_type));
+      await client.query("ROLLBACK");
+      if (!finalRetrieval) return res.status(409).json({ error: "verified_object_no_longer_authoritative" });
+      return res.json({ ...prior.rows[0], status: "already_applied" });
+    }
+
+    const stored = await headPrivatePhoto(reservation.upload_object_key);
     const failures = verifyStoredPhoto({
       byteSize: Number(reservation.byte_size),
       contentType: reservation.content_type,
@@ -276,7 +324,7 @@ photosRouter.post("/offline/confirm", async (req: AuthedRequest, res) => {
       return res.status(409).json({ error: "stored_object_verification_failed", failures });
     }
     const retrievalVerified = await verifyPrivatePhotoRetrieval(
-      reservation.storage_object_key,
+      reservation.upload_object_key,
       reservation.sha256_checksum,
       maximumMediaBytes(reservation.content_type),
     );
@@ -287,6 +335,22 @@ photosRouter.post("/offline/confirm", async (req: AuthedRequest, res) => {
       );
       await client.query("COMMIT");
       return res.status(409).json({ error: "authorized_retrieval_verification_failed", failures: ["checksum_mismatch"] });
+    }
+    if (!stored.etag) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "stored_object_etag_missing" });
+    }
+    await promotePrivatePhotoObject({ uploadKey: reservation.upload_object_key,
+      finalKey: reservation.storage_object_key, sourceEtag: stored.etag });
+    const finalStored = await headPrivatePhoto(reservation.storage_object_key);
+    const finalFailures = verifyStoredPhoto({ byteSize: Number(reservation.byte_size),
+      contentType: reservation.content_type, sha256Checksum: reservation.sha256_checksum,
+      photoId: reservation.photo_id }, finalStored);
+    const finalRetrievalVerified = finalFailures.length === 0 && await verifyPrivatePhotoRetrieval(
+      reservation.storage_object_key, reservation.sha256_checksum, maximumMediaBytes(reservation.content_type));
+    if (!finalRetrievalVerified) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "final_object_verification_failed", failures: finalFailures });
     }
 
     const targetColumns = {
@@ -338,6 +402,7 @@ photosRouter.post("/offline/confirm", async (req: AuthedRequest, res) => {
       [reservation.id],
     );
     await client.query("COMMIT");
+    await deleteObject(reservation.upload_object_key).catch(() => undefined);
     return res.status(201).json(receipt.rows[0]);
   } catch (err: any) {
     await client.query("ROLLBACK").catch(() => undefined);
