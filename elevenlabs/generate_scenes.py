@@ -136,7 +136,8 @@ def submitted_text(root, clip):
                  % clip["scene_id"])
     rec = {
         "script_sha256_frozen": hashlib.sha256((frozen + "\n").encode()).hexdigest(),
-        "submitted_sha256": hashlib.sha256((text + "\n").encode()).hexdigest(),
+        "submitted_sha256": hashlib.sha256((text if clip.get("submitted_sha256_normalization") == "utf8-strip" else text + "\n").encode()).hexdigest(),
+        "submitted_sha256_normalization": clip.get("submitted_sha256_normalization", "utf8-strip-plus-newline"),
         "characters_frozen": len(frozen),
         "characters_submitted": len(text),
         "overrides_applied": applied,
@@ -235,6 +236,8 @@ def main():
                     help="assert the plan contains exactly this many scenes before "
                          "generating. A registry edit that quietly adds or drops a scene "
                          "then stops the run instead of silently changing the batch.")
+    ap.add_argument("--require-pins", action="store_true")
+    ap.add_argument("--expect-characters", type=int)
     a = ap.parse_args()
 
     voice = load_voice()
@@ -274,7 +277,17 @@ def main():
     # ElevenLabs bills per CHARACTER of the submitted text, so the cost is known
     # exactly before anything is spent — it is the scripts, counted.
     subs = {c["scene_id"]: submitted_text(ROOT, c) for c in todo}
+    if a.require_pins:
+        missing = [c["scene_id"] for c in todo if not c.get("submitted_sha256_expected")]
+        if missing:
+            sys.exit("Missing required approved-text pins: " + " ".join(missing) + ". Nothing generated.")
+    pinned = [c["scene_id"] for c in todo if c.get("submitted_sha256_expected")]
+    print(f"pins    {len(pinned)} of {len(todo)} verified against the submitted text: {' '.join(pinned)}")
+    if wanted and {c["scene_id"] for c in todo} != wanted:
+        sys.exit("Requested scene set does not match the executable plan. Nothing generated.")
     chars = sum(r["characters_submitted"] for _, r in subs.values())
+    if a.expect_characters is not None and chars != a.expect_characters:
+        sys.exit(f"Expected {a.expect_characters} submitted characters, found {chars}. Nothing generated.")
     frozen_chars = sum(r["characters_frozen"] for _, r in subs.values())
     words = sum(c["words"] for c in todo)
     print(f"to generate ({len(todo)}): {' '.join(c['scene_id'] for c in todo) or 'none'}")
@@ -318,7 +331,7 @@ def main():
     results, failed = [], []
     for i, c in enumerate(todo, 1):
         sid = c["scene_id"]
-        text, subrec = submitted_text(ROOT, c)
+        text, subrec = subs[sid]  # Submit exactly the prevalidated string.
         dest = ROOT / c["audio"]
         if dest.suffix != ext:
             dest = dest.with_suffix(ext)

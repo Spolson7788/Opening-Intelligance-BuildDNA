@@ -103,6 +103,12 @@ def cmd_scripts(reg, a):
     sc = ROOT / "elevenlabs" / "scenes"
     sc.mkdir(parents=True, exist_ok=True)
     voice = json.loads((ROOT / "elevenlabs" / "voice_settings.json").read_text(encoding="utf-8"))
+    mpath = ROOT / "elevenlabs" / "generation_manifest.json"
+    existing = json.loads(mpath.read_text(encoding="utf-8")) if mpath.exists() else {}
+    approval_fields = ("submitted_sha256_expected", "submitted_sha256_normalization",
+                       "characters_submitted_expected", "pronunciation_overrides")
+    approvals = {c["scene_id"]: {k: c[k] for k in approval_fields if k in c}
+                 for c in existing.get("clips", [])}
     manifest, master = [], []
     for s in reg["scenes"]:
         if not s["narration"].strip():
@@ -132,6 +138,7 @@ def cmd_scripts(reg, a):
             "provisional_reason": s.get("provisional_reason"),
             "provisional_depends_on": s.get("provisional_depends_on"),
         })
+        manifest[-1].update(approvals.get(s["scene_id"], {}))
     (ROOT / "elevenlabs" / "master_narration.txt").write_text("\n\n".join(master) + "\n", encoding="utf-8")
     (ROOT / "elevenlabs" / "generation_manifest.json").write_text(
         json.dumps({"generated": TODAY, "video_version": reg["video_version"],
@@ -409,7 +416,7 @@ def cmd_voicecheck(reg, a):
                   "recorded now — they do not match each other.")
             ok = False
 
-    clips = sorted((ROOT / "elevenlabs" / "audio").glob("*.*")) if (ROOT / "elevenlabs" / "audio").exists() else []
+    clips = sorted(p for p in (ROOT / "elevenlabs" / "audio").glob("*.*") if p.name != ".gitkeep") if (ROOT / "elevenlabs" / "audio").exists() else []
     print(f"\nclips          {len(clips)} present")
     if clips:
         import subprocess as sp
@@ -520,12 +527,14 @@ def main():
 
     a = ap.parse_args()
     reg = load()
-    {"status": cmd_status, "scripts": cmd_scripts, "record": cmd_record, "build": cmd_build,
+    result = {"status": cmd_status, "scripts": cmd_scripts, "record": cmd_record, "build": cmd_build,
      "assemble": cmd_assemble, "missing": cmd_missing, "impact": cmd_impact,
      "voicecheck": cmd_voicecheck,
      "inventory": cmd_inventory,
      "approve": cmd_setstatus, "supersede": cmd_setstatus, "block": cmd_setstatus,
      "review": cmd_setstatus, "draft": cmd_setstatus, "release": cmd_release}[a.cmd](reg, a)
+    if a.cmd == "voicecheck":
+        raise SystemExit(result)
 
 
 if __name__ == "__main__":

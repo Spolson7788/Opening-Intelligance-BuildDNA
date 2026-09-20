@@ -1,5 +1,5 @@
 {
- "generated": "2026-09-18",
+ "generated": "2026-09-20",
  "video_version": "0.42.0",
  "voice": {
   "_status": "LOCKED. Validation sample approved by Michelle on 2026-09-14; voice ID and settings locked for the OI Modular Video Production System. Every narration clip in every chapter — Trial 1 and everything after it — is generated at exactly these values. Changing any one of them invalidates every existing clip and requires regenerating all of them in a single session, plus a minor version bump on the video system.",
@@ -601,47 +601,6 @@
    "audio": "elevenlabs/audio/S130.mp3",
    "audio_present": false,
    "renarrate_required": true,
-   "words": 63,
-   "estimated_seconds": 30.3,
-   "voice_id": "OZxMHsGaBmV5pjMIDIn0",
-   "model_id": "eleven_multilingual_v2",
-   "settings": {
-    "speed": 0.72,
-    "stability": 0.6,
-    "similarity_boost": 0.75,
-    "style": 0.0,
-    "use_speaker_boost": true
-   },
-   "output_format": {
-    "preferred": {
-     "api_value": "mp3_44100_128",
-     "container": "mp3",
-     "sample_rate": 44100,
-     "bit_rate_kbps": 128,
-     "channels": 1,
-     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
-     "lossy": true,
-     "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
-    },
-    "superseded": {
-     "api_value": "pcm_44100",
-     "container": "wav",
-     "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
-    },
-    "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
-   },
-   "status": "Draft",
-   "in_master": true,
-   "narration_provisional": true,
-   "provisional_reason": "Asserts the recognition RESULT: manufacturer Cal-Royal, family CR441, model not established. Three narration variants exist; the controlled recognition test (PC-7) selects which is spoken.",
-   "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
-  },
-  {
-   "scene_id": "S130A",
-   "script": "elevenlabs/scenes/S130A.txt",
-   "audio": "elevenlabs/audio/S130A.mp3",
-   "audio_present": false,
-   "renarrate_required": true,
    "words": 32,
    "estimated_seconds": 15.4,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
@@ -673,9 +632,56 @@
    },
    "status": "Draft",
    "in_master": true,
-   "narration_provisional": true,
-   "provisional_reason": "Describes the specific evidence OI asks for, which only exists if the result lands at family level. Follows whichever variant S130 takes.",
-   "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+   "narration_provisional": false,
+   "provisional_reason": null,
+   "provisional_depends_on": null,
+   "submitted_sha256_expected": "6304672c3fe23c3a49afd0da5a757ce378d8e03faf33db6732d3bd89b295e59c",
+   "submitted_sha256_normalization": "utf8-strip",
+   "characters_submitted_expected": 184
+  },
+  {
+   "scene_id": "S130A",
+   "script": "elevenlabs/scenes/S130A.txt",
+   "audio": "elevenlabs/audio/S130A.mp3",
+   "audio_present": false,
+   "renarrate_required": true,
+   "words": 28,
+   "estimated_seconds": 13.5,
+   "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+   "model_id": "eleven_multilingual_v2",
+   "settings": {
+    "speed": 0.72,
+    "stability": 0.6,
+    "similarity_boost": 0.75,
+    "style": 0.0,
+    "use_speaker_boost": true
+   },
+   "output_format": {
+    "preferred": {
+     "api_value": "mp3_44100_128",
+     "container": "mp3",
+     "sample_rate": 44100,
+     "bit_rate_kbps": 128,
+     "channels": 1,
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "lossy": true,
+     "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+    },
+    "superseded": {
+     "api_value": "pcm_44100",
+     "container": "wav",
+     "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
+    },
+    "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
+   },
+   "status": "Draft",
+   "in_master": true,
+   "narration_provisional": false,
+   "provisional_reason": null,
+   "provisional_depends_on": null,
+   "submitted_sha256_expected": "ed089bca601616c828e3fd54f07cc99c9a7b88f45f03689d3ff881d51ff364d9",
+   "submitted_sha256_normalization": "utf8-strip",
+   "characters_submitted_expected": 153
   },
   {
    "scene_id": "S130B",
@@ -765,8 +771,8 @@
    "audio": "elevenlabs/audio/S140.mp3",
    "audio_present": false,
    "renarrate_required": true,
-   "words": 70,
-   "estimated_seconds": 33.7,
+   "words": 60,
+   "estimated_seconds": 28.9,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -796,9 +802,12 @@
    },
    "status": "Draft",
    "in_master": true,
-   "narration_provisional": true,
-   "provisional_reason": "Framed on the closer resolving at FAMILY level ('even before the exact model is pinned down'). If the test establishes the model, the framing changes.",
-   "provisional_depends_on": "PC-7 — controlled recognition test (not run)"
+   "narration_provisional": false,
+   "provisional_reason": null,
+   "provisional_depends_on": null,
+   "submitted_sha256_expected": "fea0985752c63bf55c11834c28e66f1c3f313ae8ca3db93a17852676c8f08c75",
+   "submitted_sha256_normalization": "utf8-strip",
+   "characters_submitted_expected": 344
   },
   {
    "scene_id": "S150",
@@ -2466,5 +2475,5 @@
    "_expected_hash_note": "S316 carries no pronunciation override, so the submitted text is the frozen text and this hash equals script_sha256_frozen. It is pinned so the generator refuses the run if the script file on the branch is not the approved 323-character wording. Added by Claude, 19 Sep 2026; it changes no narration, no setting and no scene scope."
   }
  ],
- "run_name": "run18-batch18-approved"
+ "run_name": "approved-S130-S130A-S140-681"
 }

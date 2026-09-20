@@ -27,7 +27,7 @@ on:
       expected_scene_count:
         description: 'Number of scenes this run is approved for. Mismatch stops the run.'
         required: true
-        default: '4'
+        default: '3'
       dry_run:
         description: 'Plan and check only — no API calls, no credits spent'
         type: boolean
@@ -73,6 +73,19 @@ jobs:
       - name: Python dependencies (pinned)
         run: pip install --disable-pip-version-check -r .github/workflows/requirements.txt
 
+      - name: Exact approved batch scope
+        env:
+          SCENES: ${{ inputs.scenes }}
+          EXPECTED: ${{ inputs.expected_scene_count }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          python - <<'PYGATE'
+          import os
+          assert os.environ["SCENES"].split() == ["S130", "S130A", "S140"], "Unapproved scene list"
+          assert os.environ["EXPECTED"] == "3", "Unapproved request count"
+          assert os.environ["RUN_ATTEMPT"] == "1", "No retries authorized; do not rerun this job"
+          PYGATE
+
       - name: Preflight — every required file present and coherent
         run: python .github/workflows/preflight.py
 
@@ -102,7 +115,7 @@ jobs:
           EXPECTED: ${{ inputs.expected_scene_count }}
           SCENES: ${{ inputs.scenes }}
         run: |
-          python elevenlabs/generate_scenes.py --dry-run --expect "$EXPECTED" \
+          python elevenlabs/generate_scenes.py --dry-run --require-pins --expect-characters 681 --expect "$EXPECTED" \
             ${SCENES:+--scenes $SCENES}
 
 
@@ -145,6 +158,19 @@ jobs:
       # ---------------------------------------------------------------- gates
       # Preflight first: a file that did not make it into the repository should
       # stop the run here, not halfway through a paid batch.
+      - name: Exact approved batch scope
+        env:
+          SCENES: ${{ inputs.scenes }}
+          EXPECTED: ${{ inputs.expected_scene_count }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          python - <<'PYGATE'
+          import os
+          assert os.environ["SCENES"].split() == ["S130", "S130A", "S140"], "Unapproved scene list"
+          assert os.environ["EXPECTED"] == "3", "Unapproved request count"
+          assert os.environ["RUN_ATTEMPT"] == "1", "No retries authorized; do not rerun this job"
+          PYGATE
+
       - name: Preflight — every required file present and coherent
         run: python .github/workflows/preflight.py
 
@@ -247,7 +273,7 @@ jobs:
           EXPECTED: ${{ inputs.expected_scene_count }}
           SCENES: ${{ inputs.scenes }}
         run: |
-          python elevenlabs/generate_scenes.py --dry-run --expect "$EXPECTED" \
+          python elevenlabs/generate_scenes.py --dry-run --require-pins --expect-characters 681 --expect "$EXPECTED" \
             ${SCENES:+--scenes $SCENES}
 
       - name: Secret is present
@@ -271,7 +297,7 @@ jobs:
           EXPECTED: ${{ inputs.expected_scene_count }}
           SCENES: ${{ inputs.scenes }}
         run: |
-          python elevenlabs/generate_scenes.py \
+          python elevenlabs/generate_scenes.py --require-pins --expect-characters 681 \
             --expect "$EXPECTED" \
             ${SCENES:+--scenes $SCENES} \
             --fail-fast
@@ -279,9 +305,8 @@ jobs:
         # file. A half-generated batch uploaded as if complete is the failure
         # this is written to prevent.
         #
-        # --regenerate is NOT passed, so a clip already on disk is skipped, not
-        # remade. Re-dispatching after a partial run therefore costs only the
-        # scenes that are still missing — it never re-spends on a good clip.
+        # No retries are authorized. A fresh checkout has no previous run's
+        # artifacts: never redispatch a partial batch without reconciliation.
 
       - name: Verify every clip — MP3, duration, format, size, hash, and the set
         # !cancelled() rather than success(): if generation stopped partway, the

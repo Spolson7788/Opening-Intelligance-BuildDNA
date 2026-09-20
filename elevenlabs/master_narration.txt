@@ -22,13 +22,13 @@ I enter the visible closer attributes: its type, mounting, arm configuration, co
 
 Now let's review the result from those entries.
 
-OI analyzes the photographs together with the visible attributes I entered and tells me how far the evidence goes. Surface-mounted closer, manufacturer Cal-Royal, family C R four forty-one—and then it stops. Model: not established. This family has look-alikes, and nothing in the evidence separates them yet. It reports the level it can defend, not the one I'd like.
+OI analyzes the photographs and recognizes a surface-mounted closer. It's leaning toward Cal-Royal, but it won't go further on the evidence it has, and it says so rather than guessing.
 
-And it doesn't leave it there. It names what would settle it: photograph the stamp on the body, because across this family the printed identifier is the one thing that separates them.
+And it doesn't leave it there. It flags the result for review and names what would help resolve it: the stamp, the body shape, the mounting hole spacing.
 
 I review the result before saving the closer. If the exact model isn't established, I leave it unresolved. A model I enter myself is technician-supplied information, not a model recognized from these photographs.
 
-Let's open the manufacturer's document for that family. This is Cal-Royal's own C R four forty-one installation sheet—the standard, top jamb and parallel mounting options, the maximum door width and spring power table, and how the hand of the door is defined. Even before the exact model is pinned down, the family document is what you check the hardware against while you're still standing at the door.
+The document stays shut. OI will not open a manufacturer's cut sheet for a product it cannot name, and it says so plainly: no product has been identified, and a cut sheet would assert an identification that was not made. The control is disabled with its reason stated—not broken. Opening it would claim something this evidence does not support.
 
 For this demonstration I mark the closer worn and enter a provisional estimate of four hundred fifty dollars. The technician typed that figure; the app did not calculate it, and no product has been identified to price.
 

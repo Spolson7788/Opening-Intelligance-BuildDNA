@@ -70,7 +70,7 @@ class TestTriggers(unittest.TestCase):
 
     def test_expected_scene_count_defaults_to_the_approved_run(self):
         i = TRIGGERS["workflow_dispatch"]["inputs"]["expected_scene_count"]
-        self.assertEqual(i["default"], "4")
+        self.assertEqual(i["default"], "3")
         self.assertTrue(i["required"])
 
 
@@ -379,7 +379,7 @@ class TestEmbeddedPython(unittest.TestCase):
         _, s = step_named("permitted scenes and the held")
         r = subprocess.run([sys.executable, "-c", embedded_python(s["run"])[0]],
                            capture_output=True, text=True, cwd=ROOT)
-        self.assertTrue(held, "the manifest lists no held scenes at all")
+        self.assertEqual(held, [], "all three recognition holds are released for this batch")
         for sid in held:
             self.assertIn(sid, r.stdout)
         self.assertIn(f"PERMITTED ({len(ready)})", r.stdout)

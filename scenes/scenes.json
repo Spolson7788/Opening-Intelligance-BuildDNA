@@ -5,7 +5,7 @@
   "master_cut": "Trial 1 — introduction and first complete opening through the purchasing handoff",
   "field_app_version": "FA-v40-drop14",
   "demo_data_version": "OI-DEMO 1.12.0",
-  "last_modified": "2026-09-18",
+  "last_modified": "2026-09-20",
   "statuses": [
     "Draft",
     "Ready for review",
@@ -820,7 +820,7 @@
       "title": "What the analysis supports",
       "purpose": "Read the result at the level the evidence supports.",
       "audience_benefit": "Honest uncertainty is the product's strongest sales point.",
-      "narration": "OI analyzes the photographs together with the visible attributes I entered and tells me how far the evidence goes. Surface-mounted closer, manufacturer Cal-Royal, family C R four forty-one—and then it stops. Model: not established. This family has look-alikes, and nothing in the evidence separates them yet. It reports the level it can defend, not the one I'd like.",
+      "narration": "OI analyzes the photographs and recognizes a surface-mounted closer. It's leaning toward Cal-Royal, but it won't go further on the evidence it has, and it says so rather than guessing.",
       "screen_action": [
         "Hold on the result card while the level rows are spoken.",
         "One push-in across the three level rows. No second push-in.",
@@ -845,7 +845,7 @@
       "caption": "Category and family supported — model not established",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-20",
       "dependencies": [
         "OI-DEMO.OP1.closer.attribute_only_result"
       ],
@@ -906,39 +906,74 @@
           "date": "2026-09-14",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-20",
+          "event": "narration hold released; wording approved",
+          "amendment": "PC-7 closure — corrected-build retest on deploy 6aaf541352c77d3fccf1f3ca"
+        },
+        {
+          "date": "2026-09-20",
+          "event": "evidence_required variant corrected — joint-attribution clause removed",
+          "why": "The retest screen reads 'Auto-filled from 2 shot(s)'. The clause 'together with the visible attributes I entered' asserted a technician entry the screen does not show. Criteria 8 and 9 rewritten to preserve the recognition standard — no variant may claim the photographs established the manufacturer — without mandating the false attribution.",
+          "note": "The corrected text restores the pre-v1.1g attribution and keeps the v1.1g phrase 'on the evidence it has'; it is not a return to the pre-v1.1g wording."
         }
       ],
       "acceptance_criteria": [
         "The spoken identification level matches the on-screen 'Highest defensible level' exactly.",
         "No model is named as established unless the screen establishes it.",
         "The headline confidence percentage is not read aloud.",
-        "A family-level outcome is delivered as the intended result, not as a failure or a workaround.",
+        "An unresolved, component-level outcome is delivered as the intended result, not as a failure or a workaround.",
         "Runs no longer than about 25 seconds.",
         "Nothing presents a result obtained from clean or manufacturer-supplied images as measured field-recognition accuracy.",
-        "The CR441 label is legible to a viewer in the underside asset, but its marking is below the app's marking gate. Nothing claims the application transcribed it.",
-        "No variant may say or imply that the photographs independently established the manufacturer. The technician entered the manufacturer attribute in S110, and every variant says so.",
-        "Whichever variant the photograph test selects, this criterion applies to it. A variant may not be activated without the joint-attribution clause."
+        "The application may report a tentative text reading from the photographs. A reported reading is evidence toward a candidate, not an established identity: no variant may present a reported marking as establishing manufacturer, family or model, and the spoken level must continue to match the on-screen highest defensible level exactly.",
+        "No variant may say or imply that the photographs established the manufacturer. On this result no manufacturer is established at all: the screen shows attributes auto-filled from the photographs and a labelled leading hypothesis, and a variant may present Cal-Royal only as that hypothesis.",
+        "Whichever variant the photograph test selects, this criterion applies to it. A variant may not be activated if it attributes the visible attributes to a source the screen does not show: the retest screen reads 'Auto-filled from 2 shot(s)', so no variant may claim the technician entered them."
       ],
       "narration_variants": {
-        "active": "family_established",
+        "active": "evidence_required",
         "note": "The recorded result and the spoken line must agree exactly. Test the exact demonstration photographs against the OI image-recognition service, see which path the result takes, then set `active` and copy that variant into `narration` before generating the clip.",
         "model_established": "OI analyzes the photographs together with the visible attributes I entered, and identifies this as Cal-Royal's C R four forty-one. The stamp in the second shot is what carried it to the model—that's why we take that photograph. I'll still check it against the marking in front of me before I save it.",
         "family_established": "OI analyzes the photographs together with the visible attributes I entered and tells me how far the evidence goes. Surface-mounted closer, manufacturer Cal-Royal, family C R four forty-one—and then it stops. Model: not established. This family has look-alikes, and nothing in the evidence separates them yet. It reports the level it can defend, not the one I'd like.",
-        "evidence_required": "OI analyzes the photographs together with the visible attributes I entered and recognizes a surface-mounted closer. It's leaning toward Cal-Royal, but it won't go further on the evidence it has, and it says so rather than guessing.",
+        "evidence_required": "OI analyzes the photographs and recognizes a surface-mounted closer. It's leaning toward Cal-Royal, but it won't go further on the evidence it has, and it says so rather than guessing.",
         "_previous": {
           "family_established": "OI analyzes the photographs and tells me how far the evidence goes. Surface-mounted closer, manufacturer Cal-Royal, family C R four forty-one—and then it stops. Model: not established. This family has look-alikes, and nothing it can see separates them yet. It reports the level it can defend, not the one I'd like.",
           "model_established": "OI analyzes the photographs and identifies this as Cal-Royal's C R four forty-one. The stamp in the second shot is what carried it to the model—that's why we take that photograph. I'll still check it against the marking in front of me before I save it.",
           "evidence_required": "OI analyzes the photographs and recognizes a surface-mounted closer. It's leaning toward Cal-Royal, but it won't go further on what it can see, and it says so rather than guessing."
+        },
+        "_superseded_20260920": {
+          "evidence_required": "OI analyzes the photographs together with the visible attributes I entered and recognizes a surface-mounted closer. It's leaning toward Cal-Royal, but it won't go further on the evidence it has, and it says so rather than guessing."
         }
       },
       "narration_previous": "OI analyzes the photographs and tells me how far the evidence goes. Surface-mounted closer, manufacturer Cal-Royal, family C R four forty-one—and then it stops. Model: not established. This family has look-alikes, and nothing it can see separates them yet. It reports the level it can defend, not the one I'd like.",
-      "narration_provisional": true,
-      "provisional_reason": "Asserts the recognition RESULT: manufacturer Cal-Royal, family CR441, model not established. Three narration variants exist; the controlled recognition test (PC-7) selects which is spoken.",
-      "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null,
       "recognition_hold": {
-        "state": "HELD",
-        "reason": "closer result is semantically incoherent — see reports/PC7_Stage_B_Reconciliation.md. Blocked on the closer correction, not on evidence volume.",
-        "confirmed_on": "2026-09-15"
+        "state": "RELEASED",
+        "released_on": "2026-09-20",
+        "reason": "PC-7 closed by the corrected-build retest; wording and paid scope approved 20 Sep 2026."
+      },
+      "narration_superseded_20260920": "OI analyzes the photographs together with the visible attributes I entered and tells me how far the evidence goes. Surface-mounted closer, manufacturer Cal-Royal, family C R four forty-one—and then it stops. Model: not established. This family has look-alikes, and nothing in the evidence separates them yet. It reports the level it can defend, not the one I'd like.",
+      "acceptance_criteria_superseded_20260920": {
+        "3": "A family-level outcome is delivered as the intended result, not as a failure or a workaround.",
+        "6": "The CR441 label is legible to a viewer in the underside asset, but its marking is below the app's marking gate. Nothing claims the application transcribed it.",
+        "7": "No variant may say or imply that the photographs independently established the manufacturer. The technician entered the manufacturer attribute in S110, and every variant says so.",
+        "8": "Whichever variant the photograph test selects, this criterion applies to it. A variant may not be activated without the joint-attribution clause."
+      },
+      "recognition_hold_released": {
+        "released_on": "2026-09-20",
+        "approved_by": "Stephan Olson — explicit three-scene, 681-character dispatch authorization in this chat",
+        "evidence": "PC7_Closure_Evidence_6aaf5413.zip sha256 e8d82945e8e026d27fe1ca143e36a9ab1295fbeaf752755b2e860a795c9a63f1",
+        "deploy_id": "6aaf541352c77d3fccf1f3ca",
+        "source_commit": "8ed781ccf07b85ea79e819d3beba443a296df25a",
+        "supported_outcome": "component level; identity unresolved; review required; cut sheet disabled; purchasing disabled; manufacturer, family and model not established",
+        "previous_hold": {
+          "state": "HELD",
+          "reason": "closer result is semantically incoherent — see reports/PC7_Stage_B_Reconciliation.md. Blocked on the closer correction, not on evidence volume.",
+          "confirmed_on": "2026-09-15"
+        },
+        "package_approval_attribution": "Michelle (wording and paid scope), 20 September 2026"
       }
     },
     {
@@ -947,7 +982,7 @@
       "title": "OI asks for the evidence it needs",
       "purpose": "Show that OI names the specific evidence that would resolve an uncertain identification.",
       "audience_benefit": "A technician learns what to photograph next instead of guessing; a facility gets a record that says why it is uncertain.",
-      "narration": "And it doesn't leave it there. It names what would settle it: photograph the stamp on the body, because across this family the printed identifier is the one thing that separates them.",
+      "narration": "And it doesn't leave it there. It flags the result for review and names what would help resolve it: the stamp, the body shape, the mounting hole spacing.",
       "screen_action": [
         "Hold on the 'To confirm, capture:' panel; one push-in on the request.",
         "Do NOT reference a Needs Review flag here — the closer's result does not carry one."
@@ -959,7 +994,7 @@
       ],
       "acceptance_criteria": [
         "The spoken evidence request matches the request on screen in substance.",
-        "No Needs Review flag is claimed for the closer — tested 13 Sep 2026, the closer's result returns needs_review = false.",
+        "The Needs Review flag is on screen and the narration says so.",
         "Runs no longer than about 15 seconds."
       ],
       "required_source_assets": [],
@@ -971,7 +1006,7 @@
       "caption": "OI names the evidence it needs",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-20",
       "dependencies": [
         "OI-DEMO.OP1.closer.attribute_only_result"
       ],
@@ -1006,15 +1041,38 @@
           "date": "2026-09-14",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-20",
+          "event": "narration hold released; wording approved",
+          "amendment": "PC-7 closure — corrected-build retest on deploy 6aaf541352c77d3fccf1f3ca"
         }
       ],
-      "narration_provisional": true,
-      "provisional_reason": "Describes the specific evidence OI asks for, which only exists if the result lands at family level. Follows whichever variant S130 takes.",
-      "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null,
       "recognition_hold": {
-        "state": "HELD",
-        "reason": "closer result is semantically incoherent — see reports/PC7_Stage_B_Reconciliation.md. Blocked on the closer correction, not on evidence volume.",
-        "confirmed_on": "2026-09-15"
+        "state": "RELEASED",
+        "released_on": "2026-09-20",
+        "reason": "PC-7 closed by the corrected-build retest; wording and paid scope approved 20 Sep 2026."
+      },
+      "narration_superseded_20260920": "And it doesn't leave it there. It names what would settle it: photograph the stamp on the body, because across this family the printed identifier is the one thing that separates them.",
+      "acceptance_criteria_superseded_20260920": {
+        "1": "No Needs Review flag is claimed for the closer — tested 13 Sep 2026, the closer's result returns needs_review = false."
+      },
+      "recognition_hold_released": {
+        "released_on": "2026-09-20",
+        "approved_by": "Stephan Olson — explicit three-scene, 681-character dispatch authorization in this chat",
+        "evidence": "PC7_Closure_Evidence_6aaf5413.zip sha256 e8d82945e8e026d27fe1ca143e36a9ab1295fbeaf752755b2e860a795c9a63f1",
+        "deploy_id": "6aaf541352c77d3fccf1f3ca",
+        "source_commit": "8ed781ccf07b85ea79e819d3beba443a296df25a",
+        "supported_outcome": "component level; identity unresolved; review required; cut sheet disabled; purchasing disabled; manufacturer, family and model not established",
+        "previous_hold": {
+          "state": "HELD",
+          "reason": "closer result is semantically incoherent — see reports/PC7_Stage_B_Reconciliation.md. Blocked on the closer correction, not on evidence volume.",
+          "confirmed_on": "2026-09-15"
+        },
+        "package_approval_attribution": "Michelle (wording and paid scope), 20 September 2026"
       }
     },
     {
@@ -1174,7 +1232,7 @@
       "title": "Open the manufacturer's cut sheet",
       "purpose": "Open and read the closer's manufacturer document.",
       "audience_benefit": "The supporting document is available at the door.",
-      "narration": "Let's open the manufacturer's document for that family. This is Cal-Royal's own C R four forty-one installation sheet—the standard, top jamb and parallel mounting options, the maximum door width and spring power table, and how the hand of the door is defined. Even before the exact model is pinned down, the family document is what you check the hardware against while you're still standing at the door.",
+      "narration": "The document stays shut. OI will not open a manufacturer's cut sheet for a product it cannot name, and it says so plainly: no product has been identified, and a cut sheet would assert an identification that was not made. The control is disabled with its reason stated—not broken. Opening it would claim something this evidence does not support.",
       "screen_action": [
         "Tap 'View cut sheet'; let the document panel open.",
         "Zoom the three mounting illustrations; hold 4s.",
@@ -1196,7 +1254,7 @@
       "caption": "Manufacturer documentation for the supported family",
       "status": "Draft",
       "blocked_reason": null,
-      "last_modified": "2026-09-14",
+      "last_modified": "2026-09-20",
       "dependencies": [
         "OI-DEMO.OP1.closer.cut_sheet"
       ],
@@ -1237,23 +1295,46 @@
           "date": "2026-09-14",
           "event": "re-recorded",
           "field_app_version": "FA-v40-drop14"
+        },
+        {
+          "date": "2026-09-20",
+          "event": "narration hold released; wording approved",
+          "amendment": "PC-7 closure — corrected-build retest on deploy 6aaf541352c77d3fccf1f3ca"
         }
       ],
       "acceptance_criteria": [
-        "The document opened belongs to the family OI actually supported.",
+        "The cut-sheet control is shown disabled, with the app's own reason visible in frame.",
         "The document is legible at the zoom levels used.",
         "Nothing implies the document confirms a model OI has not established."
       ],
       "notes": [
         "2026-09-14: Recorded. PC-3: the CR441 manufacturer specification renders inside OI as six page images; no external tab opens."
       ],
-      "narration_provisional": true,
-      "provisional_reason": "Framed on the closer resolving at FAMILY level ('even before the exact model is pinned down'). If the test establishes the model, the framing changes.",
-      "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
+      "narration_provisional": false,
+      "provisional_reason": null,
+      "provisional_depends_on": null,
       "recognition_hold": {
-        "state": "HELD",
-        "reason": "closer result is semantically incoherent — see reports/PC7_Stage_B_Reconciliation.md. Blocked on the closer correction, not on evidence volume.",
-        "confirmed_on": "2026-09-15"
+        "state": "RELEASED",
+        "released_on": "2026-09-20",
+        "reason": "PC-7 closed by the corrected-build retest; wording and paid scope approved 20 Sep 2026."
+      },
+      "narration_superseded_20260920": "Let's open the manufacturer's document for that family. This is Cal-Royal's own C R four forty-one installation sheet—the standard, top jamb and parallel mounting options, the maximum door width and spring power table, and how the hand of the door is defined. Even before the exact model is pinned down, the family document is what you check the hardware against while you're still standing at the door.",
+      "acceptance_criteria_superseded_20260920": {
+        "0": "The document opened belongs to the family OI actually supported."
+      },
+      "recognition_hold_released": {
+        "released_on": "2026-09-20",
+        "approved_by": "Stephan Olson — explicit three-scene, 681-character dispatch authorization in this chat",
+        "evidence": "PC7_Closure_Evidence_6aaf5413.zip sha256 e8d82945e8e026d27fe1ca143e36a9ab1295fbeaf752755b2e860a795c9a63f1",
+        "deploy_id": "6aaf541352c77d3fccf1f3ca",
+        "source_commit": "8ed781ccf07b85ea79e819d3beba443a296df25a",
+        "supported_outcome": "component level; identity unresolved; review required; cut sheet disabled; purchasing disabled; manufacturer, family and model not established",
+        "previous_hold": {
+          "state": "HELD",
+          "reason": "closer result is semantically incoherent — see reports/PC7_Stage_B_Reconciliation.md. Blocked on the closer correction, not on evidence volume.",
+          "confirmed_on": "2026-09-15"
+        },
+        "package_approval_attribution": "Michelle (wording and paid scope), 20 September 2026"
       }
     },
     {

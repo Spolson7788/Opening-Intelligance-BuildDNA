@@ -1,0 +1,1 @@
+OI analyzes the photographs and recognizes a surface-mounted closer. It's leaning toward Cal-Royal, but it won't go further on the evidence it has, and it says so rather than guessing.
