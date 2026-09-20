@@ -322,6 +322,10 @@ def main():
         print("nothing to do.")
         return 0
 
+    existing = [c["audio"] for c in todo if (ROOT / c["audio"]).exists()]
+    if existing:
+        sys.exit("Refusing to overwrite existing masters: " + ", ".join(existing))
+
     key = os.environ.get(KEY_ENV)
     if not key:
         sys.exit(f"{KEY_ENV} is not set. Nothing generated. Set it in the shell "
@@ -368,7 +372,7 @@ def main():
                   f"{dest.stat().st_size} bytes)")
             failed.append({"scene_id": sid, "error": "incomplete file",
                            "seconds": p["seconds"], "bytes": dest.stat().st_size})
-            dest.unlink()
+            # Retain incomplete responses as evidence; never retry automatically.
             if a.fail_fast:
                 break
             continue
@@ -401,7 +405,7 @@ def main():
               f"(estimator uses 2.278 — update it if this differs materially)")
     if failed:
         print(f"\n{len(failed)} FAILED: {' '.join(f['scene_id'] for f in failed)}")
-        print("Nothing partial was kept for those. Re-run for just those ids.")
+        print("Partial responses are retained. No retry is authorized.")
         if a.fail_fast:
             done = {r["scene_id"] for r in results} | {f["scene_id"] for f in failed}
             never = [c["scene_id"] for c in todo if c["scene_id"] not in done]

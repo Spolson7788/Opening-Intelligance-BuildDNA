@@ -45,7 +45,7 @@ EXPECTED_SETTINGS = {"speed": 0.72, "stability": 0.60, "similarity_boost": 0.75,
 # and the service call (5): 28 -> 43 ready, and the four provisional Opening 3
 # scenes join the held set. Run 16 is SCOPED to 16 of the 43 via the workflow's
 # `scenes` input; this number is the registry's shape, not the run's size.
-EXPECTED_READY = int(os.environ.get("OI_EXPECTED_READY", "50"))
+EXPECTED_READY = int(os.environ.get("OI_EXPECTED_READY", "56"))
 APPROVED_FORMAT = "mp3_44100_128"
 MASTER_CONTAINER = "mp3"
 # S130/S130A/S140 released by the approved 681-character batch, 20 Sep 2026.

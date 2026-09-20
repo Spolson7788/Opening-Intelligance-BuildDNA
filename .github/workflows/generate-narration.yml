@@ -27,7 +27,7 @@ on:
       expected_scene_count:
         description: 'Number of scenes this run is approved for. Mismatch stops the run.'
         required: true
-        default: '3'
+        default: '7'
       dry_run:
         description: 'Plan and check only — no API calls, no credits spent'
         type: boolean
@@ -81,8 +81,8 @@ jobs:
         run: |
           python - <<'PYGATE'
           import os
-          assert os.environ["SCENES"].split() == ["S130", "S130A", "S140"], "Unapproved scene list"
-          assert os.environ["EXPECTED"] == "3", "Unapproved request count"
+          assert os.environ["SCENES"].split() == ["S316", "S317", "S320", "S395", "S600", "S610", "S620"], "Unapproved scene list"
+          assert os.environ["EXPECTED"] == "7", "Unapproved request count"
           assert os.environ["RUN_ATTEMPT"] == "1", "No retries authorized; do not rerun this job"
           PYGATE
 
@@ -115,7 +115,7 @@ jobs:
           EXPECTED: ${{ inputs.expected_scene_count }}
           SCENES: ${{ inputs.scenes }}
         run: |
-          python elevenlabs/generate_scenes.py --dry-run --require-pins --expect-characters 681 --expect "$EXPECTED" \
+          python elevenlabs/generate_scenes.py --dry-run --require-pins --expect-characters 1365 --expect "$EXPECTED" \
             ${SCENES:+--scenes $SCENES}
 
 
@@ -166,8 +166,8 @@ jobs:
         run: |
           python - <<'PYGATE'
           import os
-          assert os.environ["SCENES"].split() == ["S130", "S130A", "S140"], "Unapproved scene list"
-          assert os.environ["EXPECTED"] == "3", "Unapproved request count"
+          assert os.environ["SCENES"].split() == ["S316", "S317", "S320", "S395", "S600", "S610", "S620"], "Unapproved scene list"
+          assert os.environ["EXPECTED"] == "7", "Unapproved request count"
           assert os.environ["RUN_ATTEMPT"] == "1", "No retries authorized; do not rerun this job"
           PYGATE
 
@@ -273,7 +273,7 @@ jobs:
           EXPECTED: ${{ inputs.expected_scene_count }}
           SCENES: ${{ inputs.scenes }}
         run: |
-          python elevenlabs/generate_scenes.py --dry-run --require-pins --expect-characters 681 --expect "$EXPECTED" \
+          python elevenlabs/generate_scenes.py --dry-run --require-pins --expect-characters 1365 --expect "$EXPECTED" \
             ${SCENES:+--scenes $SCENES}
 
       - name: Secret is present
@@ -297,7 +297,7 @@ jobs:
           EXPECTED: ${{ inputs.expected_scene_count }}
           SCENES: ${{ inputs.scenes }}
         run: |
-          python elevenlabs/generate_scenes.py --require-pins --expect-characters 681 \
+          python elevenlabs/generate_scenes.py --require-pins --expect-characters 1365 \
             --expect "$EXPECTED" \
             ${SCENES:+--scenes $SCENES} \
             --fail-fast

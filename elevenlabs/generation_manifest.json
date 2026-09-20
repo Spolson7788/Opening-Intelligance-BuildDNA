@@ -2424,8 +2424,8 @@
    "audio": "elevenlabs/audio/S316.mp3",
    "audio_present": false,
    "renarrate_required": true,
-   "words": 58,
-   "estimated_seconds": 30.54,
+   "words": 48,
+   "estimated_seconds": 22.97,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -2455,10 +2455,8 @@
    },
    "status": "Draft",
    "in_master": true,
-   "narration_provisional": false,
-   "provisional_depends_on": "Verified against the working development build before generation. Not in run 16.",
-   "script_sha256_frozen": "648e63ac6b3694b3c806a222b34c22e961e4590498443e1fdd4c62c15932822e",
-   "characters_frozen": 323,
+   "script_sha256_frozen": "62ba67bec5291bb2af874fd1dc2040e5abe4a77bb87d5482262def38e1b2672e",
+   "characters_frozen": 280,
    "provisional_hold_released": {
     "was_provisional": true,
     "previous_reason": "Its combined-request claim is verified in source but has never been observed on a screen.",
@@ -2470,10 +2468,317 @@
     "previous_master_sha256": "87dca94275be7898",
     "why": "The run-18 master closes by saying the combined request across every opening is refused. At 46a5d9ff2823686567d8300a9be6a751529fcf4f the eligible 310C request proceeds once the technician acknowledges the 205A exclusion, so that sentence is no longer true. Wording approved by Stephan on 19 Sep 2026 subject to the 46a5d9f verification, which passed."
    },
-   "submitted_sha256_expected": "648e63ac6b3694b3c806a222b34c22e961e4590498443e1fdd4c62c15932822e",
-   "characters_submitted_expected": 323,
-   "_expected_hash_note": "S316 carries no pronunciation override, so the submitted text is the frozen text and this hash equals script_sha256_frozen. It is pinned so the generator refuses the run if the script file on the branch is not the approved 323-character wording. Added by Claude, 19 Sep 2026; it changes no narration, no setting and no scene scope."
+   "submitted_sha256_expected": "91a28c20abd5212aff39de9961f812fccfdf1c9f218a49b39a38e7e30aac4721",
+   "characters_submitted_expected": 280,
+   "_expected_hash_note": "Run 31: approved pin is SHA-256 of UTF-8 text.strip(); no pronunciation substitution.",
+   "approved_characters": 280,
+   "supersedes_existing_narration": true,
+   "previous_master_retained": true,
+   "supersedes_note": "S316 replaces its existing narration for assembly only; its previous master is retained.",
+   "submitted_sha256_normalization": "utf8-strip",
+   "narration_provisional": false
+  },
+  {
+   "scene_id": "S317",
+   "script": "elevenlabs/scenes/S317.txt",
+   "audio": "elevenlabs/audio/S317.mp3",
+   "audio_present": false,
+   "renarrate_required": true,
+   "words": 34,
+   "estimated_seconds": 16.27,
+   "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+   "model_id": "eleven_multilingual_v2",
+   "settings": {
+    "speed": 0.72,
+    "stability": 0.6,
+    "similarity_boost": 0.75,
+    "style": 0.0,
+    "use_speaker_boost": true
+   },
+   "output_format": {
+    "preferred": {
+     "api_value": "mp3_44100_128",
+     "container": "mp3",
+     "sample_rate": 44100,
+     "bit_rate_kbps": 128,
+     "channels": 1,
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "lossy": true,
+     "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+    },
+    "superseded": {
+     "api_value": "pcm_44100",
+     "container": "wav",
+     "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
+    },
+    "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
+   },
+   "status": "Draft",
+   "in_master": true,
+   "script_sha256_frozen": "d30e919771dd6fa4b3e3fc9e12caec74f322cd51cb895e5c966f97ff90d9f049",
+   "characters_frozen": 202,
+   "submitted_sha256_expected": "7cefdc959110a100db382ee02fec1ea316b56848b43db59ed856517f9748d84a",
+   "characters_submitted_expected": 202,
+   "_expected_hash_note": "Run 31: approved pin is SHA-256 of UTF-8 text.strip(); no pronunciation substitution.",
+   "note": "purchasing hand-off",
+   "approved_characters": 202,
+   "submitted_sha256_normalization": "utf8-strip",
+   "narration_provisional": false
+  },
+  {
+   "scene_id": "S320",
+   "script": "elevenlabs/scenes/S320.txt",
+   "audio": "elevenlabs/audio/S320.mp3",
+   "audio_present": false,
+   "renarrate_required": true,
+   "words": 53,
+   "estimated_seconds": 25.36,
+   "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+   "model_id": "eleven_multilingual_v2",
+   "settings": {
+    "speed": 0.72,
+    "stability": 0.6,
+    "similarity_boost": 0.75,
+    "style": 0.0,
+    "use_speaker_boost": true
+   },
+   "output_format": {
+    "preferred": {
+     "api_value": "mp3_44100_128",
+     "container": "mp3",
+     "sample_rate": 44100,
+     "bit_rate_kbps": 128,
+     "channels": 1,
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "lossy": true,
+     "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+    },
+    "superseded": {
+     "api_value": "pcm_44100",
+     "container": "wav",
+     "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
+    },
+    "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
+   },
+   "status": "Draft",
+   "in_master": true,
+   "script_sha256_frozen": "0d434d3a0848371d253055d88edc712d1d366b2ae00e9bd1d7f1c02987e428f1",
+   "characters_frozen": 282,
+   "submitted_sha256_expected": "749762411861e2bda2d12dffdb32706dbc3c3588c9143a1f4ec17d774da316b7",
+   "characters_submitted_expected": 282,
+   "_expected_hash_note": "Run 31: approved pin is SHA-256 of UTF-8 text.strip(); no pronunciation substitution.",
+   "note": "QR generation and retrieval",
+   "approved_characters": 282,
+   "submitted_sha256_normalization": "utf8-strip",
+   "narration_provisional": false
+  },
+  {
+   "scene_id": "S395",
+   "script": "elevenlabs/scenes/S395.txt",
+   "audio": "elevenlabs/audio/S395.mp3",
+   "audio_present": false,
+   "renarrate_required": true,
+   "words": 12,
+   "estimated_seconds": 5.74,
+   "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+   "model_id": "eleven_multilingual_v2",
+   "settings": {
+    "speed": 0.72,
+    "stability": 0.6,
+    "similarity_boost": 0.75,
+    "style": 0.0,
+    "use_speaker_boost": true
+   },
+   "output_format": {
+    "preferred": {
+     "api_value": "mp3_44100_128",
+     "container": "mp3",
+     "sample_rate": 44100,
+     "bit_rate_kbps": 128,
+     "channels": 1,
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "lossy": true,
+     "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+    },
+    "superseded": {
+     "api_value": "pcm_44100",
+     "container": "wav",
+     "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
+    },
+    "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
+   },
+   "status": "Draft",
+   "in_master": true,
+   "script_sha256_frozen": "a05152793bbb57aeaa10f2c3aa0253143cb9705827f8d50c418a534dda8a045a",
+   "characters_frozen": 62,
+   "submitted_sha256_expected": "15b8444967894ada203dd47ac2c72c9548498b0b581b8a274e2fcc49de1b673c",
+   "characters_submitted_expected": 62,
+   "_expected_hash_note": "Run 31: approved pin is SHA-256 of UTF-8 text.strip(); no pronunciation substitution.",
+   "note": "transition to the later service call on 310B",
+   "approved_characters": 62,
+   "submitted_sha256_normalization": "utf8-strip",
+   "narration_provisional": false
+  },
+  {
+   "scene_id": "S600",
+   "script": "elevenlabs/scenes/S600.txt",
+   "audio": "elevenlabs/audio/S600.mp3",
+   "audio_present": false,
+   "renarrate_required": true,
+   "words": 28,
+   "estimated_seconds": 13.4,
+   "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+   "model_id": "eleven_multilingual_v2",
+   "settings": {
+    "speed": 0.72,
+    "stability": 0.6,
+    "similarity_boost": 0.75,
+    "style": 0.0,
+    "use_speaker_boost": true
+   },
+   "output_format": {
+    "preferred": {
+     "api_value": "mp3_44100_128",
+     "container": "mp3",
+     "sample_rate": 44100,
+     "bit_rate_kbps": 128,
+     "channels": 1,
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "lossy": true,
+     "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+    },
+    "superseded": {
+     "api_value": "pcm_44100",
+     "container": "wav",
+     "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
+    },
+    "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
+   },
+   "status": "Draft",
+   "in_master": true,
+   "script_sha256_frozen": "028eaa50abcaf044d563c48f09ba755528a9ff087f674b77ad9ca2fd9faeb865",
+   "characters_frozen": 148,
+   "submitted_sha256_expected": "d934559b2ff21d5608f7fee120ffe49aca0bebb0e93de229710fc61ea5e463d3",
+   "characters_submitted_expected": 148,
+   "_expected_hash_note": "Run 31: approved pin is SHA-256 of UTF-8 text.strip(); no pronunciation substitution.",
+   "note": "fire-door inspection introduction",
+   "approved_characters": 148,
+   "submitted_sha256_normalization": "utf8-strip",
+   "narration_provisional": false
+  },
+  {
+   "scene_id": "S610",
+   "script": "elevenlabs/scenes/S610.txt",
+   "audio": "elevenlabs/audio/S610.mp3",
+   "audio_present": false,
+   "renarrate_required": true,
+   "words": 37,
+   "estimated_seconds": 17.7,
+   "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+   "model_id": "eleven_multilingual_v2",
+   "settings": {
+    "speed": 0.72,
+    "stability": 0.6,
+    "similarity_boost": 0.75,
+    "style": 0.0,
+    "use_speaker_boost": true
+   },
+   "output_format": {
+    "preferred": {
+     "api_value": "mp3_44100_128",
+     "container": "mp3",
+     "sample_rate": 44100,
+     "bit_rate_kbps": 128,
+     "channels": 1,
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "lossy": true,
+     "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+    },
+    "superseded": {
+     "api_value": "pcm_44100",
+     "container": "wav",
+     "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
+    },
+    "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
+   },
+   "status": "Draft",
+   "in_master": true,
+   "script_sha256_frozen": "5e82ffc95be51f844384e26760429696fa5948bd77ce399a4a458cd6c3ffa2d0",
+   "characters_frozen": 228,
+   "submitted_sha256_expected": "0821eceb6ab22b9431dd24ecadb85e3023db13ae024ef341d53e4729ec6ac85c",
+   "characters_submitted_expected": 228,
+   "_expected_hash_note": "Run 31: approved pin is SHA-256 of UTF-8 text.strip(); no pronunciation substitution.",
+   "note": "inspection explanation",
+   "approved_characters": 228,
+   "submitted_sha256_normalization": "utf8-strip",
+   "narration_provisional": false
+  },
+  {
+   "scene_id": "S620",
+   "script": "elevenlabs/scenes/S620.txt",
+   "audio": "elevenlabs/audio/S620.mp3",
+   "audio_present": false,
+   "renarrate_required": true,
+   "words": 27,
+   "estimated_seconds": 12.92,
+   "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+   "model_id": "eleven_multilingual_v2",
+   "settings": {
+    "speed": 0.72,
+    "stability": 0.6,
+    "similarity_boost": 0.75,
+    "style": 0.0,
+    "use_speaker_boost": true
+   },
+   "output_format": {
+    "preferred": {
+     "api_value": "mp3_44100_128",
+     "container": "mp3",
+     "sample_rate": 44100,
+     "bit_rate_kbps": 128,
+     "channels": 1,
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "lossy": true,
+     "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+    },
+    "superseded": {
+     "api_value": "pcm_44100",
+     "container": "wav",
+     "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
+    },
+    "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
+   },
+   "status": "Draft",
+   "in_master": true,
+   "script_sha256_frozen": "8bb61c43f3fd411e83cf808f9b0134de8635c4c71d02c4a79dc5b8d094b98865",
+   "characters_frozen": 163,
+   "submitted_sha256_expected": "4acc3f369594b9711abf9eff842bb578b035eca84bed569caff2344c9ad50eff",
+   "characters_submitted_expected": 163,
+   "_expected_hash_note": "Run 31: approved pin is SHA-256 of UTF-8 text.strip(); no pronunciation substitution.",
+   "note": "inspection closing",
+   "approved_characters": 163,
+   "submitted_sha256_normalization": "utf8-strip",
+   "narration_provisional": false
   }
  ],
- "run_name": "approved-S130-S130A-S140-681"
+ "run_name": "approved-run31-seven-scene-1365char",
+ "approval": {
+  "approved_by": "Stephan",
+  "date": "2026-09-20",
+  "requests": 7,
+  "characters": 1365,
+  "retries_authorized": 0,
+  "scenes": [
+   "S316",
+   "S317",
+   "S320",
+   "S395",
+   "S600",
+   "S610",
+   "S620"
+  ],
+  "one_clip_per_scene": true,
+  "voice_lock": "unchanged",
+  "preservation": "S316 replaces its existing narration while retaining the old master; other existing narration remains unchanged."
+ }
 }

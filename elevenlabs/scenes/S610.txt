@@ -1,0 +1,1 @@
+Twelve checks, each one pass, fail or not applicable—and a failed check has to say why. For this training example, I enter simulated clearance measurements. Nothing saves until every answer, the inspector and the date are there.
