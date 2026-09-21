@@ -35,7 +35,14 @@ authRouter.post("/signup", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
 
-  const client = await pool.connect();
+  let client;
+  try {
+    client = await pool.connect();
+  } catch {
+    // A failed connection has created no records. Do not leak connection
+    // details or let Express 4 lose an asynchronous rejection.
+    return res.status(503).json({ error: "database_unavailable" });
+  }
   try {
     await client.query("BEGIN");
 

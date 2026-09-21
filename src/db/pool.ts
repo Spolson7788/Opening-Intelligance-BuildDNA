@@ -1,5 +1,6 @@
 import { Pool, types } from "pg";
 import dotenv from "dotenv";
+import { databaseConnectionConfig } from "./connectionConfig";
 
 dotenv.config();
 
@@ -17,9 +18,7 @@ types.setTypeParser(1700, (val) => (val === null ? null : parseFloat(val)));
 
 // Expects DATABASE_URL env var, e.g.
 // postgres://user:password@localhost:5432/opening_intel
-export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+export const pool = new Pool(databaseConnectionConfig(process.env));
 
 pool.on("error", (err) => {
   console.error("Unexpected error on idle Postgres client", err);
