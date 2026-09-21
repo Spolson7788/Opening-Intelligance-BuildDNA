@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument } from "../lib/api";
+import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl } from "../lib/api";
 import type { OpeningDetail, DocumentEntry, PurchasingEligibility, HardwareComponent, OpeningPhoto } from "../lib/api";
 import { Sidebar } from "../components/Sidebar";
 import { HealthPill } from "../components/HealthPill";
@@ -27,6 +27,32 @@ function photoScopeLabel(photo: OpeningPhoto, opening: OpeningDetail) {
   }
   if (photo.frame_id) return "Frame";
   return "Opening";
+}
+
+function PrivateMedia({ photo }: { photo: OpeningPhoto }) {
+  const [url, setUrl] = useState<string | null>(photo.storage_url.startsWith("private:") ? null : photo.storage_url);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setFailed(false);
+    if (!photo.storage_url.startsWith("private:")) {
+      setUrl(photo.storage_url);
+      return () => { active = false; };
+    }
+    setUrl(null);
+    fetchPhotoAccessUrl(photo.id)
+      .then(({ url }) => { if (active) setUrl(url); })
+      .catch(() => { if (active) setFailed(true); });
+    return () => { active = false; };
+  }, [photo.id, photo.storage_url]);
+
+  if (failed) return <div role="status" style={{ color: "var(--danger)", fontSize: 12 }}>Photo unavailable</div>;
+  if (!url) return <div style={{ aspectRatio: "1", display: "grid", placeItems: "center", fontSize: 12 }}>Loading…</div>;
+  if (photo.media_type === "video") {
+    return <video src={url} controls style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} />;
+  }
+  return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Opening photo" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} /></a>;
 }
 
 function formatReason(reason: string) {
@@ -168,25 +194,10 @@ export function OpeningDetailPage() {
                 <h2>Photos &amp; Videos</h2>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
                   {opening.photos.map((p) =>
-                    p.media_type === "video" ? (
-                      <div key={p.id}>
-                      <video
-                        key={p.id}
-                        src={p.storage_url}
-                        controls
-                        style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }}
-                      />
+                    <div key={p.id}>
+                      <PrivateMedia photo={p} />
                       <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{photoScopeLabel(p, opening)}</div>
-                      </div>
-                    ) : (
-                      <div key={p.id}><a href={p.storage_url} target="_blank" rel="noreferrer">
-                        <img
-                          src={p.storage_url}
-                          alt=""
-                          style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }}
-                        />
-                      </a><div style={{ fontSize: 11, color: "var(--text-secondary)" }}>{photoScopeLabel(p, opening)}</div></div>
-                    )
+                    </div>
                   )}
                 </div>
               </div>

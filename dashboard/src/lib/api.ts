@@ -180,6 +180,10 @@ export async function deleteDocument(id: string): Promise<void> {
   return authedFetch(`/documents/${id}`, { method: "DELETE" });
 }
 
+export async function fetchPhotoAccessUrl(id: string): Promise<{ url: string; expires_in_seconds: number }> {
+  return authedFetch(`/photos/${id}/access`);
+}
+
 export interface WorkOrder {
   id: string;
   opening_id: string;

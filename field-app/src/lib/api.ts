@@ -122,6 +122,10 @@ export async function deletePhoto(id: string) {
   return authedFetch(`/photos/${id}`, { method: "DELETE" });
 }
 
+export async function fetchPhotoAccessUrl(id: string): Promise<{ url: string; expires_in_seconds: number }> {
+  return authedFetch(`/photos/${id}/access`);
+}
+
 // Uploads directly to storage using the presigned URL — bypasses our own API
 // entirely for the actual bytes, per authedFetch not being used here.
 export async function uploadToPresignedUrl(uploadUrl: string, blob: Blob, contentType: string) {

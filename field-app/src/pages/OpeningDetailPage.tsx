@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto } from "../lib/api";
+import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchPhotoAccessUrl } from "../lib/api";
 import { getAllOfflineMedia, updateCachedOpening } from "../lib/db";
 import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
@@ -12,6 +12,32 @@ function healthClass(score: number | null) {
   if (score >= 75) return "health-good";
   if (score >= 50) return "health-fair";
   return "health-poor";
+}
+
+function SyncedMedia({ photo }: { photo: any }) {
+  const [url, setUrl] = useState<string | null>(photo.storage_url?.startsWith("private:") ? null : photo.storage_url);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setFailed(false);
+    if (!photo.storage_url?.startsWith("private:")) {
+      setUrl(photo.storage_url);
+      return () => { active = false; };
+    }
+    setUrl(null);
+    fetchPhotoAccessUrl(photo.id)
+      .then(({ url }) => { if (active) setUrl(url); })
+      .catch(() => { if (active) setFailed(true); });
+    return () => { active = false; };
+  }, [photo.id, photo.storage_url]);
+
+  if (failed) return <div className="error-text" role="status">Photo unavailable</div>;
+  if (!url) return <div style={{ aspectRatio: "1", display: "grid", placeItems: "center" }}>Loading…</div>;
+  if (photo.media_type === "video") {
+    return <video src={url} controls style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} />;
+  }
+  return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Opening photo" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} /></a>;
 }
 
 export function OpeningDetailPage() {
@@ -193,21 +219,7 @@ export function OpeningDetailPage() {
             ))}
             {opening.photos && opening.photos.map((p: any) => (
               <div key={p.id} style={{ position: "relative" }}>
-                {p.media_type === "video" ? (
-                  <video
-                    src={p.storage_url}
-                    controls
-                    style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }}
-                  />
-                ) : (
-                  <a href={p.storage_url} target="_blank" rel="noreferrer">
-                    <img
-                      src={p.storage_url}
-                      alt=""
-                      style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }}
-                    />
-                  </a>
-                )}
+                <SyncedMedia photo={p} />
                 <button
                   onClick={() => handleDeletePhoto(p.id)}
                   aria-label="Delete photo"
