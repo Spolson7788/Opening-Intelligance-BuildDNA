@@ -159,6 +159,7 @@ export function OpeningDetailPage() {
           <Link to={`/opening/${opening.id}/structure`} state={{ opening }} className="btn btn-secondary" style={{ textDecoration: "none" }}>
             Door &amp; frame details
           </Link>
+          {opening.completion_state === "complete" && !fromCache && <Link className="btn btn-secondary" to={`/opening/${opening.id}/label`}>Print / save label</Link>}
           <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={handleCompleteOpening} disabled={opening.completion_state === "complete"}>
             {opening.completion_state === "complete" ? "Opening complete" : opening.completion_state === "pending_sync" ? "Completion pending sync" : "Finish the opening"}
           </button>

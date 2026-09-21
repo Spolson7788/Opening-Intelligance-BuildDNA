@@ -19,11 +19,9 @@ import { AuthedRequest } from "./auth";
 //                        consistently avoided doing without real input.
 //   viewer              — read-only, full stop.
 //
-// Deliberately NOT included: creating openings, bulk imports (openings or
-// hardware), and anything under /api/portfolio (properties, buildings,
-// forecasts, alerts) — those are portfolio-setup and reporting actions, not
-// day-to-day field work, and the field app itself has never exposed opening
-// creation for the same reason.
+// Technician setup now permits exactly property, building and opening creation.
+// Existing handlers enforce organization ownership of each parent. Bulk import,
+// portfolio creation and team administration remain outside technician writes.
 const FIELD_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp }> = [
   { method: "POST", pattern: /^\/api\/events\/service-events$/ },
   { method: "POST", pattern: /^\/api\/events\/inspection-events$/ },
@@ -31,7 +29,7 @@ const FIELD_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp }> = [
   { method: "PATCH", pattern: /^\/api\/hardware\/[^/]+$/ },
   { method: "DELETE", pattern: /^\/api\/hardware\/[^/]+$/ },
   { method: "POST", pattern: /^\/api\/photos\/presign$/ },
-  { method: "POST", pattern: /^\/api\/photos\/offline\/(reserve|confirm)$/ },
+  { method: "POST", pattern: /^\/api\/photos\/offline\/(reserve|confirm|recover-reservation)$/ },
   { method: "POST", pattern: /^\/api\/photos$/ },
   { method: "DELETE", pattern: /^\/api\/photos\/[^/]+$/ },
   { method: "POST", pattern: /^\/api\/documents\/presign$/ },
@@ -60,6 +58,9 @@ export function enforceRolePermissions(req: AuthedRequest, res: Response, next: 
   // mounting depth, which is what the shared, full-path patterns above
   // actually need to match against.
   const path = req.originalUrl.split("?")[0];
+
+  if (role === "technician" && req.method === "POST" &&
+      ["/api/portfolio/properties", "/api/portfolio/buildings", "/api/openings"].includes(path)) return next();
 
   if (role === "technician" || role === "inspector") {
     const allowed = FIELD_WRITE_ACTIONS.some((a) => a.method === req.method && a.pattern.test(path));

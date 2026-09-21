@@ -268,3 +268,10 @@ export async function fetchMyWorkOrders(userId: string): Promise<FieldWorkOrder[
 export async function updateMyWorkOrderStatus(id: string, status: string): Promise<FieldWorkOrder> {
   return authedFetch(`/work-orders/${id}/status`, { method: "POST", body: JSON.stringify({ status }) });
 }
+
+export const listFieldPortfolios = () => authedFetch("/portfolio/portfolios");
+export const listFieldProperties = () => authedFetch("/portfolio/properties");
+export const createFieldProperty = (payload: {portfolio_id:string;name:string;property_type:string}) => authedFetch("/portfolio/properties", {method:"POST", body:JSON.stringify(payload)});
+export const createFieldBuilding = (payload: {property_id:string;name:string}) => authedFetch("/portfolio/buildings", {method:"POST", body:JSON.stringify(payload)});
+export const createFieldOpening = (payload: {building_id:string;opening_code:string;opening_type:string;opening_configuration:string;fire_rated:boolean}) => authedFetch("/openings", {method:"POST", body:JSON.stringify(payload)});
+export const fetchOpeningLabel = (id:string) => authedFetch(`/openings/${encodeURIComponent(id)}/qr-code`);

@@ -11,6 +11,7 @@ export default defineConfig({
       DATABASE_URL: TEST_DATABASE_URL,
       JWT_SECRET: "test-secret-for-vitest-do-not-use-in-production",
       CORS_ORIGINS: "",
+      OI_FIELD_APP_URL: "https://staging.example.test/field/",
     },
     // These tests hit a real Postgres through a shared connection pool —
     // running test files in parallel worker processes each with their own

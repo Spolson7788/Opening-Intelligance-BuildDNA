@@ -185,6 +185,12 @@ describe("offline synchronization API foundation", () => {
     const { buildingId } = await createPortfolioHierarchy(org.token);
     const opening = await createTestOpening(org.token, buildingId);
     const user = await pool.query("SELECT id FROM users WHERE email=$1", [org.email]);
+    const peerEmail = `peer-${randomUUID()}@example.com`;
+    await request(app).post("/api/auth/register").set("Authorization", `Bearer ${org.token}`)
+      .send({email:peerEmail,password:"testpassword123",full_name:"Peer technician",role:"technician"}).expect(201);
+    const peer = await request(app).post("/api/auth/login").send({email:peerEmail,password:"testpassword123"}).expect(200);
+    // Exercise the actual field role; requireAuth reads the current DB role.
+    await pool.query("UPDATE users SET role='technician' WHERE id=$1", [user.rows[0].id]);
     const originalOperationId = randomUUID();
     const legacyPhotoId = randomUUID();
     const requested = { ...reservation(opening.id, { photo_id: legacyPhotoId,
@@ -201,6 +207,21 @@ describe("offline synchronization API foundation", () => {
       .send({ photo_id: legacyPhotoId, opening_id: opening.id, target_type: "opening", target_id: opening.id,
         original_filename: requested.original_filename, content_type: requested.content_type,
         byte_size: requested.byte_size, sha256_checksum: requested.sha256_checksum, device_id: requested.device_id });
+    const foreign = await signupTestOrg("Foreign legacy recovery");
+    const denied = await request(app).post("/api/photos/offline/recover-reservation")
+      .set("Authorization", `Bearer ${foreign.token}`)
+      .send({ photo_id: legacyPhotoId, opening_id: opening.id, target_type: "opening", target_id: opening.id,
+        original_filename: requested.original_filename, content_type: requested.content_type,
+        byte_size: requested.byte_size, sha256_checksum: requested.sha256_checksum, device_id: requested.device_id });
+    expect(denied.status).toBe(403);
+    const peerDenied = await request(app).post("/api/photos/offline/recover-reservation")
+      .set("Authorization", `Bearer ${peer.body.token}`)
+      .send({ photo_id: legacyPhotoId, opening_id: opening.id, target_type: "opening", target_id: opening.id,
+        original_filename: requested.original_filename, content_type: requested.content_type,
+        byte_size: requested.byte_size, sha256_checksum: requested.sha256_checksum, device_id: requested.device_id });
+    expect(peerDenied.status).toBe(409);
+    expect(peerDenied.body.error).toBe("legacy_reservation_identity_conflict");
+
     expect(recovered.status).toBe(200);
     expect(recovered.body).toMatchObject({ photo_id: legacyPhotoId, client_operation_id: originalOperationId,
       status: "reserved" });

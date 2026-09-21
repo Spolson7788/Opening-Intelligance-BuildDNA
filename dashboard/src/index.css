@@ -347,3 +347,5 @@ tbody tr:hover { background: var(--surface-sunken); }
     margin: 0.4in;
   }
 }
+
+@media print { .label-card { background: white; color: black; } .label-location { color: black; overflow-wrap: anywhere; } .label-code { overflow-wrap: anywhere; } }

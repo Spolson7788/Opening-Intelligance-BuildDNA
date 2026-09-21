@@ -100,6 +100,7 @@ export function PrintLabelsPage() {
             {items.map((item) => (
               <div className="label-card" key={item.id}>
                 <img src={item.qr_data_url} alt="" className="label-qr" />
+                <div className="label-location">{item.facility_name} · {item.building_name}</div>
                 <div className="label-code">{item.opening_code}</div>
                 {item.location_description && <div className="label-location">{item.location_description}</div>}
               </div>

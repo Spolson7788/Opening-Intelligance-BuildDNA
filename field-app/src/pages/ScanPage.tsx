@@ -71,6 +71,7 @@ export function ScanPage() {
         </div>
         {cameraError && <p className="error-text">{cameraError}</p>}
 
+        <button className="btn btn-secondary" onClick={() => navigate("/setup-opening")}>Facilities and openings</button>
         <div className="section-label" style={{ marginTop: 24 }}>Or enter the opening code</div>
         <form onSubmit={onManualSubmit}>
           <div className="field">

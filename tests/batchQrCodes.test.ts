@@ -16,6 +16,8 @@ describe("batch QR codes", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(3);
+    expect(res.body.items.every((i:any)=>i.facility_name === "Test Property" && i.building_name === "Test Building")).toBe(true);
+    expect(res.body.items.every((i:any)=>i.payload.startsWith("https://staging.example.test/field/opening/by-qr/"))).toBe(true);
     expect(res.body.items.length).toBe(3);
     expect(res.body.items.every((i: any) => i.qr_data_url.startsWith("data:image/png;base64,"))).toBe(true);
   });

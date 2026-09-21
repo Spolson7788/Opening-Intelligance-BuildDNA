@@ -1,11 +1,12 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +18,8 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await login(email, password);
-      navigate("/scan");
+      const from = location.state?.from;
+      navigate(typeof from === "string" && from.startsWith("/") && !from.startsWith("//") && from !== "/login" ? from : "/scan", { replace: true });
     } catch (err) {
       setError("Email or password didn't match. Try again.");
     } finally {

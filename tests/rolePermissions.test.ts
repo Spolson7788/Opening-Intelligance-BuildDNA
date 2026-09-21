@@ -115,18 +115,14 @@ describe("role-based permissions", () => {
       expect(res.status).toBe(200);
     });
 
-    it("CANNOT create a new opening", async () => {
-      const org = await signupTestOrg();
-      const { buildingId } = await createPortfolioHierarchy(org.token);
-      const techToken = await inviteAndLogin(org.token, "technician");
-
-      const res = await request(app)
-        .post("/api/openings")
-        .set("Authorization", `Bearer ${techToken}`)
-        .send({ opening_code: "TECH-SHOULD-NOT-CREATE", building_id: buildingId, opening_type: "door" });
-
-      expect(res.status).toBe(403);
-      expect(res.body.error).toBe("insufficient_role_for_action");
+    it("creates own-org openings but refuses a foreign building", async () => {
+      const org = await signupTestOrg(); const other = await signupTestOrg();
+      const own = await createPortfolioHierarchy(org.token); const foreign = await createPortfolioHierarchy(other.token);
+      const token = await inviteAndLogin(org.token, "technician");
+      const create = (building_id: string) => request(app).post("/api/openings")
+        .set("Authorization", `Bearer ${token}`).send({building_id, opening_code: `TECH-${building_id}`, opening_type:"door"});
+      expect((await create(own.buildingId)).status).toBe(201);
+      expect((await create(foreign.buildingId)).status).toBe(403);
     });
 
     it("CANNOT bulk-import openings", async () => {
@@ -142,17 +138,17 @@ describe("role-based permissions", () => {
       expect(res.status).toBe(403);
     });
 
-    it("CANNOT create a property", async () => {
-      const org = await signupTestOrg();
-      const portfolios = await request(app).get("/api/portfolio/portfolios").set("Authorization", `Bearer ${org.token}`);
-      const techToken = await inviteAndLogin(org.token, "technician");
-
-      const res = await request(app)
-        .post("/api/portfolio/properties")
-        .set("Authorization", `Bearer ${techToken}`)
-        .send({ portfolio_id: portfolios.body[0].id, name: "Tech Should Not Create This" });
-
-      expect(res.status).toBe(403);
+    it("creates own-org facilities and buildings but refuses foreign parents", async () => {
+      const org=await signupTestOrg();const other=await signupTestOrg();
+      const own=await createPortfolioHierarchy(org.token);const foreign=await createPortfolioHierarchy(other.token);
+      const token=await inviteAndLogin(org.token,"technician");
+      const post=(path:string,body:object)=>request(app).post(path).set("Authorization",`Bearer ${token}`).send(body);
+      const property=await post("/api/portfolio/properties",{portfolio_id:own.portfolioId,name:"Technician facility",property_type:"healthcare"});
+      expect(property.status).toBe(201);
+      expect((await post("/api/portfolio/buildings",{property_id:property.body.id,name:"Building"})).status).toBe(201);
+      expect((await post("/api/portfolio/properties",{portfolio_id:foreign.portfolioId,name:"Forbidden"})).status).toBe(403);
+      expect((await post("/api/portfolio/buildings",{property_id:foreign.propertyId,name:"Forbidden"})).status).toBe(403);
+      expect((await post("/api/portfolio/portfolios",{name:"Forbidden"})).status).toBe(403);
     });
 
     it("can still read everything, same as any role", async () => {
@@ -167,7 +163,7 @@ describe("role-based permissions", () => {
     });
   });
 
-  describe("inspector — same field-write scope as technician, by design", () => {
+  describe("inspector — field records only, without technician setup", () => {
     it("can log an inspection event", async () => {
       const org = await signupTestOrg();
       const { buildingId } = await createPortfolioHierarchy(org.token);
@@ -182,7 +178,7 @@ describe("role-based permissions", () => {
       expect(res.status).toBe(201);
     });
 
-    it("CANNOT create a new opening, same restriction as technician", async () => {
+    it("CANNOT create a new opening", async () => {
       const org = await signupTestOrg();
       const { buildingId } = await createPortfolioHierarchy(org.token);
       const inspectorToken = await inviteAndLogin(org.token, "inspector");

@@ -434,6 +434,9 @@ export async function bulkImportHardware(rows: BulkImportHardwareRow[]): Promise
 }
 
 export interface QrLabelItem {
+  facility_name: string;
+  building_name: string;
+  payload: string;
   id: string;
   opening_code: string;
   opening_type: string;

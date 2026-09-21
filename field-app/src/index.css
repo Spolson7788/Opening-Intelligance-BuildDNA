@@ -215,3 +215,12 @@ h1, h2, h3 {
   font-weight: 600;
   margin-bottom: 8px;
 }
+
+.opening-print-label { box-sizing:border-box; width:2.4in; min-height:3in; padding:0.12in; border:1px solid #444; background:white; color:black; text-align:center; overflow-wrap:anywhere; break-inside:avoid; }
+.opening-print-label img { display:block; width:1.75in; height:1.75in; margin:0.05in auto; }
+@media print {
+  body:has(.qr-print-page) { background:white; color:black; }
+  .qr-print-page .no-print { display:none !important; }
+  .qr-print-page.screen { padding:0; margin:0; max-width:none; }
+  @page { size:letter portrait; margin:0.4in; }
+}

@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import { randomUUID } from "node:crypto";
 import QRCode from "qrcode";
+import { openingQrUrl } from "../services/openingQr";
 import { z } from "zod";
 import { pool } from "../db/pool";
 import { computeHealthScore } from "../services/healthScore";
@@ -337,15 +338,16 @@ openingsRouter.get("/qr-codes", async (req: AuthedRequest, res) => {
 
   try {
     const openings = await pool.query(
-      `SELECT id, opening_code, qr_token, opening_type, floor_label, location_description
-       FROM openings WHERE building_id = $1 ORDER BY opening_code`,
+      `SELECT o.id, o.opening_code, o.qr_token, o.opening_type, o.floor_label, o.location_description, p.name AS facility_name, b.name AS building_name
+       FROM openings o JOIN buildings b ON b.id=o.building_id JOIN properties p ON p.id=b.property_id
+       WHERE o.building_id = $1 ORDER BY o.opening_code`,
       [building_id]
     );
 
     const items = await Promise.all(
       openings.rows.map(async (o) => {
-        const payload = `https://app.openingintel.com/scan/${o.qr_token}`;
-        const qr_data_url = await QRCode.toDataURL(payload, { width: 300, margin: 1 });
+        const payload = openingQrUrl(o.qr_token);
+        const qr_data_url = await QRCode.toDataURL(payload, { width: 300, margin: 4 });
         return {
           id: o.id,
           opening_code: o.opening_code,
@@ -353,6 +355,7 @@ openingsRouter.get("/qr-codes", async (req: AuthedRequest, res) => {
           floor_label: o.floor_label,
           location_description: o.location_description,
           qr_data_url,
+          payload, facility_name: o.facility_name, building_name: o.building_name,
         };
       })
     );
@@ -427,15 +430,15 @@ openingsRouter.get("/:id/qr-code", async (req: AuthedRequest, res) => {
   const orgId = req.auth!.organizationId;
   try {
     const result = await pool.query(
-      `SELECT qr_token FROM openings WHERE id = $1 AND id IN (${openingsForOrgSubquery(2)})`,
+      `SELECT o.qr_token, o.opening_code, o.completion_state, p.name AS facility_name, b.name AS building_name FROM openings o JOIN buildings b ON b.id=o.building_id JOIN properties p ON p.id=b.property_id WHERE o.id = $1 AND o.id IN (${openingsForOrgSubquery(2)})`,
       [id, orgId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: "not_found" });
 
     const { qr_token } = result.rows[0];
-    const payload = `https://app.openingintel.com/scan/${qr_token}`;
-    const dataUrl = await QRCode.toDataURL(payload, { width: 400, margin: 2 });
-    res.json({ qr_data_url: dataUrl, payload });
+    const payload = openingQrUrl(qr_token);
+    const dataUrl = await QRCode.toDataURL(payload, { width: 400, margin: 4 });
+    res.json({ qr_data_url: dataUrl, payload, opening_code: result.rows[0].opening_code, facility_name: result.rows[0].facility_name, building_name: result.rows[0].building_name, completion_state: result.rows[0].completion_state });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
