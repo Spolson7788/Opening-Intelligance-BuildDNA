@@ -12,3 +12,11 @@
 
 [context.production.environment]
   NODE_ENV = "production"
+
+# Isolated, protected staging only; production settings above are unchanged.
+[context."pr2-staging"]
+  command = "node scripts/build-protected-staging.mjs"
+  publish = "dist/protected-staging"
+
+[context."pr2-staging".environment]
+  NPM_FLAGS = "--include=dev"
