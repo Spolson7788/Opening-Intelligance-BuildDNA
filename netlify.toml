@@ -14,6 +14,7 @@
   NODE_ENV = "production"
 
 # Isolated, protected staging only; production settings above are unchanged.
+# The staging site enables only pr2-staging branch deploys; its primary branch is production-disabled.
 [context."pr2-staging"]
   command = "node scripts/build-protected-staging.mjs"
   publish = "dist/protected-staging"
