@@ -355,8 +355,8 @@
    "audio": "elevenlabs/audio/S070.mp3",
    "audio_present": false,
    "renarrate_required": true,
-   "words": 57,
-   "estimated_seconds": 27.4,
+   "words": 54,
+   "estimated_seconds": 23.71,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -388,7 +388,14 @@
    "in_master": true,
    "narration_provisional": false,
    "provisional_reason": null,
-   "provisional_depends_on": null
+   "provisional_depends_on": null,
+   "script_sha256_frozen": "526057e87006af8b2660a41336fcb0ea00faa8c5d077509617694dfc1a697137",
+   "characters_frozen": 352,
+   "submitted_sha256_expected": "47b304365481391df92d3f2eba87248b762486753db69e096f48ca610c562058",
+   "characters_submitted_expected": 352,
+   "_expected_hash_note": "Final consolidated batch: approved pin is SHA-256 of UTF-8 text.strip(); no pronunciation substitution.",
+   "approved_characters": 352,
+   "submitted_sha256_normalization": "utf8-strip"
   },
   {
    "scene_id": "S080",
@@ -979,8 +986,8 @@
    "audio": "elevenlabs/audio/S180.mp3",
    "audio_present": false,
    "renarrate_required": true,
-   "words": 90,
-   "estimated_seconds": 47.39,
+   "words": 78,
+   "estimated_seconds": 34.24,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -1011,10 +1018,15 @@
    "status": "Draft",
    "in_master": true,
    "narration_provisional": false,
-   "provisional_reason": "Asserts the device result: Cal-Royal established, family and model not established, eight unresolved candidates. Subject to what the deployed recognition service returns.",
-   "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
-   "script_sha256_frozen": "c97621be7ed0241a37f69a844b5ff8dfad0acd2fa83dbc09f4e23f4d61d9120a",
-   "characters_frozen": 514
+   "provisional_reason": null,
+   "provisional_depends_on": null,
+   "script_sha256_frozen": "1cd4e53bd4856340c362ac1ed1732b341374a64917cc5449c6274ca0ae6d9e58",
+   "characters_frozen": 488,
+   "submitted_sha256_expected": "8c73d9d4299d080e6a0d3f4931d4517a2f85f65c8dac2b346246736fa76e0f0a",
+   "characters_submitted_expected": 488,
+   "_expected_hash_note": "Final consolidated batch: approved pin is SHA-256 of UTF-8 text.strip(); no pronunciation substitution.",
+   "approved_characters": 488,
+   "submitted_sha256_normalization": "utf8-strip"
   },
   {
    "scene_id": "S190",
@@ -2532,7 +2544,7 @@
    "audio_present": false,
    "renarrate_required": true,
    "words": 53,
-   "estimated_seconds": 25.36,
+   "estimated_seconds": 23.27,
    "voice_id": "OZxMHsGaBmV5pjMIDIn0",
    "model_id": "eleven_multilingual_v2",
    "settings": {
@@ -2562,13 +2574,13 @@
    },
    "status": "Draft",
    "in_master": true,
-   "script_sha256_frozen": "0d434d3a0848371d253055d88edc712d1d366b2ae00e9bd1d7f1c02987e428f1",
-   "characters_frozen": 282,
-   "submitted_sha256_expected": "749762411861e2bda2d12dffdb32706dbc3c3588c9143a1f4ec17d774da316b7",
-   "characters_submitted_expected": 282,
-   "_expected_hash_note": "Run 31: approved pin is SHA-256 of UTF-8 text.strip(); no pronunciation substitution.",
+   "script_sha256_frozen": "5f38e9dcf41e2e5638b076ae13c89f9ab88af1c6a0211d35b99b0755a4601bed",
+   "characters_frozen": 286,
+   "submitted_sha256_expected": "f68a15a469f07d3831e070aca3f453376edaf05d268a4ab330c545e480ede37a",
+   "characters_submitted_expected": 286,
+   "_expected_hash_note": "Final consolidated batch: approved pin is SHA-256 of UTF-8 text.strip(); no pronunciation substitution.",
    "note": "QR generation and retrieval",
-   "approved_characters": 282,
+   "approved_characters": 286,
    "submitted_sha256_normalization": "utf8-strip",
    "narration_provisional": false
   },
@@ -2761,24 +2773,21 @@
    "narration_provisional": false
   }
  ],
- "run_name": "approved-run31-seven-scene-1365char",
+ "run_name": "final-consolidated-three-scene-1126char",
  "approval": {
-  "approved_by": "Stephan",
-  "date": "2026-09-20",
-  "requests": 7,
-  "characters": 1365,
+  "state": "HELD pending Stephan's explicit paid-generation approval",
+  "approved_by": null,
+  "date": null,
+  "requests": 3,
+  "characters": 1126,
   "retries_authorized": 0,
   "scenes": [
-   "S316",
-   "S317",
+   "S070",
    "S320",
-   "S395",
-   "S600",
-   "S610",
-   "S620"
+   "S180"
   ],
   "one_clip_per_scene": true,
   "voice_lock": "unchanged",
-  "preservation": "S316 replaces its existing narration while retaining the old master; other existing narration remains unchanged."
+  "preservation": "All previous masters and unrelated repository work remain unchanged. These three clips supersede the separate S070/S320 and S180 requests only."
  }
 }
