@@ -186,6 +186,11 @@ class TestOrderOfChecks(unittest.TestCase):
 
 
 class TestGenerationIsBounded(unittest.TestCase):
+    def test_both_jobs_are_pinned_to_the_consolidated_batch(self):
+        self.assertEqual(RAW.count('["S070", "S320", "S180"]'), 2)
+        self.assertEqual(RAW.count('assert os.environ["EXPECTED"] == "3"'), 2)
+        self.assertEqual(RAW.count("--expect-characters 1126"), 3)
+
     def test_generation_passes_fail_fast_and_expect(self):
         _, s = step_named("Generate the permitted")
         self.assertIn("--fail-fast", s["run"])

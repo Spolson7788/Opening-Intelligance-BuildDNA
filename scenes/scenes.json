@@ -427,7 +427,7 @@
       "title": "Type the opening number",
       "purpose": "Type the opening number and say why identity matters.",
       "audience_benefit": "A technician returning later finds the same door.",
-      "narration": "And this is opening two zero five A. The facility and opening are records I just created; the images are reference images, as the label says. The hardware and door-and-frame records attach to this opening and stay on this device. This local-only build doesn't synchronize, and it doesn't retain the photographs as opening records.",
+      "narration": "Here I'm documenting opening two zero five A. This walkthrough demonstrates the technician's field workflow; the connection to the Facility Dashboard will be demonstrated separately. The images are reference images, as the label says. In this demonstration the records stay on this device, and the photographs aren't kept as part of the opening record.",
       "screen_action": [
         "Click the Opening # field; type '205A' during the first phrase.",
         "Hold both completed fields on screen for at least 2s while the benefit line is spoken."
@@ -1596,7 +1596,7 @@
       "title": "Identify the device",
       "purpose": "Look the device up by model and be clear what that does.",
       "audience_benefit": "Catalog lookup speeds entry; the stamp is still what establishes the model.",
-      "narration": "Same process for the device. Using the photographs and the visible attributes I entered, OI establishes Cal-Royal as the manufacturer. It does not establish the exact family or model—several candidates it can't separate, and it says so rather than picking one. The stamp here is legible, so I'll look the model up: A F seventy-seven hundred. There it is—Cal-Royal's A seventy-seven hundred, A F seventy-seven hundred rim exit device. Choosing it sets the part type and the manufacturer, and OI records it as my selection, not as something it recognized.",
+      "narration": "Same process for the device. From the visible attributes I entered, OI reaches Cal-Royal as a candidate but establishes nothing—manufacturer, family and model all unresolved, and it flags the result for review rather than picking one. The stamp here is legible, so I look up A F seventy-seven hundred. The exact Cal-Royal A F seventy-seven hundred rim exit device appears. Choosing it sets the part type and manufacturer, and the record says so: technician selected, image recognition no.",
       "screen_action": [
         "Type 'AF7700' into the model lookup while it is spoken; press Search catalog.",
         "Hold on the result rows.",
@@ -1702,8 +1702,8 @@
       ],
       "narration_previous": "Same process for the device. OI analyzes the photographs and puts the manufacturer at Cal-Royal—and on the images alone, that's as far as it goes. The stamp on this one is legible, so I'll help it along: I'll look the model up, A F seventy-seven hundred. There it is in the catalog—Cal-Royal's A seventy-seven hundred, A F seventy-seven hundred rim exit device. Choosing it sets the part type and the manufacturer. What establishes the model is the stamp I can read and confirm, not the fact that I typed it.",
       "narration_provisional": false,
-      "provisional_reason": "Asserts the device result: Cal-Royal established, family and model not established, eight unresolved candidates. Subject to what the deployed recognition service returns.",
-      "provisional_depends_on": "PC-7 — controlled recognition test (not run)",
+      "provisional_reason": null,
+      "provisional_depends_on": null,
       "recognition_hold": {
         "state": "RELEASED",
         "released_on": "2026-09-15",
