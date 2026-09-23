@@ -51,6 +51,13 @@ describe("bulk import", () => {
     expect(res.body.results[1].error).toBe("opening_code already exists");
     expect(res.body.results[0].status).toBe("created");
     expect(res.body.results[2].status).toBe("created");
+
+    const list = await request(app).get("/api/openings").set("Authorization", `Bearer ${org.token}`);
+    expect(list.body.filter((o: any) => ["GOOD-001", "GOOD-002"].includes(o.opening_code)))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ opening_code: "GOOD-001" }),
+        expect.objectContaining({ opening_code: "GOOD-002" }),
+      ]));
   });
 
   it("rejects importing into a building that belongs to another org", async () => {
