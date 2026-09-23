@@ -3,6 +3,9 @@ SELECT set_config('test.uid',gen_random_uuid()::text,true),set_config('test.othe
 INSERT INTO auth.users(id) VALUES(current_setting('test.uid')::uuid),(current_setting('test.other')::uuid);
 SELECT set_config('test.product',gen_random_uuid()::text,true);
 INSERT INTO public.approved_products(id,manufacturer,model,document_url,approved,demonstration_record) VALUES(current_setting('test.product')::uuid,'Synthetic brand','Synthetic model','https://example.invalid/synthetic-document',true,true);
+SELECT set_config('test.org',gen_random_uuid()::text,true);
+INSERT INTO public.organizations(id,code,name) VALUES(current_setting('test.org')::uuid,current_setting('test.org'),'Rollback-only organization');
+INSERT INTO public.organization_memberships(organization_id,user_id,role) VALUES(current_setting('test.org')::uuid,current_setting('test.uid')::uuid,'admin');
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub',current_setting('test.uid'),true);
 INSERT INTO public.facilities(id,name,address,city,state,postal_code) VALUES(current_setting('test.fid')::uuid,'Rollback-only paired test','Synthetic address','Phoenix','AZ','85001');

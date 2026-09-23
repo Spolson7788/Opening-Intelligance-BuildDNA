@@ -3,6 +3,9 @@ BEGIN;
 SELECT set_config('test.uid',gen_random_uuid()::text,true),set_config('test.fid',gen_random_uuid()::text,true),set_config('test.event',gen_random_uuid()::text,true),set_config('test.def',gen_random_uuid()::text,true);
 -- Transient FK fixture, no password/identity, always rolled back.
 INSERT INTO auth.users(id) VALUES(current_setting('test.uid')::uuid);
+SELECT set_config('test.org',gen_random_uuid()::text,true);
+INSERT INTO public.organizations(id,code,name) VALUES(current_setting('test.org')::uuid,current_setting('test.org'),'Rollback-only organization');
+INSERT INTO public.organization_memberships(organization_id,user_id,role) VALUES(current_setting('test.org')::uuid,current_setting('test.uid')::uuid,'admin');
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub',current_setting('test.uid'),true);
 INSERT INTO public.facilities(id,name) VALUES(current_setting('test.fid')::uuid,'Rollback-only service role test');
@@ -61,3 +64,4 @@ IF EXISTS(SELECT 1 FROM public.verification_events) THEN RAISE EXCEPTION 'Nonmem
 END $test$;
 ROLLBACK;
 SELECT 'PASS: tech insert/update; viewer read only; nonmember record denial across seven service tables. Rollback SQL simulation only.' AS result;
+

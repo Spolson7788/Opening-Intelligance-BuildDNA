@@ -372,7 +372,7 @@ async function boot(){
   if(!session){$('loginView').style.display='block';$('appView').style.display='none';return;}
   if(await routeByType(session))return;
   $('loginView').style.display='none';$('appView').style.display='block';
-  const {data,error}=await sb.from('memberships').select('facility_id,role,facilities(name,address)');
+  const {data,error}=await sb.from('memberships').select('facility_id,role,facilities!membership_facility_org(name,address)');
   if(error){$('rows').innerHTML='<tr><td colspan=6 style="color:var(--critical);padding:20px">Could not load facilities: '+error.message+'</td></tr>';return;}
   facilities=(data||[]).map(m=>({id:m.facility_id,role:m.role,name:m.facilities?m.facilities.name:'Facility',address:m.facilities?m.facilities.address:''}));
   if(!facilities.length){$('facName').textContent='No facility linked to this login';return;}
