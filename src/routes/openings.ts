@@ -418,3 +418,132 @@ openingsRouter.get("/by-qr/:qrToken", async (req: AuthedRequest, res) => {
 openingsRouter.get("/by-code/:openingCode", async (req: AuthedRequest, res) => {
   const { openingCode } = req.params;
   const orgId = req.auth!.organizationId;
+  try {
+    const result = await pool.query(
+      `SELECT * FROM openings WHERE opening_code = $1 AND id IN (${openingsForOrgSubquery(2)})`,
+      [openingCode, orgId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: "not_found" });
+    res.json(await hydrateOpening(result.rows[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// Generate a printable QR code image (PNG data URL) for a given opening
+openingsRouter.get("/:id/qr-code", async (req: AuthedRequest, res) => {
+  const { id } = req.params;
+  const orgId = req.auth!.organizationId;
+  try {
+    const result = await pool.query(
+      `SELECT o.qr_token, o.opening_code, o.completion_state, p.name AS facility_name, b.name AS building_name FROM openings o JOIN buildings b ON b.id=o.building_id JOIN properties p ON p.id=b.property_id WHERE o.id = $1 AND o.id IN (${openingsForOrgSubquery(2)})`,
+      [id, orgId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: "not_found" });
+
+    const { qr_token } = result.rows[0];
+    const payload = openingQrUrl(qr_token);
+    const dataUrl = await QRCode.toDataURL(payload, { width: 400, margin: 4 });
+    res.json({ qr_data_url: dataUrl, payload, opening_code: result.rows[0].opening_code, facility_name: result.rows[0].facility_name, building_name: result.rows[0].building_name, completion_state: result.rows[0].completion_state });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// Batch QR generation for an entire building — pairs with bulk import: import
+// 200 openings from a CSV, then get all 200 QR codes in one request instead
+// of 200 round trips, ready to lay out on a print-friendly label sheet.
+
+// Recompute and persist the health score for an opening
+openingsRouter.post("/:id/recompute-health-score", async (req: AuthedRequest, res) => {
+  const { id } = req.params;
+  const orgId = req.auth!.organizationId;
+  try {
+    const openingRes = await pool.query(
+      `SELECT install_date, last_service_date, fire_rated FROM openings
+       WHERE id = $1 AND id IN (${openingsForOrgSubquery(2)})`,
+      [id, orgId]
+    );
+    if (openingRes.rows.length === 0) return res.status(404).json({ error: "not_found" });
+    const opening = openingRes.rows[0];
+
+    const serviceCountRes = await pool.query(
+      `SELECT COUNT(*) FROM service_events
+       WHERE opening_id = $1 AND event_date >= now() - interval '12 months'`,
+      [id]
+    );
+    const failedInspectionsRes = await pool.query(
+      `SELECT COUNT(*) FROM inspection_events
+       WHERE opening_id = $1 AND passed = false AND event_date >= now() - interval '24 months'`,
+      [id]
+    );
+    const openIssuesRes = await pool.query(
+      `SELECT COUNT(*) FROM inspection_events
+       WHERE opening_id = $1 AND passed = false
+       AND event_date = (SELECT MAX(event_date) FROM inspection_events WHERE opening_id = $1)`,
+      [id]
+    );
+
+    const { score, factors } = computeHealthScore({
+      installDate: opening.install_date,
+      lastServiceDate: opening.last_service_date,
+      serviceEventsLast12Months: parseInt(serviceCountRes.rows[0].count, 10),
+      failedInspectionsLast24Months: parseInt(failedInspectionsRes.rows[0].count, 10),
+      openComplianceIssues: parseInt(openIssuesRes.rows[0].count, 10),
+      fireRated: opening.fire_rated,
+    });
+
+    await pool.query("UPDATE openings SET health_score = $1, updated_at = now() WHERE id = $2", [score, id]);
+    await pool.query(
+      "INSERT INTO health_score_history (opening_id, score, factors) VALUES ($1, $2, $3)",
+      [id, score, factors]
+    );
+
+    res.json({ score, factors });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// Portfolio-wide list, filterable by property/building/type/health threshold —
+// the dashboard's main query. Always scoped to the caller's organization.
+openingsRouter.get("/", async (req: AuthedRequest, res) => {
+  const { building_id, property_id, opening_type, max_health_score } = req.query;
+  const orgId = req.auth!.organizationId;
+  const conditions: string[] = [];
+  const values: any[] = [];
+
+  if (building_id) {
+    values.push(building_id);
+    conditions.push(`building_id = $${values.length}`);
+  }
+  if (property_id) {
+    values.push(property_id);
+    conditions.push(`building_id IN (SELECT id FROM buildings WHERE property_id = $${values.length})`);
+  }
+  if (opening_type) {
+    values.push(opening_type);
+    conditions.push(`opening_type = $${values.length}`);
+  }
+  if (max_health_score) {
+    values.push(max_health_score);
+    conditions.push(`health_score <= $${values.length}`);
+  }
+  values.push(orgId);
+  conditions.push(`id IN (${openingsForOrgSubquery(values.length)})`);
+
+  const whereClause = `WHERE ${conditions.join(" AND ")}`;
+  try {
+    const result = await pool.query(
+      `SELECT * FROM openings ${whereClause} ORDER BY health_score ASC NULLS LAST LIMIT 500`,
+      values
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
