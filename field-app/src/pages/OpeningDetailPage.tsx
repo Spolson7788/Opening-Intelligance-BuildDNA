@@ -6,6 +6,7 @@ import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
 import { SyncBadge } from "../components/SyncBadge";
 import { PhotoCapture } from "../components/PhotoCapture";
+import { openingCompletionRequirements } from "../lib/openingCompletion";
 
 function healthClass(score: number | null) {
   if (score === null || score === undefined) return "";
@@ -48,6 +49,9 @@ export function OpeningDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [queuedPhotos, setQueuedPhotos] = useState<(OfflineMediaRecord & { previewUrl: string })[]>([]);
+  const [photoToDelete, setPhotoToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deletingPhoto, setDeletingPhoto] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const openingIdRef = useRef<string | null>(id ?? null);
 
   useEffect(() => {
@@ -72,13 +76,18 @@ export function OpeningDetailPage() {
     });
   }
 
-  async function handleDeletePhoto(photoId: string) {
-    if (!window.confirm("Delete this photo? This can't be undone.")) return;
+  async function handleDeletePhoto() {
+    if (!photoToDelete) return;
+    setDeletingPhoto(true);
+    setDeleteError(null);
     try {
-      await deletePhoto(photoId);
-      reload(); // re-fetch so the grid reflects the deletion
+      await deletePhoto(photoToDelete.id);
+      setPhotoToDelete(null);
+      reload();
     } catch {
-      window.alert("Couldn't delete that photo — please try again.");
+      setDeleteError("Couldn't delete that photo. It remains attached; please try again.");
+    } finally {
+      setDeletingPhoto(false);
     }
   }
 
@@ -134,6 +143,9 @@ export function OpeningDetailPage() {
     );
   }
 
+  const completionRequirements = openingCompletionRequirements(opening);
+  const completionBlocked = opening.completion_state !== "complete" && opening.completion_state !== "pending_sync" && completionRequirements.length > 0;
+
   return (
     <div className="app-shell">
       <div className="top-bar">
@@ -186,7 +198,16 @@ export function OpeningDetailPage() {
             Door &amp; frame details
           </Link>
           {opening.completion_state === "complete" && !fromCache && <Link className="btn btn-secondary" to={`/opening/${opening.id}/label`}>Print / save label</Link>}
-          <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={handleCompleteOpening} disabled={opening.completion_state === "complete"}>
+          {completionBlocked && (
+            <div role="status" className="error-text" style={{ marginTop: 10 }}>
+              <strong>Before finishing:</strong>
+              <ul style={{ margin: "4px 0 0", paddingLeft: 20 }}>
+                {completionRequirements.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </div>
+          )}
+          <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={handleCompleteOpening}
+            disabled={opening.completion_state === "complete" || opening.completion_state === "pending_sync" || completionBlocked}>
             {opening.completion_state === "complete" ? "Opening complete" : opening.completion_state === "pending_sync" ? "Completion pending sync" : "Finish the opening"}
           </button>
         </div>
@@ -221,7 +242,7 @@ export function OpeningDetailPage() {
               <div key={p.id} style={{ position: "relative" }}>
                 <SyncedMedia photo={p} />
                 <button
-                  onClick={() => handleDeletePhoto(p.id)}
+                  onClick={() => { setDeleteError(null); setPhotoToDelete({ id: p.id, name: p.original_filename || "this photo" }); }}
                   aria-label="Delete photo"
                   style={{
                     position: "absolute", top: 4, right: 4, width: 24, height: 24,
@@ -237,6 +258,23 @@ export function OpeningDetailPage() {
           </div>
         )}
         <PhotoCapture openingId={opening.id} onQueued={loadQueuedPhotos} />
+
+        {photoToDelete && (
+          <div role="dialog" aria-modal="true" aria-labelledby="delete-photo-title" className="card"
+            style={{ borderColor: "var(--danger)", marginTop: 10 }}>
+            <strong id="delete-photo-title">Delete photo?</strong>
+            <p style={{ margin: "6px 0 10px", fontSize: 14 }}>
+              {photoToDelete.name} will be removed from this opening. This cannot be undone in the field app.
+            </p>
+            {deleteError && <p role="alert" className="error-text">{deleteError}</p>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-secondary" disabled={deletingPhoto} onClick={() => { setPhotoToDelete(null); setDeleteError(null); }}>Cancel</button>
+              <button className="btn btn-primary" disabled={deletingPhoto} onClick={handleDeletePhoto}>
+                {deletingPhoto ? "Deleting…" : "Delete photo"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {opening.hardware_components && opening.hardware_components.length > 0 && (
           <>
