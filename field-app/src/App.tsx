@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import { AuthProvider, useAuth } from "./lib/AuthContext";
 import { initSync } from "./lib/sync";
 import { LoginPage } from "./pages/LoginPage";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ScanPage } from "./pages/ScanPage";
 import { OpeningDetailPage } from "./pages/OpeningDetailPage";
 import { LogServiceEventPage } from "./pages/LogServiceEventPage";
@@ -32,6 +33,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/setup-opening" element={<RequireAuth><SetupOpeningPage /></RequireAuth>} />
       <Route path="/opening/:id/label" element={<RequireAuth><QrLabelPage /></RequireAuth>} />
       <Route path="/scan" element={<RequireAuth><ScanPage /></RequireAuth>} />

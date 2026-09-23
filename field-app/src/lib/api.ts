@@ -47,6 +47,13 @@ export async function login(email: string, password: string) {
   return res.json() as Promise<{ token: string; expiresIn: string }>;
 }
 
+export async function requestPasswordReset(email: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/password-reset/request`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
+  });
+  if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error || "reset_request_failed");
+}
+
 // Decode the JWT payload client-side just to read organizationId/role for local
 // storage — this is NOT a security boundary, the server verifies the signature.
 export function decodeTokenPayload(token: string): { userId: string; organizationId: string; role: string } {

@@ -1,19 +1,21 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { pool } from "../db/pool";
 import { requireAuth, requireRole, AuthedRequest } from "../middleware/auth";
 import { auditLog } from "../middleware/auditLog";
+import { passwordResetConfigured, sendPasswordChangedEmail, sendPasswordResetEmail } from "../services/passwordResetEmail";
 
 export const authRouter = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET as string;
 const TOKEN_EXPIRY = "12h";
 
-function issueToken(user: { id: string; organization_id: string; role: string }) {
+function issueToken(user: { id: string; organization_id: string; role: string; session_version?: number }) {
   return jwt.sign(
-    { userId: user.id, organizationId: user.organization_id, role: user.role },
+    { userId: user.id, organizationId: user.organization_id, role: user.role, sessionVersion: user.session_version ?? 0 },
     JWT_SECRET,
     { expiresIn: TOKEN_EXPIRY }
   );
@@ -130,7 +132,7 @@ authRouter.post("/login", async (req, res) => {
 
   try {
     const result = await pool.query(
-      "SELECT id, organization_id, role, password_hash, is_active FROM users WHERE email = $1",
+      "SELECT id, organization_id, role, password_hash, is_active, session_version FROM users WHERE email = $1",
       [email.toLowerCase()]
     );
     if (result.rows.length === 0) return res.status(401).json({ error: "invalid_credentials" });
@@ -148,6 +150,168 @@ authRouter.post("/login", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
+  }
+});
+
+const resetRequestSchema = z.object({ email: z.string().trim().toLowerCase().email().max(320) });
+const resetSchema = z.object({
+  token: z.string().regex(/^[a-f0-9]{64}$/),
+  password: z.string().min(12).max(128),
+});
+const changeSchema = z.object({
+  current_password: z.string().min(1),
+  password: z.string().min(12).max(128),
+});
+const RESET_MESSAGE = { message: "If this account can receive email, a reset link is on its way." };
+
+// A signed-in account holder can change their own password without mail setup.
+// A successful change revokes every existing OI session, including this one.
+authRouter.post("/password/change", requireAuth, async (req: AuthedRequest, res) => {
+  const parsed = changeSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "invalid_password_change" });
+  let client;
+  try { client = await pool.connect(); }
+  catch { return res.status(503).json({ error: "database_unavailable" }); }
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      "SELECT password_hash, email FROM users WHERE id=$1 AND organization_id=$2 AND is_active=true FOR UPDATE",
+      [req.auth!.userId, req.auth!.organizationId]
+    );
+    if (!result.rows.length || !await bcrypt.compare(parsed.data.current_password, result.rows[0].password_hash)) {
+      await client.query("ROLLBACK");
+      return res.status(401).json({ error: "current_password_incorrect" });
+    }
+    if (await bcrypt.compare(parsed.data.password, result.rows[0].password_hash)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "password_unchanged" });
+    }
+    const hash = await bcrypt.hash(parsed.data.password, 12);
+    await client.query("UPDATE users SET password_hash=$1, session_version=session_version+1 WHERE id=$2", [hash, req.auth!.userId]);
+    await client.query("UPDATE password_reset_tokens SET consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL", [req.auth!.userId]);
+    await client.query("COMMIT");
+    try { await sendPasswordChangedEmail(result.rows[0].email); }
+    catch { console.error("Password changed email delivery failed"); }
+    return res.json({ message: "Password changed. Sign in with your new password." });
+  } catch {
+    await client.query("ROLLBACK");
+    console.error("Password change failed");
+    return res.status(500).json({ error: "password_change_failed" });
+  } finally {
+    client.release();
+  }
+});
+
+authRouter.post("/password-reset/request", async (req, res) => {
+  const parsed = resetRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "invalid_email" });
+  // Never suggest that a message was sent when delivery is not configured.
+  if (!passwordResetConfigured()) return res.status(503).json({ error: "password_reset_unavailable" });
+
+  const started = Date.now();
+  try {
+    const client = await pool.connect();
+    let delivery: { email: string; token: string; tokenHash: string } | undefined;
+    try {
+      await client.query("BEGIN");
+      // Lock the account before counting. Concurrent requests cannot bypass the
+      // per-account limit through multiple serverless instances.
+      const userResult = await client.query(
+        "SELECT id, email FROM users WHERE email=$1 AND is_active=true FOR UPDATE",
+        [parsed.data.email]
+      );
+      if (userResult.rows.length) {
+        const user = userResult.rows[0];
+        const rate = await client.query(
+          "SELECT count(*)::int AS sent FROM password_reset_tokens WHERE user_id=$1 AND created_at > now()-interval '1 hour'",
+          [user.id]
+        );
+        if (rate.rows[0].sent < 3) {
+          const token = randomBytes(32).toString("hex");
+          const tokenHash = createHash("sha256").update(token).digest("hex");
+          await client.query(
+            "INSERT INTO password_reset_tokens (token_hash,user_id,expires_at) VALUES ($1,$2,now()+interval '30 minutes')",
+            [tokenHash, user.id]
+          );
+          delivery = { email: user.email, token, tokenHash };
+        }
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+    if (delivery) {
+      try {
+        await sendPasswordResetEmail(delivery.email, delivery.token);
+      } catch {
+        // Keep the failed attempt for throttling, but make the unsent link unusable.
+        await pool.query("UPDATE password_reset_tokens SET consumed_at=now() WHERE token_hash=$1", [delivery.tokenHash]);
+        console.error("Password reset email delivery failed"); // no email, link, or token in logs
+      }
+    }
+  } catch {
+    console.error("Password reset request failed");
+  }
+  // Match the visible result for known, unknown, and rate-limited accounts.
+  // The email provider has a 3-second deadline; keep the public response
+  // timing similar whether the email exists or not.
+  const remaining = 3200 - (Date.now() - started);
+  if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+  return res.json(RESET_MESSAGE);
+});
+
+authRouter.post("/password-reset/confirm", async (req, res) => {
+  const parsed = resetSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "invalid_reset_request" });
+  const tokenHash = createHash("sha256").update(parsed.data.token).digest("hex");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // Serialize simultaneous links for the same account before locking a token.
+    const candidate = await client.query(
+      "SELECT user_id FROM password_reset_tokens WHERE token_hash=$1",
+      [tokenHash]
+    );
+    if (!candidate.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "invalid_or_expired_reset_link" });
+    }
+    await client.query("SELECT id FROM users WHERE id=$1 FOR UPDATE", [candidate.rows[0].user_id]);
+    const result = await client.query(
+      `SELECT t.user_id, u.email FROM password_reset_tokens t JOIN users u ON u.id=t.user_id
+       WHERE t.token_hash=$1 AND t.consumed_at IS NULL AND t.expires_at>now() AND u.is_active=true FOR UPDATE OF t`,
+      [tokenHash]
+    );
+    if (!result.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "invalid_or_expired_reset_link" });
+    }
+    const { user_id: userId, email } = result.rows[0];
+    const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+    await client.query(
+      "UPDATE users SET password_hash=$1, session_version=session_version+1 WHERE id=$2",
+      [passwordHash, userId]
+    );
+    await client.query(
+      "UPDATE password_reset_tokens SET consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL",
+      [userId]
+    );
+    await client.query("COMMIT");
+    try {
+      await sendPasswordChangedEmail(email);
+    } catch {
+      console.error("Password changed email delivery failed");
+    }
+    return res.json({ message: "Password changed. Sign in with your new password." });
+  } catch {
+    await client.query("ROLLBACK");
+    console.error("Password reset confirmation failed");
+    return res.status(500).json({ error: "password_reset_failed" });
+  } finally {
+    client.release();
   }
 });
 
