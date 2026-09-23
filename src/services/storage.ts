@@ -51,7 +51,7 @@ const ALLOWED_DOCUMENT_CONTENT_TYPES = [
 // stops at the same bound while hashing, so a malicious oversized object is
 // never read fully into process memory.
 export const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100MB
-export const MAX_IMAGE_BYTES = 25 * 1024 * 1024; // 25MB
+export const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2MB connected-staging and field limit
 export const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024; // 25MB — same client-side-only caveat as above
 
 export function maximumMediaBytes(contentType: string): number {
