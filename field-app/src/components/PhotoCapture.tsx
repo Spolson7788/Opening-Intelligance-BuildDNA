@@ -22,6 +22,7 @@ const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 export function PhotoCapture({ openingId, relatedEntityType = "opening", relatedEntityId, onQueued }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const inputSuffix = `${openingId}-${relatedEntityType}-${relatedEntityId ?? openingId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
 
   function getLocation(): Promise<{ latitude?: number; longitude?: number }> {
     return new Promise((resolve) => {
@@ -100,26 +101,30 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
   return (
     <div>
       <div style={{ display: "flex", gap: 8 }}>
-        <label className="btn btn-secondary" style={{ cursor: "pointer" }}>
+        <label htmlFor={`photo-input-${inputSuffix}`} className="btn btn-secondary" style={{ cursor: "pointer" }}>
           {saving ? "Saving…" : "+ Add Photo"}
           <input
+            id={`photo-input-${inputSuffix}`}
+            aria-label="Choose photograph"
             type="file"
             accept="image/*"
             capture="environment"
             onChange={onFileSelected}
             disabled={saving}
-            style={{ display: "none" }}
+            style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}
           />
         </label>
-        <label className="btn btn-secondary" style={{ cursor: "pointer" }}>
+        <label htmlFor={`video-input-${inputSuffix}`} className="btn btn-secondary" style={{ cursor: "pointer" }}>
           {saving ? "Saving…" : "+ Add Video"}
           <input
+            id={`video-input-${inputSuffix}`}
+            aria-label="Choose video"
             type="file"
             accept="video/mp4,video/quicktime"
             capture="environment"
             onChange={onFileSelected}
             disabled={saving}
-            style={{ display: "none" }}
+            style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}
           />
         </label>
       </div>
