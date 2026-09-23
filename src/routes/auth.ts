@@ -169,7 +169,9 @@ const RESET_MESSAGE = { message: "If this account can receive email, a reset lin
 authRouter.post("/password/change", requireAuth, async (req: AuthedRequest, res) => {
   const parsed = changeSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "invalid_password_change" });
-  const client = await pool.connect();
+  let client;
+  try { client = await pool.connect(); }
+  catch { return res.status(503).json({ error: "database_unavailable" }); }
   try {
     await client.query("BEGIN");
     const result = await client.query(
