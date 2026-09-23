@@ -19,10 +19,17 @@ import { syncRouter } from "./routes/sync";
 // cross-origin requests are the normal case, not an edge case — so this is
 // required, not optional, for a cloud deployment to work at all.
 export function corsOriginsFromEnv(): string[] {
-  return (process.env.CORS_ORIGINS || "")
-    .split(",")
+  // Netlify gives every deploy an immutable URL. Include the runtime-provided
+  // deploy URLs so a frozen deployment can call its own API without requiring
+  // a new CORS_ORIGINS edit for every build.
+  return [
+    ...(process.env.CORS_ORIGINS || "").split(","),
+    process.env.DEPLOY_URL || "",
+    process.env.DEPLOY_PRIME_URL || "",
+    process.env.URL || "",
+  ]
     .map((o) => o.trim())
-    .filter(Boolean);
+    .filter((origin, index, origins) => Boolean(origin) && origins.indexOf(origin) === index);
 }
 
 export function createApp() {
