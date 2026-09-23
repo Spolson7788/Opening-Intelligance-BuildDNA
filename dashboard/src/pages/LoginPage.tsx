@@ -47,6 +47,9 @@ export function LoginPage() {
             {submitting ? "Signing in…" : "Sign In"}
           </button>
         </form>
+        <p style={{ fontSize: 13, marginTop: 12, textAlign: "center" }}>
+          <Link to="/forgot-password">Forgot your OI password?</Link>
+        </p>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 16, textAlign: "center" }}>
           New here? <Link to="/signup">Create an organization</Link>
         </p>

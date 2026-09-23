@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { ApiError } from "../lib/api";
 
@@ -71,6 +71,9 @@ export function LoginPage() {
           {submitting ? "Signing in…" : "Sign In"}
         </button>
       </form>
+      <p style={{ textAlign: "center", marginTop: 16 }}>
+        <Link to="/forgot-password">Forgot your OI password?</Link>
+      </p>
     </div>
   );
 }

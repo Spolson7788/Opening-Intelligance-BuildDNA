@@ -65,6 +65,20 @@ export async function login(email: string, password: string) {
   return res.json() as Promise<{ token: string; expiresIn: string }>;
 }
 
+export async function requestPasswordReset(email: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/password-reset/request`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
+  });
+  if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error || "reset_request_failed");
+}
+
+export async function confirmPasswordReset(token: string, password: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/password-reset/confirm`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, password }),
+  });
+  if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error || "reset_confirmation_failed");
+}
+
 export interface Opening {
   id: string;
   opening_code: string;
