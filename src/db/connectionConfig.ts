@@ -1,6 +1,18 @@
 import { X509Certificate } from "node:crypto";
 import type { PoolConfig } from "pg";
 
+export function databaseTargetDescriptor(connectionString: string | undefined): string {
+  if (!connectionString) return "not-configured";
+  try {
+    const hostname = new URL(connectionString).hostname.toLowerCase();
+    const supabaseMatch = hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/);
+    if (supabaseMatch) return `supabase:${supabaseMatch[1]}`;
+    return `host:${hostname}`;
+  } catch {
+    return "invalid-url";
+  }
+}
+
 // A provider CA is optional for existing deployments and local databases.
 // When supplied, trust it only for Postgres and retain certificate/host checks.
 export function databaseConnectionConfig(env: NodeJS.ProcessEnv): PoolConfig {
