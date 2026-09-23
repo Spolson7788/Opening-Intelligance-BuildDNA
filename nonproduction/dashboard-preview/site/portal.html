@@ -115,8 +115,9 @@ tbody tr{cursor:pointer}
 tbody tr.prow td{padding:10px 14px}
 tbody tr.prow td.cpt{width:26px}
 .detpart{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:10px}
-.detpart .ph{display:flex;justify-content:space-between;align-items:center}
-.detpart .pn{font-weight:800;color:var(--navy)}
+.detpart .part-header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:8px 12px}
+.detpart .pn{font-weight:800;color:var(--navy);flex:1 1 160px;min-width:0;overflow-wrap:anywhere}
+.detpart .part-header .cond{flex:0 0 auto}
 .detpart .meta{color:var(--sec);font-size:13px;margin-top:4px}
 @media(max-width:640px){
 #rows .prow{display:grid;grid-template-columns:1fr;}
@@ -183,7 +184,7 @@ table:has(#rows) thead{display:none;} .ohead .obadge{float:none;display:block;}
 
 <script type="module">
 import {url,key} from "./preview-config.mjs";
-import {loadDashboardRows} from "./connected.mjs";
+import {loadDashboardRows,correctiveSummary,loadQuarterServiceSummary,formatCalendarDate,photoScopeLabel} from "./connected.mjs";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
 const SUPA_URL=url;
 const SUPA_KEY=key;
@@ -219,6 +220,18 @@ BANDS.unknown=['Not assessed','—','var(--muted)'];
 function assessedScore(p){return ['good','worn','failed'].includes(p.condition)&&Number.isFinite(p.health_score)&&p.health_score>=0&&p.health_score<=100?p.health_score:null;}
 function openingScore(o){var scores=o.parts.map(assessedScore);var known=scores.filter(s=>s!==null);var low=known.length?Math.min(...known):null;return scores.includes(null)&&(low===null||low>=80)?null:low;}
 function bandOf(s){if(s===null)return 'unknown';return s>=80?'healthy':s>=60?'monitor':s>=40?'serious':'critical';}
+async function renderQuarterService(fid){
+  const target=$('quarterService');
+  try{
+    const total=await loadQuarterServiceSummary(sb,fid);
+    if(!target.isConnected||current.id!==fid)return;
+    const amount=total.count&&total.unpriced===total.count?'Not recorded':'$'+total.cost.toLocaleString();
+    const detail=total.count+' service event'+(total.count===1?'':'s')+(total.unpriced?' · '+total.unpriced+' without cost':' · recorded costs');
+    target.outerHTML=tile('Recorded service this quarter',amount,detail,'var(--good)');
+  }catch(e){
+    if(target.isConnected&&current.id===fid)target.outerHTML=tile('Recorded service this quarter','—','Service totals unavailable — reload to retry','var(--muted)');
+  }
+}
 function renderService(fid){
   var card=document.getElementById('svcCard'); if(!card) return;
   Promise.all([
@@ -409,18 +422,19 @@ async function render(ops){
   var n=OPEN.length,parts=(ops||[]).length;
   $('facSub').textContent=(current.address?current.address+' · ':'')+n+' opening'+(n===1?'':'s')+' · '+parts+' parts on file';
   var counts={healthy:0,monitor:0,serious:0,critical:0,unknown:0};
-  var sum=0,need=0,work=0,priced=0,completed=0,cqCost=0,cqN=0,fireN=0,inspDue=0;var _now=new Date();var _qs=new Date(_now.getFullYear(),Math.floor(_now.getMonth()/3)*3,1);
+  var sum=0,need=0,fireN=0,inspDue=0;
+  const corrective=correctiveSummary(ops||[]);
   OPEN.forEach(function(o){var w=worst(o);var b=bandOf(w);counts[b]++;if(w!==null)sum+=w;if(w!==null&&w<80)need++;
     if(o.fire_rated){fireN++;var _is=inspStatus(o);if(_is&&(_is.state==='overdue'||_is.state==='never'))inspDue++;}
-    o.parts.forEach(function(p){var done=!!p.work_completed_at;if(done)completed++;if(done&&new Date(p.work_completed_at)>=_qs){cqN++;if(p.repair_cost!=null)cqCost+=Number(p.repair_cost)||0;}if(p.repair_cost!=null&&!done){work+=Number(p.repair_cost)||0;priced++;}});});
+  });
   var complete=OPEN.every(o=>o.parts.every(p=>assessedScore(p)!==null));var score=n?Math.round(sum/n):0;
   var sband=n?(score>=85?['Good','var(--good)','✓']:score>=70?['Fair','var(--warn)','◔']:score>=55?['Monitor','var(--warn)','◔']:['At risk','var(--serious)','▲']):['—','var(--muted)',''];
   $('kpis').innerHTML=
     tile('Facility health score',n&&complete?score+'<small>/100</small>':'—',complete?sband[2]+' '+sband[0]:'Assessment incomplete',sband[1])+
     tile('Openings on file',n,parts+' parts documented','var(--sec)')+
     tile('Need attention',need,'openings below healthy','var(--serious)')+
-    tile('Identified corrective work','$'+work.toLocaleString(),(priced?priced+' part'+(priced===1?'':'s')+' priced':'awaiting estimates'),'var(--sec)')+
-    tile('Completed this quarter','$'+cqCost.toLocaleString(),(cqN?cqN+' serviced this quarter':'none yet this quarter'),'var(--good)')+
+    tile('Identified corrective work',corrective.unpriced&&!corrective.priced?'Awaiting estimates':'$'+corrective.cost.toLocaleString(),corrective.priced+' replacement'+(corrective.priced===1?'':'s')+' priced'+(corrective.unpriced?' · '+corrective.unpriced+' awaiting estimate':''),'var(--sec)')+
+    tile('Recorded service this quarter','—','Loading recorded service costs','var(--muted)').replace('class="tile"','class="tile" id="quarterService"')+
     (fireN?tile('Fire-door inspections due',inspDue,(inspDue?'of '+fireN+' fire openings — NFPA 80':'inspection dates recorded for '+fireN),inspDue?'var(--critical)':'var(--good)'):'');
   var seg='';['healthy','monitor','serious','critical','unknown'].forEach(function(k){if(counts[k])seg+='<i style="flex:'+counts[k]+';background:'+BANDS[k][2]+'"></i>';});
   $('distbar').innerHTML=seg||'<i class="empty"></i>';
@@ -428,6 +442,7 @@ async function render(ops){
   $('legrow').innerHTML=leg;
   renderMfr(OPEN);
   renderService(current.id);
+  renderQuarterService(current.id);
   if(!n){$('rows').innerHTML='<tr><td colspan=6 style="color:var(--muted);padding:20px 10px">No openings yet. Scan one in the field app and it will appear here.</td></tr>';return;}
   var html='';
   OPEN.forEach(function(o,oi){var w=worst(o);var b=bandOf(w);var B=BANDS[b];
@@ -437,7 +452,7 @@ async function render(ops){
     else if(is&&is.state==='current')insp='<span class="fire" style="background:#0a6b0a">✓ Inspection recorded</span>';
     html+='<tr class="ohead" data-op="'+oi+'"><td colspan="6"><span class="opn">'+esc(o.opening_no)+'</span> '+fire+insp+'<span class="ar">'+esc(o.area||'')+'</span><span class="cnt">'+o.parts.length+' part'+(o.parts.length===1?'':'s')+'</span><span class="obadge" style="color:'+B[2]+'">'+B[1]+' '+B[0]+'</span></td></tr>';
     o.parts.forEach(function(p){var s=assessedScore(p);var pb=bandOf(s);var PB=BANDS[pb];var cond=p.condition||'unverified';
-      var serv=p.work_completed_at?'<span style="color:var(--good);font-weight:700">✓ '+new Date(p.work_completed_at).toLocaleDateString()+'</span>':'<span style="color:var(--muted)">No service date</span>';
+      var serv=p.work_completed_at?'<span style="color:var(--good);font-weight:700">✓ '+formatCalendarDate(p.work_completed_at)+'</span>':'<span style="color:var(--muted)">No service date</span>';
       html+='<tr class="prow" data-op="'+oi+'"><td class="cpt"></td>'+
         '<td data-label="Component">'+esc((p.component_class||'').replace(/_/g,' '))+'<small style="display:block">'+esc((p.hierarchy||'opening').replace(/_/g,' '))+'</small>'+'</td>'+
         '<td class="mm" data-label="Manufacturer / model">'+esc(p.manufacturer||'')+'<span class="mdl">'+esc(p.model||'')+'</span></td>'+
@@ -476,8 +491,8 @@ function openDetail(oi){
     '<div style="color:var(--sec);font-size:13.5px;margin-bottom:4px">'+fire+esc(o.area||'')+' · '+o.parts.length+' parts · overall <b style="color:'+B[2]+'">'+B[0]+'</b></div>';
   o.parts.forEach(function(p){var s=assessedScore(p);var pb=bandOf(s);var PB=BANDS[pb];var cond=p.condition||'unverified';
     var cost=p.repair_cost!=null?' · $'+Number(p.repair_cost).toLocaleString():'';
-    var serv=p.work_completed_at?' · serviced '+new Date(p.work_completed_at).toLocaleDateString():'';
-    body+='<div class="detpart"><div class="ph"><span class="pn">'+esc((p.component_class||'').replace(/_/g,' '))+'<small style="display:block">'+esc((p.hierarchy||'opening').replace(/_/g,' '))+'</small>'+'</span><span class="cond '+(CC[cond]||'cn')+'">'+(CL[cond]||cond)+'</span></div>'+
+    var serv=p.work_completed_at?' · serviced '+formatCalendarDate(p.work_completed_at):'';
+    body+='<div class="detpart"><div class="part-header"><span class="pn">'+esc((p.component_class||'').replace(/_/g,' '))+'<small style="display:block">'+esc((p.hierarchy||'opening').replace(/_/g,' '))+'</small>'+'</span><span class="cond '+(CC[cond]||'cn')+'">'+(CL[cond]||cond)+'</span></div>'+
       '<div class="meta">'+esc(p.manufacturer||'')+' '+esc(p.model||'')+' · <b style="color:'+PB[2]+'">'+PB[1]+' '+PB[0]+' '+(s===null?'—':s+'/100')+'</b>'+cost+serv+'</div></div>';
   });
   // NFPA 80 annual fire-door inspection status (fire-rated openings only)
@@ -486,16 +501,17 @@ function openDetail(oi){
     body+='<div style="margin-top:12px;padding:9px 11px;border-radius:8px;color:'+ic[0]+';background:'+ic[1]+';border:1px solid '+ic[0]+'44;font-size:13px"><b>'+ic[2]+' NFPA 80 fire-door inspection:</b> '+esc(_is.label)+(_is.last?' · last '+new Date(_is.last+'T00:00:00').toLocaleDateString():'')+'</div>';}
   // field photos captured for this opening (stored in the opening-photos bucket)
   // section renders hidden, then fills in async from the opening_photos log (falls back to latest_photo_path per part)
-  body+='<div id="detphotosec" style="margin-top:14px;display:none"><span style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700">Field photos</span><div id="detphotos" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"></div></div>';
+  body+='<div id="detphotosec" style="margin-top:14px;display:none"><span style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700">Attached images</span><div id="detphotos" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"></div></div>';
   // service record — history, deficiencies, verification. Filled async below.
   body+='<div id="detsvcsec" style="margin-top:14px;display:none"></div>';
   body+='<div class="detrec" style="margin-top:14px;color:'+rec[1]+';background:'+rec[2]+';border:1px solid '+rec[1]+'44"><b>Priority:</b> '+rec[0]+'</div></div>';
   document.getElementById('detcard').innerHTML=body;
-  function _addPhoto(path){
+  function _addPhoto(path,label){
+    var container=document.getElementById('detphotos');
     sb.storage.from('opening-photos').createSignedUrl(path,3600).then(function(r){
       var url=(r&&r.data&&r.data.signedUrl)||null;
       // Private photos require successful authorized signed retrieval; no public fallback.
-      if(url){var sec=document.getElementById('detphotosec');var c=document.getElementById('detphotos');if(c){if(sec)sec.style.display='';var img=document.createElement('img');img.src=url;img.loading='lazy';img.style.cssText='width:104px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer';img.title='Open full size';img.onclick=function(){window.open(url,'_blank');};img.onerror=function(){img.remove();if(c&&!c.children.length&&sec)sec.style.display='none';};c.appendChild(img);}}
+      if(url){var sec=document.getElementById('detphotosec');var c=document.getElementById('detphotos');if(c&&c===container){if(sec)sec.style.display='';var img=document.createElement('img');img.src=url;img.loading='lazy';img.style.cssText='width:104px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer';img.alt=label||'Attached image';img.title=(label||'Attached image')+' — open full size';img.onclick=function(){window.open(url,'_blank');};var figure=document.createElement('figure');figure.style.cssText='margin:0;max-width:180px';var caption=document.createElement('figcaption');caption.textContent=label||'Attached image';caption.style.cssText='font-size:12px;margin-top:5px;overflow-wrap:anywhere';figure.append(img,caption);img.onerror=function(){figure.remove();if(c&&!c.children.length&&sec)sec.style.display='none';};c.appendChild(figure);}}
     }).catch(function(){});
   }
   // ── SERVICE RECORD · added 2026-09-06 ────────────────────────────────
@@ -572,7 +588,7 @@ function openDetail(oi){
     // full log first (every guided photo); fall back to each part's latest_photo_path
     sb.from('assembly_photos').select('storage_path,structure_id,component_id').eq('facility_id',current.id).eq('assembly_id',o.parts[0].assembly_id).order('taken_at',{ascending:true}).then(function(r){
       var rows=(r&&r.data)||[];
-      if(rows.length){rows.forEach(function(row){var p=row.storage_path;if(p&&!seen[p]){seen[p]=1;_addPhoto(p);}});}
+      if(rows.length){rows.forEach(function(row){var p=row.storage_path;if(p&&!seen[p]){seen[p]=1;_addPhoto(p,photoScopeLabel(row,o.parts));}});}
       else{(o.parts||[]).forEach(function(p){var pp=p.latest_photo_path;if(pp&&!seen[pp]){seen[pp]=1;_addPhoto(pp);}});}
     }).catch(function(){(o.parts||[]).forEach(function(p){var pp=p.latest_photo_path;if(pp&&!seen[pp]){seen[pp]=1;_addPhoto(pp);}});});
   })();
