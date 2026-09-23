@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
+import { ApiError } from "../lib/api";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -17,11 +18,17 @@ export function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(email, password);
+      await login(email.trim(), password);
       const from = location.state?.from;
       navigate(typeof from === "string" && from.startsWith("/") && !from.startsWith("//") && from !== "/login" ? from : "/scan", { replace: true });
     } catch (err) {
-      setError("Email or password didn't match. Try again.");
+      if (err instanceof ApiError && err.status === 401) {
+        setError("Email or password didn't match. Try again.");
+      } else if (err instanceof ApiError && err.status === 403) {
+        setError("This account is deactivated. Contact an administrator.");
+      } else {
+        setError("Sign-in service is unavailable. Your credentials were not rejected; try again shortly.");
+      }
     } finally {
       setSubmitting(false);
     }
