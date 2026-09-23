@@ -32,6 +32,26 @@ export function corsOriginsFromEnv(): string[] {
     .filter((origin, index, origins) => Boolean(origin) && origins.indexOf(origin) === index);
 }
 
+function netlifySiteHost(origin: string): string | null {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "https:" || !url.hostname.endsWith(".netlify.app")) return null;
+    const deploySeparator = url.hostname.indexOf("--");
+    return deploySeparator >= 0 ? url.hostname.slice(deploySeparator + 2) : url.hostname;
+  } catch {
+    return null;
+  }
+}
+
+export function isAllowedOrigin(origin: string, allowedOrigins: string[]): boolean {
+  if (allowedOrigins.includes(origin)) return true;
+  const requestedSite = netlifySiteHost(origin);
+  return Boolean(
+    requestedSite &&
+      allowedOrigins.some((allowedOrigin) => netlifySiteHost(allowedOrigin) === requestedSite)
+  );
+}
+
 export function createApp() {
   const app = express();
   const allowedOrigins = corsOriginsFromEnv();
@@ -41,7 +61,7 @@ export function createApp() {
       origin(origin, callback) {
         // Allow no-origin requests (curl, server-to-server, mobile webviews in
         // some configurations) and anything on the explicit allowlist.
-        if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+        if (!origin || allowedOrigins.length === 0 || isAllowedOrigin(origin, allowedOrigins)) {
           return callback(null, true);
         }
         callback(new Error(`Origin ${origin} not allowed by CORS_ORIGINS`));
