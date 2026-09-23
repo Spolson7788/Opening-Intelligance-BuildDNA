@@ -1,11 +1,12 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +34,7 @@ export function LoginPage() {
         <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 24 }}>
           Sign in to view your facilities.
         </p>
+        {location.state?.passwordChanged && <p role="status">Password changed. Sign in with your new password.</p>}
         <form onSubmit={onSubmit}>
           <div className="field">
             <label htmlFor="email">Email</label>

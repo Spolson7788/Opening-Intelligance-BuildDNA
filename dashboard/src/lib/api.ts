@@ -79,6 +79,12 @@ export async function confirmPasswordReset(token: string, password: string): Pro
   if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error || "reset_confirmation_failed");
 }
 
+export async function changePassword(current_password: string, password: string): Promise<void> {
+  await authedFetch("/auth/password/change", {
+    method: "POST", body: JSON.stringify({ current_password, password }),
+  });
+}
+
 export interface Opening {
   id: string;
   opening_code: string;

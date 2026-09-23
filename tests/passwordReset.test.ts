@@ -30,6 +30,32 @@ afterEach(() => {
 });
 
 describe("OI password recovery", () => {
+  it("changes only the signed-in account's password with the current password and revokes old sessions", async () => {
+    const owner = await signupTestOrg("Password owner");
+    const other = await signupTestOrg("Other organization");
+    const endpoint = () => request(app).post("/api/auth/password/change");
+    const payload = { current_password: "testpassword123", password: "a-new-password-long-enough" };
+    expect((await endpoint().send(payload)).status).toBe(401);
+    const wrong = await endpoint().set("Authorization", `Bearer ${owner.token}`)
+      .send({ ...payload, current_password: "incorrect-password", organization_id: other.organizationId });
+    expect(wrong.status).toBe(401);
+    const unchanged = await endpoint().set("Authorization", `Bearer ${owner.token}`)
+      .send({ ...payload, password: payload.current_password });
+    expect(unchanged.status).toBe(400);
+    const changed = await endpoint().set("Authorization", `Bearer ${owner.token}`)
+      .send({ ...payload, organization_id: other.organizationId });
+    expect(changed.status).toBe(200);
+    const revoked = await request(app).get("/api/openings").set("Authorization", `Bearer ${owner.token}`);
+    expect(revoked.status).toBe(401);
+    expect(revoked.body.error).toBe("session_revoked");
+    expect((await request(app).post("/api/auth/login").send({ email: owner.email, password: payload.current_password })).status).toBe(401);
+    const newLogin = await request(app).post("/api/auth/login").send({ email: owner.email, password: payload.password });
+    expect(newLogin.status).toBe(200);
+    expect((await request(app).get("/api/openings").set("Authorization", `Bearer ${newLogin.body.token}`)).status).toBe(200);
+    expect((await request(app).get("/api/openings").set("Authorization", `Bearer ${other.token}`)).status).toBe(200);
+    expect((await request(app).post("/api/auth/login").send({ email: other.email, password: payload.current_password })).status).toBe(200);
+  });
+
   it("does not pretend an email was sent without a configured provider", async () => {
     const result = await request(app).post("/api/auth/password-reset/request").send({ email: "someone@example.test" });
     expect(result.status).toBe(503);

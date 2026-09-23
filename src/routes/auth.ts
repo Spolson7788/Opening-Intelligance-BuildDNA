@@ -158,7 +158,47 @@ const resetSchema = z.object({
   token: z.string().regex(/^[a-f0-9]{64}$/),
   password: z.string().min(12).max(128),
 });
+const changeSchema = z.object({
+  current_password: z.string().min(1),
+  password: z.string().min(12).max(128),
+});
 const RESET_MESSAGE = { message: "If this account can receive email, a reset link is on its way." };
+
+// A signed-in account holder can change their own password without mail setup.
+// A successful change revokes every existing OI session, including this one.
+authRouter.post("/password/change", requireAuth, async (req: AuthedRequest, res) => {
+  const parsed = changeSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "invalid_password_change" });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      "SELECT password_hash, email FROM users WHERE id=$1 AND organization_id=$2 AND is_active=true FOR UPDATE",
+      [req.auth!.userId, req.auth!.organizationId]
+    );
+    if (!result.rows.length || !await bcrypt.compare(parsed.data.current_password, result.rows[0].password_hash)) {
+      await client.query("ROLLBACK");
+      return res.status(401).json({ error: "current_password_incorrect" });
+    }
+    if (await bcrypt.compare(parsed.data.password, result.rows[0].password_hash)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "password_unchanged" });
+    }
+    const hash = await bcrypt.hash(parsed.data.password, 12);
+    await client.query("UPDATE users SET password_hash=$1, session_version=session_version+1 WHERE id=$2", [hash, req.auth!.userId]);
+    await client.query("UPDATE password_reset_tokens SET consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL", [req.auth!.userId]);
+    await client.query("COMMIT");
+    try { await sendPasswordChangedEmail(result.rows[0].email); }
+    catch { console.error("Password changed email delivery failed"); }
+    return res.json({ message: "Password changed. Sign in with your new password." });
+  } catch {
+    await client.query("ROLLBACK");
+    console.error("Password change failed");
+    return res.status(500).json({ error: "password_change_failed" });
+  } finally {
+    client.release();
+  }
+});
 
 authRouter.post("/password-reset/request", async (req, res) => {
   const parsed = resetRequestSchema.safeParse(req.body);

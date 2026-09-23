@@ -5,13 +5,19 @@ Development branch: `feat/oi-password-reset` from the frozen staging commit
 deployed and does not change the frozen R8 video build.
 
 Both OI login pages now link to a reset request page; the email link opens the
-Dashboard's password-change page and applies to the same OI account. For an active account
+Dashboard's reset page and applies to the same OI account. For an active account
 with a reachable email address, the API creates a 256-bit random token, stores
 only its SHA-256 hash, and emails a 30-minute, one-use link. The link carries
 the token in a URL fragment. A successful reset replaces the bcrypt password
 hash, consumes all that user's pending links, invalidates prior OI sessions,
 and requires a normal sign-in. Unknown accounts and throttled accounts get the
 same public response. The requester cannot specify an organization or target URL.
+
+The Dashboard also offers **Change password** in the signed-in account menu.
+It verifies the account's current OI password, accepts a new one, revokes all
+previous sessions, and signs out the browser. This route does not require a
+mail provider, but still requires migration 016 for session revocation. The
+forgotten-password link remains separate and needs a configured email sender.
 
 ## Before a nonproduction preview can offer working resets
 
