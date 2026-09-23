@@ -126,7 +126,7 @@ describe("offline synchronization API foundation", () => {
     const opening = await createTestOpening(org.token, buildingId);
     const response = await request(app).post("/api/photos/offline/reserve")
       .set("Authorization", `Bearer ${org.token}`)
-      .send(reservation(opening.id, { byte_size: 25 * 1024 * 1024 + 1 }));
+      .send(reservation(opening.id, { byte_size: 2 * 1024 * 1024 + 1 }));
     expect(response.status).toBe(413);
     expect(response.body.error).toBe("media_too_large");
   });
