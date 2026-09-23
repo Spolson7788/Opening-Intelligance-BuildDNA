@@ -4,9 +4,15 @@ import type { PoolConfig } from "pg";
 export function databaseTargetDescriptor(connectionString: string | undefined): string {
   if (!connectionString) return "not-configured";
   try {
-    const hostname = new URL(connectionString).hostname.toLowerCase();
+    const url = new URL(connectionString);
+    const hostname = url.hostname.toLowerCase();
     const supabaseMatch = hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/);
     if (supabaseMatch) return `supabase:${supabaseMatch[1]}`;
+    if (/^aws-[a-z0-9-]+\.pooler\.supabase\.com$/.test(hostname)) {
+      const poolerMatch = decodeURIComponent(url.username).match(/\.([a-z0-9]+)$/);
+      if (poolerMatch) return `supabase:${poolerMatch[1]}`;
+      return "supabase:pooler-project-unresolved";
+    }
     return `host:${hostname}`;
   } catch {
     return "invalid-url";
