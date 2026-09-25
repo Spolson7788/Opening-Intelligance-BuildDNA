@@ -7,7 +7,7 @@ assert 'lujfnhvkmllnpxkihhno' in config
 source=re.sub(r'const SUPA_URL=.*?;',"const SUPA_URL=url;",source)
 source=re.sub(r'const SUPA_KEY=.*?;',"const SUPA_KEY=key;",source)
 source=source.replace("@supabase/supabase-js@2'","@supabase/supabase-js@2.57.4'")
-source=source.replace('<script type="module">','<script type="module">\nimport {url,key} from "./preview-config.mjs";\nimport {loadDashboardRows,correctiveSummary,loadQuarterServiceSummary,formatCalendarDate,photoScopeLabel} from "./connected.mjs";')
+source=source.replace('<script type="module">','<script type="module">\nimport {url,key} from "./preview-config.mjs";\nimport {loadAuthorizedFacilities,defaultHomeState,mountFacilitySearch} from "./facility-search.mjs";\nimport {loadDashboardRows,correctiveSummary,loadQuarterServiceSummary,formatCalendarDate,photoScopeLabel} from "./connected.mjs";')
 old="await sb.from('openings').select('*').eq('facility_id',fac.id).order('opening_no',{ascending:true})"
 assert old in source
 source=source.replace(old,'await loadDashboardRows(sb,fac.id)')

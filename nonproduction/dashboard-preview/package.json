@@ -1,1 +1,14 @@
-{"name":"oi-dashboard-preview-candidate","private":true,"version":"0.1.0","scripts":{"build":"python3 build.py","test":"node tests/browser.cjs"},"devDependencies":{"playwright":"1.51.1"}}
+{
+  "name": "oi-dashboard-preview-candidate",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "python3 build.py",
+    "test": "node tests/browser.cjs",
+    "test:provider": "python3 build.py && node --test tests/provider-access.test.mjs tests/facility-search.test.mjs tests/calendar-date.test.mjs tests/financial-summary.test.mjs && node tests/provider-browser.cjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.14",
+    "playwright": "1.51.1"
+  }
+}

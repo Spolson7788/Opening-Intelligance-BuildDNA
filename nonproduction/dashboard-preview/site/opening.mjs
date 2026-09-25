@@ -2,6 +2,7 @@ import {createClient} from 'https://esm.sh/@supabase/supabase-js@2.57.4';
 import {url,key} from './preview-config.mjs';
 import {enqueue,pending,flush} from './queue.mjs';
 import {componentLabel,photoScopeLabel} from './connected.mjs';
+import {loadAuthorizedFacilities,defaultHomeState,mountFacilitySearch} from './facility-search.mjs';
 const sb=createClient(url,key), $=id=>document.getElementById(id), msg=s=>$('message').textContent=s;
 let user=null,fac=null,opening=null,structures=[],components=[],products=[],epoch=0;
 const must=r=>{if(r.error)throw Error(r.error.message);return r.data;};
@@ -10,9 +11,25 @@ function on(id,fn){$(id).onclick=async()=>{const b=$(id);b.disabled=true;try{awa
 async function queueStatus(){if(user)$('queueStatus').textContent=(await pending(user.id,url)).length+' pending operations';}
 async function sync(){if(!user)return;try{await flush(sb,user.id,url,r=>msg(r.status==='already_applied'?'Already synchronized; no duplicate created.':'Saved online.'));}finally{await queueStatus();}}
 async function boot(){user=(await sb.auth.getSession()).data.session?.user||null;epoch++;$('app').hidden=!user;$('login').hidden=!!user;if(user){products=must(await sb.from('approved_products').select('*').eq('approved',true));$('product').replaceChildren(option('','Not established'),...products.map(p=>option(p.id,p.manufacturer+' '+p.model)));await loadFacilities();await queueStatus();}}
-async function loadFacilities(){const rows=must(await sb.from('memberships').select('facility_id,facilities!membership_facility_org(id,name)').eq('user_id',user.id));$('facility').replaceChildren(...rows.map(r=>option(r.facility_id,r.facilities?.name||'Facility')));await chooseFacility();}
-async function chooseFacility(){fac=$('facility').value;const rows=fac?must(await sb.from('opening_assemblies').select('*').eq('facility_id',fac).order('opening_no')):[];$('opening').replaceChildren(...rows.map(r=>option(r.id,r.opening_no)));await chooseOpening();}
-async function chooseOpening(){const id=$('opening').value;opening=id?must(await sb.from('opening_assemblies').select('*').eq('id',id).single()):null;$('selected').hidden=!opening;if(opening)await renderOpening();}
+function clearOpening(){epoch++;opening=null;structures=[];components=[];$('selected').hidden=true;$('photos').replaceChildren();$('components').replaceChildren();$('purchasing').textContent='';}
+async function loadFacilities(){
+ clearOpening();fac=null;$('facilitySearch').replaceChildren();
+ const account=user?.id;if(!account)return;
+ const [rows,homeState]=await Promise.all([loadAuthorizedFacilities(sb),defaultHomeState(sb)]);
+ if(user?.id!==account)return;
+ mountFacilitySearch($('facilitySearch'),rows,f=>chooseFacility(f?.id||'').catch(e=>msg(e.message)),{homeState});
+}
+async function chooseFacility(id){
+ clearOpening();fac=id;const stamp=epoch;$('opening').replaceChildren();
+ const rows=fac?must(await sb.from('opening_assemblies').select('*').eq('facility_id',fac).order('opening_no')):[];
+ if(stamp!==epoch)return;
+ $('opening').replaceChildren(...rows.map(r=>option(r.id,r.opening_no)));await chooseOpening();
+}
+async function chooseOpening(){
+ clearOpening();const stamp=epoch,id=$('opening').value;
+ const selected=id?must(await sb.from('opening_assemblies').select('*').eq('id',id).eq('facility_id',fac).single()):null;
+ if(stamp!==epoch)return;opening=selected;$('selected').hidden=!opening;if(opening)await renderOpening();
+}
 async function renderOpening(){const stamp=++epoch,a=opening;const results=await Promise.all([sb.from('opening_structure').select('*').eq('assembly_id',a.id),sb.from('opening_components').select('*').eq('assembly_id',a.id)]);if(stamp!==epoch)return;structures=must(results[0]);components=must(results[1]);$('structure').replaceChildren();
  for(const kind of a.configuration==='paired'?['frame','active_leaf','inactive_leaf']:['frame','active_leaf']){const s=structures.find(x=>x.kind===kind)||{id:crypto.randomUUID(),kind};const box=document.createElement('fieldset');box.dataset.id=s.id;box.dataset.kind=kind;const title=document.createElement('legend');title.textContent=kind.replaceAll('_',' ');const material=document.createElement('input');material.setAttribute('aria-label',kind+' material');material.placeholder='Material';material.value=s.material||'';const condition=document.createElement('select');condition.setAttribute('aria-label',kind+' condition');for(const c of ['unverified','good','worn','failed'])condition.append(option(c,c==='unverified'?'Not assessed':c));condition.value=s.condition||'unverified';box.append(title,material,condition);$('structure').append(box);}
  $('componentParent').replaceChildren(option('','Opening'),...structures.map(s=>option(s.id,s.kind.replaceAll('_',' '))));
@@ -26,9 +43,9 @@ on('signin',async()=>{must(await sb.auth.signInWithPassword({email:$('email').va
 on('reset',async()=>{must(await sb.auth.resetPasswordForEmail($('email').value.trim(),{redirectTo:location.origin+'/opening.html'}));msg('If this account exists, a reset link will be sent.');});
 on('savePassword',async()=>{if(!$('newPassword').reportValidity())return;must(await sb.auth.updateUser({password:$('newPassword').value}));$('newPassword').value='';$('recovery').hidden=true;msg('Password updated.');});
 sb.auth.onAuthStateChange(event=>{if(event==='PASSWORD_RECOVERY')$('recovery').hidden=false;});
-on('signout',async()=>{must(await sb.auth.signOut());opening=null;await boot();});
+on('signout',async()=>{must(await sb.auth.signOut());clearOpening();fac=null;$('facilitySearch').replaceChildren();await boot();});
 on('createFacility',async()=>{const name=$('facilityName').value.trim();if(!name)throw Error('Enter a facility name');must(await sb.from('facilities').insert({name,address:$('address').value,city:$('city').value,state:$('state').value,postal_code:$('zip').value,created_by:user.id}));await loadFacilities();msg('Facility saved with creator access.');});
-on('createOpening',async()=>{if(!fac||!$('openingNo').value.trim())throw Error('Select a facility and enter an opening number');const a=must(await sb.from('opening_assemblies').insert({facility_id:fac,opening_no:$('openingNo').value.trim(),area:$('area').value,configuration:$('configuration').value}).select().single());await chooseFacility();$('opening').value=a.id;await chooseOpening();});
+on('createOpening',async()=>{if(!fac||!$('openingNo').value.trim())throw Error('Select a facility and enter an opening number');const a=must(await sb.from('opening_assemblies').insert({facility_id:fac,opening_no:$('openingNo').value.trim(),area:$('area').value,configuration:$('configuration').value}).select().single());await chooseFacility(fac);$('opening').value=a.id;await chooseOpening();});
 on('saveStructure',async()=>{const a=opening;for(const box of $('structure').children){must(await sb.from('opening_structure').upsert({id:box.dataset.id,assembly_id:a.id,facility_id:a.facility_id,kind:box.dataset.kind,material:box.querySelector('input').value,condition:box.querySelector('select').value},{onConflict:'id'}));}await renderOpening();msg('Frame and leaf records saved separately.');});
 on('newComponent',async()=>edit());
 on('saveComponent',async()=>{if(!$('componentClass').value.trim())throw Error('Enter the component class');const payload={product_id:$('product').value||null,id:$('componentId').value||crypto.randomUUID(),assembly_id:opening.id,facility_id:opening.facility_id,structure_id:$('componentParent').value||null,component_class:$('componentClass').value.trim(),manufacturer:$('manufacturer').value,model:$('model').value,condition:$('condition').value,disposition:$('disposition').value,identity_source:$('identitySource').value,document_url:$('documentUrl').value||null,reviewed:$('reviewed').checked};await enqueue(user.id,url,'component',payload);$('componentId').value=payload.id;await sync();await renderOpening();});
@@ -37,6 +54,6 @@ on('retry',async()=>{await sync();if(opening)await renderOpening();});
 on('finish',async()=>{if((await pending(user.id,url)).length)throw Error('Synchronize pending work before finishing');const r=must(await sb.rpc('oi_finish_opening',{p_assembly:opening.id}));msg(r.status==='completed'?'Opening completed. Changes require finishing again.':r.status);});
 on('purchase',async()=>{const r=must(await sb.rpc('oi_purchasing_review',{p_assembly:opening.id}));$('purchasing').textContent=r.reason+'\n'+(r.eligible||[]).map(c=>'Eligible: '+c.class+' · '+c.manufacturer+' '+c.model+' · '+c.identity_source).join('\n')+'\n'+(r.excluded||[]).map(c=>c.reason).join('\n');});
 $('product').onchange=()=>{const p=products.find(p=>p.id===$('product').value);if(p){$('manufacturer').value=p.manufacturer;$('model').value=p.model;$('documentUrl').value=p.document_url;$('identitySource').value='technician_selected';}};
-$('facility').onchange=()=>chooseFacility().catch(e=>msg(e.message));$('opening').onchange=()=>chooseOpening().catch(e=>msg(e.message));
+$('opening').onchange=()=>chooseOpening().catch(e=>msg(e.message));
 window.addEventListener('online',()=>sync().then(()=>opening&&renderOpening()).catch(e=>msg(e.message)));
 boot().catch(e=>msg(e.message));

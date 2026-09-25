@@ -1,0 +1,77 @@
+import {PGlite} from '@electric-sql/pglite';
+import {readFile} from 'node:fs/promises';
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+const root=new URL('../',import.meta.url);
+const file=p=>readFile(new URL(p,root),'utf8');
+test('provider isolation against recovered preview schema, hierarchy, storage policies and queue RPC',async()=>{
+ const db=new PGlite();
+ try {
+ await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;
+ CREATE SCHEMA auth; CREATE SCHEMA storage; CREATE SCHEMA extensions;
+ CREATE TABLE auth.users(id uuid PRIMARY KEY,email text,raw_user_meta_data jsonb);
+ CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+ GRANT USAGE ON SCHEMA auth,storage TO authenticated;
+ GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated;
+ CREATE TABLE storage.objects(id uuid DEFAULT gen_random_uuid(),bucket_id text,name text);
+ ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+ GRANT SELECT,INSERT ON storage.objects TO authenticated;
+ CREATE FUNCTION storage.foldername(text) RETURNS text[] LANGUAGE sql IMMUTABLE AS $$ SELECT string_to_array($1,'/') $$;`);
+ for(const p of ['tests/fixtures/preview-baseline.sql','tests/fixtures/preview-hierarchy.sql','sql/connected_contract.sql','sql/serialize_component_changes.sql','sql/purchasing_snapshot_lock.sql','sql/product_approval_gate.sql','sql/service_write_roles.sql','supabase/migrations/20260923191344_organization_access.sql','supabase/migrations/20260925194138_provider_facility_access.sql'])await db.exec(await file(p));
+ // Existing owner permissions must still pass their original regression suite.
+ await db.exec(await file('tests/organization_access.sql'));
+ await db.exec(await file('tests/contract.sql'));
+ const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+ const owner=id(1),vortex=id(2),pace=id(3),viewer=id(4),unapproved=id(5),org=id(6),vp=id(7),dp=id(8),ca=id(9),fl=id(10),df=id(11),opening=id(12),photo=id(13),component=id(14),op=id(15);
+ const as=async u=>{await db.exec('RESET ROLE');await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[u]);await db.exec('SET ROLE authenticated');};
+ const rows=async(sql,params=[]) => (await db.query(sql,params)).rows;
+ const admin=async()=>db.exec('RESET ROLE');
+ for(const [u,email] of [[owner,'owner@example.invalid'],[vortex,'tech@vortex.example'],[pace,'tech@pace.example'],[viewer,'viewer@vortex.example'],[unapproved,'unapproved@vortex.example']])await db.query('INSERT INTO auth.users VALUES($1,$2,$3)',[u,email,JSON.stringify({provider_id:vp,role:'admin'})]);
+ await db.query('INSERT INTO organizations VALUES($1,$2,$3)',[org,'CUSTOMER','Customer owner']);
+ await db.query("INSERT INTO organization_memberships VALUES($1,$2,'admin')",[org,owner]);
+ await as(owner);
+ for(const [f,name,state] of [[ca,'Vortex California','CA'],[fl,'Vortex Florida','FL'],[df,'DH Pace California','CA']])await db.query('INSERT INTO facilities(id,name,state) VALUES($1,$2,$3)',[f,name,state]);
+ await db.query("INSERT INTO opening_assemblies(id,facility_id,opening_no,configuration) VALUES($1,$2,'PAIR','paired')",[opening,ca]);
+ await db.query("INSERT INTO storage.objects(bucket_id,name) VALUES('opening-photos',$1)",[`${ca}/${opening}/${photo}`]);
+ await db.query('INSERT INTO assembly_photos(id,assembly_id,facility_id,storage_path) VALUES($1,$2,$3,$4)',[photo,opening,ca,`${ca}/${opening}/${photo}`]);
+ await db.query("INSERT INTO service_events(facility_id,opening_no,work_performed) VALUES($1,'PAIR','Test')",[ca]);
+ await admin();
+ for(const [p,name] of [[vp,'Vortex test'],[dp,'DH Pace test']])await db.query('INSERT INTO service_providers(id,name) VALUES($1,$2)',[p,name]);
+ for(const [p,u,role] of [[vp,vortex,'tech'],[dp,pace,'tech'],[vp,viewer,'viewer']])await db.query("INSERT INTO provider_memberships(provider_id,user_id,role,home_state) VALUES($1,$2,$3,'CA')",[p,u,role]);
+ for(const [f,p] of [[ca,vp],[fl,vp],[df,dp]])await db.query('INSERT INTO facility_provider_assignments(facility_id,provider_id,allow_write) VALUES($1,$2,true)',[f,p]);
+ await as(vortex);
+ assert.deepEqual((await rows('SELECT id FROM facilities ORDER BY id')).map(r=>r.id),[ca,fl]);
+ assert.equal((await rows("SELECT id FROM facilities WHERE state='CA'")).length,1);
+ assert.equal((await rows('SELECT id FROM facilities WHERE id=$1',[df])).length,0);
+ assert.equal((await rows('SELECT * FROM service_providers')).length,1);
+ assert.equal((await rows('SELECT * FROM assembly_photos')).length,1);
+ assert.equal((await rows('SELECT * FROM storage.objects')).length,1);
+ assert.equal((await rows('SELECT * FROM service_events')).length,1);
+ await assert.rejects(db.query("INSERT INTO provider_memberships(provider_id,user_id,role) VALUES($1,$2,'admin')",[dp,vortex]),/permission denied/);
+ await assert.rejects(db.query('UPDATE facility_provider_assignments SET provider_id=$1',[vp]),/permission denied/);
+ const payload={id:component,assembly_id:opening,facility_id:ca,component_class:'CLOSER',condition:'good'};
+ assert.equal((await rows("SELECT oi_apply_operation($1,'component',$2::jsonb) AS r",[op,JSON.stringify(payload)]))[0].r.status,'applied');
+ await as(pace);
+ assert.deepEqual((await rows('SELECT id FROM facilities')).map(r=>r.id),[df]);
+ for(const table of ['opening_assemblies','opening_components','assembly_photos','storage.objects','service_events','sync_receipts'])assert.equal((await rows(`SELECT * FROM ${table}`)).length,0,table+' leaks');
+ await assert.rejects(db.query("SELECT oi_apply_operation($1,'component',$2::jsonb)",[id(16),JSON.stringify(payload)]),/Write access required/);
+ await assert.rejects(db.query("INSERT INTO storage.objects(bucket_id,name) VALUES('opening-photos',$1)",[`${ca}/${opening}/${id(20)}`]),/row-level security/);
+ await as(unapproved);assert.equal((await rows('SELECT * FROM facilities')).length,0,'email/metadata must not grant access');
+ await as(viewer);assert.equal((await rows('SELECT * FROM facilities')).length,2);
+ assert.equal((await rows('SELECT can_write($1) AS ok',[ca]))[0].ok,false);
+ // Role downgrade is read from the DB immediately, with unchanged JWT identity.
+ await admin();await db.query("UPDATE provider_memberships SET role='viewer' WHERE user_id=$1",[vortex]);await as(vortex);
+ await assert.rejects(db.query("SELECT oi_apply_operation($1,'component',$2::jsonb)",[op,JSON.stringify(payload)]),/Write access required/);
+ await admin();await db.query("UPDATE provider_memberships SET role='tech' WHERE user_id=$1",[vortex]);await db.query('UPDATE facility_provider_assignments SET active=false WHERE facility_id=$1 AND provider_id=$2',[ca,vp]);await as(vortex);
+ assert.equal((await rows('SELECT * FROM assembly_photos')).length,0);assert.equal((await rows('SELECT * FROM storage.objects')).length,0);
+ await assert.rejects(db.query("SELECT oi_apply_operation($1,'component',$2::jsonb)",[op,JSON.stringify(payload)]),/Write access required/);
+ await admin();await db.query('UPDATE facility_provider_assignments SET active=true,allow_write=false WHERE facility_id=$1',[ca]);await as(vortex);
+ assert.equal((await rows('SELECT is_member($1) AS ok',[ca]))[0].ok,true);assert.equal((await rows('SELECT can_write($1) AS ok',[ca]))[0].ok,false);
+ await admin();await db.query('UPDATE provider_memberships SET active=false WHERE user_id=$1',[vortex]);await as(vortex);assert.equal((await rows('SELECT * FROM facilities')).length,0);
+ await as(owner);assert.equal((await rows('SELECT * FROM facilities')).length,3,'customer access retained');
+ // Explicit shared facility, followed by provider removal: same customer record persists.
+ await admin();await db.query('INSERT INTO facility_provider_assignments(facility_id,provider_id) VALUES($1,$2)',[ca,dp]);await as(pace);assert.equal((await rows('SELECT * FROM facilities')).length,2);
+ await admin();await db.query('UPDATE service_providers SET active=false WHERE id=$1',[dp]);await as(pace);assert.equal((await rows('SELECT * FROM facilities')).length,0);
+ await db.exec('RESET ROLE; SET ROLE anon');await assert.rejects(db.query('SELECT * FROM facilities'),/permission denied/);
+ } finally {await db.close();}
+});
