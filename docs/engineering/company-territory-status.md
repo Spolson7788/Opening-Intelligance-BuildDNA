@@ -65,7 +65,19 @@ production published_at null. No production merge or deployment.
   Added those controls, preserving leaf association. Real mobile UI with mocked
   API verifies pending-to-reviewed, changed condition/identity/replacement and
   values reloaded from the saved response. Field App build passes. Hosted
-  verification of this correction is pending.
+  verification passed on commit 591826ce4ab99bd7fac72bbf482c13d3218e728e: the
+  pending active-leaf closer was reviewed, and the opening completed. Both
+  closers retain their distinct active/inactive associations.
+- Synthetic service event synchronized. Synthetic photo uploaded to private
+  storage, rendered after reload, and database join confirmed attachment to
+  QA-ACTIVE-CLOSER on the active leaf. Photo id
+  2eac9114-988d-47ed-820d-d0ab4f304a2e. No signed URL retained in this report.
+- Found service dates displayed one day early in Pacific time, despite the
+  database date being correct. Field App and API-backed Dashboard event-date
+  formatting now preserves UTC calendar dates. Field App mobile regression in
+  America/Los_Angeles passes; both app builds pass. Hosted check pending.
+- Existing offline app shell needed a second reload after deployment to show
+  the new version; queued data was retained. This is a release rollout caveat.
 - No two-account hosted isolation, offline interruption, private-photo or
   approved static Dashboard synchronization pass is claimed.
 
