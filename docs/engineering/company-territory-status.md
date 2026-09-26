@@ -28,22 +28,46 @@ GPS sorting and self-service administrator screens are not implemented. No compa
 Netlify browser authentication was verified on 26 September. The existing project
 `6430c57d-8a98-43bc-ba25-94007dd244f2` has production branch
 `production-disabled`, only `pr2-staging` branch deployments, and pull-request
-previews enabled after explicit user approval. PR 9 is open for review and remains unmerged. Database/storage/JWT settings already exist for Deploy
-Previews and pr2-staging; branch-deploy defaults are empty. Values were not
-revealed or copied. The preview QR target also needs its own non-secret
-OI_FIELD_APP_URL value before testing opening creation.
+previews enabled after explicit user approval. PR 9 is open for review and remains unmerged. Existing database/storage/JWT settings remain in place. Added Functions-scoped
+Deploy Preview values for OI_FIELD_APP_URL and the public Supabase Root 2021
+CA certificate. The missing preview CA initially prevented database TLS.
+Certificate and hostname verification remain enabled; no credentials were exposed.
 
 PR 9 now includes an isolated Deploy Preview build configuration. Its build
 guard accepts only this nonproduction site plus PR 9's exact source branch,
 or the existing pr2-staging branch deployment. Eight guard tests pass,
 including rejection of production, another site, another PR and another
 branch. Builds publish build-info.json with commit, branch, context and
-acceptance-pending status. This does not claim a deployment exists.
+acceptance-pending status. The guard uses Netlify HEAD for the PR source branch and BRANCH for branch deployments.
 
 After rebasing on the actual remote staging candidate, API/Field App builds
 and the mobile mocked-API check pass again. The combined offline sync,
 current-role permissions, facility search and QR suite passes 46 tests.
-No web deployment performed. No production merge or deployment.
+Protected Deploy Preview 9 deployed successfully: commit
+`ad5b42a592a3be50a42fa6c3d505f26b45279690`, deployment
+`6ab7fa3bd79aa59c1b3aae9a`, state ready, context deploy-preview,
+production published_at null. No production merge or deployment.
+
+## Hosted checks on 26 September
+- Secure Field App sign-in succeeds after the preview CA correction.
+- Live facility search: CA + QA West returns only California; FL + QA East
+  returns only Florida; FL + QA West returns zero. Changing filters clears
+  the selected facility and disables building selection. Text search further
+  narrows the intersection. These are live API/database checks, not mocks.
+- Test records are explicitly SYNTHETIC QA 20260926. Properties
+  f7260926-0001-4000-8000-000000000001 and
+  f7260926-0001-4000-8000-000000000002 belong to OI Staging Test.
+- Created paired opening 7f2cf151-0579-489a-a00a-94594b873297 through the UI.
+  Frame and separate active/inactive leaves synchronized; independent database
+  read confirms one frame and two correctly associated leaves.
+- Found a live completion blocker: Edit Hardware omitted review/condition/
+  identity/replacement controls although Add Hardware and the API support them.
+  Added those controls, preserving leaf association. Real mobile UI with mocked
+  API verifies pending-to-reviewed, changed condition/identity/replacement and
+  values reloaded from the saved response. Field App build passes. Hosted
+  verification of this correction is pending.
+- No two-account hosted isolation, offline interruption, private-photo or
+  approved static Dashboard synchronization pass is claimed.
 
 ## Release sequence and rollback
 Finish the provider mapping on the actual Field App API, test all direct record/media/queue paths, deploy reviewed nonproduction web/API candidates, then run two-account Auth/HTTP/browser acceptance, offline replay/revocation, and connected record/photo checks. Preserve existing deployment artifacts and synthetic evidence. Additive geography columns may remain during web rollback. Revert provider helper functions only using the prior verified definitions; do not drop associations or alter customer ownership.
