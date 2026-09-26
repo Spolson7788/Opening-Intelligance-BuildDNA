@@ -70,7 +70,7 @@ class TestTriggers(unittest.TestCase):
 
     def test_expected_scene_count_defaults_to_the_approved_run(self):
         i = TRIGGERS["workflow_dispatch"]["inputs"]["expected_scene_count"]
-        self.assertEqual(i["default"], "13")
+        self.assertEqual(i["default"], "1")
         self.assertTrue(i["required"])
 
 
@@ -187,9 +187,9 @@ class TestOrderOfChecks(unittest.TestCase):
 
 class TestGenerationIsBounded(unittest.TestCase):
     def test_both_jobs_are_pinned_to_the_consolidated_batch(self):
-        self.assertEqual(RAW.count('["D010", "D020", "D030", "D040", "D050", "D060a", "D060b", "D070", "D080i", "D080", "D080Bi", "D080Ci", "D100"]'), 2)
-        self.assertEqual(RAW.count('assert os.environ["EXPECTED"] == "13"'), 2)
-        self.assertEqual(RAW.count("--expect-characters 1287"), 3)
+        self.assertEqual(RAW.count('["DBRAND"]'), 2)
+        self.assertEqual(RAW.count('assert os.environ["EXPECTED"] == "1"'), 2)
+        self.assertEqual(RAW.count("--expect-characters 42"), 3)
 
     def test_generation_passes_fail_fast_and_expect(self):
         _, s = step_named("Generate the permitted")
