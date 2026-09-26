@@ -1,0 +1,1 @@
+Saved images stay linked to the opening, frame, door leaf or component they document.
