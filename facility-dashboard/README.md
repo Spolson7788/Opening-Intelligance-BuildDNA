@@ -15,7 +15,7 @@ photo identity/association metadata, no storage key or signed URL.
 There is no database mirror, no cross-backend email matching, no new credential,
 and no migration or copying of the separate preview demonstration records.
 State and territory filters apply only to server-authorized company facilities.
-Same-org authorization does not yet implement customer/provider assignment sharing.
+Explicit owner-admin facility assignments extend access to named provider organizations. Assignment revocation is checked on subsequent API requests.
 
 Use Refresh saved records after a Field App save. There is no realtime subscription.
 Opening scores use the canonical API score. Component condition ratings retain
@@ -25,9 +25,7 @@ remain visible as an empty opening, without counting the placeholder as a part.
 
 The preview-only deficiency/service-request workflow is not supported by this
 backend. This page labels the connected records as service history. It does not
-assert that absence of a deficiency means compliance or closure. Purchasing
-approval/document gating remains a separate release blocker; this read-only
-Dashboard does not submit, email or order anything.
+assert that absence of a deficiency means compliance or closure. Purchasing review now checks canonical owner-approved identity/document evidence and whole-opening readiness. Review never submits, emails or orders anything. Hosted acceptance remains pending.
 
 Validation:
 - `tests/facilityDashboard.test.ts`: canonical hierarchy, updated condition,

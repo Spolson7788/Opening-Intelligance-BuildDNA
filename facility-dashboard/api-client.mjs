@@ -9,9 +9,9 @@ export async function readFieldSession() {
       get.onsuccess=()=>resolve(get.result||null);get.onerror=()=>resolve(null);tx.oncomplete=()=>db.close();};
   });
 }
-export async function api(path) {
+export async function api(path, body) {
   const before=await readFieldSession();if(!before)throw Error('Sign in through the Field App.');
-  const response=await fetch('/api'+path,{headers:{Authorization:'Bearer '+before.token},cache:'no-store'});
+  const response=await fetch('/api'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+before.token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),cache:'no-store'});
   const after=await readFieldSession();
   if(!after||after.userId!==before.userId||after.organizationId!==before.organizationId||after.token!==before.token)throw Error('Account changed. Reload the Dashboard.');
   if(!response.ok)throw Error([401,403,404].includes(response.status)?'Access unavailable. Sign in again or contact your administrator.':'Connected records unavailable. Reload to retry.');

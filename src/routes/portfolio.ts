@@ -1,3 +1,4 @@
+import { facilityAccessPredicate } from "../db/tenantScope";
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
@@ -32,7 +33,7 @@ portfolioRouter.get("/facility-dashboard/:id", async (req: AuthedRequest, res) =
         FROM openings o JOIN buildings b ON b.id=o.building_id WHERE b.property_id=p.id
       ), '[]'::jsonb) AS openings
       FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id
-      WHERE p.id=$1 AND pf.organization_id=$2`, [req.params.id, req.auth!.organizationId]);
+      WHERE p.id=$1 AND ${facilityAccessPredicate(2)}`, [req.params.id, req.auth!.organizationId]);
     if (!result.rows.length) return res.status(404).json({ error: "not_found" });
     res.set("Cache-Control", "no-store").json(result.rows[0]);
   } catch (error) {
@@ -47,7 +48,7 @@ portfolioRouter.get("/facility-search", async (req: AuthedRequest, res) => {
   const parsed=z.object({state:z.string().regex(/^[A-Za-z]{2}$/).optional(),territory:z.string().max(120).optional(),q:z.string().max(200).optional()}).safeParse(req.query);
   if(!parsed.success)return res.status(400).json({error:"invalid_search"});
   try {
-    const {rows}=await pool.query(`SELECT p.* FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id WHERE pf.organization_id=$1 ORDER BY p.name,p.id`,[req.auth!.organizationId]);
+    const {rows}=await pool.query(`SELECT p.* FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id WHERE ${facilityAccessPredicate(1)} ORDER BY p.name,p.id`,[req.auth!.organizationId]);
     const preferences=await pool.query('SELECT home_state,home_territory FROM users WHERE id=$1 AND organization_id=$2',[req.auth!.userId,req.auth!.organizationId]);
     const {state,territory,q}=parsed.data;
     const term=(q||'').trim().toLowerCase();
@@ -158,7 +159,7 @@ portfolioRouter.get("/properties", async (req: AuthedRequest, res) => {
     const propertiesRes = await pool.query(
       `SELECT p.* FROM properties p
        JOIN portfolios pf ON pf.id = p.portfolio_id
-       WHERE pf.organization_id = $1
+       WHERE ${facilityAccessPredicate(1)}
        ORDER BY p.name`,
       [orgId]
     );

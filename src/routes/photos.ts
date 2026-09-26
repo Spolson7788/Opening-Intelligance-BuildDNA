@@ -664,7 +664,7 @@ photosRouter.delete("/:id", async (req: AuthedRequest, res) => {
         (photo_id, organization_id, opening_id, storage_object_key, requested_by_user_id)
        VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (photo_id) DO NOTHING`,
-      [photo.id, orgId, photo.opening_id, key, req.auth!.userId],
+      [photo.id, photo.organization_id ?? orgId, photo.opening_id, key, req.auth!.userId],
     );
 
     try {

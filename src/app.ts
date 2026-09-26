@@ -1,3 +1,5 @@
+import {providerAssignmentsRouter} from "./routes/providerAssignments";
+import {purchasingRouter} from "./routes/purchasing";
 import express from "express";
 import cors from "cors";
 import { openingsRouter } from "./routes/openings";
@@ -75,6 +77,8 @@ export function createApp() {
   app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
   app.use("/api/auth", authRouter);
+  app.use("/api/provider-assignments",providerAssignmentsRouter);
+  app.use("/api/purchasing",purchasingRouter);
   app.use("/api/openings", openingsRouter);
   app.use("/api/events", eventsRouter);
   app.use("/api/hardware", hardwareRouter);
