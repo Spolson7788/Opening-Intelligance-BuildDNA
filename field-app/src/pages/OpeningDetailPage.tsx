@@ -333,7 +333,7 @@ export function OpeningDetailPage() {
             {opening.service_events.slice(0, 5).map((ev: any) => (
               <div className="card" key={ev.id}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString()}</strong>
+                  <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
                 </div>
                 <p style={{ margin: "4px 0 0", fontSize: 14 }}>{ev.work_performed}</p>
               </div>
@@ -347,7 +347,7 @@ export function OpeningDetailPage() {
             {opening.inspection_events.slice(0, 5).map((ev: any) => (
               <div className="card" key={ev.id}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString()}</strong>
+                  <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
                   <span
                     className="badge"
                     style={{ color: ev.passed ? "var(--success)" : "var(--danger)", borderColor: ev.passed ? "var(--success)" : "var(--danger)" }}

@@ -30,6 +30,8 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, body.error || `request_failed_${res.status}`);
   }
+  const current=await loadAuth();
+  if(!auth||!current||current.userId!==auth.userId||current.organizationId!==auth.organizationId)throw new ApiError(401,"active_principal_changed");
   if (res.status === 204) return null; // DELETE endpoints return no body
   return res.json();
 }
@@ -56,9 +58,11 @@ export function decodeTokenPayload(token: string): { userId: string; organizatio
 
 // Resolve a scanned/entered QR token to its opening. Falls back to cache if offline.
 export async function fetchOpeningByQr(qrToken: string) {
+  const principal=await loadAuth();
+  if(!principal)throw new ApiError(401,"missing_token");
   try {
-    const opening = await authedFetch(`/openings/by-qr/${encodeURIComponent(qrToken)}`);
-    await cacheOpening(opening);
+    const opening = await authedFetch(`/openings/by-qr/${encodeURIComponent(qrToken)}`,{},principal);
+    await cacheOpening(opening,principal);
     return { opening, fromCache: false };
   } catch (err) {
     if (err instanceof TypeError || (err instanceof ApiError && err.status >= 500)) {
@@ -73,17 +77,22 @@ export async function fetchOpeningByQr(qrToken: string) {
 // For manual entry — a technician types the human-readable code printed on
 // the door tag, not the internal qr_token embedded in the QR image itself.
 export async function fetchOpeningByCode(openingCode: string) {
-  const opening = await authedFetch(`/openings/by-code/${encodeURIComponent(openingCode)}`);
-  await cacheOpening(opening);
+  const principal=await loadAuth();
+  if(!principal)throw new ApiError(401,"missing_token");
+  const opening = await authedFetch(`/openings/by-code/${encodeURIComponent(openingCode)}`,{},principal);
+  await cacheOpening(opening,principal);
   return { opening, fromCache: false };
 }
 
 export async function fetchOpening(id: string) {
+  const principal=await loadAuth();
+  if(!principal)throw new ApiError(401,"missing_token");
   try {
-    const opening = await authedFetch(`/openings/${id}`);
-    await cacheOpening(opening);
+    const opening = await authedFetch(`/openings/${id}`,{},principal);
+    await cacheOpening(opening,principal);
     return { opening, fromCache: false };
   } catch (err) {
+    if (!(err instanceof TypeError || (err instanceof ApiError && err.status >= 500))) throw err;
     const cached = await getCachedOpening(id);
     if (cached) return { opening: cached, fromCache: true };
     throw err;
@@ -279,3 +288,9 @@ export const createFieldProperty = (payload: {portfolio_id:string;name:string;pr
 export const createFieldBuilding = (payload: {property_id:string;name:string}) => authedFetch("/portfolio/buildings", {method:"POST", body:JSON.stringify(payload)});
 export const createFieldOpening = (payload: {building_id:string;opening_code:string;opening_type:string;opening_configuration:string;fire_rated:boolean}) => authedFetch("/openings", {method:"POST", body:JSON.stringify(payload)});
 export const fetchOpeningLabel = (id:string) => authedFetch(`/openings/${encodeURIComponent(id)}/qr-code`);
+
+export const searchFieldFacilities = (params:Record<string,string>={}) => authedFetch(`/portfolio/facility-search?${new URLSearchParams(params)}`);
+
+export const listBranches = () => authedFetch("/branches");
+export const saveBranch = (id:string,body:unknown) => authedFetch(`/branches/${id}`,{method:"PUT",body:JSON.stringify(body)});
+export const assignBranch = (id:string,branch_id:string|null) => authedFetch(`/branches/assignments/${id}`,{method:"PUT",body:JSON.stringify({branch_id})});

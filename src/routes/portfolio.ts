@@ -1,3 +1,4 @@
+import { facilityAccessPredicate } from "../db/tenantScope";
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
@@ -9,6 +10,52 @@ export const portfolioRouter = Router();
 portfolioRouter.use(requireAuth);
 portfolioRouter.use(enforceRolePermissions);
 portfolioRouter.use(auditLog);
+
+// One statement gives the customer Dashboard a consistent read of the same
+// records written by the Field App. No mirrored database or client-side grants.
+portfolioRouter.get("/facility-dashboard/:id", async (req: AuthedRequest, res) => {
+  if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_facility" });
+  try {
+    const result = await pool.query(`
+      SELECT p.*, COALESCE((
+        SELECT jsonb_agg(to_jsonb(o) || jsonb_build_object(
+          'building_name', b.name,
+          'frame', (SELECT to_jsonb(f) FROM opening_frames f WHERE f.opening_id=o.id),
+          'door_leaves', COALESCE((SELECT jsonb_agg(l ORDER BY l.leaf_role) FROM door_leaves l WHERE l.opening_id=o.id),'[]'::jsonb),
+          'hardware_components', COALESCE((SELECT jsonb_agg(h ORDER BY h.id) FROM hardware_components h WHERE h.opening_id=o.id),'[]'::jsonb),
+          'service_events', COALESCE((SELECT jsonb_agg(e ORDER BY e.event_date DESC,e.id) FROM service_events e WHERE e.opening_id=o.id),'[]'::jsonb),
+          'inspection_events', COALESCE((SELECT jsonb_agg(i ORDER BY i.event_date DESC,i.id) FROM inspection_events i WHERE i.opening_id=o.id),'[]'::jsonb),
+          'photos', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+            'id', ph.id, 'related_entity_type', ph.related_entity_type,
+            'related_entity_id', ph.related_entity_id, 'created_at', ph.created_at
+          ) ORDER BY ph.created_at,ph.id) FROM photos ph WHERE ph.opening_id=o.id),'[]'::jsonb)
+        ) ORDER BY o.opening_code,o.id)
+        FROM openings o JOIN buildings b ON b.id=o.building_id WHERE b.property_id=p.id
+      ), '[]'::jsonb) AS openings
+      FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id
+      WHERE p.id=$1 AND ${facilityAccessPredicate(2)}`, [req.params.id, req.auth!.organizationId]);
+    if (!result.rows.length) return res.status(404).json({ error: "not_found" });
+    res.set("Cache-Control", "no-store").json(result.rows[0]);
+  } catch (error) {
+    console.error("Facility dashboard read failed", error);
+    res.status(503).json({ error: "facility_dashboard_unavailable" });
+  }
+});
+
+// Search scope is always the current server-verified company. State, territory
+// and phone location are convenience filters, never authorization inputs.
+portfolioRouter.get("/facility-search", async (req: AuthedRequest, res) => {
+  const parsed=z.object({state:z.string().regex(/^[A-Za-z]{2}$/).optional(),territory:z.string().max(120).optional(),q:z.string().max(200).optional()}).safeParse(req.query);
+  if(!parsed.success)return res.status(400).json({error:"invalid_search"});
+  try {
+    const {rows}=await pool.query(`SELECT p.* FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id WHERE ${facilityAccessPredicate(1)} ORDER BY p.name,p.id`,[req.auth!.organizationId]);
+    const preferences=await pool.query('SELECT CASE WHEN b.id IS NOT NULL THEN b.default_state ELSE u.home_state END AS home_state, CASE WHEN b.id IS NOT NULL THEN b.default_territory ELSE u.home_territory END AS home_territory FROM users u LEFT JOIN user_branch_assignments a ON a.user_id=u.id AND a.organization_id=u.organization_id LEFT JOIN company_branches b ON b.id=a.branch_id AND b.organization_id=u.organization_id AND b.is_active=true WHERE u.id=$1 AND u.organization_id=$2',[req.auth!.userId,req.auth!.organizationId]);
+    const {state,territory,q}=parsed.data;
+    const term=(q||'').trim().toLowerCase();
+    const facilities=rows.filter(p=>(!state||String(p.state||'').trim().toUpperCase()===state.toUpperCase())&&(!territory||p.service_territory===territory)&&(!term||[p.name,p.address_line1,p.city,p.state,p.postal_code].filter(Boolean).join(' ').toLowerCase().includes(term)));
+    res.json({facilities,preferences:preferences.rows[0]||{},states:[...new Set(rows.map(p=>p.state?.trim().toUpperCase()).filter(Boolean))].sort(),territories:[...new Set(rows.map(p=>p.service_territory).filter(Boolean))].sort()});
+  } catch {res.status(503).json({error:"facility_search_unavailable"});}
+});
 
 portfolioRouter.get("/portfolios", async (req: AuthedRequest, res) => {
   const orgId = req.auth!.organizationId;
@@ -112,7 +159,7 @@ portfolioRouter.get("/properties", async (req: AuthedRequest, res) => {
     const propertiesRes = await pool.query(
       `SELECT p.* FROM properties p
        JOIN portfolios pf ON pf.id = p.portfolio_id
-       WHERE pf.organization_id = $1
+       WHERE ${facilityAccessPredicate(1)}
        ORDER BY p.name`,
       [orgId]
     );

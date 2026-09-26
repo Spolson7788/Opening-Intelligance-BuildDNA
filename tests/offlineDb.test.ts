@@ -252,3 +252,23 @@ describe("versioned offline database", () => {
       .toEqual([serverReservationOperationId]);
   });
 });
+
+describe('opening cache principal isolation',()=>{
+ it('does not expose another account or an unowned legacy cache entry',async()=>{
+  const {cacheOpening,getCachedOpening,clearAuth}=await import('../field-app/src/lib/db');
+  await saveAuth({token:'a',userId:'a',organizationId:'company-a',role:'technician'});
+  await cacheOpening({id:'cache-test',name:'Private opening'});
+  expect(await getCachedOpening('cache-test')).toBeDefined();
+  await saveAuth({token:'b',userId:'b',organizationId:'company-b',role:'technician'});
+  expect(await getCachedOpening('cache-test')).toBeUndefined();
+  await (await getDb()).put('openings',{id:'legacy-test',name:'unowned legacy'});
+  expect(await getCachedOpening('legacy-test')).toBeUndefined();
+  await clearAuth();expect(await getCachedOpening('cache-test')).toBeUndefined();
+ });
+ it('refuses caching a response for a principal who signed out during the request',async()=>{
+  const {cacheOpening,getCachedOpening}=await import('../field-app/src/lib/db');
+  await saveAuth({token:'b',userId:'b',organizationId:'company-b',role:'technician'});
+  await cacheOpening({id:'late-a'}, {userId:'a',organizationId:'company-a'});
+  expect(await getCachedOpening('late-a')).toBeUndefined();
+ });
+});

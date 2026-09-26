@@ -104,7 +104,7 @@ describe("paired-opening data contract — twelve acceptance checks", () => {
     expect(reload.body.door_leaves).toHaveLength(2);
   });
 
-  it("8. returns distinct opening, leaf, component, and eligible counts", async () => {
+  it("8. returns distinct hierarchy counts and denies replacement without approved document", async () => {
     const org = await signupTestOrg(); const { buildingId } = await createPortfolioHierarchy(org.token);
     const opening = await createTestOpening(org.token, buildingId, { opening_configuration: "pair" });
     const { leaves } = await structure(org.token, opening.id);
@@ -113,7 +113,7 @@ describe("paired-opening data contract — twelve acceptance checks", () => {
     await request(app).post(`/api/openings/${opening.id}/complete`).set(auth(org.token));
     const detail = await request(app).get(`/api/openings/${opening.id}`).set(auth(org.token));
     const purchasing = await request(app).get(`/api/openings/${opening.id}/purchasing-eligibility`).set(auth(org.token));
-    expect({ openings: 1, leaves: detail.body.door_leaves.length, components: detail.body.hardware_components.length, eligible: purchasing.body.decisions.filter((d: any) => d.eligible).length }).toEqual({ openings: 1, leaves: 2, components: 2, eligible: 1 });
+    expect({ openings: 1, leaves: detail.body.door_leaves.length, components: detail.body.hardware_components.length, eligible: purchasing.body.decisions.filter((d: any) => d.eligible).length }).toEqual({ openings: 1, leaves: 2, components: 2, eligible: 0 });
   });
 
   it("9. blocks completion until frame, required leaves, and review are complete", async () => {

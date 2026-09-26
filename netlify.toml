@@ -21,3 +21,12 @@
 
 [context."pr2-staging".environment]
   NPM_FLAGS = "--include=dev"
+
+# PR 9 on the existing protected NONPRODUCTION project only. The build script
+# rejects other sites, pull requests, branches and the production context.
+[context.deploy-preview]
+  command = "node scripts/build-protected-staging.mjs"
+  publish = "dist/protected-staging"
+
+[context.deploy-preview.environment]
+  NPM_FLAGS = "--include=dev"

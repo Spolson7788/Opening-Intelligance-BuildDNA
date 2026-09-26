@@ -2,16 +2,11 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertProtectedStagingContext } from './protected-staging-context.mjs';
+import { buildFacilityDashboard } from './build-facility-dashboard.mjs';
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const siteId = "6430c57d-8a98-43bc-ba25-94007dd244f2";
-if (process.env.NETLIFY === "true" && (
-  process.env.SITE_ID !== siteId ||
-  process.env.BRANCH !== "pr2-staging" ||
-  process.env.CONTEXT !== "branch-deploy"
-)) {
-  throw new Error("Protected staging requires the approved site and pr2-staging branch-deploy context");
-}
+assertProtectedStagingContext(process.env);
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 function run(args, dir = root, extra = {}) {
@@ -39,6 +34,15 @@ const staging = mkdtempSync(resolve(root, "dist/staging-build-"));
 cpSync(resolve(root, "netlify/public"), staging, { recursive: true });
 cpSync(resolve(root, "field-app/dist"), resolve(staging, "field"), { recursive: true });
 cpSync(resolve(root, "dashboard/dist"), resolve(staging, "dashboard"), { recursive: true });
+buildFacilityDashboard(resolve(staging, "facility-dashboard"));
+writeFileSync(resolve(staging, 'build-info.json'), JSON.stringify({
+  environment: 'nonproduction',
+  commit: process.env.COMMIT_REF || execFileSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf8'}).trim(),
+  branch: process.env.HEAD || process.env.BRANCH || 'local',
+  checkoutRef: process.env.BRANCH || 'local',
+  context: process.env.CONTEXT || 'local',
+  releaseStatus: 'acceptance-pending',
+}, null, 2) + '\n');
 writeFileSync(resolve(staging, "_redirects"),
   "/field/* /field/index.html 200\n/dashboard/* /dashboard/index.html 200\n");
 if (existsSync(output)) {
