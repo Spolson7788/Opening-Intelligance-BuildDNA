@@ -1,0 +1,1 @@
+Opening Intelligence creates a connected digital record for each commercial opening in a facility, and the Facility Dashboard is where that record is read.

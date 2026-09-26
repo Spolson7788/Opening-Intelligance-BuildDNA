@@ -1,0 +1,1 @@
+The opening screen lists each component with its manufacturer and model where recorded, the condition recorded for it, and a health score out of one hundred, under an overall rating for the opening.
