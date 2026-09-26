@@ -12,7 +12,7 @@ const output = path.resolve(process.argv[3] || 'hosted-acceptance-results.json')
 const report = { started: new Date().toISOString(), origin: config.origin, commitExpected: config.commit,
   verdict: 'INCOMPLETE', checks: [], remaining: [
     'Deployment artifact bytes and commit must be independently verified.',
-    'Account switching and service-worker restart recovery require separate execution.',
+    'In-flight account switching and service-worker restart recovery require separate execution.',
     'No production-readiness verdict is issued by this bounded runner.'
   ] };
 const input = readline.createInterface({input:process.stdin,output:process.stdout});
@@ -39,11 +39,14 @@ async function session(label, requiredRole='technician'){
   const res=await context.request.fetch(config.origin+'/api'+route,{method,headers:{Authorization:authorization},data:body});
   const data=await res.json().catch(()=>null); return {status:res.status(),data};
  }
- const payload=JSON.parse(Buffer.from(authorization.split('.')[1],'base64url').toString());
- const roster=await api('/auth/users');assert.equal(roster.status,200);
- const current=roster.data.find(u=>u.id===payload.userId);
- assert(current?.is_active && current.role===requiredRole,'The required current account role was not verified');
- return {page,context,api,userId:current.id,organizationId:payload.organizationId};
+ async function current(){
+  const payload=JSON.parse(Buffer.from(authorization.split('.')[1],'base64url').toString());
+  const roster=await api('/auth/users');assert.equal(roster.status,200);
+  const user=roster.data.find(u=>u.id===payload.userId);assert(user?.is_active);
+  return {userId:user.id,organizationId:payload.organizationId,role:user.role};
+ }
+ const principal=await current();assert.equal(principal.role,requiredRole,'The required current account role was not verified');
+ return {page,context,api,current,...principal};
 }
 async function until(fn,ms=90000){const end=Date.now()+ms;while(Date.now()<end){const v=await fn();if(v)return v;await new Promise(r=>setTimeout(r,1000));}throw Error('timeout');}
 async function photoCase(s,mode){
@@ -145,6 +148,36 @@ async function revokeCase(owner,a){
   }
  }
 }
+async function accountSwitchCase(owner,a,b){
+ await a.page.goto(config.origin+'/field/opening/'+config.openingId);
+ const selector='#photo-input-'+config.openingId+'-hardware_component-'+config.componentId;
+ await a.page.locator(selector).waitFor({state:'attached'});
+ const previous=new Set((await localRecords(a.page,'media')).map(m=>m.id));
+ await a.context.setOffline(true);
+ let queued;
+ try{
+  await a.page.locator(selector).setInputFiles(path.resolve(config.photoPath));
+  queued=await until(async()=>{const rows=await localRecords(a.page,'media');return rows.find(m=>!previous.has(m.id)&&m.retained&&m.uploadState==='queued');},15000);
+  // SPA navigation keeps the queued database intact while offline.
+  await a.page.getByRole('button',{name:'← Scan',exact:true}).click();
+  await a.page.getByRole('button',{name:'Sign Out',exact:true}).click();
+  await a.page.getByRole('heading',{name:'Field Sign-In',exact:true}).waitFor();
+ }finally{await a.context.setOffline(false);}
+ await input.question('In technician A’s SAME window, sign in as technician B and open Facilities and openings. Then press Enter. ');
+ const switched=await a.current();assert.equal(switched.userId,b.userId);assert.equal(switched.organizationId,b.organizationId);
+ assert.equal((await a.api('/openings/'+config.openingId)).status,404);
+ await a.page.goto(config.origin+'/field/sync-issues');
+ await a.page.getByText('No synchronization issues for the signed-in technician.',{exact:true}).waitFor();
+ const ownerRead=await owner.api('/openings/'+config.openingId);assert.equal(ownerRead.status,200);
+ assert(!ownerRead.data.photos.some(p=>p.id===queued.id),'B must not flush A queue');
+ assert((await localRecords(a.page,'media')).some(m=>m.id===queued.id&&m.retained),'A original must remain retained');
+ await a.page.goto(config.origin+'/field/scan');await a.page.getByRole('button',{name:'Sign Out',exact:true}).click();
+ await input.question('In the SAME window, sign back in as technician A and open Facilities and openings. Then press Enter. ');
+ assert.equal((await a.current()).userId,a.userId);
+ await until(async()=>{const r=await owner.api('/openings/'+config.openingId);return r.status===200&&r.data.photos.some(p=>p.id===queued.id);});
+ const final=await owner.api('/openings/'+config.openingId);assert.equal(final.data.photos.filter(p=>p.id===queued.id).length,1);
+ return {photoId:queued.id,isolatedFromB:true,recoveredByA:true};
+}
 (async()=>{
  browser=await chromium.launch({headless:false});
  const a=await session('authorized synthetic technician A');
@@ -173,6 +206,7 @@ async function revokeCase(owner,a){
  await check('Provider revocation denies queued media and recovery succeeds after restoration',()=>revokeCase(owner,a));
  await check('Offline capture reconnects without duplication',()=>photoCase(a,'offline'));
  await check('Lost confirmation response recovers without duplication',()=>photoCase(a,'response-loss'));
+ await check('Queued photograph remains isolated across account switch',()=>accountSwitchCase(owner,a,b));
  report.verdict='BOUNDED_CHECKS_PASS_FULL_ACCEPTANCE_INCOMPLETE';save();
  console.log('Bounded checks passed. Full acceptance remains incomplete; see remaining items in report.');
 })().catch(e=>{report.verdict='FAILED_OR_INCOMPLETE';save();console.error('Runner stopped. Inspect the failed check and browser; raw errors are withheld to protect session URLs.');process.exitCode=1;})
