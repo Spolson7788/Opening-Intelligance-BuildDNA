@@ -184,13 +184,14 @@ table:has(#rows) thead{display:none;} .ohead .obadge{float:none;display:block;}
 
 <script type="module">
 import {url,key} from "./preview-config.mjs";
+import {loadAuthorizedFacilities,defaultHomeState,loadTerritoryContext,mountFacilitySearch} from "./facility-search.mjs";
 import {loadDashboardRows,correctiveSummary,loadQuarterServiceSummary,formatCalendarDate,photoScopeLabel} from "./connected.mjs";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
 const SUPA_URL=url;
 const SUPA_KEY=key;
 const sb=createClient(SUPA_URL,SUPA_KEY);
 const $=id=>document.getElementById(id);
-let facilities=[], current=null;
+let facilities=[], current=null,facilityEpoch=0;
 async function routeByType(session){
   try{
     const {data:prof}=await sb.from('profiles').select('user_type').eq('id',session.user.id).maybeSingle();
@@ -204,8 +205,7 @@ async function routeByType(session){
       var _an=document.getElementById('adminNav');
       if(_an) _an.style.display='';
     }
-    // Vortex service people belong on the field Scan tool, not the facility dashboard.
-    if(t==='vortex' && page!=='index.html' && page!==''){location.replace('./opening.html');return true;}
+    // Provider technicians may use the Dashboard; access comes from database memberships.
     // 'facility' and 'admin' stay here; missing profile -> stay (no lockout).
   }catch(e){}
   return false;
@@ -224,12 +224,12 @@ async function renderQuarterService(fid){
   const target=$('quarterService');
   try{
     const total=await loadQuarterServiceSummary(sb,fid);
-    if(!target.isConnected||current.id!==fid)return;
+    if(!target.isConnected||current?.id!==fid)return;
     const amount=total.count&&total.unpriced===total.count?'Not recorded':'$'+total.cost.toLocaleString();
     const detail=total.count+' service event'+(total.count===1?'':'s')+(total.unpriced?' · '+total.unpriced+' without cost':' · recorded costs');
     target.outerHTML=tile('Recorded service this quarter',amount,detail,'var(--good)');
   }catch(e){
-    if(target.isConnected&&current.id===fid)target.outerHTML=tile('Recorded service this quarter','—','Service totals unavailable — reload to retry','var(--muted)');
+    if(target.isConnected&&current?.id===fid)target.outerHTML=tile('Recorded service this quarter','—','Service totals unavailable — reload to retry','var(--muted)');
   }
 }
 function renderService(fid){
@@ -242,6 +242,7 @@ function renderService(fid){
     sb.from('service_requests').select('opening_no,symptom,reported_at,priority')
       .eq('facility_id',fid).order('reported_at',{ascending:false}).limit(50)
   ]).then(function(res){
+    if(current?.id!==fid)return;
     var df=(res[0]&&res[0].data)||[], ev=(res[1]&&res[1].data)||[], rq=(res[2]&&res[2].data)||[];
     if(!df.length && !ev.length){ card.style.display='none'; return; }
     card.style.display='';
@@ -385,31 +386,40 @@ async function boot(){
   if(!session){$('loginView').style.display='block';$('appView').style.display='none';return;}
   if(await routeByType(session))return;
   $('loginView').style.display='none';$('appView').style.display='block';
-  const {data,error}=await sb.from('memberships').select('facility_id,role,facilities!membership_facility_org(name,address)');
-  if(error){$('rows').innerHTML='<tr><td colspan=6 style="color:var(--critical);padding:20px">Could not load facilities: '+error.message+'</td></tr>';return;}
-  facilities=(data||[]).map(m=>({id:m.facility_id,role:m.role,name:m.facilities?m.facilities.name:'Facility',address:m.facilities?m.facilities.address:''}));
-  if(!facilities.length){$('facName').textContent='No facility linked to this login';return;}
-  if(facilities.length>1){
-    $('facPickWrap').innerHTML='<select id="facpick"></select> ';
-    const sel=$('facpick');facilities.forEach((f,i)=>{const o=document.createElement('option');o.value=i;o.textContent=f.name;sel.appendChild(o);});
-    sel.addEventListener('change',()=>load(facilities[sel.value]));
-  }
-  load(facilities[0]);
+  clearFacility();$('facPickWrap').replaceChildren();
+  try {
+    const [authorized,homeState]=await Promise.all([loadAuthorizedFacilities(sb),defaultHomeState(sb)]);
+ const {rows,homeTerritory,homeTerritoryName}=await loadTerritoryContext(sb,authorized);
+    facilities=rows;
+    mountFacilitySearch($('facPickWrap'),rows,fac=>load(fac).catch(e=>{$('facSub').textContent=e.message;}),{homeState,homeTerritory,homeTerritoryName});
+  } catch(e) { $('facName').textContent='Facilities unavailable';$('facSub').textContent=e.message; }
+
+}
+function clearFacility(){
+  facilityEpoch++;current=null;VIEW=[];LASTINSP={};closeDetail();
+  for(const id of ['rows','kpis','distbar','legrow','mfrsum','mfrlist','svcSummary','svcPending','svcRecent'])$(id)?.replaceChildren();
+  $('svcCard').style.display='none';
+  $('facName').textContent='No matching authorized facilities';$('facSub').textContent='Change the state or search text.';
 }
 async function load(fac){
+  clearFacility();if(!fac)return;const stamp=facilityEpoch;
   current=fac;
   $('facName').textContent=fac.name;
   $('facSub').textContent=(fac.address||'')+' · loading…';
   const {data:ops,error}=await loadDashboardRows(sb,fac.id);
+  if(stamp!==facilityEpoch)return;
   if(error){$('rows').innerHTML='<tr><td colspan=6 style="color:var(--critical);padding:20px">Could not load openings: '+error.message+'</td></tr>';return;}
   // last fire-door inspection per opening (NFPA 80 is annual) — drives the overdue flag
   LASTINSP={};
   try{
     var iv=await sb.from('opening_last_inspection').select('opening_no,last_inspected_at').eq('facility_id',fac.id);
+    if(stamp!==facilityEpoch)return;
     if(!iv.error&&iv.data){iv.data.forEach(function(r){LASTINSP[r.opening_no]=r.last_inspected_at;});}
     else{var ir=await sb.from('inspections').select('opening_no,inspected_at').eq('facility_id',fac.id);
+      if(stamp!==facilityEpoch)return;
       if(!ir.error&&ir.data){ir.data.forEach(function(r){var cur=LASTINSP[r.opening_no];if(!cur||r.inspected_at>cur)LASTINSP[r.opening_no]=r.inspected_at;});}}
   }catch(e){}
+  if(stamp!==facilityEpoch)return;
   render(ops||[]);
   // Accuracy lives in the internal BuildDNA/Vortex console, not the facility dashboard.
 }
@@ -529,6 +539,7 @@ function openDetail(oi){
       sb.from('deficiencies').select('id,deficiency_ref,criterion,severity,state,opened_at,closed_at')
         .eq('facility_id',fid).eq('opening_no',ono).order('opened_at',{ascending:false})
     ]).then(function(res){
+    if(current?.id!==fid)return;
       var ev=(res[0]&&res[0].data)||[], rq=(res[1]&&res[1].data)||[], df=(res[2]&&res[2].data)||[];
       if(!ev.length && !df.length) return;                 // nothing recorded yet — stay hidden
       var reqById={}; rq.forEach(function(r){reqById[r.id]=r;});

@@ -1,0 +1,27 @@
+BEGIN;
+SELECT set_config('test.owner',gen_random_uuid()::text,true),set_config('test.v',gen_random_uuid()::text,true),set_config('test.d',gen_random_uuid()::text,true),set_config('test.org',gen_random_uuid()::text,true),set_config('test.vp',gen_random_uuid()::text,true),set_config('test.dp',gen_random_uuid()::text,true),set_config('test.fa',gen_random_uuid()::text,true),set_config('test.fb',gen_random_uuid()::text,true);
+INSERT INTO auth.users(id) VALUES(current_setting('test.owner')::uuid),(current_setting('test.v')::uuid),(current_setting('test.d')::uuid);
+INSERT INTO organizations(id,code,name) VALUES(current_setting('test.org')::uuid,'ROLLBACK-PROVIDER-CHECK','Synthetic rollback customer');
+INSERT INTO organization_memberships VALUES(current_setting('test.org')::uuid,current_setting('test.owner')::uuid,'admin');
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub',current_setting('test.owner'),true);
+INSERT INTO facilities(id,name) VALUES(current_setting('test.fa')::uuid,'SYNTHETIC Vortex facility'),(current_setting('test.fb')::uuid,'SYNTHETIC DH Pace facility');
+RESET ROLE;
+INSERT INTO service_providers(id,name) VALUES(current_setting('test.vp')::uuid,'SYNTHETIC Vortex'),(current_setting('test.dp')::uuid,'SYNTHETIC DH Pace');
+INSERT INTO provider_memberships(provider_id,user_id,role,home_state,home_territory) VALUES(current_setting('test.vp')::uuid,current_setting('test.v')::uuid,'tech','CA','Southern California'),(current_setting('test.dp')::uuid,current_setting('test.d')::uuid,'tech','CA','Southern California');
+INSERT INTO facility_provider_assignments(facility_id,provider_id,allow_write,territory) VALUES(current_setting('test.fa')::uuid,current_setting('test.vp')::uuid,true,'Southern California'),(current_setting('test.fb')::uuid,current_setting('test.dp')::uuid,true,'Southern California');
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub',current_setting('test.v'),true);
+DO $$ BEGIN
+ IF NOT is_member(current_setting('test.fa')::uuid) OR NOT can_write(current_setting('test.fa')::uuid) THEN RAISE EXCEPTION 'own grant missing'; END IF;
+ IF is_member(current_setting('test.fb')::uuid) OR can_write(current_setting('test.fb')::uuid) OR EXISTS(SELECT 1 FROM facilities WHERE id=current_setting('test.fb')::uuid) THEN RAISE EXCEPTION 'cross company leak'; END IF;
+ IF (SELECT count(*) FROM facility_provider_assignments)<>1 THEN RAISE EXCEPTION 'assignment leak'; END IF;
+ BEGIN UPDATE provider_memberships SET role='admin';RAISE EXCEPTION 'self escalation';EXCEPTION WHEN insufficient_privilege THEN NULL;END;
+END $$;
+RESET ROLE;
+UPDATE facility_provider_assignments SET active=false WHERE facility_id=current_setting('test.fa')::uuid;
+SET LOCAL ROLE authenticated;
+DO $$ BEGIN IF is_member(current_setting('test.fa')::uuid) OR can_write(current_setting('test.fa')::uuid) THEN RAISE EXCEPTION 'revocation failed'; END IF;END $$;
+RESET ROLE;
+ROLLBACK;
+SELECT 'PASS: provider isolation, grants, self-escalation denial and immediate revocation; synthetic data rolled back' AS result;
