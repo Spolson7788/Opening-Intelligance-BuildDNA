@@ -36,7 +36,8 @@ cpSync(resolve(root, "dashboard/dist"), resolve(staging, "dashboard"), { recursi
 writeFileSync(resolve(staging, 'build-info.json'), JSON.stringify({
   environment: 'nonproduction',
   commit: process.env.COMMIT_REF || execFileSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf8'}).trim(),
-  branch: process.env.BRANCH || 'local',
+  branch: process.env.HEAD || process.env.BRANCH || 'local',
+  checkoutRef: process.env.BRANCH || 'local',
   context: process.env.CONTEXT || 'local',
   releaseStatus: 'acceptance-pending',
 }, null, 2) + '\n');

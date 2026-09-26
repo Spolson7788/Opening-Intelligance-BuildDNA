@@ -5,8 +5,8 @@ export function assertProtectedStagingContext(env) {
   const correctSite = env.SITE_ID === '6430c57d-8a98-43bc-ba25-94007dd244f2';
   const staging = env.CONTEXT === 'branch-deploy' && env.BRANCH === 'pr2-staging';
   const territoryPreview = env.CONTEXT === 'deploy-preview' &&
-    env.BRANCH === 'feat/field-territory-integration' && env.REVIEW_ID === '9';
+    env.HEAD === 'feat/field-territory-integration' && env.REVIEW_ID === '9';
   if (!correctSite || (!staging && !territoryPreview)) {
-    throw new Error('Build requires the protected nonproduction site and an approved staging context');
+    throw new Error('Build requires the protected nonproduction site and an approved staging context: ' + JSON.stringify({site:env.SITE_ID,context:env.CONTEXT,branch:env.BRANCH,head:env.HEAD,review:env.REVIEW_ID}));
   }
 }
