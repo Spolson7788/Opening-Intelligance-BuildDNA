@@ -12,7 +12,6 @@ const output = path.resolve(process.argv[3] || 'hosted-acceptance-results.json')
 const report = { started: new Date().toISOString(), origin: config.origin, commitExpected: config.commit,
   verdict: 'INCOMPLETE', checks: [], remaining: [
     'Deployment artifact bytes and commit must be independently verified.',
-    'Provider assignment revocation and queued-write denial require separate execution.',
     'Account switching and service-worker restart recovery require separate execution.',
     'No production-readiness verdict is issued by this bounded runner.'
   ] };
@@ -24,7 +23,7 @@ async function check(name,fn){
  catch { report.checks.push({name,status:'FAIL'}); save(); throw new Error(name+' failed; inspect the application. No credentials or raw responses were logged.'); }
  save();
 }
-async function session(label){
+async function session(label, requiredRole='technician'){
  const context=await browser.newContext({serviceWorkers:'block'});
  const page=await context.newPage(); let authorization;
  page.on('request',req=>{
@@ -43,7 +42,7 @@ async function session(label){
  const payload=JSON.parse(Buffer.from(authorization.split('.')[1],'base64url').toString());
  const roster=await api('/auth/users');assert.equal(roster.status,200);
  const current=roster.data.find(u=>u.id===payload.userId);
- assert(current?.is_active && current.role==='technician','A live technician role is required');
+ assert(current?.is_active && current.role===requiredRole,'The required current account role was not verified');
  return {page,context,api,userId:current.id,organizationId:payload.organizationId};
 }
 async function until(fn,ms=90000){const end=Date.now()+ms;while(Date.now()<end){const v=await fn();if(v)return v;await new Promise(r=>setTimeout(r,1000));}throw Error('timeout');}
@@ -91,6 +90,61 @@ async function photoCase(s,mode){
   return {photoId:photos[0].id,association:config.componentId,responseDropped:dropped};
  }finally{await s.context.setOffline(false);if(mode==='response-loss')await s.page.unroute('**/api/photos/offline/confirm');}
 }
+async function localRecords(page,store){
+ return page.evaluate(async store=>{
+  const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('opening-intel-field');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+  try{return await new Promise((resolve,reject)=>{const r=db.transaction(store).objectStore(store).getAll();r.onsuccess=()=>resolve(r.result.map(x=>({id:x.photoId||x.operationId,entityId:x.entityId,openingId:x.openingId,state:x.state,uploadState:x.uploadState,retained:!!x.blob?.size})));r.onerror=()=>reject(r.error);});}finally{db.close();}
+ },store);
+}
+async function revokeCase(owner,a){
+ assert.notEqual(owner.organizationId,a.organizationId,'Provider must not own the test facility');
+ const before=await owner.api('/openings/'+config.openingId);assert.equal(before.status,200);
+ assert.equal(before.data.opening_code,config.openingCode);
+ const ownerFacilities=await owner.api('/portfolio/facility-search');assert.equal(ownerFacilities.status,200);
+ const facility=ownerFacilities.data.facilities.find(f=>f.id===config.providerFacilityId);
+ assert(facility && /^SYNTHETIC/.test(facility.name),'Only named synthetic facility may be tested');
+ assert(before.data.hardware_components.some(c=>c.id===config.componentId));
+ const openingFacility=await owner.api('/portfolio/facility-dashboard/'+config.providerFacilityId);
+ assert.equal(openingFacility.status,200);assert(openingFacility.data.openings.some(o=>o.id===config.openingId));
+ const initialAccess=await a.api('/openings/'+config.openingId);assert.equal(initialAccess.status,200);
+ await a.page.goto(config.origin+'/field/opening/'+config.openingId);
+ const selector='#photo-input-'+config.openingId+'-hardware_component-'+config.componentId;
+ await a.page.locator(selector).waitFor({state:'attached'});
+ const existing=new Set((await localRecords(a.page,'media')).map(m=>m.id));
+ await a.context.setOffline(true);
+ let restored=false,revocationAttempted=false,newPhoto;
+ const assignment='/provider-assignments/'+config.providerFacilityId+'/'+a.organizationId;
+ try{
+  await a.page.locator(selector).setInputFiles(path.resolve(config.photoPath));
+  newPhoto=await until(async()=>{const rows=await localRecords(a.page,'media');return rows.find(m=>!existing.has(m.id)&&m.openingId===config.openingId&&m.retained&&m.uploadState==='queued');},15000);
+  revocationAttempted=true;
+  assert.equal((await owner.api(assignment,'PUT',{active:false})).status,200);
+  await a.context.setOffline(false);
+  assert.equal((await a.api('/openings/'+config.openingId)).status,404);
+  assert.equal((await a.api('/photos/'+config.photoId+'/access')).status,404);
+  const inventory=await a.api('/portfolio/facility-search');assert.equal(inventory.status,200);
+  assert(!inventory.data.facilities.some(f=>f.id===config.providerFacilityId));
+  await until(async()=>{const operations=await localRecords(a.page,'operations');return operations.some(o=>o.entityId===newPhoto.id&&o.state==='auth_required');});
+  const withheld=await owner.api('/openings/'+config.openingId);assert.equal(withheld.status,200);
+  assert(!withheld.data.photos.some(p=>p.id===newPhoto.id),'Revoked queued photo must not reach canonical records');
+  assert((await localRecords(a.page,'media')).some(m=>m.id===newPhoto.id&&m.retained));
+  assert.equal((await owner.api(assignment,'PUT',{active:true})).status,200);restored=true;
+  await a.page.goto(config.origin+'/field/sync-issues');
+  const retry=a.page.getByRole('button',{name:'Retry after authorization is restored',exact:true});
+  assert.equal(await retry.count(),1,'Use a clean context with exactly the expected queued operation');await retry.click();
+  await until(async()=>{const r=await owner.api('/openings/'+config.openingId);return r.status===200&&r.data.photos.some(p=>p.id===newPhoto.id);});
+  const final=await owner.api('/openings/'+config.openingId);
+  const matches=final.data.photos.filter(p=>p.id===newPhoto.id);assert.equal(matches.length,1);assert.equal(matches[0].related_entity_id,config.componentId);
+  return {photoId:newPhoto.id,deniedWhileRevoked:true,retainedLocally:true,recoveredAfterRestore:true};
+ }finally{
+  await a.context.setOffline(false);
+  if(revocationAttempted&&!restored){
+   const restore=await owner.api(assignment,'PUT',{active:true});
+   report.checks.push({name:'Restore original synthetic provider assignment',status:restore.status===200?'PASS':'FAIL'});save();
+   assert.equal(restore.status,200,'Owner must restore synthetic assignment before leaving test environment');
+  }
+ }
+}
 (async()=>{
  browser=await chromium.launch({headless:false});
  const a=await session('authorized synthetic technician A');
@@ -115,6 +169,8 @@ async function photoCase(s,mode){
    return {blocked:r.data.blocked,itemCount:r.data.items.length};
   });
  }
+ const owner=await session('synthetic facility owner administrator','admin');
+ await check('Provider revocation denies queued media and recovery succeeds after restoration',()=>revokeCase(owner,a));
  await check('Offline capture reconnects without duplication',()=>photoCase(a,'offline'));
  await check('Lost confirmation response recovers without duplication',()=>photoCase(a,'response-loss'));
  report.verdict='BOUNDED_CHECKS_PASS_FULL_ACCEPTANCE_INCOMPLETE';save();
