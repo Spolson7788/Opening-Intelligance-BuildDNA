@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchPhotoAccessUrl } from "../lib/api";
+import { openingLoadFailure } from "../lib/openingLoadFailure";
 import { getAllOfflineMedia, updateCachedOpening } from "../lib/db";
 import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
@@ -44,9 +45,10 @@ function SyncedMedia({ photo }: { photo: any }) {
 export function OpeningDetailPage() {
   const { id, qrToken, openingCode } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [opening, setOpening] = useState<any | null>(null);
   const [fromCache, setFromCache] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReturnType<typeof openingLoadFailure> | null>(null);
   const [loading, setLoading] = useState(true);
   const [queuedPhotos, setQueuedPhotos] = useState<(OfflineMediaRecord & { previewUrl: string })[]>([]);
   const [photoToDelete, setPhotoToDelete] = useState<{ id: string; name: string } | null>(null);
@@ -116,7 +118,7 @@ export function OpeningDetailPage() {
         openingIdRef.current = opening.id;
         loadQueuedPhotos();
       })
-      .catch(() => setError("Couldn't find that opening. Check the code and try again."))
+      .catch((err) => { setOpening(null); setError(openingLoadFailure(err)); })
       .finally(() => setLoading(false));
   }
 
@@ -132,11 +134,16 @@ export function OpeningDetailPage() {
     return (
       <div className="app-shell">
         <div className="top-bar">
-          <h1>Not Found</h1>
+          <h1>{error?.title ?? "Opening unavailable"}</h1>
           <SyncBadge />
         </div>
         <div className="screen empty-state">
-          <p>{error}</p>
+          <p role="alert">{error?.message}</p>
+          {error?.signIn ? (
+            <button className="btn btn-primary" onClick={() => navigate("/login", { state: { from: location.pathname } })}>Sign in again</button>
+          ) : error?.retry ? (
+            <button className="btn btn-primary" onClick={reload}>Try again</button>
+          ) : null}
           <button className="btn btn-secondary" onClick={() => navigate("/scan")}>Back to Scan</button>
         </div>
       </div>
