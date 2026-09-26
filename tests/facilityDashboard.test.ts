@@ -1,0 +1,27 @@
+import {it,expect} from 'vitest';
+import request from 'supertest';
+import {app,signupTestOrg,createPortfolioHierarchy,createTestOpening} from './helpers';
+import {pool} from '../src/db/pool';
+it('Dashboard reads the Field App hierarchy, updates and photo association without crossing companies',async()=>{
+ const a=await signupTestOrg('Vortex synthetic'),b=await signupTestOrg('DH Pace synthetic');
+ const facility=await createPortfolioHierarchy(a.token),other=await createPortfolioHierarchy(b.token);
+ const opening=await createTestOpening(a.token,facility.buildingId,{opening_configuration:'pair'});
+ const frame=await pool.query("INSERT INTO opening_frames(opening_id,material) VALUES($1,'QA frame') RETURNING id",[opening.id]);
+ const leaves=await pool.query("INSERT INTO door_leaves(opening_id,leaf_role,material) VALUES($1,'active','QA active'),($1,'inactive','QA inactive') RETURNING id,leaf_role",[opening.id]);
+ const active=leaves.rows.find(l=>l.leaf_role==='active').id;
+ const hardware=await request(app).post('/api/hardware').set('Authorization',`Bearer ${a.token}`).send({opening_id:opening.id,component_type:'closer',mounting_scope:'door_leaf',door_leaf_id:active,condition:'worn',model_number:'QA-CLOSER'});
+ expect(hardware.status).toBe(201);
+ const photo=await pool.query("INSERT INTO photos(opening_id,related_entity_type,related_entity_id,storage_url) VALUES($1,'hardware_component',$2,'private:QA-object') RETURNING id",[opening.id,hardware.body.id]);
+ const url='/api/portfolio/facility-dashboard/'+facility.propertyId;
+ const read=()=>request(app).get(url).set('Authorization',`Bearer ${a.token}`);
+ const first=await read();expect(first.status).toBe(200);expect(first.headers['cache-control']).toBe('no-store');
+ const row=first.body.openings[0];expect(row.id).toBe(opening.id);expect(row.frame.id).toBe(frame.rows[0].id);expect(row.door_leaves).toHaveLength(2);expect(row.hardware_components[0].door_leaf_id).toBe(active);
+ expect(row.photos[0]).toMatchObject({id:photo.rows[0].id,related_entity_id:hardware.body.id});expect(row.photos[0].storage_url).toBeUndefined();
+ await request(app).patch('/api/hardware/'+hardware.body.id).set('Authorization',`Bearer ${a.token}`).send({condition:'good'});
+ expect((await read()).body.openings[0].hardware_components[0].condition).toBe('good');
+ expect((await request(app).get(url).set('Authorization',`Bearer ${b.token}`)).status).toBe(404);
+ expect((await request(app).get('/api/portfolio/facility-dashboard/'+other.propertyId).set('Authorization',`Bearer ${a.token}`)).status).toBe(404);
+ expect((await request(app).get(url)).status).toBe(401);
+ await pool.query('UPDATE users SET is_active=false WHERE organization_id=$1',[a.organizationId]);
+ expect((await read()).status).toBe(403);
+});

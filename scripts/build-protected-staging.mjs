@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, renameSync, writeFileSync }
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertProtectedStagingContext } from './protected-staging-context.mjs';
+import { buildFacilityDashboard } from './build-facility-dashboard.mjs';
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 assertProtectedStagingContext(process.env);
@@ -33,6 +34,7 @@ const staging = mkdtempSync(resolve(root, "dist/staging-build-"));
 cpSync(resolve(root, "netlify/public"), staging, { recursive: true });
 cpSync(resolve(root, "field-app/dist"), resolve(staging, "field"), { recursive: true });
 cpSync(resolve(root, "dashboard/dist"), resolve(staging, "dashboard"), { recursive: true });
+buildFacilityDashboard(resolve(staging, "facility-dashboard"));
 writeFileSync(resolve(staging, 'build-info.json'), JSON.stringify({
   environment: 'nonproduction',
   commit: process.env.COMMIT_REF || execFileSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf8'}).trim(),

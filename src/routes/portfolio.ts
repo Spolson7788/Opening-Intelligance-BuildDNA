@@ -10,6 +10,37 @@ portfolioRouter.use(requireAuth);
 portfolioRouter.use(enforceRolePermissions);
 portfolioRouter.use(auditLog);
 
+// One statement gives the customer Dashboard a consistent read of the same
+// records written by the Field App. No mirrored database or client-side grants.
+portfolioRouter.get("/facility-dashboard/:id", async (req: AuthedRequest, res) => {
+  if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_facility" });
+  try {
+    const result = await pool.query(`
+      SELECT p.*, COALESCE((
+        SELECT jsonb_agg(to_jsonb(o) || jsonb_build_object(
+          'building_name', b.name,
+          'frame', (SELECT to_jsonb(f) FROM opening_frames f WHERE f.opening_id=o.id),
+          'door_leaves', COALESCE((SELECT jsonb_agg(l ORDER BY l.leaf_role) FROM door_leaves l WHERE l.opening_id=o.id),'[]'::jsonb),
+          'hardware_components', COALESCE((SELECT jsonb_agg(h ORDER BY h.id) FROM hardware_components h WHERE h.opening_id=o.id),'[]'::jsonb),
+          'service_events', COALESCE((SELECT jsonb_agg(e ORDER BY e.event_date DESC,e.id) FROM service_events e WHERE e.opening_id=o.id),'[]'::jsonb),
+          'inspection_events', COALESCE((SELECT jsonb_agg(i ORDER BY i.event_date DESC,i.id) FROM inspection_events i WHERE i.opening_id=o.id),'[]'::jsonb),
+          'photos', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+            'id', ph.id, 'related_entity_type', ph.related_entity_type,
+            'related_entity_id', ph.related_entity_id, 'created_at', ph.created_at
+          ) ORDER BY ph.created_at,ph.id) FROM photos ph WHERE ph.opening_id=o.id),'[]'::jsonb)
+        ) ORDER BY o.opening_code,o.id)
+        FROM openings o JOIN buildings b ON b.id=o.building_id WHERE b.property_id=p.id
+      ), '[]'::jsonb) AS openings
+      FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id
+      WHERE p.id=$1 AND pf.organization_id=$2`, [req.params.id, req.auth!.organizationId]);
+    if (!result.rows.length) return res.status(404).json({ error: "not_found" });
+    res.set("Cache-Control", "no-store").json(result.rows[0]);
+  } catch (error) {
+    console.error("Facility dashboard read failed", error);
+    res.status(503).json({ error: "facility_dashboard_unavailable" });
+  }
+});
+
 // Search scope is always the current server-verified company. State, territory
 // and phone location are convenience filters, never authorization inputs.
 portfolioRouter.get("/facility-search", async (req: AuthedRequest, res) => {
