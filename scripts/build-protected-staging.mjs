@@ -1,5 +1,6 @@
+import {createHash} from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, renameSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, renameSync, writeFileSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertProtectedStagingContext } from './protected-staging-context.mjs';
@@ -45,6 +46,20 @@ writeFileSync(resolve(staging, 'build-info.json'), JSON.stringify({
 }, null, 2) + '\n');
 writeFileSync(resolve(staging, "_redirects"),
   "/field/* /field/index.html 200\n/dashboard/* /dashboard/index.html 200\n");
+// Hash the files produced by this Netlify build, not a later local rebuild.
+const artifacts = {};
+function hashTree(directory, prefix = '') {
+  for (const entry of readdirSync(directory, {withFileTypes:true})) {
+    const path = resolve(directory, entry.name), name = `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) hashTree(path, name);
+    else {const bytes = readFileSync(path); artifacts[name] = {sha256:createHash('sha256').update(bytes).digest('hex'),bytes:bytes.length};}
+  }
+}
+hashTree(staging);
+writeFileSync(resolve(staging, 'deployment-evidence.json'), JSON.stringify({
+  commit:process.env.COMMIT_REF, deployId:process.env.DEPLOY_ID, context:process.env.CONTEXT,
+  artifactSource:'Netlify build output before platform HTML injection', artifacts
+},null,2)+'\n');
 if (existsSync(output)) {
   const previous = mkdtempSync(resolve(root, "dist/previous-staging-"));
   renameSync(output, resolve(previous, "package"));
