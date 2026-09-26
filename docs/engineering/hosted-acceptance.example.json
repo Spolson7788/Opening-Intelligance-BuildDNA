@@ -1,0 +1,18 @@
+{
+  "origin": "REPLACE_WITH_IMMUTABLE_PROTECTED_NONPRODUCTION_ORIGIN",
+  "commit": "REPLACE_WITH_VERIFIED_CANDIDATE_COMMIT",
+  "openingCode": "SYNTHETIC-REPLACE-WITH-DISPOSABLE-TEST-OPENING",
+  "openingId": "REPLACE_WITH_UUID",
+  "componentId": "REPLACE_WITH_UUID",
+  "photoId": "REPLACE_WITH_EXISTING_PRIVATE_PHOTO_UUID",
+  "allowedFacilityIdsA": ["REPLACE_WITH_EXACT_AUTHORIZED_FACILITIES"],
+  "allowedFacilityIdsB": ["REPLACE_WITH_EXACT_AUTHORIZED_FACILITIES"],
+  "photoPath": "OP1_closer_whole.jpg",
+  "photoSha256": "23d95b0541cefaeb040fedc028eb2227d72b0038904fe8ec1d8526d5d4c00efb",
+  "purchasing": [
+    {"name":"eligible","openingIds":["REPLACE_ELIGIBLE"],"blocked":false,"itemCount":1},
+    {"name":"unresolved-document","openingIds":["REPLACE_UNRESOLVED"],"blocked":true,"itemCount":0},
+    {"name":"mixed","openingIds":["REPLACE_ELIGIBLE","REPLACE_INCOMPLETE"],"blocked":true,"itemCount":0},
+    {"name":"all-serviceable","openingIds":["REPLACE_SERVICEABLE"],"blocked":false,"itemCount":0}
+  ]
+}

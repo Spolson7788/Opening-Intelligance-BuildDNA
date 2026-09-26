@@ -1,0 +1,8 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');
+const {validateConfig}=require('./hosted-acceptance-config.cjs');
+const valid=()=>({origin:'https://6ab81b63a1c1eb00086a1593--oi-offline-sync-pr2-api-nonproduction.netlify.app',commit:'e8ef455b9bf5c4ef540d15fdf5cec0699f48b081',openingCode:'SYNTHETIC-QA',openingId:'7f2cf151-0579-489a-a00a-94594b873297',componentId:'a2700d66-f640-47a2-bfd9-298c3414680e',photoId:'f4dcbbfc-afb3-4707-a44e-569ee7651458',allowedFacilityIdsA:['A'],allowedFacilityIdsB:['B'],photoPath:'photo.jpg',photoSha256:'a'.repeat(64),purchasing:Array.from({length:4},(_,i)=>({name:String(i),openingIds:['opening'],blocked:true,itemCount:0}))});
+test('accepts explicit immutable staging configuration',()=>assert(validateConfig(valid())));
+for(const origin of ['https://openingintelligence.netlify.app','https://deploy-preview-9--oi-offline-sync-pr2-api-nonproduction.netlify.app','http://6ab81b63a1c1eb00086a1593--oi-offline-sync-pr2-api-nonproduction.netlify.app'])test('rejects non-pinned or production target '+origin,()=>assert.throws(()=>validateConfig({...valid(),origin})));
+test('rejects unlabeled mutation target',()=>assert.throws(()=>validateConfig({...valid(),openingCode:'Customer door'})));
+test('requires two known facility inventories',()=>assert.throws(()=>validateConfig({...valid(),allowedFacilityIdsB:[]})));
+test('requires approved photograph hash',()=>assert.throws(()=>validateConfig({...valid(),photoSha256:''})));
