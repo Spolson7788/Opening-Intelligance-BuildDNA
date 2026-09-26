@@ -28,7 +28,7 @@ GPS sorting and self-service administrator screens are not implemented. No compa
 Netlify browser authentication was verified on 26 September. The existing project
 `6430c57d-8a98-43bc-ba25-94007dd244f2` has production branch
 `production-disabled`, only `pr2-staging` branch deployments, and pull-request
-previews disabled. Database/storage/JWT settings already exist for Deploy
+previews enabled after explicit user approval. PR 9 is open for review and remains unmerged. Database/storage/JWT settings already exist for Deploy
 Previews and pr2-staging; branch-deploy defaults are empty. Values were not
 revealed or copied. The preview QR target also needs its own non-secret
 OI_FIELD_APP_URL value before testing opening creation.
