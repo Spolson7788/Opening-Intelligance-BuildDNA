@@ -24,7 +24,12 @@
   "ownerOrganizationId": "07d612c8-1fa3-48be-94a7-e28d39ec15fc",
   "providerOrganizationId": "d74b3113-5c0f-4cb8-b5fc-bb7ae0687020",
   "eligibleApproval": "NOT_CREATED: requires an actual synthetic document and its verified hash; eligible case must remain blocked until then.",
-  "photo": "NOT_UPLOADED",
+  "photo": {
+    "id": "ad653bf1-66a9-4a6f-9e2c-3db8e9a92a11",
+    "componentId": "9de994e0-7147-4fa7-9b41-b48df8b74f56",
+    "status": "UPLOADED_THROUGH_FIELD_APP_UI_DATABASE_ASSOCIATION_VERIFIED",
+    "sha256": "23d95b0541cefaeb040fedc028eb2227d72b0038904fe8ec1d8526d5d4c00efb"
+  },
   "projectId": "ioqfdcehnhnqpnqawwvo",
   "allowedFacilityIdsA": [
     "5419af45-f203-45f0-8654-ccbdf25fe72b",
