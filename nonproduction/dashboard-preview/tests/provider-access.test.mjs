@@ -17,7 +17,7 @@ test('provider isolation against recovered preview schema, hierarchy, storage po
  ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
  GRANT SELECT,INSERT ON storage.objects TO authenticated;
  CREATE FUNCTION storage.foldername(text) RETURNS text[] LANGUAGE sql IMMUTABLE AS $$ SELECT string_to_array($1,'/') $$;`);
- for(const p of ['tests/fixtures/preview-baseline.sql','tests/fixtures/preview-hierarchy.sql','sql/connected_contract.sql','sql/serialize_component_changes.sql','sql/purchasing_snapshot_lock.sql','sql/product_approval_gate.sql','sql/service_write_roles.sql','supabase/migrations/20260923191344_organization_access.sql','supabase/migrations/20260925194138_provider_facility_access.sql'])await db.exec(await file(p));
+ for(const p of ['tests/fixtures/preview-baseline.sql','tests/fixtures/preview-hierarchy.sql','sql/connected_contract.sql','sql/serialize_component_changes.sql','sql/purchasing_snapshot_lock.sql','sql/product_approval_gate.sql','sql/service_write_roles.sql','supabase/migrations/20260923191344_organization_access.sql','supabase/migrations/20260925194138_provider_facility_access.sql','supabase/migrations/20260926154317_provider_home_territory.sql'])await db.exec(await file(p));
  // Existing owner permissions must still pass their original regression suite.
  await db.exec(await file('tests/organization_access.sql'));
  await db.exec(await file('tests/contract.sql'));

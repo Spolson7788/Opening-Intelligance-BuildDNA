@@ -2,7 +2,7 @@ import {createClient} from 'https://esm.sh/@supabase/supabase-js@2.57.4';
 import {url,key} from './preview-config.mjs';
 import {enqueue,pending,flush} from './queue.mjs';
 import {componentLabel,photoScopeLabel} from './connected.mjs';
-import {loadAuthorizedFacilities,defaultHomeState,mountFacilitySearch} from './facility-search.mjs';
+import {loadAuthorizedFacilities,defaultHomeState,loadTerritoryContext,mountFacilitySearch} from './facility-search.mjs';
 const sb=createClient(url,key), $=id=>document.getElementById(id), msg=s=>$('message').textContent=s;
 let user=null,fac=null,opening=null,structures=[],components=[],products=[],epoch=0;
 const must=r=>{if(r.error)throw Error(r.error.message);return r.data;};
@@ -15,9 +15,10 @@ function clearOpening(){epoch++;opening=null;structures=[];components=[];$('sele
 async function loadFacilities(){
  clearOpening();fac=null;$('facilitySearch').replaceChildren();
  const account=user?.id;if(!account)return;
- const [rows,homeState]=await Promise.all([loadAuthorizedFacilities(sb),defaultHomeState(sb)]);
+ const [authorized,homeState]=await Promise.all([loadAuthorizedFacilities(sb),defaultHomeState(sb)]);
+ const {rows,homeTerritory,homeTerritoryName}=await loadTerritoryContext(sb,authorized);
  if(user?.id!==account)return;
- mountFacilitySearch($('facilitySearch'),rows,f=>chooseFacility(f?.id||'').catch(e=>msg(e.message)),{homeState});
+ mountFacilitySearch($('facilitySearch'),rows,f=>chooseFacility(f?.id||'').catch(e=>msg(e.message)),{homeState,homeTerritory,homeTerritoryName});
 }
 async function chooseFacility(id){
  clearOpening();fac=id;const stamp=epoch;$('opening').replaceChildren();

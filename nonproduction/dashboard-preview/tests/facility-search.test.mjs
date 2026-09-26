@@ -20,3 +20,9 @@ test('a single approved home state defaults locally; conflicting assignments req
  assert.equal(await defaultHomeState(sb([{home_state:'CA'}])),'CA');
  assert.equal(await defaultHomeState(sb([{home_state:'CA'},{home_state:'FL'}])),'');
 });
+
+test('territory scope remains provider-specific and combines with state',()=>{
+ const rows=[{id:'a',state:'CA',territories:[{key:'vortex-west'}]},{id:'b',state:'CA',territories:[{key:'pace-west'}]},{id:'c',state:'FL',territories:[{key:'vortex-west'}]}];
+ assert.deepEqual(filterFacilities(rows,{territory:'vortex-west',state:'CA'}).map(r=>r.id),['a']);
+ assert.deepEqual(filterFacilities(rows,{territory:'missing'}),[]);
+});

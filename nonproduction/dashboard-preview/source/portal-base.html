@@ -385,9 +385,10 @@ async function boot(){
   $('loginView').style.display='none';$('appView').style.display='block';
   clearFacility();$('facPickWrap').replaceChildren();
   try {
-    const [rows,homeState]=await Promise.all([loadAuthorizedFacilities(sb),defaultHomeState(sb)]);
+    const [authorized,homeState]=await Promise.all([loadAuthorizedFacilities(sb),defaultHomeState(sb)]);
+ const {rows,homeTerritory,homeTerritoryName}=await loadTerritoryContext(sb,authorized);
     facilities=rows;
-    mountFacilitySearch($('facPickWrap'),rows,fac=>load(fac).catch(e=>{$('facSub').textContent=e.message;}),{homeState});
+    mountFacilitySearch($('facPickWrap'),rows,fac=>load(fac).catch(e=>{$('facSub').textContent=e.message;}),{homeState,homeTerritory,homeTerritoryName});
   } catch(e) { $('facName').textContent='Facilities unavailable';$('facSub').textContent=e.message; }
 
 }

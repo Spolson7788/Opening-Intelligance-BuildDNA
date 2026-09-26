@@ -1,6 +1,6 @@
 # Company facility access — implementation candidate
 
-Status: implemented and locally tested on `feat/provider-facility-access`, based on video candidate `44ceaa8e8bf4d0156f1e23c23f138c435766db09`. No database migration or deployment has been performed. The approved recording deployment is unchanged.
+Status: implemented and locally tested on `feat/provider-facility-access`, based on video candidate `44ceaa8e8bf4d0156f1e23c23f138c435766db09`. The provider migration and home-territory extension were applied to nonproduction preview lujfnhvkmllnpxkihhno on 26 September. Web deployment remains pending. The approved recording deployment is unchanged.
 
 ## Behavior
 
@@ -10,7 +10,7 @@ A provider technician sees all facilities assigned to that company. The administ
 
 Writes require both an admin/tech provider role and `allow_write=true` on the assignment. Viewer and read-only assignments cannot write. Revocation is checked against current database rows, including queue receipt replay.
 
-This change covers the connected preview Dashboard and its opening editor. It has not been integrated into the separate recognition Field App. GPS proximity, a territory picker, and a provider administration screen are not included. The schema reserves a territory label for later work; it is not used as an authorization rule.
+This change covers the connected preview Dashboard and its opening editor. It has not been integrated into the separate recognition Field App. My Territory now filters provider-scoped service-area assignments and defaults to the administrator-approved home_territory. A default with no matching facilities remains empty instead of widening scope. GPS proximity and a provider administration screen are not included. Territory is not an authorization rule.
 
 ## Trusted administrator provisioning
 
@@ -35,7 +35,7 @@ npx playwright install chromium
 npm run test:provider
 ```
 
-Passed: 14 Node tests, including real PostgreSQL RLS evaluation through PGlite with authenticated/anonymous roles, existing organization and contract SQL regressions, two-provider isolation, metadata spoofing, viewer/write ceilings, revocation and queue replay, private object/photo/service visibility, owner preservation, and explicit sharing. Search tests cover pagination beyond 500, errors, home-state defaults and filters.
+Passed: 15 Node tests, including real PostgreSQL RLS evaluation through PGlite with authenticated/anonymous roles, existing organization and contract SQL regressions, two-provider isolation, metadata spoofing, viewer/write ceilings, revocation and queue replay, private object/photo/service visibility, owner preservation, and explicit sharing. Search tests cover pagination beyond 500, errors, home-state defaults and filters.
 
 Passed: Chromium mobile-width checks of both pages with mocked API responses: home state, all states, text search, clearing zero-match results and no runtime errors. These are browser behavior tests, not live Supabase acceptance.
 
@@ -48,3 +48,8 @@ Before release, run hosted Supabase security/performance advisors and connected 
 Already downloaded files or offline data cannot be remotely recalled. Previously issued signed image URLs remain usable until their expiry (currently 120 seconds). The new rules control subsequent authorized requests, not previously disclosed bytes.
 
 Rollback: restore the previous versions of is_member, can_write, oi_is_member and inspection policies from the base candidate, and restore its pages. Export any new associations before considering table removal. Do not drop associations as a routine rollback. No automatic organization or facility backfill is performed.
+
+## 26 September connected database verification
+`tests/provider-connected.sql` passed on the hosted preview: synthetic provider grants, cross-company denial, self-escalation denial and immediate revocation. All test fixtures rolled back. This was authenticated-role SQL, not an Auth/REST/browser acceptance run. Security advisor returned only the existing leaked-password-protection warning. No production changes.
+
+The separate PR2 Field App candidate adds territory/state search within its existing organization scope and principal-bound caching. Its database is opening-intelligence-staging, not this preview. Cross-schema provider mapping and end-to-end connected acceptance remain incomplete. Do not describe the two data models as integrated.
