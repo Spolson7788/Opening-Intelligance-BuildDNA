@@ -1,0 +1,67 @@
+-- Rollback-only SQL role simulation; not connected browser/account evidence.
+BEGIN;
+SELECT set_config('test.uid',gen_random_uuid()::text,true),set_config('test.fid',gen_random_uuid()::text,true),set_config('test.event',gen_random_uuid()::text,true),set_config('test.def',gen_random_uuid()::text,true);
+-- Transient FK fixture, no password/identity, always rolled back.
+INSERT INTO auth.users(id) VALUES(current_setting('test.uid')::uuid);
+SELECT set_config('test.org',gen_random_uuid()::text,true);
+INSERT INTO public.organizations(id,code,name) VALUES(current_setting('test.org')::uuid,current_setting('test.org'),'Rollback-only organization');
+INSERT INTO public.organization_memberships(organization_id,user_id,role) VALUES(current_setting('test.org')::uuid,current_setting('test.uid')::uuid,'admin');
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub',current_setting('test.uid'),true);
+INSERT INTO public.facilities(id,name) VALUES(current_setting('test.fid')::uuid,'Rollback-only service role test');
+RESET ROLE;
+UPDATE public.memberships SET role='tech' WHERE user_id=current_setting('test.uid')::uuid;
+SET LOCAL ROLE authenticated;
+INSERT INTO public.service_requests(facility_id,symptom) VALUES(current_setting('test.fid')::uuid,'Rollback-only symptom');
+INSERT INTO public.service_events(id,facility_id,opening_no) VALUES(current_setting('test.event')::uuid,current_setting('test.fid')::uuid,'ROLLBACK');
+INSERT INTO public.deficiencies(id,facility_id,opening_no,criterion) VALUES(current_setting('test.def')::uuid,current_setting('test.fid')::uuid,'ROLLBACK','Test criterion');
+INSERT INTO public.service_observations(event_id,observation) VALUES(current_setting('test.event')::uuid,'Rollback-only observation');
+INSERT INTO public.service_outcomes(event_id) VALUES(current_setting('test.event')::uuid);
+INSERT INTO public.diagnostic_hypotheses(event_id,rank,cause) VALUES(current_setting('test.event')::uuid,1,'Rollback-only cause');
+INSERT INTO public.verification_events(deficiency_id) VALUES(current_setting('test.def')::uuid);
+DO $test$ DECLARE n integer; BEGIN
+UPDATE public.service_requests SET id=id; GET DIAGNOSTICS n=ROW_COUNT; IF n<>1 THEN RAISE EXCEPTION 'Tech update failed: service_requests'; END IF;
+UPDATE public.service_events SET id=id; GET DIAGNOSTICS n=ROW_COUNT; IF n<>1 THEN RAISE EXCEPTION 'Tech update failed: service_events'; END IF;
+UPDATE public.deficiencies SET id=id; GET DIAGNOSTICS n=ROW_COUNT; IF n<>1 THEN RAISE EXCEPTION 'Tech update failed: deficiencies'; END IF;
+UPDATE public.service_outcomes SET id=id; GET DIAGNOSTICS n=ROW_COUNT; IF n<>1 THEN RAISE EXCEPTION 'Tech update failed: service_outcomes'; END IF;
+UPDATE public.diagnostic_hypotheses SET id=id; GET DIAGNOSTICS n=ROW_COUNT; IF n<>1 THEN RAISE EXCEPTION 'Tech update failed: diagnostic_hypotheses'; END IF;
+UPDATE public.verification_events SET id=id; GET DIAGNOSTICS n=ROW_COUNT; IF n<>1 THEN RAISE EXCEPTION 'Tech update failed: verification_events'; END IF;
+END $test$;
+RESET ROLE;
+UPDATE public.memberships SET role='viewer' WHERE user_id=current_setting('test.uid')::uuid;
+SET LOCAL ROLE authenticated;
+DO $test$ DECLARE n integer; BEGIN
+IF (SELECT count(*) FROM public.service_requests)<>1 THEN RAISE EXCEPTION 'Viewer read failed: service_requests'; END IF;
+IF (SELECT count(*) FROM public.service_events)<>1 THEN RAISE EXCEPTION 'Viewer read failed: service_events'; END IF;
+IF (SELECT count(*) FROM public.deficiencies)<>1 THEN RAISE EXCEPTION 'Viewer read failed: deficiencies'; END IF;
+IF (SELECT count(*) FROM public.service_observations)<>1 THEN RAISE EXCEPTION 'Viewer read failed: service_observations'; END IF;
+IF (SELECT count(*) FROM public.service_outcomes)<>1 THEN RAISE EXCEPTION 'Viewer read failed: service_outcomes'; END IF;
+IF (SELECT count(*) FROM public.diagnostic_hypotheses)<>1 THEN RAISE EXCEPTION 'Viewer read failed: diagnostic_hypotheses'; END IF;
+IF (SELECT count(*) FROM public.verification_events)<>1 THEN RAISE EXCEPTION 'Viewer read failed: verification_events'; END IF;
+BEGIN INSERT INTO public.service_requests(facility_id,symptom) VALUES(current_setting('test.fid')::uuid,'Rollback-only symptom'); RAISE EXCEPTION 'Viewer insert accepted: service_requests'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+BEGIN INSERT INTO public.service_events(id,facility_id,opening_no) VALUES(gen_random_uuid(),current_setting('test.fid')::uuid,'ROLLBACK'); RAISE EXCEPTION 'Viewer insert accepted: service_events'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+BEGIN INSERT INTO public.deficiencies(id,facility_id,opening_no,criterion) VALUES(gen_random_uuid(),current_setting('test.fid')::uuid,'ROLLBACK','Test criterion'); RAISE EXCEPTION 'Viewer insert accepted: deficiencies'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+BEGIN INSERT INTO public.service_observations(event_id,observation) VALUES(current_setting('test.event')::uuid,'Rollback-only observation'); RAISE EXCEPTION 'Viewer insert accepted: service_observations'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+BEGIN INSERT INTO public.service_outcomes(event_id) VALUES(current_setting('test.event')::uuid); RAISE EXCEPTION 'Viewer insert accepted: service_outcomes'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+BEGIN INSERT INTO public.diagnostic_hypotheses(event_id,rank,cause) VALUES(current_setting('test.event')::uuid,1,'Rollback-only cause'); RAISE EXCEPTION 'Viewer insert accepted: diagnostic_hypotheses'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+BEGIN INSERT INTO public.verification_events(deficiency_id) VALUES(current_setting('test.def')::uuid); RAISE EXCEPTION 'Viewer insert accepted: verification_events'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+UPDATE public.service_requests SET id=id; GET DIAGNOSTICS n=ROW_COUNT; IF n<>0 THEN RAISE EXCEPTION 'Viewer update accepted: service_requests'; END IF;
+UPDATE public.service_events SET id=id; GET DIAGNOSTICS n=ROW_COUNT; IF n<>0 THEN RAISE EXCEPTION 'Viewer update accepted: service_events'; END IF;
+UPDATE public.deficiencies SET id=id; GET DIAGNOSTICS n=ROW_COUNT; IF n<>0 THEN RAISE EXCEPTION 'Viewer update accepted: deficiencies'; END IF;
+UPDATE public.service_outcomes SET id=id; GET DIAGNOSTICS n=ROW_COUNT; IF n<>0 THEN RAISE EXCEPTION 'Viewer update accepted: service_outcomes'; END IF;
+UPDATE public.diagnostic_hypotheses SET id=id; GET DIAGNOSTICS n=ROW_COUNT; IF n<>0 THEN RAISE EXCEPTION 'Viewer update accepted: diagnostic_hypotheses'; END IF;
+UPDATE public.verification_events SET id=id; GET DIAGNOSTICS n=ROW_COUNT; IF n<>0 THEN RAISE EXCEPTION 'Viewer update accepted: verification_events'; END IF;
+END $test$;
+SELECT set_config('request.jwt.claim.sub',gen_random_uuid()::text,true);
+DO $test$ BEGIN
+IF EXISTS(SELECT 1 FROM public.service_requests) THEN RAISE EXCEPTION 'Nonmember read accepted: service_requests'; END IF;
+IF EXISTS(SELECT 1 FROM public.service_events) THEN RAISE EXCEPTION 'Nonmember read accepted: service_events'; END IF;
+IF EXISTS(SELECT 1 FROM public.deficiencies) THEN RAISE EXCEPTION 'Nonmember read accepted: deficiencies'; END IF;
+IF EXISTS(SELECT 1 FROM public.service_observations) THEN RAISE EXCEPTION 'Nonmember read accepted: service_observations'; END IF;
+IF EXISTS(SELECT 1 FROM public.service_outcomes) THEN RAISE EXCEPTION 'Nonmember read accepted: service_outcomes'; END IF;
+IF EXISTS(SELECT 1 FROM public.diagnostic_hypotheses) THEN RAISE EXCEPTION 'Nonmember read accepted: diagnostic_hypotheses'; END IF;
+IF EXISTS(SELECT 1 FROM public.verification_events) THEN RAISE EXCEPTION 'Nonmember read accepted: verification_events'; END IF;
+END $test$;
+ROLLBACK;
+SELECT 'PASS: tech insert/update; viewer read only; nonmember record denial across seven service tables. Rollback SQL simulation only.' AS result;
+
