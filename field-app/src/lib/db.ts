@@ -499,14 +499,20 @@ export async function getOfflineSetting(key: string) {
   return db.get("settings", key);
 }
 
-export async function cacheOpening(opening: any) {
+export async function cacheOpening(opening: any, principal?: {userId:string;organizationId:string}) {
   const db = await getDb();
-  await db.put("openings", opening);
+  const auth = await loadAuth();
+  const owner=principal||auth;
+  if(!owner||!auth||auth.userId!==owner.userId||auth.organizationId!==owner.organizationId)return;
+  await db.put("openings", {...opening,_cacheUserId:owner.userId,_cacheOrganizationId:owner.organizationId});
 }
 
 export async function getCachedOpening(id: string) {
   const db = await getDb();
-  return db.get("openings", id);
+  const auth=await loadAuth();
+  const row=await db.get("openings", id);
+  if(!auth||row?._cacheUserId!==auth.userId||row?._cacheOrganizationId!==auth.organizationId)return undefined;
+  return row;
 }
 
 export async function updateCachedOpening(id: string, updater: (opening: any) => any) {

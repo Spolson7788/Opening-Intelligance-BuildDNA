@@ -10,6 +10,21 @@ portfolioRouter.use(requireAuth);
 portfolioRouter.use(enforceRolePermissions);
 portfolioRouter.use(auditLog);
 
+// Search scope is always the current server-verified company. State, territory
+// and phone location are convenience filters, never authorization inputs.
+portfolioRouter.get("/facility-search", async (req: AuthedRequest, res) => {
+  const parsed=z.object({state:z.string().regex(/^[A-Za-z]{2}$/).optional(),territory:z.string().max(120).optional(),q:z.string().max(200).optional()}).safeParse(req.query);
+  if(!parsed.success)return res.status(400).json({error:"invalid_search"});
+  try {
+    const {rows}=await pool.query(`SELECT p.* FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id WHERE pf.organization_id=$1 ORDER BY p.name,p.id`,[req.auth!.organizationId]);
+    const preferences=await pool.query('SELECT home_state,home_territory FROM users WHERE id=$1 AND organization_id=$2',[req.auth!.userId,req.auth!.organizationId]);
+    const {state,territory,q}=parsed.data;
+    const term=(q||'').trim().toLowerCase();
+    const facilities=rows.filter(p=>(!state||String(p.state||'').trim().toUpperCase()===state.toUpperCase())&&(!territory||p.service_territory===territory)&&(!term||[p.name,p.address_line1,p.city,p.state,p.postal_code].filter(Boolean).join(' ').toLowerCase().includes(term)));
+    res.json({facilities,preferences:preferences.rows[0]||{},states:[...new Set(rows.map(p=>p.state?.trim().toUpperCase()).filter(Boolean))].sort(),territories:[...new Set(rows.map(p=>p.service_territory).filter(Boolean))].sort()});
+  } catch {res.status(503).json({error:"facility_search_unavailable"});}
+});
+
 portfolioRouter.get("/portfolios", async (req: AuthedRequest, res) => {
   const orgId = req.auth!.organizationId;
   try {
