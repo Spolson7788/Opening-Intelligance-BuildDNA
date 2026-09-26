@@ -27,7 +27,7 @@ on:
       expected_scene_count:
         description: 'Number of scenes this run is approved for. Mismatch stops the run.'
         required: true
-        default: '13'
+        default: '1'
       dry_run:
         description: 'Plan and check only — no API calls, no credits spent'
         type: boolean
@@ -81,13 +81,13 @@ jobs:
         run: |
           python - <<'PYGATE'
           import os
-          assert os.environ["SCENES"].split() == ["D010", "D020", "D030", "D040", "D050", "D060a", "D060b", "D070", "D080i", "D080", "D080Bi", "D080Ci", "D100"], "Unapproved scene list"
-          assert os.environ["EXPECTED"] == "13", "Unapproved request count"
+          assert os.environ["SCENES"].split() == ["DBRAND"], "Unapproved scene list"
+          assert os.environ["EXPECTED"] == "1", "Unapproved request count"
           assert os.environ["RUN_ATTEMPT"] == "1", "No retries authorized; do not rerun this job"
           PYGATE
 
       - name: Preflight — every required file present and coherent
-        run: OI_EXPECTED_READY=69 python .github/workflows/preflight.py
+        run: OI_EXPECTED_READY=70 python .github/workflows/preflight.py
 
       - name: Dry-run safety gate
         run: echo "Dry run only. No secret requested, no API call, no credits spent."
@@ -115,7 +115,7 @@ jobs:
           EXPECTED: ${{ inputs.expected_scene_count }}
           SCENES: ${{ inputs.scenes }}
         run: |
-          python elevenlabs/generate_scenes.py --dry-run --require-pins --expect-characters 1287 --expect "$EXPECTED" \
+          python elevenlabs/generate_scenes.py --dry-run --require-pins --expect-characters 42 --expect "$EXPECTED" \
             ${SCENES:+--scenes $SCENES}
 
 
@@ -166,13 +166,13 @@ jobs:
         run: |
           python - <<'PYGATE'
           import os
-          assert os.environ["SCENES"].split() == ["D010", "D020", "D030", "D040", "D050", "D060a", "D060b", "D070", "D080i", "D080", "D080Bi", "D080Ci", "D100"], "Unapproved scene list"
-          assert os.environ["EXPECTED"] == "13", "Unapproved request count"
+          assert os.environ["SCENES"].split() == ["DBRAND"], "Unapproved scene list"
+          assert os.environ["EXPECTED"] == "1", "Unapproved request count"
           assert os.environ["RUN_ATTEMPT"] == "1", "No retries authorized; do not rerun this job"
           PYGATE
 
       - name: Preflight — every required file present and coherent
-        run: OI_EXPECTED_READY=69 python .github/workflows/preflight.py
+        run: OI_EXPECTED_READY=70 python .github/workflows/preflight.py
 
       # Every ${{ }} expression is passed through `env:` and never interpolated
       # into a shell body. Interpolating run-time input directly into `run:` is
@@ -273,7 +273,7 @@ jobs:
           EXPECTED: ${{ inputs.expected_scene_count }}
           SCENES: ${{ inputs.scenes }}
         run: |
-          python elevenlabs/generate_scenes.py --dry-run --require-pins --expect-characters 1287 --expect "$EXPECTED" \
+          python elevenlabs/generate_scenes.py --dry-run --require-pins --expect-characters 42 --expect "$EXPECTED" \
             ${SCENES:+--scenes $SCENES}
 
       - name: Secret is present
@@ -297,7 +297,7 @@ jobs:
           EXPECTED: ${{ inputs.expected_scene_count }}
           SCENES: ${{ inputs.scenes }}
         run: |
-          python elevenlabs/generate_scenes.py --require-pins --expect-characters 1287 \
+          python elevenlabs/generate_scenes.py --require-pins --expect-characters 42 \
             --expect "$EXPECTED" \
             ${SCENES:+--scenes $SCENES} \
             --fail-fast

@@ -3330,6 +3330,49 @@
    "narration_provisional": false,
    "provisional_reason": null,
    "provisional_depends_on": null
+  },
+  {
+   "scene_id": "DBRAND",
+   "script": "elevenlabs/scenes/DBRAND.txt",
+   "audio": "elevenlabs/audio/DBRAND.mp3",
+   "audio_present": false,
+   "renarrate_required": true,
+   "words": 5,
+   "estimated_seconds": 4.5,
+   "voice_id": "OZxMHsGaBmV5pjMIDIn0",
+   "model_id": "eleven_multilingual_v2",
+   "settings": {
+    "speed": 0.72,
+    "stability": 0.6,
+    "similarity_boost": 0.75,
+    "style": 0.0,
+    "use_speaker_boost": true
+   },
+   "output_format": {
+    "preferred": {
+     "api_value": "mp3_44100_128",
+     "container": "mp3",
+     "sample_rate": 44100,
+     "bit_rate_kbps": 128,
+     "channels": 1,
+     "why": "The approved narration-master format, chosen 2026-09-15 as an explicit production decision after the first paid run returned HTTP 403: \"output_format_not_allowed: Output format 'pcm_44100' is only available on the Pro tier and above.\" mp3_44100_128 is available on the current subscription. Masters are kept as the MP3 the API returns — they are NOT transcoded to WAV, which would add a decode/encode round trip without recovering anything the encoder already discarded.",
+     "lossy": true,
+     "honest_description": "Lossy. One encode at generation, then one AAC encode at assembly. Do not describe these masters as lossless."
+    },
+    "superseded": {
+     "api_value": "pcm_44100",
+     "container": "wav",
+     "why_abandoned": "Returned HTTP 403 output_format_not_allowed on the first paid run (scene S010). pcm_44100 requires the ElevenLabs Pro tier. Zero clips were generated and fail-fast stopped the other 23 requests, so nothing was charged for an unusable format."
+    },
+    "note": "Output format is a DELIVERY choice and sits OUTSIDE the voice lock. The lock covers voice_id, model_id and the five settings only. Changing the container changes nothing about the voice, and the lock fingerprint is unchanged."
+   },
+   "submitted_sha256_expected": "724af4944ae1146e9c00beca27b7c0701c31a34420a2c3ca067731d049f7da1b",
+   "submitted_sha256_normalization": "utf8-strip-plus-newline",
+   "status": "READY",
+   "in_master": true,
+   "narration_provisional": false,
+   "provisional_reason": null,
+   "provisional_depends_on": null
   }
  ],
  "run_name": "final-consolidated-three-scene-1126char",
