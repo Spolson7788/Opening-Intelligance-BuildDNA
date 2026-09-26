@@ -49,7 +49,7 @@ portfolioRouter.get("/facility-search", async (req: AuthedRequest, res) => {
   if(!parsed.success)return res.status(400).json({error:"invalid_search"});
   try {
     const {rows}=await pool.query(`SELECT p.* FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id WHERE ${facilityAccessPredicate(1)} ORDER BY p.name,p.id`,[req.auth!.organizationId]);
-    const preferences=await pool.query('SELECT home_state,home_territory FROM users WHERE id=$1 AND organization_id=$2',[req.auth!.userId,req.auth!.organizationId]);
+    const preferences=await pool.query('SELECT CASE WHEN b.id IS NOT NULL THEN b.default_state ELSE u.home_state END AS home_state, CASE WHEN b.id IS NOT NULL THEN b.default_territory ELSE u.home_territory END AS home_territory FROM users u LEFT JOIN user_branch_assignments a ON a.user_id=u.id AND a.organization_id=u.organization_id LEFT JOIN company_branches b ON b.id=a.branch_id AND b.organization_id=u.organization_id AND b.is_active=true WHERE u.id=$1 AND u.organization_id=$2',[req.auth!.userId,req.auth!.organizationId]);
     const {state,territory,q}=parsed.data;
     const term=(q||'').trim().toLowerCase();
     const facilities=rows.filter(p=>(!state||String(p.state||'').trim().toUpperCase()===state.toUpperCase())&&(!territory||p.service_territory===territory)&&(!term||[p.name,p.address_line1,p.city,p.state,p.postal_code].filter(Boolean).join(' ').toLowerCase().includes(term)));

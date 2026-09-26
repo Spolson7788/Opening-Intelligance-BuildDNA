@@ -14,10 +14,10 @@ export function SetupOpeningPage() {
   const [type,setType]=useState("healthcare"); const [configuration,setConfiguration]=useState("single"); const [fire,setFire]=useState(false);
   const [busy,setBusy]=useState(false); const [error,setError]=useState(""); const [notice,setNotice]=useState("");
   const canCreate=!!auth && ["admin","facilities_manager","technician"].includes(auth.role);
-  useEffect(()=>{Promise.all([listFieldPortfolios(),listFieldProperties(),searchFieldFacilities()]).then(([p,f,scope])=>{
-    setState(scope.preferences.home_state||"");setTerritory(scope.preferences.home_territory||"");
+  useEffect(()=>{let current=true;setFacilities([]);setPortfolios([]);setState("");setTerritory("");setFacility("");setBuilding("");setPortfolio("");setQuery("");if(!auth)return;Promise.all([listFieldPortfolios(),listFieldProperties(),searchFieldFacilities()]).then(([p,f,scope])=>{
+    if(!current)return;setState(scope.preferences.home_state||"");setTerritory(scope.preferences.home_territory||"");
     setPortfolios(p);setFacilities(f); if(p.length===1)setPortfolio(p[0].id);
-  }).catch(()=>setError("Connect to load your organization's facilities."));},[]);
+  }).catch(()=>{if(current)setError("Connect to load your organization's facilities.");});return ()=>{current=false;};},[auth?.userId,auth?.organizationId]);
   const visible=facilities.filter(f=>(!state||f.state?.trim().toUpperCase()===state)&&(!territory||f.service_territory===territory)&&(!query.trim()||[f.name,f.city,f.address_line1,f.postal_code].filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase())));
   function resetSelection(){setFacility("");setBuilding("");}
   const buildings=facilities.find(f=>f.id===facility)?.buildings??[];
@@ -26,7 +26,7 @@ export function SetupOpeningPage() {
     setBusy(true);setError("");setNotice("");
     try {await action();} catch {setError("Could not confirm the save. Reload the facility list before retrying to check whether it was saved.");} finally{setBusy(false);}
   }
-  return <div className="screen"><Link to="/scan">Back to openings</Link><h1>Facilities and openings</h1>
+  return <div className="screen"><Link to="/scan">Back to openings</Link><h1>Facilities and openings</h1>{auth?.role==="admin"&&<Link to="/branches">Manage company branches</Link>}
     <p>Connected setup for your organization. Hardware, specifications and photographs can be queued once an opening is available on this device.</p>
     {error&&<p role="alert" className="error-text">{error}</p>}{notice&&<p role="status">{notice}</p>}
     <div className="field"><label htmlFor="territory">My Territory</label><select id="territory" value={territory} onChange={e=>{setTerritory(e.target.value);resetSelection();}}><option value="">All authorized territories</option>{[...new Set([...facilities.map(f=>f.service_territory),territory].filter((v):v is string=>!!v))].sort().map(v=><option key={v}>{v}</option>)}</select></div>

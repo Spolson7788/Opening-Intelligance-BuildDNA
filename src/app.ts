@@ -1,3 +1,4 @@
+import {branchesRouter} from "./routes/branches";
 import {providerAssignmentsRouter} from "./routes/providerAssignments";
 import {purchasingRouter} from "./routes/purchasing";
 import express from "express";
@@ -78,6 +79,7 @@ export function createApp() {
 
   app.use("/api/auth", authRouter);
   app.use("/api/provider-assignments",providerAssignmentsRouter);
+  app.use("/api/branches",branchesRouter);
   app.use("/api/purchasing",purchasingRouter);
   app.use("/api/openings", openingsRouter);
   app.use("/api/events", eventsRouter);
