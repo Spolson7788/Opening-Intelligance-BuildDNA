@@ -23,12 +23,13 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     return res.status(401).json({ error: "missing_token" });
   }
   const token = header.slice("Bearer ".length);
+  let payload: { userId: string; organizationId: string; role: string };
   try {
-    const payload = jwt.verify(token, JWT_SECRET as string) as {
-      userId: string;
-      organizationId: string;
-      role: string;
-    };
+    payload = jwt.verify(token, JWT_SECRET as string) as typeof payload;
+  } catch {
+    return res.status(401).json({ error: "invalid_token" });
+  }
+  try {
     const current = await pool.query(
       `SELECT id, organization_id, role, is_active
        FROM users WHERE id=$1 AND organization_id=$2`,
@@ -47,8 +48,10 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
       role: user.role,
     };
     return next();
-  } catch (err) {
-    return res.status(401).json({ error: "invalid_token" });
+  } catch {
+    // Failure to check current authority must deny the request without claiming
+    // a valid credential is invalid or prompting unnecessary password changes.
+    return res.status(503).json({ error: "authorization_service_unavailable" });
   }
 }
 
