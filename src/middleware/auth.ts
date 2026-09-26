@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { pool } from "../db/pool";
 
 export interface AuthedRequest extends Request {
   auth?: {
@@ -16,7 +17,7 @@ if (!JWT_SECRET) {
   throw new Error("JWT_SECRET environment variable is required");
 }
 
-export function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
+export async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header || !header.startsWith("Bearer ")) {
     return res.status(401).json({ error: "missing_token" });
@@ -28,8 +29,24 @@ export function requireAuth(req: AuthedRequest, res: Response, next: NextFunctio
       organizationId: string;
       role: string;
     };
-    req.auth = payload;
-    next();
+    const current = await pool.query(
+      `SELECT id, organization_id, role, is_active
+       FROM users WHERE id=$1 AND organization_id=$2`,
+      [payload.userId, payload.organizationId],
+    );
+    const user = current.rows[0];
+    if (!user) return res.status(401).json({ error: "invalid_token_subject" });
+    if (!user.is_active) return res.status(403).json({ error: "account_deactivated" });
+
+    // The database is authoritative on every request. A role change or account
+    // deactivation therefore takes effect immediately instead of waiting for a
+    // previously issued JWT to expire.
+    req.auth = {
+      userId: user.id,
+      organizationId: user.organization_id,
+      role: user.role,
+    };
+    return next();
   } catch (err) {
     return res.status(401).json({ error: "invalid_token" });
   }

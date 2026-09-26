@@ -1,8 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { enqueueOutboxItem } from "../lib/db";
-import { flushOutbox } from "../lib/sync";
+import { flushOutbox, queueOpeningMutation } from "../lib/sync";
 import { recomputeHealthScore } from "../lib/api";
 import { SyncBadge } from "../components/SyncBadge";
 
@@ -18,14 +17,10 @@ export function LogServiceEventPage() {
     e.preventDefault();
     setSubmitting(true);
 
-    await enqueueOutboxItem({
-      id: crypto.randomUUID(),
-      kind: "service_event",
-      payload: {
+    await queueOpeningMutation("service_event", id!, {
         opening_id: id,
         event_date: eventDate,
         work_performed: workPerformed,
-      },
     });
 
     setSaved(true);

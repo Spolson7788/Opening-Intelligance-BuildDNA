@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { app, signupTestOrg } from "./helpers";
+import { pool } from "../src/db/pool";
 
 describe("auth", () => {
   it("signup creates an org and issues a working token", async () => {
@@ -108,5 +109,21 @@ describe("auth", () => {
       .set("Authorization", `Bearer ${org.token}`)
       .send({ portfolio_id: portfolios.body[0].id, name: "Immediate Property" });
     expect(property.status).toBe(201);
+  });
+
+  it("revokes an already-issued token immediately when the user is deactivated", async () => {
+    const org = await signupTestOrg();
+    await pool.query("UPDATE users SET is_active=false WHERE email=$1", [org.email]);
+    const response = await request(app).get("/api/openings").set("Authorization", `Bearer ${org.token}`);
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("account_deactivated");
+  });
+
+  it("uses the current database role instead of the role embedded in an existing token", async () => {
+    const org = await signupTestOrg();
+    await pool.query("UPDATE users SET role='viewer' WHERE email=$1", [org.email]);
+    const response = await request(app).post("/api/sync/components").set("Authorization", `Bearer ${org.token}`).send({});
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("read_only_role");
   });
 });

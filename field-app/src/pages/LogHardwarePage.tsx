@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { addHardwareComponent } from "../lib/api";
+import { fetchOpening } from "../lib/api";
+import { queueOpeningMutation } from "../lib/sync";
+import { updateCachedOpening } from "../lib/db";
 import { CARRIER_OPTIONS } from "../lib/tracking";
 import { SyncBadge } from "../components/SyncBadge";
 
@@ -49,16 +51,28 @@ export function LogHardwarePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [opening, setOpening] = useState<any>(null);
+  const [mountingScope, setMountingScope] = useState("opening");
+  const [doorLeafId, setDoorLeafId] = useState("");
+  const [positionLabel, setPositionLabel] = useState("");
+  const [condition, setCondition] = useState("unverified");
+  const [identityStatus, setIdentityStatus] = useState("unresolved");
+  const [reviewState, setReviewState] = useState("pending");
+  const [replacementRequired, setReplacementRequired] = useState(false);
+
+  useEffect(() => {
+    if (id) fetchOpening(id).then((result) => setOpening(result.opening)).catch(() => undefined);
+  }, [id]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
-      // This one requires connectivity — hardware capture isn't queued offline
-      // yet (unlike service/inspection events), since it's typically a one-time
-      // setup step done during initial capture, not a routine field action.
-      await addHardwareComponent({
+      const operationId = crypto.randomUUID();
+      const componentId = crypto.randomUUID();
+      const payload = {
+        id: componentId,
         opening_id: id,
         component_type: componentType,
         manufacturer: manufacturer || undefined,
@@ -71,7 +85,26 @@ export function LogHardwarePage() {
         carrier: carrier || undefined,
         tracking_number: trackingNumber || undefined,
         shipment_status: shipmentStatus,
-      });
+        mounting_scope: mountingScope,
+        door_leaf_id: mountingScope === "door_leaf" ? doorLeafId : undefined,
+        frame_id: mountingScope === "frame" ? opening?.frame?.id : undefined,
+        position_label: positionLabel || undefined,
+        client_operation_id: operationId,
+        condition,
+        identity_status: identityStatus,
+        review_state: reviewState,
+        replacement_required: replacementRequired,
+      };
+      await queueOpeningMutation("hardware_component", id!, {
+        ...payload,
+      }, operationId);
+      await updateCachedOpening(id!, (cached) => ({
+        ...cached,
+        hardware_components: [
+          ...(cached.hardware_components || []).filter((item: any) => item.id !== componentId),
+          { ...payload, pending_sync: true },
+        ],
+      }));
       setSaved(true);
       setTimeout(() => navigate(`/opening/${id}`), 700);
     } catch {
@@ -92,8 +125,7 @@ export function LogHardwarePage() {
       <div className="screen">
         <h2 style={{ marginBottom: 4 }}>Add Hardware</h2>
         <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 20 }}>
-          Requires a connection — this is typically done during initial capture. A tracker ID is assigned
-          automatically once saved.
+          Saved locally first and synchronized automatically. A tracker ID is assigned by the server.
         </p>
 
         {saved ? (
@@ -110,6 +142,29 @@ export function LogHardwarePage() {
                 ))}
               </select>
             </div>
+            <div className="field">
+              <label htmlFor="mounting-scope">Installed on</label>
+              <select id="mounting-scope" value={mountingScope} onChange={(e) => setMountingScope(e.target.value)}>
+                <option value="opening">Overall opening</option>
+                <option value="frame" disabled={!opening?.frame}>Frame</option>
+                <option value="door_leaf" disabled={!opening?.door_leaves?.length}>Door leaf</option>
+              </select>
+            </div>
+            {mountingScope === "door_leaf" && <div className="field">
+              <label htmlFor="door-leaf">Door leaf</label>
+              <select id="door-leaf" value={doorLeafId} onChange={(e) => setDoorLeafId(e.target.value)} required>
+                <option value="">Select a leaf</option>
+                {(opening?.door_leaves || []).map((leaf: any) => <option key={leaf.id} value={leaf.id}>{leaf.leaf_role}</option>)}
+              </select>
+            </div>}
+            <div className="field">
+              <label htmlFor="position-label">Position (when more than one exists)</label>
+              <input id="position-label" value={positionLabel} onChange={(e) => setPositionLabel(e.target.value)} placeholder="e.g. top, middle, bottom" />
+            </div>
+            <div className="field"><label htmlFor="condition">Condition</label><select id="condition" value={condition} onChange={(e) => setCondition(e.target.value)}><option value="unverified">Unverified</option><option value="good">Good</option><option value="worn">Worn</option><option value="failed">Failed</option></select></div>
+            <div className="field"><label htmlFor="identity-status">Product identity</label><select id="identity-status" value={identityStatus} onChange={(e) => setIdentityStatus(e.target.value)}><option value="unresolved">Unresolved</option><option value="established">Established</option></select></div>
+            <div className="field"><label htmlFor="review-state">Review</label><select id="review-state" value={reviewState} onChange={(e) => setReviewState(e.target.value)}><option value="pending">Pending</option><option value="reviewed">Reviewed</option></select></div>
+            <label style={{ display: "flex", gap: 8, marginBottom: 16 }}><input type="checkbox" checked={replacementRequired} onChange={(e) => setReplacementRequired(e.target.checked)} />Replacement required</label>
             <div className="field">
               <label htmlFor="manufacturer">Manufacturer</label>
               <input id="manufacturer" value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} placeholder="e.g. Cal-Royal" />
