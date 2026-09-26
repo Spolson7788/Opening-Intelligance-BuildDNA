@@ -13,6 +13,7 @@ export function buildFacilityDashboard(destination){
  replace("function openingScore(o){", "function openingScore(o){if(o.parts[0]&&'opening_health_score' in o.parts[0])return o.parts[0].opening_health_score;");
  replace("var complete=OPEN.every(o=>o.parts.every(p=>assessedScore(p)!==null));", "var complete=OPEN.every(o=>openingScore(o)!==null);");
  html=html.replaceAll('Opening review','Field App');
+ html=html.replace('build v53','connected staging');
  html=html.replaceAll('href="opening.html"','href="/field/setup-opening"').replaceAll("href='/'", "href='/field/scan'").replaceAll('href="/"','href="/field/scan"');
  html=html.replace("parts=(ops||[]).length", "parts=(ops||[]).filter(p=>!p.placeholder).length").replaceAll("o.parts.length", "o.parts.filter(p=>!p.placeholder).length");
  // The canonical API has service history, not the preview-only deficiency workflow.
@@ -21,7 +22,7 @@ export function buildFacilityDashboard(destination){
  html=html.replaceAll('new Date(e.performed_at).toLocaleDateString()', "formatCalendarDate(String(e.performed_at).slice(0,10))");
  replace("_detailInit();boot();", `document.getElementById('recoverAccount').hidden=true;
  document.getElementById('recoverLogin').hidden=true;
- const refresh=document.createElement('button');refresh.textContent='Refresh saved records';refresh.onclick=()=>boot().catch(e=>{clearFacility();document.getElementById('facSub').textContent=e.message;});document.getElementById('facPickWrap').before(refresh);
+ const refresh=document.createElement('button');refresh.textContent='Refresh saved records';refresh.onclick=()=> (current?load(current):boot()).catch(e=>{clearFacility();document.getElementById('facSub').textContent=e.message;});document.getElementById('facPickWrap').before(refresh);
  let displayedAccount=null;setInterval(async()=>{const a=await readFieldSession();const key=a?[a.userId,a.organizationId,a.token].join(':'):null;if(displayedAccount!==null&&displayedAccount!==key){clearFacility();location.reload();}displayedAccount=key;},1500);
  _detailInit();boot().catch(e=>{clearFacility();document.getElementById('facSub').textContent=e.message;});`);
  mkdirSync(destination,{recursive:true});writeFileSync(resolve(destination,'index.html'),html);
