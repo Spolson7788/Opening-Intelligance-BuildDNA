@@ -46,3 +46,11 @@ it('enables recovery only for the trusted staging preview context',async()=>{
  expect(recoveryDeploymentAllowed({site:{id:'another-site'},deploy:{context:'deploy-preview'}})).toBe(false);
  expect(recoveryDeploymentAllowed()).toBe(false);
 });
+
+it('allows the isolated release only in its pinned context and excludes the public live site',async()=>{
+ const {recoveryDeploymentAllowed}=await import('../src/services/recoveryDeployment');
+ const site={id:'80fbbee8-b9d3-4b16-b93f-d2d8396591ec'};
+ expect(recoveryDeploymentAllowed({site,deploy:{context:'production'}})).toBe(true);
+ for(const context of ['deploy-preview','branch-deploy','dev'])expect(recoveryDeploymentAllowed({site,deploy:{context}})).toBe(false);
+ expect(recoveryDeploymentAllowed({site:{id:'ac07bb56-42f2-42b6-bcaf-0e543e99cac5'},deploy:{context:'production'}})).toBe(false);
+});
