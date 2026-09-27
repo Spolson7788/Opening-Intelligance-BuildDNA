@@ -1,37 +1,5 @@
 [build]
-  command = "npm run build"
+  command = "node scripts/release/hold-deployment.cjs"
   publish = "netlify/public"
-
 [build.environment]
   NODE_VERSION = "24"
-
-[functions]
-  directory = "netlify/functions"
-  node_bundler = "esbuild"
-  external_node_modules = ["express"]
-
-[context.production.environment]
-  NODE_ENV = "production"
-
-# Isolated, protected staging only; production settings above are unchanged.
-# The staging site enables only pr2-staging branch deploys; its primary branch is production-disabled.
-[context."pr2-staging"]
-  command = "node scripts/build-protected-staging.mjs"
-  publish = "dist/protected-staging"
-
-[context."pr2-staging".environment]
-  NPM_FLAGS = "--include=dev"
-
-# PR 9 on the existing protected NONPRODUCTION project only. The build script
-# rejects other sites, pull requests, branches and the production context.
-[context.deploy-preview]
-  command = "node scripts/build-protected-staging.mjs"
-  publish = "dist/protected-staging"
-
-[context.deploy-preview.environment]
-  NPM_FLAGS = "--include=dev"
-
-# Records only packaged bytes and public build identity; never source or secrets.
-# The plugin is a no-op outside the already guarded deploy-preview context.
-[[plugins]]
-  package = "./plugins/function-evidence"
