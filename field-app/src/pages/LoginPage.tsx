@@ -11,17 +11,20 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [reference, setReference] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setReference(null);
     setSubmitting(true);
     try {
       await login(email.trim(), password);
       const from = location.state?.from;
       navigate(typeof from === "string" && from.startsWith("/") && !from.startsWith("//") && from !== "/login" ? from : "/scan", { replace: true });
     } catch (err) {
+      if (err instanceof ApiError) setReference(err.reference || null);
       if (err instanceof ApiError && err.status === 401) {
         setError("Email or password didn't match. Try again.");
       } else if (err instanceof ApiError && err.status === 403) {
@@ -67,6 +70,7 @@ export function LoginPage() {
           />
         </div>
         {error && <p className="error-text">{error}</p>}
+        {reference && <p>Support reference: {reference}</p>}
         <button type="submit" className="btn btn-primary" disabled={submitting}>
           {submitting ? "Signing in…" : "Sign In"}
         </button>

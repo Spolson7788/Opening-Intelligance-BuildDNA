@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
@@ -124,30 +125,43 @@ const loginSchema = z.object({
 });
 
 authRouter.post("/login", async (req, res) => {
+  const reference = randomUUID();
+  res.setHeader("X-OI-Login-Reference", reference);
+  res.setHeader("Cache-Control", "no-store");
+  // Server-only diagnostic categories. Never log inputs, hashes, tokens or
+  // raw exceptions, and never disclose account existence to the client.
+  const report = (outcome: string) => console.info("OI login", { reference, outcome });
   const parsed = loginSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (!parsed.success) {
+    report("invalid_request");
+    return res.status(400).json({ error: "invalid_login_request", reference });
+  }
   const { email, password } = parsed.data;
-
   try {
     const result = await pool.query(
-      "SELECT id, organization_id, role, password_hash, is_active FROM users WHERE email = $1",
+      "SELECT id, organization_id, role, password_hash, is_active FROM public.users WHERE email = $1",
       [email.toLowerCase()]
     );
-    if (result.rows.length === 0) return res.status(401).json({ error: "invalid_credentials" });
-
+    if (result.rows.length === 0) {
+      report("account_not_found");
+      return res.status(401).json({ error: "invalid_credentials", reference });
+    }
     const user = result.rows[0];
     const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) return res.status(401).json({ error: "invalid_credentials" });
-    // Checked after the password, not before — an inactive account
-    // shouldn't reveal it's a real (but disabled) email to someone probing
-    // with a wrong password.
-    if (!user.is_active) return res.status(403).json({ error: "account_deactivated" });
-
+    if (!valid) {
+      report("password_mismatch");
+      return res.status(401).json({ error: "invalid_credentials", reference });
+    }
+    if (!user.is_active) {
+      report("account_deactivated");
+      return res.status(403).json({ error: "account_deactivated", reference });
+    }
     const token = issueToken(user);
+    report("success");
     res.json({ token, expiresIn: TOKEN_EXPIRY });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal_error" });
+  } catch {
+    report("service_error");
+    res.status(503).json({ error: "authentication_service_unavailable", reference });
   }
 });
 

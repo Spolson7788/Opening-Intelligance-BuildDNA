@@ -6,9 +6,11 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  reference?: string;
+  constructor(status: number, message: string, reference?: string) {
     super(message);
     this.status = status;
+    this.reference = reference;
   }
 }
 
@@ -44,7 +46,7 @@ export async function login(email: string, password: string) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error || "login_failed");
+    throw new ApiError(res.status, body.error || "login_failed", typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
   }
   return res.json() as Promise<{ token: string; expiresIn: string }>;
 }
