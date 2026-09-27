@@ -54,3 +54,5 @@ it('allows the isolated release only in its pinned context and excludes the publ
  for(const context of ['deploy-preview','branch-deploy','dev'])expect(recoveryDeploymentAllowed({site,deploy:{context}})).toBe(false);
  expect(recoveryDeploymentAllowed({site:{id:'ac07bb56-42f2-42b6-bcaf-0e543e99cac5'},deploy:{context:'production'}})).toBe(false);
 });
+
+it('readiness probe returns no account or credential information',async()=>{const r=await request(app).get('/recovery/status');expect(r.status).toBe(200);expect(r.body).toEqual({status:'available'});});

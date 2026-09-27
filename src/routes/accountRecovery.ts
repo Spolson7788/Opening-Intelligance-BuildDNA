@@ -9,7 +9,22 @@ const input = z.object({
  code: z.string().trim().regex(/^[a-f0-9]{64}$/),
  password: z.string().min(12).max(72).refine(p=>Buffer.byteLength(p,'utf8')<=72),
 });
-// Deliberately limited to the existing protected staging site. No public
+// Read-only readiness probe. It returns no account, code, or credential data.
+accountRecoveryRouter.get('/status',async(_req,res)=>{
+ res.setHeader('Cache-Control','no-store');
+ let client;
+ try{
+  client=await pool.connect();
+  await client.query('SELECT user_id FROM public.account_recovery_tokens WHERE false');
+  await client.query('SELECT id,session_version FROM public.users WHERE false');
+  return res.json({status:'available'});
+ }catch(error){
+  const code=String((error as {code?:string})?.code||'unknown');
+  console.error('OI recovery readiness',{code:/^[A-Z0-9_]{1,40}$/.test(code)?code:'unknown'});
+  return res.status(503).json({status:'unavailable'});
+ }finally{client?.release();}
+});
+// Deliberately limited to explicitly authorized private validation sites. No public
 // issuance endpoint: an authorized operator issues a code out of band.
 accountRecoveryRouter.post('/confirm',async(req,res)=>{
  res.setHeader('Cache-Control','no-store');
@@ -34,7 +49,9 @@ accountRecoveryRouter.post('/confirm',async(req,res)=>{
   await client.query('UPDATE public.account_recovery_tokens SET consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL',[user.rows[0].id]);
   await client.query('COMMIT');
   return res.json({message:'Password saved. Sign in with the password you just chose.'});
- }catch{
+ }catch(error){
+  const code=String((error as {code?:string})?.code||'unknown');
+  console.error('OI recovery failure',{code:/^[A-Z0-9_]{1,40}$/.test(code)?code:'unknown'});
   await client.query('ROLLBACK').catch(()=>{});
   return res.status(503).json({error:'recovery_unavailable'});
  }finally{client.release();}
