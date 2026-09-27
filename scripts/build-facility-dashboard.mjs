@@ -11,6 +11,22 @@ export function buildFacilityDashboard(destination){
  replace("if(await routeByType(session))return;", "if(await routeByType(session))return;await refreshScope();");
  replace("const {data:ops,error}=await loadDashboardRows(sb,fac.id);", "await refreshFacility(fac.id);const {data:ops,error}=await loadDashboardRows(sb,fac.id);");
  replace("function openingScore(o){", "function openingScore(o){if(o.parts[0]&&'opening_health_score' in o.parts[0])return o.parts[0].opening_health_score;");
+ // A service-history score must not suppress an observed component defect.
+ // Keep the canonical numerical score; use the more urgent observed condition
+ // for action recommendations, and do not call unassessed parts healthy.
+ replace('function recFor(b){', `function openingPriorityBand(o){
+  const scores=[openingScore(o),...o.parts.map(assessedScore)];
+  const known=scores.filter(s=>Number.isFinite(s)&&s>=0&&s<=100);
+  const low=known.length?Math.min(...known):null;
+  return bandOf(low!==null&&low<80?low:scores.some(s=>!Number.isFinite(s))?null:low);
+ }
+ function recFor(b){`);
+ replace('var B=BANDS[b];var rec=recFor(b);', 'var B=BANDS[b];var rec=recFor(openingPriorityBand(o));');
+ replace('if(w!==null&&w<80)need++;', "if(['monitor','serious','critical'].includes(openingPriorityBand(o)))need++;");
+ replace("need,'openings below healthy'", "need,'openings with condition or health concerns'");
+ replace('<b>Priority:</b> ', '<b>Priority (health and recorded conditions):</b> ');
+ replace("tile('Facility health score',", "tile('Service-history health score',");
+ replace('Every opening on file, bucketed by its health score.', 'Openings grouped by service-history health score. Recorded part conditions also determine attention and priority.');
  replace("var complete=OPEN.every(o=>o.parts.every(p=>assessedScore(p)!==null));", "var complete=OPEN.every(o=>openingScore(o)!==null);");
  html=html.replaceAll('Opening review','Field App');
  html=html.replace('build v53','connected staging');
