@@ -55,6 +55,35 @@ function componentOperation(openingId: string, overrides: Record<string, unknown
 }
 
 describe("offline synchronization API foundation", () => {
+  it("rejects unassessed completion through direct and queued endpoints, then accepts assessed structure", async () => {
+    const org=await signupTestOrg(); const {buildingId}=await createPortfolioHierarchy(org.token);
+    const opening=await createTestOpening(org.token,buildingId); const auth={Authorization:`Bearer ${org.token}`};
+    await request(app).put(`/api/openings/${opening.id}/frame`).set(auth).send({material:"Steel",condition:"unverified"});
+    await request(app).post(`/api/openings/${opening.id}/door-leaves`).set(auth).send({leaf_role:"single",condition:"unverified"});
+    await request(app).post("/api/sync/components").set(auth).send(componentOperation(opening.id));
+    const op={operation_id:randomUUID(),entity_id:opening.id,opening_id:opening.id,device_id:deviceId,base_server_revision:null,schema_version:3,app_version:"test",protocol_version:1,entity_type:"completion",operation_type:"complete",payload:{}};
+    const direct=await request(app).post(`/api/openings/${opening.id}/complete`).set(auth);
+    const queued=await request(app).post("/api/sync/operations").set(auth).send(op);
+    for(const result of [direct,queued]) { expect(result.status).toBe(409);expect(result.body.missing).toEqual(expect.arrayContaining(["frame_condition","leaf_condition"])); }
+    await pool.query("UPDATE opening_frames SET condition='good' WHERE opening_id=$1",[opening.id]);
+    await pool.query("UPDATE door_leaves SET condition='good' WHERE opening_id=$1",[opening.id]);
+    expect((await request(app).post("/api/sync/operations").set(auth).send(op)).status).toBe(201);
+  });
+
+  it("preserves hardware commercial fields across sync and rejects a changed-cost replay", async () => {
+    const org=await signupTestOrg(); const {buildingId}=await createPortfolioHierarchy(org.token);
+    const opening=await createTestOpening(org.token,buildingId); const body=componentOperation(opening.id);
+    Object.assign(body.payload,{unit_cost:250,install_date:"2026-09-27",supplier_name:"Synthetic QA",supplier_contact:"qa@example.invalid",serial_number:"QA-123",carrier:"UPS",tracking_number:"QA-TRACK",shipment_status:"not_shipped"});
+    const first=await request(app).post("/api/sync/components").set("Authorization",`Bearer ${org.token}`).send(body);
+    expect(first.status).toBe(201);
+    const result=await pool.query("SELECT * FROM hardware_components WHERE id=$1",[body.entity_id]);
+    expect(Number(result.rows[0].unit_cost)).toBe(250);
+    expect(result.rows[0]).toMatchObject({supplier_name:"Synthetic QA",supplier_contact:"qa@example.invalid",serial_number:"QA-123",carrier:"UPS",tracking_number:"QA-TRACK"});
+    Object.assign(body.payload,{unit_cost:251});
+    const replay=await request(app).post("/api/sync/components").set("Authorization",`Bearer ${org.token}`).send(body);
+    expect(replay.status).toBe(409);
+  });
+
   it("creates the additive receipt, audit, and private-photo reservation tables", async () => {
     const result = await pool.query(
       `SELECT table_name FROM information_schema.tables

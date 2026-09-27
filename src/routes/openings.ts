@@ -193,9 +193,9 @@ openingsRouter.post("/:id/complete", async (req: AuthedRequest, res) => {
   const opening = await getOpeningForOrg(req.params.id, req.auth!.organizationId);
   if (!opening) return res.status(404).json({ error: "not_found" });
   const [frame, leaves, hardware] = await Promise.all([
-    pool.query("SELECT 1 FROM opening_frames WHERE opening_id=$1", [opening.id]),
-    pool.query("SELECT leaf_role FROM door_leaves WHERE opening_id=$1", [opening.id]),
-    pool.query("SELECT review_state FROM hardware_components WHERE opening_id=$1", [opening.id]),
+    pool.query("SELECT condition FROM opening_frames WHERE opening_id=$1", [opening.id]),
+    pool.query("SELECT leaf_role,condition FROM door_leaves WHERE opening_id=$1", [opening.id]),
+    pool.query("SELECT review_state,condition FROM hardware_components WHERE opening_id=$1", [opening.id]),
   ]);
   const roles = new Set(leaves.rows.map((row) => row.leaf_role));
   const leavesComplete = opening.opening_configuration === "pair"
@@ -207,7 +207,10 @@ openingsRouter.post("/:id/complete", async (req: AuthedRequest, res) => {
     ...(hardware.rows.length ? [] : ["hardware_component"]),
     ...(hardware.rows.some((row) => row.review_state !== "reviewed") ? ["hardware_review"] : []),
   ];
-  if (missing.length) return res.status(409).json({ error: "opening_incomplete", missing });
+  missing.push(...(frame.rows.some((r:any)=>!["good","worn","failed"].includes(r.condition)) ? ["frame_condition"] : []),
+      ...(leaves.rows.some((r:any)=>!["good","worn","failed"].includes(r.condition)) ? ["leaf_condition"] : []),
+      ...(hardware.rows.some((r:any)=>!["good","worn","failed"].includes(r.condition)) ? ["hardware_condition"] : []));
+    if (missing.length) return res.status(409).json({ error: "opening_incomplete", missing });
   const result = await pool.query(
     `UPDATE openings SET completion_state='complete', completed_at=COALESCE(completed_at,now()),
        completed_by_user_id=COALESCE(completed_by_user_id,$2), status='active', updated_at=now()

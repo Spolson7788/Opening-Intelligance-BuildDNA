@@ -39,6 +39,14 @@ const syncComponentCreate = z.object({
     component_type: componentType,
     manufacturer: z.string().optional(),
     model_number: z.string().optional(),
+    install_date: z.string().optional(),
+    unit_cost: z.number().min(0).optional(),
+    supplier_name: z.string().optional(),
+    supplier_contact: z.string().optional(),
+    serial_number: z.string().optional(),
+    carrier: z.string().optional(),
+    tracking_number: z.string().optional(),
+    shipment_status: z.enum(["not_shipped", "ordered", "shipped", "in_transit", "delivered", "installed", "other"]).optional(),
     finish: z.string().optional(),
     notes: z.string().optional(),
     mounting_scope: z.enum(["opening", "frame", "door_leaf"]).default("opening"),
@@ -121,15 +129,17 @@ syncRouter.post("/components", async (req: AuthedRequest, res) => {
       `INSERT INTO hardware_components
         (id, opening_id, component_type, manufacturer, model_number, finish, notes, tracker_id,
          mounting_scope, door_leaf_id, frame_id, position_label, client_operation_id,
-         condition, identity_status, review_state, replacement_required, revision)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,1)
+         condition, identity_status, review_state, replacement_required, revision, install_date, unit_cost, supplier_name, supplier_contact, serial_number, carrier, tracking_number, shipment_status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,1,$18,$19,$20,$21,$22,$23,$24,$25)
        RETURNING *`,
       [b.entity_id, b.opening_id, b.payload.component_type, b.payload.manufacturer ?? null,
         b.payload.model_number ?? null, b.payload.finish ?? null, b.payload.notes ?? null,
         trackerId(), b.payload.mounting_scope, b.payload.door_leaf_id ?? null,
         b.payload.frame_id ?? null, b.payload.position_label ?? null, b.operation_id,
         b.payload.condition, b.payload.identity_status, b.payload.review_state,
-        b.payload.replacement_required],
+        b.payload.replacement_required, b.payload.install_date ?? null, b.payload.unit_cost ?? null,
+        b.payload.supplier_name ?? null, b.payload.supplier_contact ?? null, b.payload.serial_number ?? null,
+        b.payload.carrier ?? null, b.payload.tracking_number ?? null, b.payload.shipment_status ?? "not_shipped"],
     );
     const changedFields = Object.keys(b.payload).sort();
     const receipt = await writeSyncReceiptAndAudit(client, {
@@ -286,15 +296,18 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
         payload.notes??null,payload.signature_data??null,payload.signed_by_name??null,payload.signature_data?new Date().toISOString():null,b.operation_id]); record=result.rows[0];
     } else {
       const [frame,leaves,hardware]=await Promise.all([
-        client.query("SELECT 1 FROM opening_frames WHERE opening_id=$1",[b.opening_id]),
-        client.query("SELECT leaf_role FROM door_leaves WHERE opening_id=$1",[b.opening_id]),
-        client.query("SELECT review_state FROM hardware_components WHERE opening_id=$1",[b.opening_id]),
+        client.query("SELECT condition FROM opening_frames WHERE opening_id=$1",[b.opening_id]),
+        client.query("SELECT leaf_role,condition FROM door_leaves WHERE opening_id=$1",[b.opening_id]),
+        client.query("SELECT review_state,condition FROM hardware_components WHERE opening_id=$1",[b.opening_id]),
       ]);
       const roles=new Set(leaves.rows.map((row:any)=>row.leaf_role));
       const leavesComplete=opening.opening_configuration === "pair" ? roles.has("active")&&roles.has("inactive") : roles.has("single");
       const missing=[...(frame.rows.length?[]:["frame"]),...(leavesComplete?[]:["door_leaf"]),
         ...(hardware.rows.length?[]:["hardware_component"]),...(hardware.rows.some((row:any)=>row.review_state!=="reviewed")?["hardware_review"]:[])];
-      if (missing.length) { await client.query("ROLLBACK"); return res.status(409).json({ error:"opening_incomplete",missing }); }
+      missing.push(...(frame.rows.some((r:any)=>!["good","worn","failed"].includes(r.condition)) ? ["frame_condition"] : []),
+      ...(leaves.rows.some((r:any)=>!["good","worn","failed"].includes(r.condition)) ? ["leaf_condition"] : []),
+      ...(hardware.rows.some((r:any)=>!["good","worn","failed"].includes(r.condition)) ? ["hardware_condition"] : []));
+    if (missing.length) { await client.query("ROLLBACK"); return res.status(409).json({ error:"opening_incomplete",missing }); }
       const result=await client.query(`UPDATE openings SET completion_state='complete',completed_at=COALESCE(completed_at,now()),
         completed_by_user_id=COALESCE(completed_by_user_id,$2),status='active',revision=revision+1,updated_at=now() WHERE id=$1 RETURNING *`,
       [b.opening_id,userId]); record=result.rows[0];
