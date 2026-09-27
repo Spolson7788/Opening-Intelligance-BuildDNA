@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "commit": "96e4268bc51aa89403f4ff7c18f1edad5d985f22",
+  "deployId": "6ab951cf9494f400073efee8",
+  "context": "deploy-preview",
+  "source": "Netlify onPostBuild FUNCTIONS_DIST packaged ZIP bytes",
+  "qualification": "Build-side package evidence, not an independent download of running Lambda bytes",
+  "artifacts": {
+    "api": {
+      "bytes": 1772273,
+      "sha256": "84b6e416133c5ae47d2200e11b1bcb24d2ae25ba7222531f4cdb19cd14c7ed2a"
+    },
+    "photo-deletion-retry": {
+      "bytes": 991086,
+      "sha256": "d45e7b71ad161b3b57f51cec5e3a8315ff63680b868d59682873cf4038c90f57"
+    }
+  }
+}
