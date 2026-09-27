@@ -30,3 +30,8 @@
 
 [context.deploy-preview.environment]
   NPM_FLAGS = "--include=dev"
+
+# Records only packaged bytes and public build identity; never source or secrets.
+# The plugin is a no-op outside the already guarded deploy-preview context.
+[[plugins]]
+  package = "./plugins/function-evidence"
