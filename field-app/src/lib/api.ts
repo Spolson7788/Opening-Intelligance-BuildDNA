@@ -4,6 +4,10 @@ import { loadAuth, cacheOpening, getCachedOpening } from "./db";
 // both in local dev (via Vite proxy) and once deployed.
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
+export async function recognizeHardware(openingId:string,images:string[],mediaType:string) {
+  return authedFetch('/recognition',{method:'POST',body:JSON.stringify({opening_id:openingId,images,media_type:mediaType})});
+}
+
 export class ApiError extends Error {
   status: number;
   reference?: string;

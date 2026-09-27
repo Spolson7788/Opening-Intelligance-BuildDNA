@@ -9,6 +9,7 @@
 const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
+const { assertMigrationBaseline } = require("./migration-preflight.cjs");
 require("dotenv").config();
 
 async function main() {
@@ -20,8 +21,9 @@ async function main() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
   try {
+    await assertMigrationBaseline(pool);
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
+      CREATE TABLE IF NOT EXISTS public.schema_migrations (
         filename TEXT PRIMARY KEY,
         applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
@@ -33,7 +35,7 @@ async function main() {
       .filter((f) => f.endsWith(".sql"))
       .sort(); // filenames are prefixed 001_, 002_, etc. — sort order is apply order
 
-    const appliedResult = await pool.query("SELECT filename FROM schema_migrations");
+    const appliedResult = await pool.query("SELECT filename FROM public.schema_migrations");
     const applied = new Set(appliedResult.rows.map((r) => r.filename));
 
     const pending = files.filter((f) => !applied.has(f));
@@ -51,7 +53,7 @@ async function main() {
       try {
         await client.query("BEGIN");
         await client.query(sql);
-        await client.query("INSERT INTO schema_migrations (filename) VALUES ($1)", [file]);
+        await client.query("INSERT INTO public.schema_migrations (filename) VALUES ($1)", [file]);
         await client.query("COMMIT");
         console.log(`  ✓ ${file}`);
       } catch (err) {
