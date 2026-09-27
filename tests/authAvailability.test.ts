@@ -25,3 +25,11 @@ it('uses current role instead of stale token role after recovery',async()=>{
  vi.mocked(pool.query).mockResolvedValueOnce({rows:[{id:'u',organization_id:'o',is_active:true,role:'technician'}]} as never);
  const r=await invoke(token());expect(r.req.auth.role).toBe('technician');expect(r.next).toHaveBeenCalledOnce();
 });
+it('rejects an old session after password recovery',async()=>{
+ vi.mocked(pool.query).mockResolvedValueOnce({rows:[{id:'u',organization_id:'o',is_active:true,role:'technician',session_version:1}]} as never);
+ const r=await invoke(token());expect(r.res.status).toHaveBeenCalledWith(401);expect(r.res.json).toHaveBeenCalledWith({error:'session_revoked'});expect(r.next).not.toHaveBeenCalled();
+});
+it('accepts the new session version after recovery',async()=>{
+ vi.mocked(pool.query).mockResolvedValueOnce({rows:[{id:'u',organization_id:'o',is_active:true,role:'technician',session_version:1}]} as never);
+ const r=await invoke(jwt.sign({userId:'u',organizationId:'o',role:'technician',sessionVersion:1},process.env.JWT_SECRET!));expect(r.next).toHaveBeenCalledOnce();
+});

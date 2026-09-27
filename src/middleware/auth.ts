@@ -23,7 +23,7 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     return res.status(401).json({ error: "missing_token" });
   }
   const token = header.slice("Bearer ".length);
-  let payload: { userId: string; organizationId: string; role: string };
+  let payload: { userId: string; organizationId: string; role: string; sessionVersion?: number };
   try {
     payload = jwt.verify(token, JWT_SECRET as string) as typeof payload;
   } catch {
@@ -31,13 +31,15 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
   }
   try {
     const current = await pool.query(
-      `SELECT id, organization_id, role, is_active
+      `SELECT id, organization_id, role, is_active, session_version
        FROM users WHERE id=$1 AND organization_id=$2`,
       [payload.userId, payload.organizationId],
     );
     const user = current.rows[0];
     if (!user) return res.status(401).json({ error: "invalid_token_subject" });
     if (!user.is_active) return res.status(403).json({ error: "account_deactivated" });
+
+    if ((payload.sessionVersion ?? 0) !== (user.session_version ?? 0)) return res.status(401).json({ error: "session_revoked" });
 
     // The database is authoritative on every request. A role change or account
     // deactivation therefore takes effect immediately instead of waiting for a

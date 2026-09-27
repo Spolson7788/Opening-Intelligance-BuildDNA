@@ -12,9 +12,9 @@ export const authRouter = Router();
 const JWT_SECRET = process.env.JWT_SECRET as string;
 const TOKEN_EXPIRY = "12h";
 
-function issueToken(user: { id: string; organization_id: string; role: string }) {
+function issueToken(user: { id: string; organization_id: string; role: string; session_version?: number }) {
   return jwt.sign(
-    { userId: user.id, organizationId: user.organization_id, role: user.role },
+    { userId: user.id, organizationId: user.organization_id, role: user.role, sessionVersion: user.session_version ?? 0 },
     JWT_SECRET,
     { expiresIn: TOKEN_EXPIRY }
   );
@@ -139,7 +139,7 @@ authRouter.post("/login", async (req, res) => {
   const { email, password } = parsed.data;
   try {
     const result = await pool.query(
-      "SELECT id, organization_id, role, password_hash, is_active FROM public.users WHERE email = $1",
+      "SELECT id, organization_id, role, password_hash, is_active, session_version FROM public.users WHERE email = $1",
       [email.toLowerCase()]
     );
     if (result.rows.length === 0) {
