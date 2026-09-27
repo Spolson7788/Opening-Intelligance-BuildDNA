@@ -26,6 +26,8 @@ export function buildFacilityDashboard(destination){
  replace("need,'openings below healthy'", "need,'openings with condition or health concerns'");
  replace('<b>Priority:</b> ', '<b>Priority (health and recorded conditions):</b> ');
  replace("tile('Facility health score',", "tile('Service-history health score',");
+ replace('Condition at a glance', 'Service-history health at a glance');
+ replace(' parts · overall <b', ' parts · service-history health <b');
  replace('Every opening on file, bucketed by its health score.', 'Openings grouped by service-history health score. Recorded part conditions also determine attention and priority.');
  replace("var complete=OPEN.every(o=>o.parts.every(p=>assessedScore(p)!==null));", "var complete=OPEN.every(o=>openingScore(o)!==null);");
  html=html.replaceAll('Opening review','Field App');
