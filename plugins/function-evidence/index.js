@@ -5,9 +5,8 @@ const {createEvidence} = require('./evidence.cjs');
 
 module.exports = {
   async onPostBuild({constants}) {
-    if (process.env.CONTEXT !== 'deploy-preview') return;
-    const {assertProtectedStagingContext} = await import('../../scripts/protected-staging-context.mjs');
-    assertProtectedStagingContext(process.env);
+    const {assertIsolatedReleaseContext} = await import('../../scripts/isolated-release-context.mjs');
+    assertIsolatedReleaseContext(process.env);
     const evidence = createEvidence(constants.FUNCTIONS_DIST, {
       commit:process.env.COMMIT_REF, deployId:process.env.DEPLOY_ID, context:process.env.CONTEXT,
     });

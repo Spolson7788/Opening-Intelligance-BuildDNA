@@ -23,7 +23,7 @@ export function databaseTargetDescriptor(connectionString: string | undefined): 
 // When supplied, trust it only for Postgres and retain certificate/host checks.
 export function databaseConnectionConfig(env: NodeJS.ProcessEnv): PoolConfig {
   const connectionString = env.DATABASE_URL;
-  const ca = env.DATABASE_CA_CERT;
+  const ca = env.DATABASE_CA_CERT?.replace(/\\n/g, "\n");
   if (!ca) return { connectionString };
   try {
     if (!new X509Certificate(ca).ca) throw new Error();

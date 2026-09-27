@@ -20,6 +20,13 @@ describe("Postgres certificate trust", () => {
     expect(ssl.checkServerIdentity).toBeUndefined(); // Node's hostname verifier remains in effect.
     expect(new URL(config.connectionString!).searchParams.get("application_name")).toBe("test");
   });
+  it("accepts escaped newlines from single-line secret forms without weakening TLS", () => {
+    const config = databaseConnectionConfig({ DATABASE_URL: url, DATABASE_CA_CERT: ca.replace(/\n/g, "\\n") });
+    const ssl = (new Client(config) as any).connectionParameters.ssl;
+    expect(ssl.ca).toBe(ca);
+    expect(ssl.rejectUnauthorized).toBe(true);
+    expect(ssl.checkServerIdentity).toBeUndefined();
+  });
   it.each(["disable", "no-verify", "verify-ca", "require"])("refuses conflicting mode %s", mode => {
     expect(() => databaseConnectionConfig({ DATABASE_URL: url.replace("verify-full", mode), DATABASE_CA_CERT: ca })).toThrow("database_tls_configuration_conflict");
   });

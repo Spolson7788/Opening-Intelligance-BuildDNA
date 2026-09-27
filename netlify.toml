@@ -1,5 +1,14 @@
 [build]
-  command = "node scripts/release/hold-deployment.cjs"
-  publish = "netlify/public"
+  command = "node scripts/build-isolated-release.mjs"
+  publish = "dist/isolated-release"
 [build.environment]
   NODE_VERSION = "24"
+  NPM_FLAGS = "--include=dev"
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  external_node_modules = ["express"]
+[context.production.environment]
+  NODE_ENV = "production"
+[[plugins]]
+  package = "./plugins/function-evidence"
