@@ -1,0 +1,42 @@
+{
+  "status": "APPLIED_STAGING_DATABASE_VERIFIED_NOT_HOSTED_ACCEPTANCE",
+  "ids": {
+    "portfolio": "c7751e45-25b5-4c3e-ba1e-6b6004f3cc63",
+    "facility": "1df79d1f-d01d-441a-835c-86680f8e9da7",
+    "building": "b7471623-5f4b-4282-b2aa-df1baa3c7791",
+    "eligible": "bc705886-82df-44f8-b493-7e3ca46f229b",
+    "unresolved": "2d24a93e-02be-4659-a851-29f01156a994",
+    "incomplete": "35ca16f5-d85d-4336-a12c-253ba15923a4",
+    "serviceable": "c2fcd45e-5963-4272-8aae-1eefe40fbf64",
+    "eligible_frame": "69c430fe-1aeb-48ab-aa83-d724ef9ae386",
+    "eligible_leaf": "084bd26f-60e6-4a24-8ecf-4ce862b4fd6d",
+    "eligible_component": "9de994e0-7147-4fa7-9b41-b48df8b74f56",
+    "unresolved_frame": "cfa1107a-41ac-4929-a6ae-33db3f35f78e",
+    "unresolved_leaf": "3c03b611-072c-45c8-9a3f-a09285c5d6b7",
+    "unresolved_component": "060547f7-d67b-483d-be60-dd3413b2d88d",
+    "incomplete_frame": "f3b3c458-df40-4f5d-a2bb-85172fb9e9b9",
+    "incomplete_leaf": "c17c9e69-3959-4151-b91a-b58a7f9d9a3a",
+    "incomplete_component": "daee14fe-81bc-4475-a459-f140ae17b859",
+    "serviceable_frame": "f91b7c0d-2dd7-44da-9d0c-9f5d905f94bb",
+    "serviceable_leaf": "2519be6c-521d-4beb-b527-c91df301a0e5",
+    "serviceable_component": "d4733614-fa1d-4104-85ec-1f76c40f7193"
+  },
+  "ownerOrganizationId": "07d612c8-1fa3-48be-94a7-e28d39ec15fc",
+  "providerOrganizationId": "d74b3113-5c0f-4cb8-b5fc-bb7ae0687020",
+  "eligibleApproval": "NOT_CREATED: requires an actual synthetic document and its verified hash; eligible case must remain blocked until then.",
+  "photo": {
+    "id": "ad653bf1-66a9-4a6f-9e2c-3db8e9a92a11",
+    "componentId": "9de994e0-7147-4fa7-9b41-b48df8b74f56",
+    "status": "UPLOADED_THROUGH_FIELD_APP_UI_DATABASE_ASSOCIATION_VERIFIED",
+    "sha256": "23d95b0541cefaeb040fedc028eb2227d72b0038904fe8ec1d8526d5d4c00efb"
+  },
+  "projectId": "ioqfdcehnhnqpnqawwvo",
+  "allowedFacilityIdsA": [
+    "5419af45-f203-45f0-8654-ccbdf25fe72b",
+    "c0966bb6-f519-4c72-8a23-2a7eeeafd3ac",
+    "1df79d1f-d01d-441a-835c-86680f8e9da7"
+  ],
+  "allowedFacilityIdsB": [
+    "9578fb13-4852-488e-b7b9-1fe673cfbbc9"
+  ]
+}

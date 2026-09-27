@@ -39,6 +39,9 @@ const FIELD_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp }> = [
   { method: "POST", pattern: /^\/api\/openings\/[^/]+\/recompute-health-score$/ },
   { method: "POST", pattern: /^\/api\/sync\/components$/ },
   { method: "POST", pattern: /^\/api\/sync\/operations$/ },
+  { method: "PUT", pattern: /^\/api\/openings\/[^/]+\/frame$/ },
+  { method: "POST", pattern: /^\/api\/openings\/[^/]+\/(door-leaves|complete)$/ },
+  { method: "POST", pattern: /^\/api\/purchasing\/review$/ },
 ];
 
 const WRITE_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);

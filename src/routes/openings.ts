@@ -1,3 +1,4 @@
+import {purchasingReview} from "../services/purchasingReview";
 import { Router, Response } from "express";
 import { randomUUID } from "node:crypto";
 import QRCode from "qrcode";
@@ -217,24 +218,12 @@ openingsRouter.post("/:id/complete", async (req: AuthedRequest, res) => {
 });
 
 openingsRouter.get("/:id/purchasing-eligibility", async (req: AuthedRequest, res) => {
-  const opening = await getOpeningForOrg(req.params.id, req.auth!.organizationId);
-  if (!opening) return res.status(404).json({ error: "not_found" });
-  const components = await pool.query(
-    "SELECT * FROM hardware_components WHERE opening_id=$1 ORDER BY created_at",
-    [opening.id]
-  );
-  const complete = opening.completion_state === "complete";
-  const decisions = components.rows.map((component) => {
-    const reasons: string[] = [];
-    if (!complete) reasons.push("opening_not_complete");
-    if (component.review_state !== "reviewed") reasons.push("component_not_reviewed");
-    if (component.identity_status !== "established") reasons.push("identity_unresolved");
-    if (!component.replacement_required || !["worn", "failed"].includes(component.condition)) {
-      reasons.push("replacement_not_required");
-    }
-    return { component_id: component.id, eligible: reasons.length === 0, reasons };
-  });
-  res.json({ opening_id: opening.id, opening_complete: complete, decisions });
+  if(!z.string().uuid().safeParse(req.params.id).success)return res.status(400).json({error:'invalid_opening'});
+  const c=await pool.connect();try{await c.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+  const result=await purchasingReview(c,req.auth!.organizationId,[req.params.id]);await c.query('COMMIT');
+  if(!result)return res.status(404).json({error:'not_found'});
+  res.set('Cache-Control','no-store').json({...result,opening_id:req.params.id,opening_complete:result.openings[0].opening_complete});
+  }catch(e){await c.query('ROLLBACK');res.status(500).json({error:'review_failed'});}finally{c.release();}
 });
 
 const bulkImportRowSchema = z.object({

@@ -1,0 +1,23 @@
+import {it,expect} from 'vitest';
+import request from 'supertest';
+import {app,signupTestOrg,createPortfolioHierarchy} from './helpers';
+import {pool} from '../src/db/pool';
+it('search narrows only the authenticated company and defaults are server-owned',async()=>{
+ const a=await signupTestOrg('Vortex synthetic'),b=await signupTestOrg('DH Pace synthetic');
+ const ca=await createPortfolioHierarchy(a.token),fl=await createPortfolioHierarchy(a.token),other=await createPortfolioHierarchy(b.token);
+ await pool.query("UPDATE properties SET state='CA',city='Los Angeles',service_territory='Southwest' WHERE id=$1",[ca.propertyId]);
+ await pool.query("UPDATE properties SET state='FL',city='Miami',service_territory='Southeast' WHERE id=$1",[fl.propertyId]);
+ await pool.query("UPDATE properties SET state='CA',city='Los Angeles',service_territory='Southwest' WHERE id=$1",[other.propertyId]);
+ await pool.query("UPDATE users SET home_state='CA',home_territory='Southwest' WHERE organization_id=$1",[a.organizationId]);
+ const all=await request(app).get('/api/portfolio/facility-search').set('Authorization',`Bearer ${a.token}`);
+ expect(all.status).toBe(200);expect(all.body.facilities.map((f:any)=>f.id).sort()).toEqual([ca.propertyId,fl.propertyId].sort());
+ expect(all.body.preferences).toEqual({home_state:'CA',home_territory:'Southwest'});
+ const local=await request(app).get('/api/portfolio/facility-search?state=ca&territory=Southwest&q=Los').set('Authorization',`Bearer ${a.token}`);
+ expect(local.body.facilities.map((f:any)=>f.id)).toEqual([ca.propertyId]);
+ const none=await request(app).get('/api/portfolio/facility-search?state=FL&territory=Southwest').set('Authorization',`Bearer ${a.token}`);
+ expect(none.body.facilities).toEqual([]);
+ const spoof=await request(app).get('/api/portfolio/facility-search').query({organizationId:b.organizationId}).set('Authorization',`Bearer ${a.token}`);
+ expect(spoof.body.facilities.some((f:any)=>f.id===other.propertyId)).toBe(false);
+ await pool.query('UPDATE users SET is_active=false WHERE organization_id=$1',[a.organizationId]);
+ expect((await request(app).get('/api/portfolio/facility-search').set('Authorization',`Bearer ${a.token}`)).status).toBe(403);
+});

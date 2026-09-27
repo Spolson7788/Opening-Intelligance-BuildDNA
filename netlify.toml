@@ -21,3 +21,17 @@
 
 [context."pr2-staging".environment]
   NPM_FLAGS = "--include=dev"
+
+# PR 9 on the existing protected NONPRODUCTION project only. The build script
+# rejects other sites, pull requests, branches and the production context.
+[context.deploy-preview]
+  command = "node scripts/build-protected-staging.mjs"
+  publish = "dist/protected-staging"
+
+[context.deploy-preview.environment]
+  NPM_FLAGS = "--include=dev"
+
+# Records only packaged bytes and public build identity; never source or secrets.
+# The plugin is a no-op outside the already guarded deploy-preview context.
+[[plugins]]
+  package = "./plugins/function-evidence"

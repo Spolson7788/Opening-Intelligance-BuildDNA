@@ -1,3 +1,5 @@
+import {AccountRecoveryPage} from "./pages/AccountRecoveryPage";
+import {BranchesPage} from "./pages/BranchesPage";
 import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/AuthContext";
@@ -32,6 +34,8 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/account-recovery" element={<AccountRecoveryPage />} />
+      <Route path="/branches" element={<RequireAuth><BranchesPage /></RequireAuth>} />
       <Route path="/setup-opening" element={<RequireAuth><SetupOpeningPage /></RequireAuth>} />
       <Route path="/opening/:id/label" element={<RequireAuth><QrLabelPage /></RequireAuth>} />
       <Route path="/scan" element={<RequireAuth><ScanPage /></RequireAuth>} />

@@ -282,7 +282,7 @@ export function OpeningDetailPage() {
                   <tbody>
                     {opening.service_events.map((ev: any) => (
                       <tr key={ev.id}>
-                        <td>{new Date(ev.event_date).toLocaleDateString()}</td>
+                        <td>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</td>
                         <td>{ev.work_performed}</td>
                         <td>{ev.cost ? `$${ev.cost}` : "—"}</td>
                       </tr>
@@ -304,7 +304,7 @@ export function OpeningDetailPage() {
                   <tbody>
                     {opening.inspection_events.map((ev: any) => (
                       <tr key={ev.id}>
-                        <td>{new Date(ev.event_date).toLocaleDateString()}</td>
+                        <td>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</td>
                         <td style={{ textTransform: "capitalize" }}>{ev.inspection_type.replace(/_/g, " ")}</td>
                         <td>
                           <span className={`health-pill ${ev.passed ? "health-good" : "health-poor"}`}>

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchPhotoAccessUrl } from "../lib/api";
+import { mediaAssociationLabel } from "../lib/mediaAssociationLabel";
+import { openingLoadFailure } from "../lib/openingLoadFailure";
 import { getAllOfflineMedia, updateCachedOpening } from "../lib/db";
 import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
@@ -15,7 +17,7 @@ function healthClass(score: number | null) {
   return "health-poor";
 }
 
-function SyncedMedia({ photo }: { photo: any }) {
+function SyncedMedia({ photo, label }: { photo: any; label: string }) {
   const [url, setUrl] = useState<string | null>(photo.storage_url?.startsWith("private:") ? null : photo.storage_url);
   const [failed, setFailed] = useState(false);
 
@@ -38,15 +40,16 @@ function SyncedMedia({ photo }: { photo: any }) {
   if (photo.media_type === "video") {
     return <video src={url} controls style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} />;
   }
-  return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Opening photo" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} /></a>;
+  return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={label} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} /></a>;
 }
 
 export function OpeningDetailPage() {
   const { id, qrToken, openingCode } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [opening, setOpening] = useState<any | null>(null);
   const [fromCache, setFromCache] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReturnType<typeof openingLoadFailure> | null>(null);
   const [loading, setLoading] = useState(true);
   const [queuedPhotos, setQueuedPhotos] = useState<(OfflineMediaRecord & { previewUrl: string })[]>([]);
   const [photoToDelete, setPhotoToDelete] = useState<{ id: string; name: string } | null>(null);
@@ -116,7 +119,7 @@ export function OpeningDetailPage() {
         openingIdRef.current = opening.id;
         loadQueuedPhotos();
       })
-      .catch(() => setError("Couldn't find that opening. Check the code and try again."))
+      .catch((err) => { setOpening(null); setError(openingLoadFailure(err)); })
       .finally(() => setLoading(false));
   }
 
@@ -132,11 +135,16 @@ export function OpeningDetailPage() {
     return (
       <div className="app-shell">
         <div className="top-bar">
-          <h1>Not Found</h1>
+          <h1>{error?.title ?? "Opening unavailable"}</h1>
           <SyncBadge />
         </div>
         <div className="screen empty-state">
-          <p>{error}</p>
+          <p role="alert">{error?.message}</p>
+          {error?.signIn ? (
+            <button className="btn btn-primary" onClick={() => navigate("/login", { state: { from: location.pathname } })}>Sign in again</button>
+          ) : error?.retry ? (
+            <button className="btn btn-primary" onClick={reload}>Try again</button>
+          ) : null}
           <button className="btn btn-secondary" onClick={() => navigate("/scan")}>Back to Scan</button>
         </div>
       </div>
@@ -192,7 +200,7 @@ export function OpeningDetailPage() {
         <div className="card">
           <strong>{opening.opening_configuration === "pair" ? "Door pair" : "Single door"}</strong>
           <p style={{ margin: "6px 0", fontSize: 13, color: "var(--text-secondary)" }}>
-            Frame: {opening.frame?.material || "not saved"} · Door leaves: {opening.door_leaves?.length || 0}
+            Frame: {opening.frame ? (opening.frame.material || "saved — material not recorded") : "not saved"} · Door leaves: {opening.door_leaves?.length || 0}
           </p>
           <Link to={`/opening/${opening.id}/structure`} state={{ opening }} className="btn btn-secondary" style={{ textDecoration: "none" }}>
             Door &amp; frame details
@@ -226,7 +234,7 @@ export function OpeningDetailPage() {
                 ) : (
                   <img
                     src={p.previewUrl}
-                    alt=""
+                    alt={mediaAssociationLabel(p, opening)}
                     style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", opacity: 0.6 }}
                   />
                 )}
@@ -240,7 +248,8 @@ export function OpeningDetailPage() {
             ))}
             {opening.photos && opening.photos.map((p: any) => (
               <div key={p.id} style={{ position: "relative" }}>
-                <SyncedMedia photo={p} />
+                <SyncedMedia photo={p} label={mediaAssociationLabel(p, opening)} />
+                <p style={{ fontSize: 12, margin: "4px 0", overflowWrap: "anywhere" }}>{mediaAssociationLabel(p, opening)}</p>
                 <button
                   onClick={() => { setDeleteError(null); setPhotoToDelete({ id: p.id, name: p.original_filename || "this photo" }); }}
                   aria-label="Delete photo"
@@ -333,7 +342,7 @@ export function OpeningDetailPage() {
             {opening.service_events.slice(0, 5).map((ev: any) => (
               <div className="card" key={ev.id}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString()}</strong>
+                  <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
                 </div>
                 <p style={{ margin: "4px 0 0", fontSize: 14 }}>{ev.work_performed}</p>
               </div>
@@ -347,7 +356,7 @@ export function OpeningDetailPage() {
             {opening.inspection_events.slice(0, 5).map((ev: any) => (
               <div className="card" key={ev.id}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString()}</strong>
+                  <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
                   <span
                     className="badge"
                     style={{ color: ev.passed ? "var(--success)" : "var(--danger)", borderColor: ev.passed ? "var(--success)" : "var(--danger)" }}

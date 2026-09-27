@@ -6,6 +6,7 @@ import { queueOpeningMutation } from "../lib/sync";
 import { updateCachedOpening } from "../lib/db";
 import { CARRIER_OPTIONS } from "../lib/tracking";
 import { SyncBadge } from "../components/SyncBadge";
+import { RecognitionReview } from "../components/RecognitionReview";
 
 const COMPONENT_TYPES = [
   { value: "lockset", label: "Lockset" },
@@ -134,6 +135,7 @@ export function LogHardwarePage() {
           </div>
         ) : (
           <form onSubmit={onSubmit}>
+            {id && <RecognitionReview key={id} openingId={id} onUse={(brand,model)=>{setManufacturer(brand);setModelNumber(model);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
             <div className="field">
               <label htmlFor="component-type">Component type</label>
               <select id="component-type" value={componentType} onChange={(e) => setComponentType(e.target.value)}>

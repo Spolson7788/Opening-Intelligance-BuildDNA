@@ -40,6 +40,10 @@ export function EditHardwarePage() {
   const [loading, setLoading] = useState(true);
   const [trackerId, setTrackerId] = useState("");
   const [componentType, setComponentType] = useState("lockset");
+  const [condition, setCondition] = useState("unverified");
+  const [identityStatus, setIdentityStatus] = useState("unresolved");
+  const [reviewState, setReviewState] = useState("pending");
+  const [replacementRequired, setReplacementRequired] = useState(false);
   const [manufacturer, setManufacturer] = useState("");
   const [modelNumber, setModelNumber] = useState("");
   const [serialNumber, setSerialNumber] = useState("");
@@ -78,6 +82,10 @@ export function EditHardwarePage() {
   function applyHardware(hw: any) {
     setTrackerId(hw.tracker_id || "");
     setComponentType(hw.component_type);
+    setCondition(hw.condition || "unverified");
+    setIdentityStatus(hw.identity_status || "unresolved");
+    setReviewState(hw.review_state || "pending");
+    setReplacementRequired(hw.replacement_required === true);
     setManufacturer(hw.manufacturer || "");
     setModelNumber(hw.model_number || "");
     setSerialNumber(hw.serial_number || "");
@@ -96,6 +104,10 @@ export function EditHardwarePage() {
     try {
       await editHardwareComponent(hardwareId!, {
         component_type: componentType,
+        condition,
+        identity_status: identityStatus,
+        review_state: reviewState,
+        replacement_required: replacementRequired,
         manufacturer: manufacturer || undefined,
         model_number: modelNumber || undefined,
         serial_number: serialNumber || undefined,
@@ -149,7 +161,7 @@ export function EditHardwarePage() {
         <h2 style={{ marginBottom: 4 }}>Edit Hardware</h2>
         {trackerId && <div className="asset-plate" style={{ marginBottom: 12 }}>{trackerId}</div>}
         <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 20 }}>
-          Requires a connection — same as adding hardware.
+          Editing saved hardware requires a connection.
         </p>
 
         {saved ? (
@@ -167,6 +179,25 @@ export function EditHardwarePage() {
                   ))}
                 </select>
               </div>
+              <div className="field">
+                <label htmlFor="condition">Condition</label>
+                <select id="condition" value={condition} onChange={(e) => setCondition(e.target.value)}>
+                  <option value="unverified">Unverified</option><option value="good">Good</option><option value="worn">Worn</option><option value="failed">Failed</option>
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="identity-status">Product identity</label>
+                <select id="identity-status" value={identityStatus} onChange={(e) => setIdentityStatus(e.target.value)}>
+                  <option value="unresolved">Unresolved</option><option value="established">Established</option>
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="review-state">Review</label>
+                <select id="review-state" value={reviewState} onChange={(e) => setReviewState(e.target.value)}>
+                  <option value="pending">Pending</option><option value="reviewed">Reviewed</option>
+                </select>
+              </div>
+              <label><input type="checkbox" checked={replacementRequired} onChange={(e) => setReplacementRequired(e.target.checked)} /> Replacement required</label>
               <div className="field">
                 <label htmlFor="manufacturer">Manufacturer</label>
                 <input id="manufacturer" value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} placeholder="e.g. Cal-Royal" />
