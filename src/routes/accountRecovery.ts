@@ -13,8 +13,7 @@ const input = z.object({
 // issuance endpoint: an authorized operator issues a code out of band.
 accountRecoveryRouter.post('/confirm',async(req,res)=>{
  res.setHeader('Cache-Control','no-store');
- if(process.env.SITE_ID!=='6430c57d-8a98-43bc-ba25-94007dd244f2'||process.env.CONTEXT!=='deploy-preview')
-  return res.status(404).json({error:'not_found'});
+ // Mounted only when the trusted Netlify request context enables recovery.
  const parsed=input.safeParse(req.body);
  if(!parsed.success)return res.status(400).json({error:'invalid_recovery_request'});
  let client;

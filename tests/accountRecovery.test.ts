@@ -19,9 +19,6 @@ beforeAll(async()=>{
 });
 afterAll(async()=>{await state.db.close();delete process.env.SITE_ID;delete process.env.CONTEXT;});
 async function code(expired=false){const code=randomBytes(32).toString('hex');await state.db.query("INSERT INTO account_recovery_tokens(token_hash,user_id,expires_at) VALUES ($1,$2,now()+$3::interval)",[createHash('sha256').update(code).digest('hex'),id,expired?'-1 minute':'30 minutes']);return code;}
-it('requires the protected staging deploy context',async()=>{
- process.env.CONTEXT='production';expect((await request(app).post('/recovery/confirm').send({})).status).toBe(404);process.env.CONTEXT='deploy-preview';
-});
 it('rejects unknown, expired and wrong-account codes without changing credentials',async()=>{
  for(const payload of [{code:'a'.repeat(64),email},{code:await code(true),email},{code:await code(),email:'other@example.invalid'}]){
   expect((await request(app).post('/recovery/confirm').send({...payload,password:'new-synthetic-password'})).status).toBe(400);
@@ -40,4 +37,12 @@ it('rejects inactive users and overlong bcrypt inputs',async()=>{
  const value=await code();await state.db.query('UPDATE users SET is_active=false WHERE id=$1',[id]);
  expect((await request(app).post('/recovery/confirm').send({code:value,email,password:'long-enough-test-password'})).status).toBe(400);
  expect((await request(app).post('/recovery/confirm').send({code:value,email,password:'密'.repeat(30)})).status).toBe(400);
+});
+it('enables recovery only for the trusted staging preview context',async()=>{
+ const {recoveryDeploymentAllowed}=await import('../src/services/recoveryDeployment');
+ const site={id:'6430c57d-8a98-43bc-ba25-94007dd244f2'};
+ expect(recoveryDeploymentAllowed({site,deploy:{context:'deploy-preview'}})).toBe(true);
+ expect(recoveryDeploymentAllowed({site,deploy:{context:'production'}})).toBe(false);
+ expect(recoveryDeploymentAllowed({site:{id:'another-site'},deploy:{context:'deploy-preview'}})).toBe(false);
+ expect(recoveryDeploymentAllowed()).toBe(false);
 });
