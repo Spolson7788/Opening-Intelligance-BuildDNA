@@ -438,7 +438,7 @@ async function render(ops){
     if(o.fire_rated){fireN++;var _is=inspStatus(o);if(_is&&(_is.state==='overdue'||_is.state==='never'))inspDue++;}
   });
   var complete=OPEN.every(o=>o.parts.every(p=>assessedScore(p)!==null));var score=n?Math.round(sum/n):0;
-  var sband=n?(score>=85?['Good','var(--good)','✓']:score>=70?['Fair','var(--warn)','◔']:score>=55?['Monitor','var(--warn)','◔']:['At risk','var(--serious)','▲']):['—','var(--muted)',''];
+  var facilityBand=BANDS[bandOf(n&&complete?score:null)];var sband=[facilityBand[0],facilityBand[2],facilityBand[1]];
   $('kpis').innerHTML=
     tile('Facility health score',n&&complete?score+'<small>/100</small>':'—',complete?sband[2]+' '+sband[0]:'Assessment incomplete',sband[1])+
     tile('Openings on file',n,parts+' parts documented','var(--sec)')+
