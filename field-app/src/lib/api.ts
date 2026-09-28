@@ -34,7 +34,7 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error || `request_failed_${res.status}`);
+    throw new ApiError(res.status, body.error || `request_failed_${res.status}`, typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
   }
   const current=await loadAuth();
   if(!auth||!current||current.userId!==auth.userId||current.organizationId!==auth.organizationId)throw new ApiError(401,"active_principal_changed");

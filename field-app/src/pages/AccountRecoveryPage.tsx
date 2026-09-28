@@ -1,6 +1,7 @@
 import {useState} from 'react';
 import type {FormEvent} from 'react';
 import {Link} from 'react-router-dom';
+import {recoveryResponse} from '../lib/authResponse';
 export function AccountRecoveryPage(){
  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[done,setDone]=useState(false);
  async function submit(e:FormEvent<HTMLFormElement>){
@@ -11,9 +12,9 @@ export function AccountRecoveryPage(){
   setBusy(true);setMessage('');
   try{
    const response=await fetch(`${import.meta.env.VITE_API_BASE_URL||'/api'}/account-recovery/confirm`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:String(form.get('email')||'').trim(),code:String(form.get('code')||'').trim(),password})});
-   if(response.ok){element.reset();setDone(true);setMessage('Password saved. Sign in with the password you just chose.');}
-   else if(response.status===400)setMessage('The recovery code is invalid, expired, already used, or does not match this email.');
-   else setMessage('Recovery service unavailable. Your password has not been confirmed changed.');
+   const result=await recoveryResponse(response);
+   if(result.saved){element.reset();setDone(true);}
+   setMessage(result.message);
   }catch{setMessage('Could not confirm the reset. Check your connection before trying again.');}
   finally{setBusy(false);}
  }

@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { ApiError } from "../lib/api";
 import { readLoginForm } from "../lib/loginForm";
+import { loginFailureMessage } from "../lib/authResponse";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -27,10 +28,8 @@ export function LoginPage() {
       navigate(typeof from === "string" && from.startsWith("/") && !from.startsWith("//") && from !== "/login" ? from : "/scan", { replace: true });
     } catch (err) {
       if (err instanceof ApiError) setReference(err.reference || null);
-      if (err instanceof ApiError && err.status === 401) {
-        setError("Email or password didn't match. Try again.");
-      } else if (err instanceof ApiError && err.status === 403) {
-        setError("This account is deactivated. Contact an administrator.");
+      if (err instanceof ApiError) {
+        setError(loginFailureMessage(err.status, err.message, err.reference));
       } else {
         setError("Sign-in service is unavailable. Your credentials were not rejected; try again shortly.");
       }

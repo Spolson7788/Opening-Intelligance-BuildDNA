@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { randomUUID } from "node:crypto";
 import { pool } from "../db/pool";
 
 export interface AuthedRequest extends Request {
@@ -18,16 +19,25 @@ if (!JWT_SECRET) {
 }
 
 export async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
+  // Correlate denied reads and writes without logging credentials, URLs,
+  // query parameters, record IDs or request bodies.
+  const deny = (status: number, error: string, outcome = error) => {
+    const reference = randomUUID();
+    res.setHeader("X-OI-Auth-Reference", reference);
+    res.setHeader("Cache-Control", "no-store");
+    console.info("OI authorization", { reference, outcome });
+    return res.status(status).json({ error, reference });
+  };
   const header = req.headers.authorization;
   if (!header || !header.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "missing_token" });
+    return deny(401, "missing_token");
   }
   const token = header.slice("Bearer ".length);
   let payload: { userId: string; organizationId: string; role: string; sessionVersion?: number };
   try {
     payload = jwt.verify(token, JWT_SECRET as string) as typeof payload;
-  } catch {
-    return res.status(401).json({ error: "invalid_token" });
+  } catch (error) {
+    return deny(401, "invalid_token", error instanceof jwt.TokenExpiredError ? "token_expired" : "invalid_token");
   }
   try {
     const current = await pool.query(
@@ -36,10 +46,10 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
       [payload.userId, payload.organizationId],
     );
     const user = current.rows[0];
-    if (!user) return res.status(401).json({ error: "invalid_token_subject" });
-    if (!user.is_active) return res.status(403).json({ error: "account_deactivated" });
+    if (!user) return deny(401, "invalid_token_subject");
+    if (!user.is_active) return deny(403, "account_deactivated");
 
-    if ((payload.sessionVersion ?? 0) !== (user.session_version ?? 0)) return res.status(401).json({ error: "session_revoked" });
+    if ((payload.sessionVersion ?? 0) !== (user.session_version ?? 0)) return deny(401, "session_revoked");
 
     // The database is authoritative on every request. A role change or account
     // deactivation therefore takes effect immediately instead of waiting for a
@@ -53,7 +63,7 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
   } catch {
     // Failure to check current authority must deny the request without claiming
     // a valid credential is invalid or prompting unnecessary password changes.
-    return res.status(503).json({ error: "authorization_service_unavailable" });
+    return deny(503, "authorization_service_unavailable");
   }
 }
 

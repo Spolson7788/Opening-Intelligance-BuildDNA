@@ -18,6 +18,9 @@ const server = new PGLiteSocketServer({ db, port, host:'127.0.0.1' });
 let status=1;
 try {
  await server.start();
+ // Hosted deployments provision the runtime role before applying migrations.
+ // Reproduce that prerequisite only in this disposable in-memory database.
+ await db.exec('CREATE ROLE oi_pr2_api NOLOGIN');
  const selected = process.argv.slice(2);
  const tests = selected.length ? selected : ['tests/offlineSyncApi.test.ts','tests/rolePermissions.test.ts','tests/batchQrCodes.test.ts','tests/openingQr.test.ts'];
  if(tests.some(p=>!/^tests\/[\w.-]+\.test\.ts$/.test(p)))throw new Error('Only explicit local test files are accepted');
