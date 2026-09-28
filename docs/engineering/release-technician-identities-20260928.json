@@ -1,0 +1,46 @@
+{
+  "status": "PROVISIONED_DATABASE_VERIFIED_SECURE_CREDENTIAL_SETUP_PENDING",
+  "backend": "fdudsigbxumcpbxxxerb",
+  "origin": "https://6aba709e58e0e10008eb836e--oi-connected-release-candidate.netlify.app",
+  "commit": "ab00a7bb04162008c2ebb1a1d58f8a8a75a63925",
+  "accounts": {
+    "a": {
+      "email": "stg-tech-a@oi-nonprod.invalid",
+      "userId": "00e72bb6-5c22-4e65-87e6-5e1795264fab",
+      "organizationId": "44b157d8-acf7-408c-a833-c83f5c4b09bc",
+      "role": "technician",
+      "branchId": "00351488-da32-4188-8dc5-827a40bebdfb",
+      "defaultState": "CA",
+      "defaultTerritory": "SYNTHETIC-QA West"
+    },
+    "b": {
+      "email": "stg-tech-b@oi-nonprod.invalid",
+      "userId": "d95588c5-9af8-4812-bbca-72a9ea19c8c7",
+      "organizationId": "fb7f7867-aa5c-497f-9dc0-b400fbc1ce31",
+      "role": "technician",
+      "branchId": "2911263a-6922-47d6-826f-ee769d8da1d9",
+      "defaultState": "FL",
+      "defaultTerritory": "SYNTHETIC-QA Southeast"
+    },
+    "owner": {
+      "email": "stephan.o@elitesalesconsultants.com",
+      "userId": "0166a530-8ec1-4060-9d38-b8fc9f4ca238",
+      "organizationId": "d943f915-6061-4f48-b67b-041032989cfd",
+      "role": "admin"
+    }
+  },
+  "allowedFacilityIdsA": ["33f3cbf5-1440-4d06-97fb-09d92f471c58"],
+  "allowedFacilityIdsB": ["52a002f3-7579-4f1f-9c60-ba0babc8fde7"],
+  "providerFacilityId": "33f3cbf5-1440-4d06-97fb-09d92f471c58",
+  "openingCode": "SYNTHETIC-QA-RELEASE-FIELD-PAIR",
+  "openingId": "f6ee2e93-4589-42e4-850e-643780f57dfc",
+  "componentId": "f05bf37d-da0e-415a-bc70-81ec5a480a7d",
+  "photoId": "3a074de1-c30c-450e-bb3e-9053b1121dc0",
+  "limitations": [
+    "This is an identity manifest, not a runnable acceptance configuration.",
+    "New accounts have unrecoverable random bootstrap password hashes; no usable password or session was exported. Secure operator credential setup is required.",
+    "Database assignments are not authenticated HTTP isolation or technician-default acceptance evidence.",
+    "Purchasing fixtures and local photo path/checksum still need reconciliation before runner execution.",
+    "Existing staging accounts and recording deployment remain unchanged."
+  ]
+}
