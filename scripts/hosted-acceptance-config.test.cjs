@@ -6,3 +6,10 @@ for(const origin of ['https://openingintelligence.netlify.app','https://deploy-p
 test('rejects unlabeled mutation target',()=>assert.throws(()=>validateConfig({...valid(),openingCode:'Customer door'})));
 test('requires two known facility inventories',()=>assert.throws(()=>validateConfig({...valid(),allowedFacilityIdsB:[]})));
 test('requires approved photograph hash',()=>assert.throws(()=>validateConfig({...valid(),photoSha256:''})));
+const release=()=>({...valid(),origin:'https://6aba709e58e0e10008eb836e--oi-connected-release-candidate.netlify.app',commit:'ab00a7bb04162008c2ebb1a1d58f8a8a75a63925',accounts:Object.fromEntries(['a','b','owner'].map((key,i)=>[key,{email:key+'@example.invalid',userId:`00000000-0000-4000-8000-00000000000${i}`,organizationId:`10000000-0000-4000-8000-00000000000${i}`,role:key==='owner'?'admin':'technician'}]))});
+test('accepts only the exact isolated deployment and commit with distinct principals',()=>assert(validateConfig(release())));
+test('rejects new backend without verified test identities',()=>{const c=release();delete c.accounts;assert.throws(()=>validateConfig(c));});
+test('rejects wrong release commit',()=>assert.throws(()=>validateConfig({...release(),commit:'a'.repeat(40)})));
+test('rejects mutable isolated site origin',()=>assert.throws(()=>validateConfig({...release(),origin:'https://oi-connected-release-candidate.netlify.app'})));
+test('rejects substituting administrator for technician',()=>{const c=release();c.accounts.a.role='admin';assert.throws(()=>validateConfig(c));});
+test('rejects same company masquerading as two providers',()=>{const c=release();c.accounts.b.organizationId=c.accounts.a.organizationId;assert.throws(()=>validateConfig(c));});

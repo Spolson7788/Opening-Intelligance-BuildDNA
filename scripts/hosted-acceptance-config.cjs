@@ -1,6 +1,17 @@
 const assert=require('node:assert/strict');
 exports.validateConfig=function(c){
- assert.match(c.origin,/^https:\/\/[a-f0-9]{24}--oi-offline-sync-pr2-api-nonproduction\.netlify\.app$/,'Only immutable protected nonproduction previews permitted');
+ const releaseOrigin='https://6aba709e58e0e10008eb836e--oi-connected-release-candidate.netlify.app';
+ if(c.origin===releaseOrigin){
+  assert.equal(c.commit,'ab00a7bb04162008c2ebb1a1d58f8a8a75a63925','Release commit must match the pinned deployment');
+  assert(c.accounts,'The isolated backend requires its own verified test accounts');
+  for(const [key,role] of [['a','technician'],['b','technician'],['owner','admin']]){
+   const account=c.accounts[key];assert(account);assert.equal(account.role,role);
+   assert.match(account.email,/^[^@\s]+@[^@\s]+$/);
+   for(const field of ['userId','organizationId'])assert.match(account[field],/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/);
+  }
+  assert.equal(new Set(Object.values(c.accounts).map(a=>a.userId)).size,3);
+  assert.equal(new Set(Object.values(c.accounts).map(a=>a.organizationId)).size,3);
+ }else assert.match(c.origin,/^https:\/\/[a-f0-9]{24}--oi-offline-sync-pr2-api-nonproduction\.netlify\.app$/,'Only pinned private acceptance targets permitted');
  assert.match(c.commit,/^[a-f0-9]{40}$/);
  assert.match(c.openingCode,/^SYNTHETIC-/);
  for(const key of ['openingId','componentId','photoId','providerFacilityId'])assert.match(c[key],/^[a-f0-9-]{36}$/);
