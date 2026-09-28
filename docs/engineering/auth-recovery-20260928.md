@@ -43,8 +43,23 @@ Netlify build log OI_FUNCTION_PACKAGE_EVIDENCE:
 
 These are build-side package hashes, not independent downloads of running Lambda bytes. Build installed locked dependencies, compiled both frontends and API, and deployed both functions. No schema change. Rollback: previous private deploy 6ab9876de306190008e2dc7f; it removes the diagnostic improvements. The local operator acceptance runner is now pinned to the new immutable deploy and commit but remains unexecuted against this backend.
 
-## Current hosted acceptance blocker
+## Initial hosted sign-in failure (resolved)
 
 Candidate sign-in at 07:14:49 America/Phoenix returned support reference 1d021ce9-93d2-4b6e-a62d-a72a4c538e4f. Netlify API log confirms password_mismatch and the expected database target fdudsigbxumcpbxxxerb. This is a different account/backend from today's successful recording-account recovery. Do not alter the recording account or profile to address it. No further automated login or recovery attempt was made.
 
-The current release administrator is active with session_version 1 (read-only verification by its designated UUID). Live authenticated acceptance remains blocked on that account's sign-in. Browser tool does not expose controlled network interruption; the operator harness requires separately pinned synthetic A/B identities before hosted offline/isolation acceptance. No acceptance pass is inferred from the 13 configuration validation tests, which all pass after repinning.
+The current release administrator is active with session_version 1 (read-only verification by its designated UUID). The user subsequently completed manual sign-in successfully. Authenticated acceptance resumed without resetting or altering the recording account.
+
+## Hosted results after successful sign-in
+
+Tested the private isolated deploy above through its actual authenticated Field App and Dashboard, using the customer-organization administrator. These are not technician/provider A/B results.
+
+- Opening SYNTHETIC-QA-RELEASE-FIELD-PAIR (f6ee2e93-4589-42e4-850e-643780f57dfc): paired leaves and their separately associated closers loaded. Existing synthetic service history was visible in the Dashboard.
+- Changed active closer f05bf37d-da0e-415a-bc70-81ec5a480a7d cost from $250 to $251 through the Field App edit form. Dashboard showed $251 after Refresh saved records. Elapsed browser orchestration time from refresh click to the matching visible result was 497 ms; this is not a server latency measurement or automatic synchronization claim.
+- Restored the cost to $250 through the same Field App form and verified $250 after Dashboard refresh. No test cost restoration remains pending.
+- Reloaded Dashboard: authenticated records reappeared after initialization, including restored $250 and the synthetic service event. A transient login view during initialization was not treated as sign-out.
+- State filter FL left only SYNTHETIC-QA-RELEASE-FL — Miami — FL; CA left only SYNTHETIC-QA-RELEASE-CA — Los Angeles — CA. Reload restored All authorized states for this unassigned administrator. My Territory currently contains only All authorized territories; meaningful named-territory and technician default acceptance remain open.
+- Hosted purchasing review returned requirements unresolved and Review only — nothing is sent or ordered. The incomplete SYNTHETIC-QA-RELEASE-PAIR required completion/assessment/review; its serviceable hinge and the paired opening's serviceable closer were excluded as replacement not required. The worn active closer required an approved supporting document. No purchasing message or order was sent. This verifies refusal/exclusion behavior, not the positive approved-document route.
+
+## Remaining bounded acceptance prerequisites
+
+Browser tooling here does not expose controlled network interruption. The operator harness requires separately pinned synthetic A/B technician identities on fdudsigbxumcpbxxxerb and an authorized browser runner with interruption/restart controls before hosted offline/isolation acceptance. Prior-backend identities or results must not be substituted. Positive approved-document purchasing needs designated synthetic supporting-document evidence. California branch defaults remain required and are not accepted for narration from this administrator/state-filter test. No acceptance pass is inferred from the 13 configuration validation tests, which all pass after repinning. Production readiness remains withheld.
