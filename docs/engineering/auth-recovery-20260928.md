@@ -62,4 +62,14 @@ Tested the private isolated deploy above through its actual authenticated Field 
 
 ## Remaining bounded acceptance prerequisites
 
+### Follow-up: named territories verified, designated accounts absent
+
+On 28 September, a query limited to the two previously designated addresses (stg-tech-a@oi-nonprod.invalid and stg-tech-b@oi-nonprod.invalid) returned no rows on fdudsigbxumcpbxxxerb. This establishes absence of those exact accounts, not absence of every possible technician. No credentials were queried.
+
+Set service_territory on only the two existing labelled synthetic release facilities, previously NULL: CA 33f3cbf5-1440-4d06-97fb-09d92f471c58 to SYNTHETIC-QA West; FL 52a002f3-7579-4f1f-9c60-ba0babc8fde7 to SYNTHETIC-QA Southeast. These retained demonstration labels do not grant access. Affected row count: two. The recording deployment/backend is untouched.
+
+Live Dashboard after page reload: West selected only CA; Southeast selected only FL. Refresh saved records alone did not reload facility territory options. Live Field App Facilities and openings: West selected only CA; Southeast selected only FL; Southeast plus CA selected zero facilities; West plus CA selected one. Thus named-territory filtering is now verified for the signed-in administrator on both applications. Automatic California defaults for a technician and company isolation remain unverified.
+
+Concrete next access setup: two synthetic provider organizations with separate technician principals, each limited to one of these synthetic facilities through owner-approved provider assignments. Provider A uses West/CA branch defaults; provider B uses Southeast/FL. Preserve current administrator and recording account. Do not copy password hashes, mint sessions, or re-use identities from another backend. Secure interactive account setup and a runner with network interruption controls remain required before executing the hosted A/B harness.
+
 Browser tooling here does not expose controlled network interruption. The operator harness requires separately pinned synthetic A/B technician identities on fdudsigbxumcpbxxxerb and an authorized browser runner with interruption/restart controls before hosted offline/isolation acceptance. Prior-backend identities or results must not be substituted. Positive approved-document purchasing needs designated synthetic supporting-document evidence. California branch defaults remain required and are not accepted for narration from this administrator/state-filter test. No acceptance pass is inferred from the 13 configuration validation tests, which all pass after repinning. Production readiness remains withheld.
