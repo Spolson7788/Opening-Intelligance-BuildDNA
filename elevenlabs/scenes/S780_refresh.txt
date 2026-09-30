@@ -1,0 +1,1 @@
+In the Facility Dashboard the previous value stays until Refresh saved records is clicked; then the change appears. There is no automatic refresh.
