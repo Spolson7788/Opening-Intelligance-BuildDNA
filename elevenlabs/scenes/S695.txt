@@ -1,0 +1,1 @@
+Scenes marked connected staging were recorded on the connected staging build, with synthetic demonstration records. Each return to the local demonstration build is marked.

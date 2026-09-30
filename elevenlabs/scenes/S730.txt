@@ -1,0 +1,1 @@
+After reloading, the screen shows California, QA West, and the California facility.

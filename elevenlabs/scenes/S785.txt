@@ -1,0 +1,1 @@
+The original value is restored the same way, and confirmed with another refresh.

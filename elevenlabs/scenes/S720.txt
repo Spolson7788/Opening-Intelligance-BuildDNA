@@ -1,0 +1,1 @@
+Filters narrow the facilities this account is authorised for. Florida with QA West matches nothing. Florida with QA East offers the Florida facility, and not California. Filtering never grants another company's facilities.
