@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchPhotoAccessUrl } from "../lib/api";
 import { mediaAssociationLabel } from "../lib/mediaAssociationLabel";
 import { openingLoadFailure } from "../lib/openingLoadFailure";
-import { getAllOfflineMedia, updateCachedOpening } from "../lib/db";
+import { getAllOfflineMedia, getSyncOperationsForOpening, updateCachedOpening } from "../lib/db";
 import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
 import { SyncBadge } from "../components/SyncBadge";
@@ -51,7 +51,7 @@ export function OpeningDetailPage() {
   const [fromCache, setFromCache] = useState(false);
   const [error, setError] = useState<ReturnType<typeof openingLoadFailure> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [queuedPhotos, setQueuedPhotos] = useState<(OfflineMediaRecord & { previewUrl: string })[]>([]);
+  const [queuedPhotos, setQueuedPhotos] = useState<(OfflineMediaRecord & { previewUrl: string; tooLarge?: boolean })[]>([]);
   const [photoToDelete, setPhotoToDelete] = useState<{ id: string; name: string } | null>(null);
   const [deletingPhoto, setDeletingPhoto] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -73,9 +73,12 @@ export function OpeningDetailPage() {
     const openingId = openingIdRef.current;
     if (!openingId) return;
     const items = (await getAllOfflineMedia()).filter((item) => item.openingId === openingId && item.uploadState !== "verified");
+    const rejected = new Set((await getSyncOperationsForOpening(openingId))
+      .filter((op) => op.entityType === "photo" && op.state === "permanent_failure" && op.lastErrorCode === "media_too_large")
+      .map((op) => op.entityId));
     setQueuedPhotos((prev) => {
       prev.forEach((p) => URL.revokeObjectURL(p.previewUrl)); // avoid leaking object URLs
-      return items.map((item) => ({ ...item, previewUrl: URL.createObjectURL(item.blob) }));
+      return items.map((item) => ({ ...item, tooLarge: rejected.has(item.photoId), previewUrl: URL.createObjectURL(item.blob) }));
     });
   }
 
@@ -242,7 +245,8 @@ export function OpeningDetailPage() {
                   className="badge badge-offline"
                   style={{ position: "absolute", bottom: 4, left: 4, fontSize: 10, padding: "2px 6px" }}
                 >
-                  {p.uploadState === "retry_wait" ? "Retrying…" : p.uploadState === "conflict" ? "Conflict" : "Queued"}
+                  {p.tooLarge ? <Link to="/sync-issues" style={{ color: "inherit" }}>Too large · review</Link>
+                    : p.uploadState === "retry_wait" ? "Retrying…" : p.uploadState === "conflict" ? "Conflict" : "Queued"}
                 </span>
               </div>
             ))}

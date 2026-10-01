@@ -37,7 +37,7 @@ export function SyncBadge() {
   }
 
   if (syncState.failed > 0) {
-    return <Link to="/sync-issues" className="badge badge-offline" title="Saved locally; synchronization will retry">{syncState.failed} retrying</Link>;
+    return <Link to="/sync-issues" className="badge badge-offline" title="Saved on this device; open Synchronization review to choose what happens next">{syncState.failed} need{syncState.failed === 1 ? "s" : ""} review</Link>;
   }
 
   if (syncState.pending > 0) {

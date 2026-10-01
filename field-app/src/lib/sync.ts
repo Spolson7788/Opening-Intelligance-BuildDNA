@@ -3,6 +3,7 @@ import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhot
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
 import type { OfflineEntityEnvelope, OfflineEntityType, SyncConflict, SyncOperation, SyncOperationState, SyncReceipt } from "./offlineTypes";
 import { readyOperations, retryDelayMs } from "./offlineSyncModel";
+import { MEDIA_TOO_LARGE, maximumMediaBytes } from "./mediaLimits";
 import type { OutboxItem } from "./db";
 
 type SyncListener = (state: SyncState) => void;
@@ -120,6 +121,9 @@ async function submitComponent(operation: SyncOperation, principal: Principal) {
 }
 async function submitPhoto(operation: SyncOperation, principal: Principal) {
   const media = await getOfflineMedia(operation.entityId); if (!media) throw new Error("offline_media_missing");
+  // Media queued by an earlier app version may exceed the server limit; stop
+  // before any request so it is surfaced for review instead of retried.
+  if (media.byteSize > maximumMediaBytes(media.contentType)) throw new Error(MEDIA_TOO_LARGE);
   if ((operation.payload as Record<string, unknown>).legacy_identity_recovery === true) {
     try {
       const recovered = await recoverOfflinePhotoReservation({ photo_id: media.photoId,
@@ -161,11 +165,18 @@ async function submitGeneralOperation(operation: SyncOperation, principal: Princ
     app_version: operation.appVersion, protocol_version: operation.protocolVersion, payload,
   }, principal);
 }
+// A size refusal is final for these bytes: retrying cannot succeed, so the
+// operation stops and is surfaced for review with the photograph retained.
+export function isMediaSizeRejection(error: unknown): boolean {
+  if (error instanceof ApiError) return error.status === 413 || error.message === MEDIA_TOO_LARGE;
+  return error instanceof Error && (error.message === "upload_failed_413" || error.message === MEDIA_TOO_LARGE);
+}
 async function recordFailure(operation: SyncOperation, error: unknown) {
-  const conflict = error instanceof ApiError && error.status === 409;
+  const tooLarge = isMediaSizeRejection(error);
+  const conflict = !tooLarge && error instanceof ApiError && error.status === 409;
   const authRequired = error instanceof ApiError && (error.status === 401 || error.status === 403);
-  const state: SyncOperationState = conflict ? "conflict" : authRequired ? "auth_required" : "retry_wait";
-  const message = error instanceof Error ? error.message : "unknown_error";
+  const state: SyncOperationState = tooLarge ? "permanent_failure" : conflict ? "conflict" : authRequired ? "auth_required" : "retry_wait";
+  const message = tooLarge ? MEDIA_TOO_LARGE : error instanceof Error ? error.message : "unknown_error";
   if (conflict) {
     const item: SyncConflict = { conflictId: crypto.randomUUID(), operationId: operation.operationId,
       entityId: operation.entityId, openingId: operation.openingId, organizationId: operation.organizationId,
@@ -173,7 +184,7 @@ async function recordFailure(operation: SyncOperation, error: unknown) {
       detectedAt: new Date().toISOString(), resolutionState: "open" };
     await putSyncConflict(item);
   } else await putSyncOperation({ ...operation, state, attemptCount: operation.attemptCount + 1,
-    lastAttemptAt: new Date().toISOString(), nextAttemptAt: authRequired ? undefined : new Date(Date.now() + retryDelayMs(operation.attemptCount)).toISOString(),
+    lastAttemptAt: new Date().toISOString(), nextAttemptAt: authRequired || tooLarge ? undefined : new Date(Date.now() + retryDelayMs(operation.attemptCount)).toISOString(),
     dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined, lastErrorCode: message });
   currentState = { ...currentState, lastError: message };
 }
@@ -198,6 +209,7 @@ export async function flushVersionedOperations() {
     }
     catch (error) {
       await recordFailure(operation, error);
+      if (isMediaSizeRejection(error)) continue;
       if (!(error instanceof ApiError) || error.status >= 500) return;
     }
   }

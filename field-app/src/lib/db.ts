@@ -356,6 +356,73 @@ export async function recoverOrphanedMediaOperation(photoId: string) {
   return operation;
 }
 
+// A photograph refused for size (operation permanent_failure, media_too_large)
+// stays on the device until the technician chooses an outcome. Both outcomes
+// below are single transactions limited to the signed-in technician's records.
+async function rejectedMediaInTransaction(tx: any, photoId: string) {
+  const auth = await tx.objectStore("auth").get("current");
+  const media: OfflineMediaRecord | undefined = await tx.objectStore("media").get(photoId);
+  if (!auth || !media || media.capturedByUserId !== auth.userId || media.organizationId !== auth.organizationId) {
+    throw new Error("media_principal_mismatch");
+  }
+  const operations: SyncOperation[] = await tx.objectStore("operations").getAll();
+  const operation = operations.find((item) => item.entityType === "photo" && item.entityId === photoId);
+  if (!operation || operation.state !== "permanent_failure" || operation.lastErrorCode !== "media_too_large") {
+    throw new Error("media_not_rejected_for_size");
+  }
+  return { auth, media, operation, operations };
+}
+
+export async function replaceRejectedMediaWithReducedCopy(photoId: string, reduced: {
+  blob: Blob; contentType: string; byteSize: number; sha256Checksum: string; filename: string;
+  widthPixels?: number; heightPixels?: number;
+}, nowIso = new Date().toISOString()) {
+  const db = await getDb();
+  const tx = db.transaction(["auth", "media", "operations"], "readwrite");
+  const { media, operation, operations } = await rejectedMediaInTransaction(tx, photoId);
+  const newPhotoId = crypto.randomUUID();
+  const newOperationId = crypto.randomUUID();
+  const extension = reduced.contentType.split("/")[1] || "bin";
+  const verifiedOrPending = operation.dependencyOperationIds;
+  const replacement: OfflineMediaRecord = { ...media, photoId: newPhotoId, operationId: newOperationId,
+    originalFilename: reduced.filename, generatedCaptureName: `${newPhotoId}.${extension}`,
+    contentType: reduced.contentType, byteSize: reduced.byteSize, sha256Checksum: reduced.sha256Checksum,
+    widthPixels: reduced.widthPixels, heightPixels: reduced.heightPixels, blob: reduced.blob,
+    localBlobState: "retained", uploadState: verifiedOrPending.length ? "blocked_dependency" : "queued",
+    provenanceState: "derived", derivedFromPhotoId: media.photoId, updatedAtLocal: nowIso };
+  const replacementOperation: SyncOperation = { ...operation, operationId: newOperationId, entityId: newPhotoId,
+    payload: { ...(operation.payload as Record<string, unknown>), original_filename: reduced.filename,
+      content_type: reduced.contentType, byte_size: reduced.byteSize, sha256_checksum: reduced.sha256Checksum,
+      legacy_identity_recovery: false, reduced_from_photo_id: media.photoId },
+    payloadHash: reduced.sha256Checksum, createdAtLocal: nowIso,
+    state: verifiedOrPending.length ? "blocked_dependency" : "queued", attemptCount: 0,
+    nextAttemptAt: undefined, lastAttemptAt: undefined, dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined,
+    lastErrorCode: undefined };
+  await tx.objectStore("media").put(replacement);
+  await tx.objectStore("operations").put(replacementOperation);
+  for (const dependent of operations) {
+    if (!dependent.dependencyOperationIds.includes(operation.operationId)) continue;
+    await tx.objectStore("operations").put({ ...dependent, dependencyOperationIds:
+      dependent.dependencyOperationIds.map((id) => id === operation.operationId ? newOperationId : id) });
+  }
+  await tx.objectStore("operations").delete(operation.operationId);
+  await tx.objectStore("media").delete(media.photoId);
+  await tx.done;
+  return { photoId: newPhotoId, operationId: newOperationId };
+}
+
+export async function removeRejectedMedia(photoId: string) {
+  const db = await getDb();
+  const tx = db.transaction(["auth", "media", "operations"], "readwrite");
+  const { media, operation, operations } = await rejectedMediaInTransaction(tx, photoId);
+  if (operations.some((item) => item.dependencyOperationIds.includes(operation.operationId))) {
+    throw new Error("rejected_media_has_dependents");
+  }
+  await tx.objectStore("operations").delete(operation.operationId);
+  await tx.objectStore("media").delete(media.photoId);
+  await tx.done;
+}
+
 export async function reconcileRecoveredMediaOperationId(oldOperationId: string, recoveredOperationId: string) {
   if (oldOperationId === recoveredOperationId) {
     const db = await getDb();

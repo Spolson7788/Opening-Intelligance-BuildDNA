@@ -2,6 +2,8 @@ import { useState } from "react";
 import { getAllSyncOperations, loadAuth, saveMediaAndOperation } from "../lib/db";
 import { checksumBlob, dependencyIdsForOperation, flushOutbox, getOrCreateDeviceId } from "../lib/sync";
 import { OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "../lib/offlineTypes";
+import { formatMegabytes, MAX_IMAGE_BYTES, MAX_VIDEO_BYTES, MEDIA_TOO_LARGE } from "../lib/mediaLimits";
+import { prepareImageForUpload, reducedFilename } from "../lib/photoPreparation";
 import type { OfflineMediaRecord, SyncOperation } from "../lib/offlineTypes";
 
 interface Props {
@@ -11,18 +13,32 @@ interface Props {
   onQueued: () => void; // fires the instant a photo/video is saved locally, not once it's uploaded
 }
 
-// Matches the API's ALLOWED_CONTENT_TYPES in src/services/storage.ts — kept
-// in sync manually since this is a separate app; if that list changes there,
-// this needs to change too, or the upload will reach the server and get a
-// 400 back after already being queued locally (still safe, just a wasted
-// round trip surfaced as an error later rather than caught at capture time).
-const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100MB, matches the server-side constant
-const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+// Size limits come from lib/mediaLimits.ts, which a test keeps equal to the
+// API's limits in src/services/storage.ts.
+
+// The opening page re-renders its loading view after each synchronization pass, which remounts this
+// component. Capture outcomes (a reduction notice or a size refusal) are kept here briefly per input so
+// the technician still sees them after that remount.
+const MESSAGE_TTL_MS = 2 * 60_000;
+const recentMessages = new Map<string, { error: string | null; notice: string | null; at: number }>();
+function recentMessage(key: string) {
+  const entry = recentMessages.get(key);
+  return entry && Date.now() - entry.at < MESSAGE_TTL_MS ? entry : undefined;
+}
 
 export function PhotoCapture({ openingId, relatedEntityType = "opening", relatedEntityId, onQueued }: Props) {
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const inputSuffix = `${openingId}-${relatedEntityType}-${relatedEntityId ?? openingId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const [saving, setSaving] = useState(false);
+  const [error, setErrorState] = useState<string | null>(() => recentMessage(inputSuffix)?.error ?? null);
+  const [notice, setNoticeState] = useState<string | null>(() => recentMessage(inputSuffix)?.notice ?? null);
+  const setError = (value: string | null) => {
+    setErrorState(value);
+    recentMessages.set(inputSuffix, { error: value, notice: value ? null : recentMessage(inputSuffix)?.notice ?? null, at: Date.now() });
+  };
+  const setNotice = (value: string | null) => {
+    setNoticeState(value);
+    recentMessages.set(inputSuffix, { notice: value, error: value ? null : recentMessage(inputSuffix)?.error ?? null, at: Date.now() });
+  };
 
   function getLocation(): Promise<{ latitude?: number; longitude?: number }> {
     return new Promise((resolve) => {
@@ -40,19 +56,27 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
     e.target.value = ""; // allow selecting the same file again later
     if (!file) return;
     setError(null);
+    setNotice(null);
 
     const isVideo = file.type.startsWith("video/");
     if (isVideo && file.size > MAX_VIDEO_BYTES) {
-      setError(`That video is too large (${Math.round(file.size / 1024 / 1024)}MB) — 100MB max. Try a shorter clip.`);
-      return;
-    }
-    if (!isVideo && file.size > MAX_IMAGE_BYTES) {
-      setError(`That photograph is too large (${Math.round(file.size / 1024 / 1024)}MB) — 25MB max.`);
+      setError(`That video is too large (${formatMegabytes(file.size)}) — ${formatMegabytes(MAX_VIDEO_BYTES)} max. Try a shorter clip.`);
       return;
     }
 
     setSaving(true);
     try {
+      // Photographs above the upload limit are reduced to a JPEG copy that
+      // fits. If that is impossible on this device, the original is still
+      // kept locally and listed in Synchronization review (never discarded,
+      // never retried indefinitely).
+      const prepared = isVideo
+        ? { blob: file as Blob, contentType: file.type, reduced: false, withinLimit: true, sourceBytes: file.size }
+        : await prepareImageForUpload(file, MAX_IMAGE_BYTES);
+      const blob = prepared.blob;
+      const contentType = prepared.contentType || file.type;
+      const filename = prepared.reduced ? reducedFilename(file.name) : file.name;
+      const rejected = !prepared.withinLimit;
       // Save the blob to IndexedDB immediately — this is the offline-safe step.
       // Upload happens later via the same outbox-flush mechanism as service/
       // inspection events, so this button behaves consistently with the rest
@@ -65,7 +89,7 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
       const photoId = crypto.randomUUID();
       const operationId = crypto.randomUUID();
       const deviceId = await getOrCreateDeviceId();
-      const checksum = await checksumBlob(file);
+      const checksum = await checksumBlob(blob);
       const targetId = relatedEntityId ?? openingId;
       const dependencies = dependencyIdsForOperation(await getAllSyncOperations(), "photo", openingId, {
         target_type: relatedEntityType, target_id: targetId,
@@ -74,23 +98,30 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
         photoId, openingId, organizationId: auth.organizationId,
         targetType: relatedEntityType, targetId, capturedAtDevice: now,
         capturedByUserId: auth.userId, capturedByDeviceId: deviceId,
-        originalFilename: file.name, generatedCaptureName: `${photoId}.${file.type.split("/")[1] || "bin"}`,
-        contentType: file.type, byteSize: file.size, sha256Checksum: checksum, blob: file,
+        originalFilename: filename, generatedCaptureName: `${photoId}.${contentType.split("/")[1] || "bin"}`,
+        contentType, byteSize: blob.size, sha256Checksum: checksum, blob,
+        widthPixels: "width" in prepared ? prepared.width : undefined, heightPixels: "height" in prepared ? prepared.height : undefined,
         latitude: location.latitude, longitude: location.longitude,
-        localBlobState: "retained", uploadState: "queued", provenanceState: "original",
+        localBlobState: "retained", uploadState: rejected ? "permanent_failure" : "queued", provenanceState: "original",
         reviewState: "pending", createdAtLocal: now, updatedAtLocal: now,
       };
       const operation: SyncOperation = {
         operationId, operationType: "confirm_media", entityType: "photo", entityId: photoId,
         openingId, organizationId: auth.organizationId, actorUserId: auth.userId, deviceId,
         baseServerRevision: null, payload: { target_type: relatedEntityType, target_id: targetId,
-          original_filename: file.name, content_type: file.type, byte_size: file.size, sha256_checksum: checksum,
+          original_filename: filename, content_type: contentType, byte_size: blob.size, sha256_checksum: checksum,
           latitude: location.latitude, longitude: location.longitude },
         payloadHash: checksum, dependencyOperationIds: dependencies, createdAtLocal: now,
-        state: dependencies.length ? "blocked_dependency" : "queued", attemptCount: 0,
+        state: rejected ? "permanent_failure" : dependencies.length ? "blocked_dependency" : "queued", attemptCount: 0,
+        lastErrorCode: rejected ? MEDIA_TOO_LARGE : undefined,
         schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: "offline-protocol-1", protocolVersion: SYNC_PROTOCOL_VERSION,
       };
       await saveMediaAndOperation(media, operation);
+      if (rejected) {
+        setError(`This photograph is ${formatMegabytes(file.size)}, above the ${formatMegabytes(MAX_IMAGE_BYTES)} upload limit, and this device could not make a smaller copy. It is kept on this device: open Synchronization review to save a copy or remove it.`);
+      } else if (prepared.reduced) {
+        setNotice(`Photograph reduced from ${formatMegabytes(prepared.sourceBytes)} to ${formatMegabytes(blob.size)} to fit the ${formatMegabytes(MAX_IMAGE_BYTES)} upload limit.`);
+      }
       onQueued();
       flushOutbox(); // fire-and-forget: uploads now if online, otherwise sits queued
     } finally {
@@ -128,7 +159,8 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
           />
         </label>
       </div>
-      {error && <p className="error-text" style={{ marginTop: 8 }}>{error}</p>}
+      {notice && <p role="status" style={{ marginTop: 8, color: "var(--text-secondary)" }}>{notice}</p>}
+      {error && <p className="error-text" role="alert" style={{ marginTop: 8 }}>{error}</p>}
     </div>
   );
 }
