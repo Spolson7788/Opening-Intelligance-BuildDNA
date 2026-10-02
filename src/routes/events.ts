@@ -40,6 +40,12 @@ eventsRouter.post("/service-events", async (req: AuthedRequest, res) => {
     if (!(await assertOpeningInOrg(b.opening_id, orgId))) {
       return res.status(403).json({ error: "forbidden" });
     }
+    // A component-level service event must name a component of this same opening (the sync route
+    // applies the same rule). Without it a foreign component id would be limited only by the FK.
+    if (b.hardware_component_id) {
+      const target = await pool.query("SELECT 1 FROM hardware_components WHERE id = $1 AND opening_id = $2", [b.hardware_component_id, b.opening_id]);
+      if (!target.rows[0]) return res.status(409).json({ error: "component_not_in_opening" });
+    }
 
     const result = await pool.query(
       `INSERT INTO service_events

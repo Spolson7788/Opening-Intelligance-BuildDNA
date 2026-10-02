@@ -532,7 +532,7 @@ function openDetail(oi){
     var sec=document.getElementById('detsvcsec'); if(!sec) return;
     var fid=current.id, ono=o.opening_no;
     Promise.all([
-      sb.from('service_events').select('id,performed_at,work_performed,parts_used,cost,cost_evidence,request_id')
+      sb.from('service_events').select('id,performed_at,work_performed,parts_used,cost,cost_evidence,request_id,hardware_component_id,component_id,component_label')
         .eq('facility_id',fid).eq('opening_no',ono).order('performed_at',{ascending:false}),
       sb.from('service_requests').select('id,symptom,reported_by,reported_at,priority')
         .eq('facility_id',fid).eq('opening_no',ono).order('reported_at',{ascending:false}),
@@ -572,13 +572,12 @@ function openDetail(oi){
         }
       }
 
-      // the history itself
-      H+='<div style="margin-top:8px">';
-      ev.slice(0,8).forEach(function(e){
+      // the history itself: whole-opening events, then one history per component (e.g. each closer of a pair)
+      function evRow(e){
         var r=reqById[e.request_id];
         var when=new Date(e.performed_at).toLocaleDateString();
         var parts=Array.isArray(e.parts_used)?e.parts_used:[];
-        H+='<div style="padding:9px 0;border-bottom:1px solid var(--line)">'+
+        return '<div data-service-event="'+esc(e.id)+'" style="padding:9px 0;border-bottom:1px solid var(--line)">'+
            '<div style="font-size:13px"><b>'+when+'</b>'+
            (r?' · <span style="color:var(--sec)">reported: '+esc(r.symptom)+'</span>':'')+'</div>'+
            (e.work_performed?'<div style="font-size:13px;margin-top:2px">'+esc(e.work_performed)+'</div>':'')+
@@ -586,9 +585,19 @@ function openDetail(oi){
              (parts.length?esc(parts.join(', '))+' · ':'')+
              (e.cost!=null?'$'+Number(e.cost).toLocaleString()+(e.cost_evidence?' ('+esc(e.cost_evidence)+')':''):'no cost recorded')+
            '</div></div>';
+      }
+      var groups=[], byKey={};
+      ev.forEach(function(e){var key=e.component_id?('c:'+e.component_id):(e.hardware_component_id?'x:'+e.hardware_component_id:'opening');
+        if(!byKey[key]){byKey[key]={key:key,label:e.component_label||'Whole opening',component:e.component_id||null,items:[]};groups.push(byKey[key]);}
+        byKey[key].items.push(e);});
+      groups.sort(function(a,b){return a.key==='opening'?-1:b.key==='opening'?1:a.label.localeCompare(b.label);});
+      groups.forEach(function(g){
+        H+='<div '+(g.component?'data-component-history="'+esc(g.component)+'"':'data-opening-service-history')+' style="margin-top:10px">'+
+           '<div style="font-size:12px;font-weight:700;color:var(--sec)">'+esc(g.label)+'</div>';
+        g.items.slice(0,8).forEach(function(e){H+=evRow(e);});
+        if(g.items.length>8) H+='<div style="font-size:12px;color:var(--muted);padding-top:6px">'+(g.items.length-8)+' earlier event(s) not shown</div>';
+        H+='</div>';
       });
-      if(ev.length>8) H+='<div style="font-size:12px;color:var(--muted);padding-top:6px">'+(ev.length-8)+' earlier event(s) not shown</div>';
-      H+='</div>';
 
       sec.innerHTML=H; sec.style.display='';
     }).catch(function(){});

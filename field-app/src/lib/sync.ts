@@ -1,5 +1,5 @@
 import { claimSyncOperation, getAllSyncOperations, getOfflineMedia, getOfflineSetting, getSyncOperationsForPrincipal, loadAuth, putOfflineSetting, putSyncConflict, putSyncOperation, putSyncReceipt, reconcileRecoveredMediaOperationId, saveEntityAndOperation } from "./db";
-import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, uploadPrivatePhoto, ApiError } from "./api";
+import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, uploadPrivatePhoto, ApiError, PrincipalChangedError, isClientPrincipalChange } from "./api";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
 import type { OfflineEntityEnvelope, OfflineEntityType, SyncConflict, SyncOperation, SyncOperationState, SyncReceipt } from "./offlineTypes";
 import { readyOperations, retryDelayMs } from "./offlineSyncModel";
@@ -109,7 +109,7 @@ type Principal = { userId: string; organizationId: string };
 async function assertPrincipal(principal: Principal) {
   const auth = await loadAuth();
   if (!auth || auth.userId !== principal.userId || auth.organizationId !== principal.organizationId) {
-    throw new ApiError(401, "active_principal_changed");
+    throw new PrincipalChangedError();
   }
 }
 async function submitComponent(operation: SyncOperation, principal: Principal) {
@@ -174,7 +174,11 @@ export function isMediaSizeRejection(error: unknown): boolean {
 async function recordFailure(operation: SyncOperation, error: unknown) {
   const tooLarge = isMediaSizeRejection(error);
   const conflict = !tooLarge && error instanceof ApiError && error.status === 409;
-  const authRequired = error instanceof ApiError && (error.status === 401 || error.status === 403);
+  // A change of signed-in account (raised by this app) stops the operation like an authorization
+  // failure, but is marked so that it resumes once the same account signs in again. A server 401/403
+  // is not marked and stays stopped for review.
+  const principalChange = isClientPrincipalChange(error);
+  const authRequired = principalChange || (error instanceof ApiError && (error.status === 401 || error.status === 403));
   const state: SyncOperationState = tooLarge ? "permanent_failure" : conflict ? "conflict" : authRequired ? "auth_required" : "retry_wait";
   const message = tooLarge ? MEDIA_TOO_LARGE : error instanceof Error ? error.message : "unknown_error";
   if (conflict) {
@@ -185,7 +189,7 @@ async function recordFailure(operation: SyncOperation, error: unknown) {
     await putSyncConflict(item);
   } else await putSyncOperation({ ...operation, state, attemptCount: operation.attemptCount + 1,
     lastAttemptAt: new Date().toISOString(), nextAttemptAt: authRequired || tooLarge ? undefined : new Date(Date.now() + retryDelayMs(operation.attemptCount)).toISOString(),
-    dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined, lastErrorCode: message });
+    dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined, lastErrorCode: message, principalChangeStop: principalChange ? true : undefined });
   currentState = { ...currentState, lastError: message };
 }
 export async function flushVersionedOperations() {
@@ -193,7 +197,13 @@ export async function flushVersionedOperations() {
   if (!auth) return;
   const principal = { userId: auth.userId, organizationId: auth.organizationId };
   while (true) {
-    await assertPrincipal(principal);
+    try { await assertPrincipal(principal); }
+    catch (error) {
+      // The signed-in account changed since this pass started: stop this pass. The new account's
+      // own pass handles its operations; this account's resume after it signs in again.
+      if (isClientPrincipalChange(error)) return;
+      throw error;
+    }
     const operations = await getSyncOperationsForPrincipal(principal.userId, principal.organizationId);
     const verified = new Set(operations.filter((item) => item.state === "verified").map((item) => item.operationId));
     const [candidate] = readyOperations(operations.filter((item) => item.state !== "verified"), verified, new Date().toISOString());
@@ -210,6 +220,7 @@ export async function flushVersionedOperations() {
     catch (error) {
       await recordFailure(operation, error);
       if (isMediaSizeRejection(error)) continue;
+      if (isClientPrincipalChange(error)) return;
       if (!(error instanceof ApiError) || error.status >= 500) return;
     }
   }
@@ -218,6 +229,7 @@ export async function flushOutbox() {
   if (currentState.syncing || !navigator.onLine) return;
   currentState = { ...currentState, syncing: true }; notify();
   try { await flushVersionedOperations(); }
+  catch (error) { currentState = { ...currentState, lastError: error instanceof Error ? error.message : "unknown_error" }; }
   finally { currentState = { ...currentState, syncing: false }; await refreshPendingCount(); }
 }
 export function initSync() {

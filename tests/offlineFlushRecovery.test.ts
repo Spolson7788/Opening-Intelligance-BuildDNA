@@ -111,7 +111,10 @@ describe("flush interruption recovery", () => {
       await saveAuth({ token: "token-b", userId: ids.userB, organizationId: ids.organization, role: "technician" });
     };
 
-    await expect(flushVersionedOperations()).rejects.toThrow("active_principal_changed");
+    // The pass now stops quietly when the signed-in account changes (it used to reject unhandled).
+    // This test replaces submitOfflineOperation, so the request wrapper's check after the response does
+    // not run here; tests/principalChangeRecovery.test.ts covers that path through the real wrapper.
+    await expect(flushVersionedOperations()).resolves.toBeUndefined();
     const operations = await getSyncOperationsForOpening(ids.opening);
     expect(operations.find((item) => item.operationId === first.operation.operationId)?.state).toBe("verified");
     expect(operations.find((item) => item.operationId === second.operation.operationId)?.state).toBe("queued");

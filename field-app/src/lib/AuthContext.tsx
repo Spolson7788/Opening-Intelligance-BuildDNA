@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { login as apiLogin, decodeTokenPayload } from "./api";
-import { saveAuth, loadAuth, clearAuth } from "./db";
+import { loadAuth, clearAuth } from "./db";
+import { recordFreshSignIn } from "./freshSignIn";
 
 interface AuthState {
   token: string;
@@ -34,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { token } = await apiLogin(email, password);
     const { userId, organizationId, role } = decodeTokenPayload(token);
     const next = { token, userId, organizationId, role };
-    await saveAuth(next);
+    await recordFreshSignIn(next);
     setAuth(next);
   }
 

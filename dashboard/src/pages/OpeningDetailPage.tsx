@@ -6,6 +6,27 @@ import type { OpeningDetail, DocumentEntry, PurchasingEligibility, HardwareCompo
 import { Sidebar } from "../components/Sidebar";
 import { HealthPill } from "../components/HealthPill";
 import { carrierTrackingUrl, SHIPMENT_STATUS_LABELS } from "../lib/tracking";
+import { componentLabel, splitServiceHistory } from "../lib/serviceHistory";
+import type { ServiceEventRow } from "../lib/serviceHistory";
+
+function ServiceTable({ events }: { events: ServiceEventRow[] }) {
+  return (
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Work Performed</th><th>Cost</th></tr>
+      </thead>
+      <tbody>
+        {events.map((ev) => (
+          <tr key={ev.id} data-service-event={ev.id}>
+            <td>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</td>
+            <td>{ev.work_performed}</td>
+            <td>{ev.cost ? `$${ev.cost}` : "—"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
 function hardwarePlacement(component: HardwareComponent, opening: OpeningDetail) {
   if (component.mounting_scope === "frame") return "Frame";
@@ -270,26 +291,31 @@ export function OpeningDetailPage() {
               )}
             </div>
 
-            <div className="panel">
+            <div className="panel" data-service-history>
               <h2>Service History</h2>
               {opening.service_events.length === 0 ? (
                 <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No service events recorded yet.</p>
-              ) : (
-                <table>
-                  <thead>
-                    <tr><th>Date</th><th>Work Performed</th><th>Cost</th></tr>
-                  </thead>
-                  <tbody>
-                    {opening.service_events.map((ev: any) => (
-                      <tr key={ev.id}>
-                        <td>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</td>
-                        <td>{ev.work_performed}</td>
-                        <td>{ev.cost ? `$${ev.cost}` : "—"}</td>
-                      </tr>
+              ) : (() => {
+                const history = splitServiceHistory(opening as any);
+                return (
+                  <>
+                    <div data-opening-service-history>
+                      <h3 style={{ fontSize: 14, margin: "8px 0 4px" }}>Whole opening</h3>
+                      {history.openingLevel.length + history.unmatched.length === 0
+                        ? <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No opening-level service recorded.</p>
+                        : <ServiceTable events={[...history.openingLevel, ...history.unmatched]} />}
+                    </div>
+                    {opening.hardware_components.map((hw) => (
+                      <div key={hw.id} data-component-history={hw.id}>
+                        <h3 style={{ fontSize: 14, margin: "14px 0 4px" }}>{componentLabel(hw as any, opening as any)}</h3>
+                        {(history.byComponent.get(hw.id) || []).length === 0
+                          ? <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No service recorded for this component.</p>
+                          : <ServiceTable events={history.byComponent.get(hw.id) || []} />}
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              )}
+                  </>
+                );
+              })()}
             </div>
 
             <div className="panel">

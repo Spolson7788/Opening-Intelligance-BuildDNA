@@ -35,7 +35,7 @@ interface FieldAppDB extends DBSchema {
   };
   auth: {
     key: string;
-    value: { token: string; userId: string; organizationId: string; role: string; savedAt: number };
+    value: { token: string; userId: string; organizationId: string; role: string; savedAt: number; signInEventId?: string };
   };
   entities: {
     key: string;
@@ -294,7 +294,7 @@ export async function retrySyncOperationAfterReview(
     throw new Error("operation_not_reviewable");
   }
   await tx.objectStore("operations").put({ ...operation, state: "queued", nextAttemptAt: undefined,
-    dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined, lastErrorCode: undefined });
+    dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined, lastErrorCode: undefined, principalChangeStop: undefined });
   await tx.done;
 }
 
@@ -649,9 +649,36 @@ export async function retryOutboxItem(id: string, photo: boolean) {
   if (item) await db.put("outbox", { ...item, status: "pending", lastError: undefined });
 }
 
-export async function saveAuth(auth: { token: string; userId: string; organizationId: string; role: string }) {
+export async function saveAuth(auth: { token: string; userId: string; organizationId: string; role: string; signInEventId?: string }) {
   const db = await getDb();
   await db.put("auth", { ...auth, savedAt: Date.now() }, "current");
+}
+
+// Resume operations this app stopped only because the signed-in account changed while they were in
+// flight. Runs once per fresh, successful sign-in event, inside one transaction, and only for the
+// operations of the account that has just signed in (matched on user ID and organization ID, never
+// on email). Server refusals (401/403 from the server) are not touched and stay for review.
+// Operation IDs, photo IDs and dispatch-lease fields are left exactly as they are.
+export async function requeueAfterFreshSignIn(input: { userId: string; organizationId: string; signInEventId: string; nowIso?: string }) {
+  const nowIso = input.nowIso ?? new Date().toISOString();
+  const db = await getDb();
+  const tx = db.transaction(["auth", "operations"], "readwrite");
+  const auth = await tx.objectStore("auth").get("current");
+  if (!auth || auth.userId !== input.userId || auth.organizationId !== input.organizationId || auth.signInEventId !== input.signInEventId) {
+    await tx.done;
+    return [] as string[];
+  }
+  const resumed: string[] = [];
+  for (const operation of await tx.objectStore("operations").getAll()) {
+    if (operation.actorUserId !== input.userId || operation.organizationId !== input.organizationId) continue;
+    if (operation.state !== "auth_required" || operation.principalChangeStop !== true) continue;
+    if (operation.autoRecoverySignInEventId === input.signInEventId) continue;
+    await tx.objectStore("operations").put({ ...operation, state: "queued", nextAttemptAt: undefined, principalChangeStop: undefined,
+      autoRecoverySignInEventId: input.signInEventId, autoRecoveredAt: nowIso, autoRecoveryCount: (operation.autoRecoveryCount ?? 0) + 1 });
+    resumed.push(operation.operationId);
+  }
+  await tx.done;
+  return resumed;
 }
 
 export async function loadAuth() {

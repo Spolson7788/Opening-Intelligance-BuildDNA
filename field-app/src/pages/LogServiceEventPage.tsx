@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { flushOutbox, queueOpeningMutation } from "../lib/sync";
-import { recomputeHealthScore } from "../lib/api";
+import { fetchOpening, recomputeHealthScore } from "../lib/api";
+import { getCachedOpening } from "../lib/db";
+import { componentLabel } from "../lib/serviceHistory";
+import type { ComponentRow, OpeningServiceView } from "../lib/serviceHistory";
 import { SyncBadge } from "../components/SyncBadge";
 
 export function LogServiceEventPage() {
@@ -12,6 +15,20 @@ export function LogServiceEventPage() {
   const [eventDate, setEventDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [searchParams] = useSearchParams();
+  // "" = the whole opening; otherwise the id of one hardware component of this opening.
+  const [target, setTarget] = useState(searchParams.get("component") ?? "");
+  const [opening, setOpening] = useState<OpeningServiceView | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetchOpening(id!).then(({ opening }) => opening).catch(() => getCachedOpening(id!))
+      .then((loaded) => { if (active && loaded) setOpening(loaded); }).catch(() => {});
+    return () => { active = false; };
+  }, [id]);
+  const components: ComponentRow[] = opening?.hardware_components || [];
+  // A preselected component that is not on this opening is not used.
+  const validTarget = target && (!opening || components.some((c) => c.id === target)) ? target : "";
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -21,6 +38,7 @@ export function LogServiceEventPage() {
         opening_id: id,
         event_date: eventDate,
         work_performed: workPerformed,
+        ...(validTarget ? { hardware_component_id: validTarget } : {}),
     });
 
     setSaved(true);
@@ -55,6 +73,15 @@ export function LogServiceEventPage() {
           </div>
         ) : (
           <form onSubmit={onSubmit}>
+            <div className="field">
+              <label htmlFor="service-target">Applies to</label>
+              <select id="service-target" value={validTarget} onChange={(e) => setTarget(e.target.value)}>
+                <option value="">Whole opening</option>
+                {components.map((c) => (
+                  <option key={c.id} value={c.id}>{componentLabel(c, opening!)}</option>
+                ))}
+              </select>
+            </div>
             <div className="field">
               <label htmlFor="event-date">Date</label>
               <input

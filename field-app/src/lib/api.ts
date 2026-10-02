@@ -18,12 +18,25 @@ export class ApiError extends Error {
   }
 }
 
+// Raised by this app, never by the server: the signed-in account on this device changed while a
+// request for another account was being prepared or was in flight (the server may already have
+// applied it). Kept distinct from server 401/403 refusals so it can be resumed safely, and only
+// after that same account signs in again (see requeueAfterFreshSignIn).
+export const ACTIVE_PRINCIPAL_CHANGED = "active_principal_changed";
+export class PrincipalChangedError extends ApiError {
+  readonly clientPrincipalChange = true as const;
+  constructor() { super(401, ACTIVE_PRINCIPAL_CHANGED); }
+}
+export function isClientPrincipalChange(error: unknown): error is PrincipalChangedError {
+  return error instanceof PrincipalChangedError;
+}
+
 export interface ExpectedPrincipal { userId: string; organizationId: string }
 
 async function authedFetch(path: string, options: RequestInit = {}, expectedPrincipal?: ExpectedPrincipal) {
   const auth = await loadAuth();
   if (expectedPrincipal && (!auth || auth.userId !== expectedPrincipal.userId || auth.organizationId !== expectedPrincipal.organizationId)) {
-    throw new ApiError(401, "active_principal_changed");
+    throw new PrincipalChangedError();
   }
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -37,7 +50,7 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
     throw new ApiError(res.status, body.error || `request_failed_${res.status}`, typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
   }
   const current=await loadAuth();
-  if(!auth||!current||current.userId!==auth.userId||current.organizationId!==auth.organizationId)throw new ApiError(401,"active_principal_changed");
+  if(!auth||!current||current.userId!==auth.userId||current.organizationId!==auth.organizationId)throw new PrincipalChangedError();
   if (res.status === 204) return null; // DELETE endpoints return no body
   return res.json();
 }

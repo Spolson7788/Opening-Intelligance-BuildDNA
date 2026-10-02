@@ -17,6 +17,14 @@ export async function api(path, body) {
   if(!response.ok)throw Error([401,403,404].includes(response.status)?'Access unavailable. Sign in again or contact your administrator.':'Connected records unavailable. Reload to retry.');
   return response.json();
 }
+// Same wording as the Field App (field-app/src/lib/serviceHistory.ts componentLabel).
+export function componentLabel(h,o){
+  const type=String(h.component_type||'').replace(/_/g,' ');
+  const leaf=h.door_leaf_id?(o.door_leaves||[]).find(l=>l.id===h.door_leaf_id):null;
+  const place=leaf?(leaf.leaf_role==='single'?'door':leaf.leaf_role+' leaf'):(h.mounting_scope==='frame'||h.frame_id?'frame':'');
+  const model=[h.manufacturer,h.model_number].filter(Boolean).join(' ');
+  return [type.charAt(0).toUpperCase()+type.slice(1),place,model].filter(Boolean).join(' · ');
+}
 export function mapSnapshot(snapshot) {
   const tables={opening_assemblies:[],opening_structure:[],opening_components:[],service_events:[],assembly_photos:[],opening_last_inspection:[]};
   for(const o of snapshot.openings||[]){
@@ -26,7 +34,10 @@ export function mapSnapshot(snapshot) {
     if(o.frame)tables.opening_structure.push({...base,...o.frame,id:o.frame.id,kind:'frame',condition:o.frame.condition||'unverified'});
     for(const l of o.door_leaves||[])tables.opening_structure.push({...base,...l,kind:l.leaf_role==='single'?'door':l.leaf_role+'_leaf',condition:l.condition||'unverified'});
     for(const h of o.hardware_components||[])tables.opening_components.push({...base,...h,component_class:h.component_type.toUpperCase(),model:h.model_number,structure_id:h.mounting_scope==='door_leaf'?h.door_leaf_id:h.mounting_scope==='frame'?h.frame_id:null,disposition:h.replacement_required&&['worn','failed'].includes(h.condition)?'replace':'record',repair_cost:h.unit_cost,work_completed_at:null});
-    for(const e of o.service_events||[])tables.service_events.push({...base,...e,performed_at:String(e.event_date).slice(0,10)});
+    // Each event keeps its component (if any) so the history can be shown per component; opening-level events stay apart.
+    const comps=new Map((o.hardware_components||[]).map(h=>[h.id,h]));
+    for(const e of o.service_events||[]){const h=e.hardware_component_id?comps.get(e.hardware_component_id):null;
+      tables.service_events.push({...base,...e,performed_at:String(e.event_date).slice(0,10),component_id:h?h.id:null,component_label:h?componentLabel(h,o):(e.hardware_component_id?'Component not on this opening':null)});}
     for(const p of o.photos||[])tables.assembly_photos.push({...base,...p,storage_path:p.id,component_id:p.related_entity_type==='hardware_component'?p.related_entity_id:null,structure_id:['frame','door_leaf'].includes(p.related_entity_type)?p.related_entity_id:null});
     const dates=(o.inspection_events||[]).filter(i=>i.inspection_type==='fire_door_nfpa80').map(i=>String(i.event_date).slice(0,10)).sort();
     if(dates.length)tables.opening_last_inspection.push({...base,last_inspected_at:dates.at(-1)});

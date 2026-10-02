@@ -9,6 +9,17 @@ import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
 import { SyncBadge } from "../components/SyncBadge";
 import { PhotoCapture } from "../components/PhotoCapture";
 import { openingCompletionRequirements } from "../lib/openingCompletion";
+import { splitServiceHistory } from "../lib/serviceHistory";
+import type { ServiceEventRow } from "../lib/serviceHistory";
+
+function ServiceEventCard({ ev }: { ev: ServiceEventRow }) {
+  return (
+    <div className="card" data-service-event={ev.id}>
+      <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
+      <p style={{ margin: "4px 0 0", fontSize: 14 }}>{ev.work_performed}</p>
+    </div>
+  );
+}
 
 function healthClass(score: number | null) {
   if (score === null || score === undefined) return "";
@@ -155,6 +166,7 @@ export function OpeningDetailPage() {
   }
 
   const completionRequirements = openingCompletionRequirements(opening);
+  const history = splitServiceHistory(opening);
   const completionBlocked = opening.completion_state !== "complete" && opening.completion_state !== "pending_sync" && completionRequirements.length > 0;
 
   return (
@@ -328,6 +340,15 @@ export function OpeningDetailPage() {
               <div style={{ marginTop: 10 }}>
                 <PhotoCapture openingId={opening.id} relatedEntityType="hardware_component" relatedEntityId={hw.id} onQueued={loadQueuedPhotos} />
               </div>
+              <div data-component-history={hw.id} style={{ marginTop: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="section-label" style={{ margin: 0 }}>Service history for this component</span>
+                  <Link to={`/opening/${opening.id}/log-service?component=${hw.id}`} style={{ fontSize: 13 }}>Log service</Link>
+                </div>
+                {(history.byComponent.get(hw.id) || []).length === 0
+                  ? <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "4px 0 0" }}>No service recorded for this component.</p>
+                  : (history.byComponent.get(hw.id) || []).map((ev) => <ServiceEventCard key={ev.id} ev={ev} />)}
+              </div>
               </div>
             ))}
           </>
@@ -340,18 +361,12 @@ export function OpeningDetailPage() {
           + Add Hardware
         </Link>
 
-        {opening.service_events && opening.service_events.length > 0 && (
-          <>
-            <div className="section-label" style={{ marginTop: 20 }}>Recent Service</div>
-            {opening.service_events.slice(0, 5).map((ev: any) => (
-              <div className="card" key={ev.id}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
-                </div>
-                <p style={{ margin: "4px 0 0", fontSize: 14 }}>{ev.work_performed}</p>
-              </div>
-            ))}
-          </>
+        {(history.openingLevel.length > 0 || history.unmatched.length > 0) && (
+          <div data-opening-service-history>
+            <div className="section-label" style={{ marginTop: 20 }}>Opening service history</div>
+            {history.openingLevel.slice(0, 5).map((ev) => <ServiceEventCard key={ev.id} ev={ev} />)}
+            {history.unmatched.map((ev) => <ServiceEventCard key={ev.id} ev={ev} />)}
+          </div>
         )}
 
         {opening.inspection_events && opening.inspection_events.length > 0 && (

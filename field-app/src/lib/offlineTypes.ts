@@ -86,6 +86,13 @@ export interface SyncOperation<TPayload = Record<string, unknown>> {
   dispatchLeaseId?: string;
   dispatchLeaseExpiresAt?: string;
   lastErrorCode?: string;
+  // Set when this app stopped the operation because the signed-in account changed (never for a
+  // server refusal). Cleared when it is resumed.
+  principalChangeStop?: boolean;
+  // Automatic resumption bookkeeping: at most one automatic attempt per fresh sign-in event.
+  autoRecoverySignInEventId?: string;
+  autoRecoveredAt?: string;
+  autoRecoveryCount?: number;
   schemaVersion: number;
   appVersion: string;
   protocolVersion: number;
