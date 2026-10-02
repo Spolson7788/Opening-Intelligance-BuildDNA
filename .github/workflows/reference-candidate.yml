@@ -40,6 +40,10 @@ jobs:
         run: |
           npm run build
           npx tsc --noEmit --target ES2022 --module commonjs --esModuleInterop --skipLibCheck scripts/reference/import.ts scripts/reference/approve.ts
+      - name: Check fail-closed staging preview guards
+        run: |
+          node --test scripts/reference/preview-context.test.mjs
+          npx vitest run --config vitest.offline.config.ts tests/netlifyHosting.test.ts
       - name: Native PostgreSQL targeted regressions
         run: npx vitest run tests/referenceEvidence.test.ts tests/recognitionRelease.test.ts tests/offlineSyncApi.test.ts tests/pairedOpenings.test.ts tests/providerPurchasing.test.ts
       - name: Build Field App
