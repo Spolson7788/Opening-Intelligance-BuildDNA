@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Preserve checksum-pinned audit source bytes across checkouts.
+reference-data/audit_doc_manifest.csv -text

@@ -37,6 +37,7 @@ const syncComponentCreate = z.object({
   protocol_version: z.number().int().positive(),
   payload: z.object({
     component_type: componentType,
+    recognition_run_id: z.string().uuid().optional(),
     manufacturer: z.string().optional(),
     model_number: z.string().optional(),
     install_date: z.string().optional(),
@@ -141,6 +142,16 @@ syncRouter.post("/components", async (req: AuthedRequest, res) => {
         b.payload.supplier_name ?? null, b.payload.supplier_contact ?? null, b.payload.serial_number ?? null,
         b.payload.carrier ?? null, b.payload.tracking_number ?? null, b.payload.shipment_status ?? "not_shipped"],
     );
+    if (b.payload.recognition_run_id) {
+      const linked = await client.query(`UPDATE recognition_runs SET component_id=$1
+        WHERE id=$2 AND opening_id=$3 AND user_id=$4 AND organization_id=$5
+        AND (component_id IS NULL OR component_id=$1) RETURNING id`,
+        [b.entity_id,b.payload.recognition_run_id,b.opening_id,userId,orgId]);
+      if (!linked.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({error:'invalid_recognition_run'});
+      }
+    }
     const changedFields = Object.keys(b.payload).sort();
     const receipt = await writeSyncReceiptAndAudit(client, {
       organizationId: orgId,

@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchPhotoAccessUrl } from "../lib/api";
 import { mediaAssociationLabel } from "../lib/mediaAssociationLabel";
 import { openingLoadFailure } from "../lib/openingLoadFailure";
+import {RecognitionHistory} from '../components/ReferenceEvidence';
 import { getAllOfflineMedia, getSyncOperationsForOpening, updateCachedOpening } from "../lib/db";
 import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
@@ -223,6 +224,7 @@ export function OpeningDetailPage() {
           </button>
         </div>
 
+        <RecognitionHistory openingId={opening.id}/>
         <div className="section-label" style={{ marginTop: 20 }}>Photos &amp; Videos</div>
         {((opening.photos && opening.photos.length > 0) || queuedPhotos.length > 0) && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 10 }}>

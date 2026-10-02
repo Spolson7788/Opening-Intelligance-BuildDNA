@@ -183,6 +183,7 @@ table:has(#rows) thead{display:none;} .ohead .obadge{float:none;display:block;}
 <div class="lbov" id="lbov" onclick="this.style.display='none'"><img id="lbimg" src=""></div>
 
 <script type="module">
+import {mountReferenceEvidence} from './reference-evidence.mjs';
 import {url,key} from "./preview-config.mjs";
 import {loadAuthorizedFacilities,defaultHomeState,loadTerritoryContext,mountFacilitySearch} from "./facility-search.mjs";
 import {loadDashboardRows,correctiveSummary,loadQuarterServiceSummary,formatCalendarDate,photoScopeLabel} from "./connected.mjs";
@@ -516,6 +517,9 @@ function openDetail(oi){
   body+='<div id="detsvcsec" style="margin-top:14px;display:none"></div>';
   body+='<div class="detrec" style="margin-top:14px;color:'+rec[1]+';background:'+rec[2]+';border:1px solid '+rec[1]+'44"><b>Priority:</b> '+rec[0]+'</div></div>';
   document.getElementById('detcard').innerHTML=body;
+  const evidence=document.createElement('section');
+  document.querySelector('#detcard .detbd').append(evidence);
+  if(o.parts[0]?.assembly_id)mountReferenceEvidence(evidence,o.parts[0].assembly_id);
   function _addPhoto(path,label){
     var container=document.getElementById('detphotos');
     sb.storage.from('opening-photos').createSignedUrl(path,3600).then(function(r){
