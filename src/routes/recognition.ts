@@ -16,6 +16,16 @@ const schema=z.object({
 }).strict();
 export const recognitionRouter=Router();
 recognitionRouter.use(requireAuth,requireRole('admin','technician','inspector','facilities_manager'));
+function recognitionAvailability(){
+  const enabled=process.env.OI_RECOGNITION_ENABLED==='true';
+  const providerConfigured=Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+  return {available:enabled&&providerConfigured,blocking_reasons:[...(!enabled?['recognition_disabled']:[]),...(!providerConfigured?['recognition_provider_not_configured']:[])],reason:!enabled?'recognition_disabled':!providerConfigured?'recognition_provider_not_configured':null,reference_comparison_enabled:process.env.OI_REFERENCE_COMPARISON_ENABLED==='true'};
+}
+// Report configuration presence only; credentials never leave the server.
+recognitionRouter.get('/availability',(_req,res)=>{
+  res.setHeader('Cache-Control','no-store');
+  return res.json(recognitionAvailability());
+});
 recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
   res.setHeader('Cache-Control','no-store');
   const parsed=schema.safeParse(req.body);
@@ -27,11 +37,14 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     b.media_type==='image/png'?x.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):
     x.subarray(0,4).toString()==='RIFF'&&x.subarray(8,12).toString()==='WEBP');
   if(!valid)return res.status(400).json({error:'image_type_mismatch'});
+  let phase:'opening_access'|'provider'|'recording'='opening_access';
   try{
     const allowed=await pool.query(`SELECT 1 FROM (${openingsForOrgSubquery(2)}) a WHERE a.id=$1`,[b.opening_id,req.auth!.organizationId]);
     if(!allowed.rows.length)return res.status(404).json({error:'opening_not_found'});
     // Explicit release switch prevents unintended paid calls during preview tests.
-    if(process.env.OI_RECOGNITION_ENABLED!=='true'||!process.env.ANTHROPIC_API_KEY)return res.status(503).json({error:'recognition_unavailable'});
+    const availability=recognitionAvailability();
+    if(!availability.available)return res.status(503).json({error:availability.reason});
+    phase='provider';
     const response=await legacyVisionHandler({httpMethod:'POST',body:JSON.stringify(b)});
     if(response.statusCode!==200)return res.status(502).json({error:'recognition_provider_failed'});
     const result=JSON.parse(response.body);
@@ -80,6 +93,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     if(comparison)comparison.citations=validated.accepted;
     if(status==='reference_evidence'&&!validated.accepted.length)status='no_valid_reference_citations';
     const suggestion=conservativeSuggestion(result,comparison);
+    phase='recording';
     const client=await pool.connect();let run;
     try{
       await client.query('BEGIN');
@@ -95,7 +109,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       await client.query('COMMIT');
     }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
     return res.json({suggestion,run_id:run.id,status,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
-  }catch{return res.status(503).json({error:'recognition_unavailable'});}
+  }catch{return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':'recognition_provider_failed'});}
 });
 
 recognitionRouter.get('/opening/:id',async(req:AuthedRequest,res)=>{

@@ -324,3 +324,5 @@ export const searchFieldFacilities = (params:Record<string,string>={}) => authed
 export const listBranches = () => authedFetch("/branches");
 export const saveBranch = (id:string,body:unknown) => authedFetch(`/branches/${id}`,{method:"PUT",body:JSON.stringify(body)});
 export const assignBranch = (id:string,branch_id:string|null) => authedFetch(`/branches/assignments/${id}`,{method:"PUT",body:JSON.stringify({branch_id})});
+
+export const fetchRecognitionAvailability=()=>authedFetch('/recognition/availability');
