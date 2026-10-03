@@ -28,14 +28,28 @@ export function conservativeSuggestion(stage:Record<string,any>,comparison:any){
  }
  return suggestion;
 }
+// These are retrieval hints only. Never copy them into the photographed identity.
+export function reportedReferenceHint(attributes:Record<string,string>){
+ const markings=String(attributes.visible_markings||'').slice(0,500);
+ if(/\bcal[\s_-]*royal\b/i.test(markings)&&/\b(?:CR[\s_-]*)?441\b/i.test(markings))return {manufacturer:'Cal-Royal',model:'CR441'};
+ if(/\blcn\b/i.test(markings)){
+  if(/\b4040[\s_-]*XP\b/i.test(markings))return {manufacturer:'LCN',model:'4040XP'};
+  if(/\b4041[\s_-]*DA\b/i.test(markings))return {manufacturer:'LCN',model:'4041 DA'};
+ }
+ return null;
+}
 export function candidates(stage:Record<string,unknown>,attributes:Record<string,string>){
- return Array.from(new Set([stage.model||stage.series,attributes.model||attributes.series].filter((v):v is string=>typeof v==='string'&&v.trim().length>0).map(v=>v.trim().toLowerCase())));
+ // Prefer an explicit specific model. A reported hint cannot relax an
+ // unsupported specific model into a supported family.
+ const explicit=[stage.model||stage.series,attributes.model||attributes.series].filter((v):v is string=>typeof v==='string'&&v.trim().length>0);
+ const values=explicit.length?explicit:[reportedReferenceHint(attributes)?.model];
+ return Array.from(new Set(values.filter((v):v is string=>typeof v==='string'&&v.trim().length>0).map(v=>v.trim().toLowerCase())));
 }
 export async function retrieveReferences(stage:Record<string,unknown>,attributes:Record<string,string>):Promise<ReferencePage[]> {
  const names=candidates(stage,attributes);
- const brand=String(stage.manufacturer||attributes.manufacturer||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+ const brand=String(stage.manufacturer||attributes.manufacturer||reportedReferenceHint(attributes)?.manufacturer||'').toLowerCase().replace(/[^a-z0-9]/g,'');
  const visible=Array.isArray(stage.visible_text)?stage.visible_text.filter(v=>typeof v==='string').join(' '):'';
- const query=[visible,...Object.values(attributes)].join(' ').replace(/_/g,' ').slice(0,2000);
+ const query=[visible,...Object.values(attributes)].join(' ').replace(/_/g,' ').trim().slice(0,2000);
  if(!names.length&&!query.trim())return [];
  // A known model may only use documents covering that model. Free-text search
  // ranks its pages but cannot borrow evidence from a different model.
