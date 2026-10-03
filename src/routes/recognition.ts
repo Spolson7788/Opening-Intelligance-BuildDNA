@@ -1,3 +1,4 @@
+import {approvedInstallationGeometry} from '../services/installationGeometry';
 import {Router} from 'express';
 import {z} from 'zod';
 import {pool} from '../db/pool';
@@ -74,6 +75,9 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     let conflicts:unknown[]=[];let comparison:any=null;let status='no_reference_evidence';
     try{
       if(b.mode==='identify'){
+        if(result.component_class==='DOOR_CLOSER'){
+          try{result.installation_geometry=await approvedInstallationGeometry(result.installation_geometry_views,b.images.length);}catch{result.installation_geometry={status:'reference_geometry_unavailable',candidates:[],limitation:'Installation geometry could not be retrieved. Label reading continues.'};}
+        }
         const candidate=labels?.candidates?.length===1?labels.candidates[0]:null;
         const retrievalStage=!result.model&&!result.series&&!reportedReferenceHint(b.technician_attributes)&&candidate?{...result,manufacturer:result.manufacturer||candidate.manufacturer,series:candidate.series,model:candidate.model}:result;
         pages=await retrieveReferences(retrievalStage,b.technician_attributes);
@@ -81,6 +85,11 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
           const groups=await Promise.all(labels!.candidates!.map(c=>retrieveReferences({...result,manufacturer:c.manufacturer,series:c.series,model:c.model},b.technician_attributes)));
           pages=[...new Map(groups.flat().map(p=>[p.page_id,p])).values()].slice(0,8);
         }
+      }
+      if(!pages.length&&b.mode==='identify'&&result.component_class==='DOOR_CLOSER'&&result.installation_geometry?.reference_dimensions?.length){
+        const groups=await Promise.all(result.installation_geometry.reference_dimensions.flatMap((s:any)=>s.models.map((model:string)=>retrieveReferences({manufacturer:s.manufacturer,model},{}))));
+        pages=[...new Map(groups.flat().map((p:any)=>[p.page_id,p])).values()].slice(0,8) as any;
+        result.reference_lookup_basis='installation_geometry_pilot_candidates';
       }
       if(!pages.length&&b.mode==='identify'&&result.component_class==='DOOR_CLOSER'&&Array.isArray(result.scale_measurements)&&result.scale_measurements.length){
         // Dimensions without a readable model still warrant candidate comparison.

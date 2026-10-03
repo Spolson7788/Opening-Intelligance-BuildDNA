@@ -1,4 +1,5 @@
 // @ts-nocheck
+import {GEOMETRY_OBSERVATION_PROMPT} from './installationGeometry';
 import {recognitionDetailViews} from './recognitionViews';
 import {detectScaleMarkers,scaleMeasurements} from './scaleMarker';
 // Adapted production recognition engine; original source SHA256 9da330e98a2f1646f5bd825bd6fa4987a270c04d5c8b5ceb4ff6d06bd4e2cae7.
@@ -423,9 +424,10 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
       body: JSON.stringify({
         model: "claude-sonnet-4-5-20250929",
         temperature: 0,
-        max_tokens: labelBlind ? 2500 : (markingMode ? 1800 : (hardwareMode ? 2000 : 1200)),
+        max_tokens: labelBlind ? 2500 : (markingMode ? 1800 : (hardwareMode ? 2000 : 2000)),
         messages: [{ role: "user", content: [
           ...imgs.map(function(d){ return { type: "image", source: { type: "base64", media_type: media_type || "image/jpeg", data: d } }; }),
+          ...(!labelBlind&&!markingMode&&!hardwareMode?[{type:'text',text:GEOMETRY_OBSERVATION_PROMPT}]:[]),
           ...(scaleMarkers.length?[{type:'text',text:`Known-size marker detections: ${JSON.stringify(scaleMarkers)}. If you can clearly locate the endpoints of a straight closer body length, body height or mounting-hole spacing in the ORIGINAL photograph, append measurement_segments:[{feature:"closer_body_length|closer_body_height|mounting_hole_spacing",photo_index,points:[{x,y},{x,y}]}] to the identification JSON. Coordinates are fractions of that original photograph, not a detail crop. Only endpoints visibly lying in the marker's plane are eligible. Do not report a dimension yourself; the server computes marker-plane estimates. Omit obscured endpoints. Never use the printed marker's text as a product marking. Marker detections do not verify placement or print scale.`}]:[]),
           ...detailViews.flatMap(view=>[{type:'text',text:`Detail view of photograph ${view.photo_index}, source region ${JSON.stringify(view.region)}; same pixels, not additional independent evidence`},{type:'image',source:{type:'base64',media_type:'image/png',data:view.image.toString('base64')}}]),
           { type: "text", text: hardwareMode ? HARDWARE_PROMPT
@@ -513,6 +515,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
     }
 
     const obj = normalizeResult(parsed);
+    obj.installation_geometry_views=Array.isArray(parsed.installation_geometry_views)?parsed.installation_geometry_views.slice(0,5):[];
     obj.scale_markers=scaleMarkers;
     obj.scale_measurements=scaleMeasurements(parsed.measurement_segments,scaleMarkers,body.technician_attributes?.scale_marker_same_plane==='true');
     obj.scale_placement_confirmed=body.technician_attributes?.scale_marker_same_plane==='true';
