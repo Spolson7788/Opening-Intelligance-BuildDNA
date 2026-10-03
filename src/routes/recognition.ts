@@ -49,7 +49,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     const deadline=Date.now()+50000;
     const [response,labels]=await Promise.all([
       legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,timeout_ms:18000})}),
-      b.mode==='identify'?readLabels(images,b.media_type,Date.now()+27000):Promise.resolve(null),
+      b.mode==='identify'?readLabels(images,b.media_type,Date.now()+35000):Promise.resolve(null),
     ]);
     if(response.statusCode!==200){
       // Only allow known safe categories through; never forward provider bodies.

@@ -1,12 +1,14 @@
 # Label reading in connected staging
 
+Version 2 adds overlapping image search tiles, including upright and inverted views of the lower-left area, so an incorrect model-provided label box does not exclude the marking. Search areas are recorded separately from detected label regions.
+
 The original full-photograph identification runs beside label localization. The localization pass excludes installation paper, tools and background text. Bounded label crops retain their source image and coordinates and are rotated from original pixels; upscaling adds no new photographic detail.
 
 A locally bundled Tesseract OCR engine and the existing Anthropic vision model read the crops independently. No manufacturer catalog or technician model hint is supplied to either label reader. Exact token agreement is retained; missing suffixes and 0/O substitutions are never silently repaired. Single-reader LCN candidates remain explicitly unconfirmed. Partial 4040 identity can retrieve candidate 4040XP/4041 DA references, without changing the photograph suggestion to either exact variant. Technician review and purchasing department verification remain required.
 
 Label evidence is saved in recognition_runs.stage_one.label_reading with prompt version, image/region coordinates, both readings, agreement, candidate provenance and bounded failure status. Crops are transient and are not public artifacts. The existing original-photo retention flow remains in place. No secret values or provider bodies are logged.
 
-One request is bounded to six label regions, six OCR crops (up to twelve bounded OCR attempts, with a contrast fallback), and two extra vision calls. Label-service failure preserves the ordinary photograph analysis and is recorded as unavailable/partial. The synchronous pipeline has bounded provider/worker deadlines; OCR workers terminate after each request. OCR assets are bundled locally and no runtime training-data download is needed.
+One request is bounded to six label regions, eleven OCR crops including five overlapping search tiles (up to twenty-two bounded OCR attempts, with a contrast fallback), and two extra vision calls. Label-service failure preserves the ordinary photograph analysis and is recorded as unavailable/partial. The synchronous pipeline has bounded provider/worker deadlines; OCR workers terminate after each request. OCR assets are bundled locally and no runtime training-data download is needed.
 
 ## Accuracy acceptance
 

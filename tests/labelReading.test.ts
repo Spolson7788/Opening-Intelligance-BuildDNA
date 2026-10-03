@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 import sharp from 'sharp';
-import {agreedMarkings,normalizeRegions,cropLabel,applyLabelEvidence,labelCandidates,readLabels, type LabelEvidence} from '../src/services/labelReading';
+import {agreedMarkings,searchRegions,normalizeRegions,cropLabel,applyLabelEvidence,labelCandidates,readLabels, type LabelEvidence} from '../src/services/labelReading';
 const region={photo_index:0,x:.1,y:.2,w:.5,h:.2,rotation:180};
 function evidence(ocr:string,vision:string):LabelEvidence{return {version:'fixture',status:'completed',limiting_factor:null,reads:[{region,ocr_text:ocr,ocr_confidence:70,vision_text:vision,agreed_markings:agreedMarkings(ocr,vision),status:'agreement'}]};}
 describe('label reading evidence',()=>{
@@ -39,4 +39,12 @@ it('keeps a single-reader label candidate separate and suppresses conflicting mo
  expect(labelCandidates(labels.reads)).toEqual([{manufacturer:'LCN',series:'4040',model:'4040XP',verification:'single_reader'}]);
  expect(labelCandidates(evidence('4041','LCN 4040XP').reads)).toEqual([]);
  expect(labelCandidates(evidence('4040','LCN 4040XP').reads)[0].model).toBeNull();
+});
+
+it('search tiles retain the body label even when the locator chooses the wrong area',()=>{
+ const label={x:.23,y:.69,w:.2,h:.19};
+ const covers=searchRegions().filter(r=>r.x<=label.x&&r.y<=label.y&&r.x+r.w>=label.x+label.w&&r.y+r.h>=label.y+label.h);
+ expect(covers.some(r=>r.rotation===0)).toBe(true);
+ expect(covers.some(r=>r.rotation===180)).toBe(true);
+ expect(searchRegions().every(r=>r.kind==='search_tile')).toBe(true);
 });
