@@ -36,6 +36,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
   const [response,setResponse]=useState<any>(null);
   const [markings,setMarkings]=useState('');
   const [features,setFeatures]=useState('');
+  const [scalePlacement,setScalePlacement]=useState(false);
   const generation=useRef(0);
   const [availability,setAvailability]=useState<{available:boolean;blocking_reasons:string[];reason:string|null;reference_comparison_enabled:boolean}|null>(null);
   const [availabilityError,setAvailabilityError]=useState('');
@@ -55,7 +56,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
         const reader=new FileReader();reader.onerror=()=>reject(Error('Could not read photograph.'));
         reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.readAsDataURL(f);
       })));
-      const response=await recognizeHardware(openingId,images,files[0].type,{...attributes,visible_markings:markings,observed_features:features});
+      const response=await recognizeHardware(openingId,images,files[0].type,{...attributes,visible_markings:markings,observed_features:features,scale_marker_same_plane:String(scalePlacement)});
       if(current===generation.current){setResult(response.suggestion);setResponse(response);}
     }catch(e){if(current===generation.current)setError(recognitionFailureMessage(e instanceof Error?e.message:'Recognition unavailable.'));}
     finally{if(current===generation.current)setBusy(false);}
@@ -73,6 +74,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
     {availability?.available&&!availability.reference_comparison_enabled&&<p>Photograph recognition is available. Manufacturer reference comparison is switched off on this server.</p>}
     <label>Reported model or readable markings<input value={markings} maxLength={300} disabled={busy} onChange={e=>{setMarkings(e.target.value);setResult(null);setResponse(null);}} placeholder="e.g. CR441 or Cal-Royal CR441"/></label>
     <label>Observed features or measurements<input value={features} maxLength={300} onChange={e=>setFeatures(e.target.value)}/></label>
+    <details><summary>Use a size marker for dimension estimates</summary><p><a href={`${import.meta.env.BASE_URL}scale-marker.html`} target="_blank" rel="noopener noreferrer">Print the OI size marker</a> at 100% / Actual size. Place it beside the component surface being measured, in the same plane. A marker on the door face behind a protruding closer body gives misleading dimensions.</p><label><input type="checkbox" checked={scalePlacement} disabled={busy} onChange={e=>{setScalePlacement(e.target.checked);setResult(null);setResponse(null);}}/> I verified the printed marker size and placed it in the same plane as the measured surface.</label></details>
     <input aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;const selected=Array.from(e.target.files||[]);setFiles(selected);onFilesChange(selected);setResult(null);setError('');}}/>
     <button type="button" disabled={busy||!files.length||!availability?.available} onClick={analyze}>{busy?'Analyzing…':'Analyze photographs'}</button>
     {error&&<p role="alert">{error}</p>}
@@ -87,6 +89,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
       {(result.label_reading as any)?.enhancement?.regions>0&&<p>Label visibility enhanced automatically with contrast and sharpening. Original photograph preserved.</p>}
       {(result.label_reading as any)?.source_dimensions?.some((d:any)=>d.width<400||d.height<400)&&<p>This image is small; fine marking details may be missing. Enhancement cannot restore missing pixels.</p>}
       {!!labelReads.length&&<section aria-label="Label readings"><h3>Label readings</h3>{agreedTexts.length>0?<p>Two readers agree on: <strong>{agreedTexts.join(', ')}</strong></p>:labelTexts.length>0?<p>AI read: <strong>{labelTexts.join('; ')}</strong>. OCR did not confirm these characters; verify before using.</p>:<p>No reliable marking was read from these image regions.</p>}<details><summary>Reader details</summary>{labelReads.map((read:any,i:number)=><div key={i}><p>{read.region?.kind==='search_tile'?'Search area':'Detected marking area'} {i+1}</p><p>OCR: {read.ocr_text||'Unreadable'}</p><p>AI: {read.vision_text||'Unreadable'}</p></div>)}</details></section>}
+      {(result.scale_markers as any[])?.length>0&&<section><h3>Size marker</h3><p>40 mm marker detected. {result.scale_placement_confirmed?'Print size and placement confirmed by technician.':'Confirm print size and placement, then analyze again to enable dimension estimates.'}</p>{(result.scale_measurements as any[])?.map((m:any,i:number)=><p key={i}>{m.feature.replace(/_/g,' ')}: approximately {m.estimate_mm} mm — marker-plane estimate.</p>)}{!(result.scale_measurements as any[])?.length&&<p>No usable measurement endpoints were confirmed.</p>}<p>Perspective, marker placement and endpoint detection can affect estimates. These measurements do not establish product identity.</p></section>}
       <details><summary>Recognition evidence</summary><pre style={{whiteSpace:'pre-wrap'}}>{JSON.stringify(result,null,2)}</pre></details>
       {response&&<ReferenceEvidence run={response}/>}
       <button type="button" disabled={!text('model')&&!response?.reported_identity&&!response?.label_candidate} onClick={()=>onUse(text('model')?text('manufacturer'):response?.reported_identity?.manufacturer||response?.label_candidate?.manufacturer||'',text('model')||response?.reported_identity?.model||response?.label_candidate?.model||'',response?.run_id||'',photographedComponentTypes[text('component_class')]||null)}>{text('model')?'Use photograph suggestion for technician review':response?.reported_identity?'Use reported product for technician review':'Use label candidate for technician review'}</button>

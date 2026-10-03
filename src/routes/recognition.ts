@@ -82,6 +82,12 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
           pages=[...new Map(groups.flat().map(p=>[p.page_id,p])).values()].slice(0,8);
         }
       }
+      if(!pages.length&&b.mode==='identify'&&result.component_class==='DOOR_CLOSER'&&Array.isArray(result.scale_measurements)&&result.scale_measurements.length){
+        // Dimensions without a readable model still warrant candidate comparison.
+        // The classifier does not establish identity through this broader search.
+        pages=await retrieveReferences({visible_text:['closer']},{});
+        result.reference_lookup_basis='marker_dimensions_candidate_search';
+      }
       if(pages.length){
         conflicts=(await pool.query('SELECT * FROM reference_conflicts WHERE doc_sha256=ANY($1::text[])',[pages.map(p=>p.doc_sha256)])).rows.map(c=>({...c,values:c.values.map((v:any)=>({...v,page_id:`sha256:${c.doc_sha256}#p${v.page}`,doc_sha256:c.doc_sha256}))}));
         // A conflicting page must be retrieved and citable before its values

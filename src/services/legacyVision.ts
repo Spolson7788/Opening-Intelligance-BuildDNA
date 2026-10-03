@@ -1,5 +1,6 @@
 // @ts-nocheck
 import {recognitionDetailViews} from './recognitionViews';
+import {detectScaleMarkers,scaleMeasurements} from './scaleMarker';
 // Adapted production recognition engine; original source SHA256 9da330e98a2f1646f5bd825bd6fa4987a270c04d5c8b5ceb4ff6d06bd4e2cae7.
 // Internal only: exposed through authenticated, opening-scoped recognition route.
 // Opening Intelligence — vision proxy; detail crops retain original source pixels.
@@ -413,6 +414,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
     const multi = imgs.length > 1
       ? "You are given " + imgs.length + " photographs of the SAME piece of hardware from a short sweep. Examine ALL of them together before answering. A stamp, label or distinguishing feature may be legible in only one frame; transcribe it from whichever frame shows it. Do not treat the frames as separate products. "
       : "";
+    const scaleMarkers=!labelBlind&&!markingMode&&!hardwareMode?await detectScaleMarkers(imgs.map(d=>Buffer.from(d,'base64'))):[];
     const detailViews=!labelBlind&&!markingMode&&!hardwareMode?await recognitionDetailViews(imgs.map(d=>Buffer.from(d,'base64'))):[];
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -424,6 +426,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
         max_tokens: labelBlind ? 2500 : (markingMode ? 1800 : (hardwareMode ? 2000 : 1200)),
         messages: [{ role: "user", content: [
           ...imgs.map(function(d){ return { type: "image", source: { type: "base64", media_type: media_type || "image/jpeg", data: d } }; }),
+          ...(scaleMarkers.length?[{type:'text',text:`Known-size marker detections: ${JSON.stringify(scaleMarkers)}. If you can clearly locate the endpoints of a straight closer body length, body height or mounting-hole spacing in the ORIGINAL photograph, append measurement_segments:[{feature:"closer_body_length|closer_body_height|mounting_hole_spacing",photo_index,points:[{x,y},{x,y}]}] to the identification JSON. Coordinates are fractions of that original photograph, not a detail crop. Only endpoints visibly lying in the marker's plane are eligible. Do not report a dimension yourself; the server computes marker-plane estimates. Omit obscured endpoints. Never use the printed marker's text as a product marking. Marker detections do not verify placement or print scale.`}]:[]),
           ...detailViews.flatMap(view=>[{type:'text',text:`Detail view of photograph ${view.photo_index}, source region ${JSON.stringify(view.region)}; same pixels, not additional independent evidence`},{type:'image',source:{type:'base64',media_type:'image/png',data:view.image.toString('base64')}}]),
           { type: "text", text: hardwareMode ? HARDWARE_PROMPT
                                 : markingMode ? MARKING_PROMPT
@@ -510,6 +513,9 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
     }
 
     const obj = normalizeResult(parsed);
+    obj.scale_markers=scaleMarkers;
+    obj.scale_measurements=scaleMeasurements(parsed.measurement_segments,scaleMarkers,body.technician_attributes?.scale_marker_same_plane==='true');
+    obj.scale_placement_confirmed=body.technician_attributes?.scale_marker_same_plane==='true';
     /* Provider bodies and recognition results are not logged. */
     return { statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(obj) };
   } catch (e) {

@@ -107,6 +107,12 @@ describe(privateCorpus?'audited corpus retrieval with recorded provider fixtures
   expect(r.body.requires_technician_review).toBe(true);
   expect((await pool.query('SELECT retrieved_pages FROM recognition_runs WHERE id=$1',[r.body.run_id])).rows[0].retrieved_pages).not.toHaveLength(0);
  });
+ it('retrieves approved closer candidates for marker estimates without a readable product label',async()=>{
+  provider.identify.mockResolvedValueOnce({statusCode:200,body:JSON.stringify({component_class:'DOOR_CLOSER',manufacturer:null,model:null,series:null,visible_text:[],scale_measurements:[{feature:'closer_body_length',estimate_mm:200,basis:'marker_plane_estimate'}]})});
+  const r=await analyze();expect(r.status).toBe(200);expect(r.body.suggestion.model).toBeNull();
+  expect(r.body.suggestion.reference_lookup_basis).toBe('marker_dimensions_candidate_search');
+  expect((await pool.query('SELECT retrieved_pages FROM recognition_runs WHERE id=$1',[r.body.run_id])).rows[0].retrieved_pages).not.toHaveLength(0);
+ });
  it('withdrawn documents disappear on the next lookup and page read',async()=>{
   await pool.query("UPDATE reference_documents SET status='draft' WHERE sha256=$1",[doc.sha256]);
   expect(await retrieveReferences({manufacturer:'LCN',model:'4040XP'},{})).toEqual([]);
