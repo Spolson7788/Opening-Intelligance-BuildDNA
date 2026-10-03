@@ -1,4 +1,5 @@
 import { loadAuth, cacheOpening, getCachedOpening } from "./db";
+import {isUnverifiedSiteAccess, readResponseBody, requestPreviewAccess} from './previewAccess';
 
 // Point this at your deployed API. Left as a relative path + env var so it works
 // both in local dev (via Vite proxy) and once deployed.
@@ -13,10 +14,12 @@ export const fetchRecognitionRuns=(openingId:string)=>authedFetch(`/recognition/
 export class ApiError extends Error {
   status: number;
   reference?: string;
-  constructor(status: number, message: string, reference?: string) {
+  hostingAccessRequired: boolean;
+  constructor(status: number, message: string, reference?: string, hostingAccessRequired = false) {
     super(message);
     this.status = status;
     this.reference = reference;
+    this.hostingAccessRequired = hostingAccessRequired;
   }
 }
 
@@ -33,10 +36,9 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
   };
   if (auth?.token) headers["Authorization"] = `Bearer ${auth.token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'same-origin', cache: 'no-store' });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error || `request_failed_${res.status}`, typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
+    throw await responseFailure(res);
   }
   const current=await loadAuth();
   if(!auth||!current||current.userId!==auth.userId||current.organizationId!==auth.organizationId)throw new ApiError(401,"active_principal_changed");
@@ -49,12 +51,32 @@ export async function login(email: string, password: string) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
+    credentials: 'same-origin',
+    cache: 'no-store',
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error || "login_failed", typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
+    throw await responseFailure(res);
   }
   return res.json() as Promise<{ token: string; expiresIn: string }>;
+}
+
+async function responseFailure(response: Response): Promise<ApiError> {
+  const body = await readResponseBody(response);
+  const hosting = isUnverifiedSiteAccess(response, body);
+  if (hosting) requestPreviewAccess();
+  return new ApiError(response.status,
+    hosting ? 'Staging website access needs renewal. Use Renew staging access above.' : body?.error || `request_failed_${response.status}`,
+    typeof body?.reference === 'string' && /^[0-9a-f-]{36}$/i.test(body.reference) ? body.reference : undefined,
+    hosting);
+}
+
+// Check the actual protected server, not the service worker's cached app shell.
+// No password is sent, and no failed POST is retried automatically.
+export async function checkPreviewAccess() {
+  const response = await fetch('/health', {credentials: 'same-origin', cache: 'no-store'});
+  if (!response.ok) throw await responseFailure(response);
+  const body = await readResponseBody(response);
+  if (body?.status !== 'ok') throw new ApiError(503, 'Website access check is unavailable.');
 }
 
 // Decode the JWT payload client-side just to read organizationId/role for local

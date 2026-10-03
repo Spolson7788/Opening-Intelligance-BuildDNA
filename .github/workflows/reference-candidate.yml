@@ -44,6 +44,8 @@ jobs:
         run: |
           node --test scripts/reference/preview-context.test.mjs tests/databaseConnectionConfig.node.test.mjs
           npx vitest run --config vitest.offline.config.ts tests/netlifyHosting.test.ts
+      - name: Check private preview access recovery
+        run: npx vitest run --config vitest.offline.config.ts tests/previewAccess.test.ts tests/authResponse.test.ts tests/openingLoadFailure.test.ts tests/openingCacheAccess.test.ts
       - name: Native PostgreSQL targeted regressions
         run: npx vitest run tests/referenceEvidence.test.ts tests/recognitionRelease.test.ts tests/offlineSyncApi.test.ts tests/pairedOpenings.test.ts tests/providerPurchasing.test.ts
       - name: Build Field App

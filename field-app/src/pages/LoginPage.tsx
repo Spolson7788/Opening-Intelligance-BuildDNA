@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
-import { ApiError } from "../lib/api";
+import { ApiError, checkPreviewAccess } from "../lib/api";
 import { readLoginForm } from "../lib/loginForm";
 import { loginFailureMessage } from "../lib/authResponse";
 
@@ -13,6 +13,18 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [reference, setReference] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [hostingBlocked, setHostingBlocked] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    checkPreviewAccess().catch(err => {
+      if (active && err instanceof ApiError && err.hostingAccessRequired) {
+        setHostingBlocked(true);
+        setError('Staging website access needs renewal. Use Renew staging access above.');
+      }
+    });
+    return () => { active = false; };
+  }, []);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -29,7 +41,8 @@ export function LoginPage() {
     } catch (err) {
       if (err instanceof ApiError) setReference(err.reference || null);
       if (err instanceof ApiError) {
-        setError(loginFailureMessage(err.status, err.message, err.reference));
+        setHostingBlocked(err.hostingAccessRequired);
+        setError(err.hostingAccessRequired ? err.message : loginFailureMessage(err.status, err.message, err.reference));
       } else {
         setError("Sign-in service is unavailable. Your credentials were not rejected; try again shortly.");
       }
@@ -70,7 +83,7 @@ export function LoginPage() {
         </div>
         {error && <p className="error-text">{error}</p>}
         {reference && <p>Support reference: {reference}</p>}
-        <button type="submit" className="btn btn-primary" disabled={submitting}>
+        <button type="submit" className="btn btn-primary" disabled={submitting || hostingBlocked}>
           {submitting ? "Signing in…" : "Sign In"}
         </button>
       </form>
