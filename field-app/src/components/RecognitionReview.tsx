@@ -61,6 +61,9 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
     finally{if(current===generation.current)setBusy(false);}
   }
   const text=(key:string)=>typeof result?.[key]==='string'?String(result[key]):'';
+  const labelReads:any[]=(result?.label_reading as any)?.reads||[];
+  const labelTexts=[...new Set(labelReads.map(read=>read.vision_text?.trim()).filter(Boolean))] as string[];
+  const agreedTexts=[...new Set(labelReads.flatMap(read=>read.agreed_markings||[]))] as string[];
   return <section className="card" aria-label="Photograph recognition">
     <h2>Identify from photographs</h2>
     <p>Photograph the same component from up to five views. Review the suggestion before using it. Selected photographs are attached automatically when you save the hardware.</p>
@@ -76,11 +79,11 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
     {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — will attach when you save this hardware.</p>}
     {result&&<div>
       {response?.reported_identity&&<p>Technician-reported product: <strong>{response.reported_identity.manufacturer} {response.reported_identity.model}</strong> — awaiting verification.</p>}
-      {response?.label_candidate&&!text('model')&&<p>Label candidate: <strong>{response.label_candidate.manufacturer} {response.label_candidate.model||`${response.label_candidate.series} family`}</strong> — single reader; technician verification required.</p>}
+      {response?.label_candidate&&!text('model')&&<p>Label candidate: <strong>{response.label_candidate.manufacturer} {response.label_candidate.model||`${response.label_candidate.series} family`}</strong> — single AI reader; technician verification required.{response.label_candidate.manufacturer_basis==='catalog_model_match'&&' Manufacturer suggested by the catalog model match; manufacturer marking not confirmed.'}</p>}
       <p>Photograph suggestion: {text('model')?`${text('manufacturer')} ${text('model')}`:text('series')?`${text('manufacturer')} ${text('series')} family — exact model unconfirmed.`:text('manufacturer')?`${text('manufacturer')} — exact model unconfirmed.`:'Exact manufacturer and model not confirmed from this photograph.'}</p>
       {(result.label_reading as any)?.status==='unavailable'&&<p role="status">Label reading could not complete. Photograph analysis remains available.</p>}
       {(result.label_reading as any)?.status==='no_regions'&&<p>No product label was located in this photograph.</p>}
-      {!!(result.label_reading as any)?.reads?.length&&<section aria-label="Label readings"><h3>Label readings</h3>{(result.label_reading as any).reads.map((read:any,i:number)=><div key={i}><p>{read.agreed_markings?.length?`Two readers agree on: ${read.agreed_markings.join(' ')}`:'Label found; characters remain unconfirmed.'}</p><details><summary>Readings from this label</summary><p>OCR: {read.ocr_text||'Unreadable'}</p><p>Vision: {read.vision_text||'Unreadable'}</p></details></div>)}</section>}
+      {!!labelReads.length&&<section aria-label="Label readings"><h3>Label readings</h3>{agreedTexts.length>0?<p>Two readers agree on: <strong>{agreedTexts.join(', ')}</strong></p>:labelTexts.length>0?<p>AI read: <strong>{labelTexts.join('; ')}</strong>. OCR did not confirm these characters; verify before using.</p>:<p>No reliable marking was read from these image regions.</p>}<details><summary>Reader details</summary>{labelReads.map((read:any,i:number)=><div key={i}><p>{read.region?.kind==='search_tile'?'Search area':'Detected marking area'} {i+1}</p><p>OCR: {read.ocr_text||'Unreadable'}</p><p>AI: {read.vision_text||'Unreadable'}</p></div>)}</details></section>}
       <details><summary>Recognition evidence</summary><pre style={{whiteSpace:'pre-wrap'}}>{JSON.stringify(result,null,2)}</pre></details>
       {response&&<ReferenceEvidence run={response}/>}
       <button type="button" disabled={!text('model')&&!response?.reported_identity&&!response?.label_candidate} onClick={()=>onUse(text('model')?text('manufacturer'):response?.reported_identity?.manufacturer||response?.label_candidate?.manufacturer||'',text('model')||response?.reported_identity?.model||response?.label_candidate?.model||'',response?.run_id||'',photographedComponentTypes[text('component_class')]||null)}>{text('model')?'Use photograph suggestion for technician review':response?.reported_identity?'Use reported product for technician review':'Use label candidate for technician review'}</button>

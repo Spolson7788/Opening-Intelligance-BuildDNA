@@ -6,7 +6,7 @@ export const LABEL_PROMPT_VERSION='oi-label-reading-2';
 const MODEL='claude-sonnet-4-5-20250929';
 export interface LabelRegion {photo_index:number;x:number;y:number;w:number;h:number;rotation:number;kind?:'label'|'search_tile'}
 export interface LabelRead {region:LabelRegion;ocr_text:string;ocr_confidence:number;vision_text:string;agreed_markings:string[];status:'agreement'|'unconfirmed'|'unreadable'}
-export interface LabelEvidence {candidates?:{manufacturer:string;series:string;model:string|null;verification:'single_reader'}[];version:string;status:'completed'|'partial'|'unavailable'|'no_regions';reads:LabelRead[];limiting_factor:string|null}
+export interface LabelEvidence {candidates?:{manufacturer:string;series:string;model:string|null;verification:'single_reader';manufacturer_basis?:'catalog_model_match'}[];version:string;status:'completed'|'partial'|'unavailable'|'no_regions';reads:LabelRead[];limiting_factor:string|null}
 const empty=(status:LabelEvidence['status'],reason:string|null=null):LabelEvidence=>({version:LABEL_PROMPT_VERSION,status,reads:[],limiting_factor:reason});
 export function normalizeRegions(value:any,count:number):LabelRegion[]{
  const out:LabelRegion[]=[];
@@ -108,14 +108,17 @@ export function labelCandidates(reads:LabelRead[]){
  const candidates:NonNullable<LabelEvidence['candidates']>=[];
  for(const read of reads){
   const text=read.vision_text.toUpperCase();
-  if(!/\bLCN\b/.test(text))continue;
+  const brandVisible=/\bLCN\b/.test(text);
   const match=text.match(/\b(4040(?:[- ]?XP)?|4041[- ]?DA)\b/);
   if(!match)continue;
   const printed=match[1].replace(/[- ]/g,'');
+  // An exact catalog model can retrieve candidate documents without claiming
+  // the manufacturer was read. A bare family number cannot do this.
+  if(!brandVisible&&printed==='4040')continue;
   const ocrModels:string[]=read.ocr_text.toUpperCase().match(/\b\d{4}(?:XP|DA)?\b/g)||[];
   if(ocrModels.some(m=>m.slice(0,4)!==printed.slice(0,4)))continue;
   const partial=ocrModels.includes('4040')&&printed==='4040XP';
-  candidates.push({manufacturer:'LCN',series:printed.slice(0,4),model:printed==='4040'||partial?null:printed==='4041DA'?'4041 DA':printed,verification:'single_reader'});
+  candidates.push({manufacturer:'LCN',series:printed.slice(0,4),model:printed==='4040'||partial?null:printed==='4041DA'?'4041 DA':printed,verification:'single_reader',...(!brandVisible?{manufacturer_basis:'catalog_model_match' as const}:{})});
  }
  return [...new Map(candidates.map(c=>[JSON.stringify(c),c])).values()];
 }

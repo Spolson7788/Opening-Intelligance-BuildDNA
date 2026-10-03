@@ -48,3 +48,13 @@ it('search tiles retain the body label even when the locator chooses the wrong a
  expect(covers.some(r=>r.rotation===180)).toBe(true);
  expect(searchRegions().every(r=>r.kind==='search_tile')).toBe(true);
 });
+
+it('uses an exact model-only reading as a catalog candidate, without asserting a photographed manufacturer',()=>{
+ const reads=evidence('', '4040XP').reads;
+ expect(labelCandidates(reads)).toEqual([{manufacturer:'LCN',series:'4040',model:'4040XP',verification:'single_reader',manufacturer_basis:'catalog_model_match'}]);
+ expect(labelCandidates(evidence('', '4040').reads)).toEqual([]);
+ const result=applyLabelEvidence({manufacturer:null,model:null,series:null}, {...evidence('', '4040XP'), candidates:labelCandidates(reads)});
+ expect(result.manufacturer).toBeNull();
+ expect(result.model).toBeNull();
+ expect(labelCandidates(evidence('4041','4040XP').reads)).toEqual([]);
+});
