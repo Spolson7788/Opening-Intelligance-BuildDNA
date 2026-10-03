@@ -5,6 +5,7 @@ import {requireAuth,requireRole,AuthedRequest} from '../middleware/auth';
 import {openingsForOrgSubquery} from '../db/tenantScope';
 import {legacyVisionHandler} from '../services/legacyVision';
 import {createHash} from 'node:crypto';
+import {readLabels,applyLabelEvidence} from '../services/labelReading';
 import {retrieveReferences,compareWithReferences,validateCitations,componentType,conservativeSuggestion,reportedReferenceHint,REFERENCE_PROMPT_VERSION,RECOGNITION_MODEL} from '../services/referenceEvidence';
 
 const schema=z.object({
@@ -45,7 +46,11 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     const availability=recognitionAvailability();
     if(!availability.available)return res.status(503).json({error:availability.reason});
     phase='provider';
-    const response=await legacyVisionHandler({httpMethod:'POST',body:JSON.stringify(b)});
+    const deadline=Date.now()+50000;
+    const [response,labels]=await Promise.all([
+      legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,timeout_ms:18000})}),
+      b.mode==='identify'?readLabels(images,b.media_type,Date.now()+27000):Promise.resolve(null),
+    ]);
     if(response.statusCode!==200){
       // Only allow known safe categories through; never forward provider bodies.
       const safeErrors=new Set(['recognition_provider_authentication_failed','recognition_provider_permission_denied','recognition_provider_model_unavailable','recognition_provider_rate_limited','recognition_provider_image_rejected','recognition_provider_billing_blocked','recognition_provider_request_rejected','recognition_provider_temporarily_unavailable','recognition_provider_invalid_response','recognition_provider_timeout','recognition_provider_connection_failed','recognition_engine_failed']);
@@ -53,19 +58,24 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       try{const code=JSON.parse(response.body)?.error;if(safeErrors.has(code))error=code;}catch{}
       return res.status(502).json({error});
     }
-    const result=JSON.parse(response.body);
+    let result=JSON.parse(response.body);
     if(!result||typeof result!=='object'||Array.isArray(result))return res.status(502).json({error:'recognition_provider_failed'});
+    if(labels)result=applyLabelEvidence(result,labels);
     let pages:Awaited<ReturnType<typeof retrieveReferences>>=[];
     let conflicts:unknown[]=[];let comparison:any=null;let status='no_reference_evidence';
     try{
-      if(b.mode==='identify')pages=await retrieveReferences(result,b.technician_attributes);
+      if(b.mode==='identify'){
+        const candidate=labels?.candidates?.length===1?labels.candidates[0]:null;
+        const retrievalStage=!result.model&&!result.series&&!reportedReferenceHint(b.technician_attributes)&&candidate?{...result,manufacturer:result.manufacturer||candidate.manufacturer,series:candidate.series,model:candidate.model}:result;
+        pages=await retrieveReferences(retrievalStage,b.technician_attributes);
+      }
       if(pages.length){
         conflicts=(await pool.query('SELECT * FROM reference_conflicts WHERE doc_sha256=ANY($1::text[])',[pages.map(p=>p.doc_sha256)])).rows.map(c=>({...c,values:c.values.map((v:any)=>({...v,page_id:`sha256:${c.doc_sha256}#p${v.page}`,doc_sha256:c.doc_sha256}))}));
         // A conflicting page must be retrieved and citable before its values
         // can be shown as reference evidence.
         conflicts=conflicts.filter((c:any)=>c.values.every((v:any)=>pages.some(p=>p.page_id===v.page_id)));
         if(process.env.OI_REFERENCE_COMPARISON_ENABLED==='true'){
-          comparison=await compareWithReferences({images:b.images,media_type:b.media_type,stage_one:result,attributes:b.technician_attributes,pages,conflicts});
+          comparison=await compareWithReferences({images:b.images,media_type:b.media_type,stage_one:result,attributes:b.technician_attributes,pages,conflicts,timeout_ms:Math.max(1000,Math.min(18000,deadline-Date.now()))});
           status='reference_evidence';
         }else status='reference_comparison_disabled';
       }
@@ -114,7 +124,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       await client.query(`INSERT INTO audit_log (organization_id,user_id,action,method,path,request_body,status_code) VALUES ($1,$2,'Recorded recognition evidence','POST','/api/recognition',$3,200)`,[req.auth!.organizationId,req.auth!.userId,JSON.stringify({run_id:run.id,opening_id:b.opening_id,model:RECOGNITION_MODEL,prompt_version:REFERENCE_PROMPT_VERSION,rejected_citation_count:validated.rejected.length})]);
       await client.query('COMMIT');
     }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
-    return res.json({suggestion,reported_identity:reportedReferenceHint(b.technician_attributes),run_id:run.id,status,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
+    return res.json({suggestion,label_candidate:labels?.candidates?.length===1?labels.candidates[0]:null,reported_identity:reportedReferenceHint(b.technician_attributes),run_id:run.id,status,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
   }catch{return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':'recognition_provider_failed'});}
 });
 

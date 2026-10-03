@@ -48,6 +48,11 @@ jobs:
         run: npx vitest run --config vitest.offline.config.ts tests/previewAccess.test.ts tests/authResponse.test.ts tests/openingLoadFailure.test.ts tests/openingCacheAccess.test.ts
       - name: Recognition photo retention and offline dependencies
         run: npx vitest run --config vitest.offline.config.ts tests/offlineDb.test.ts tests/offlineDependencies.test.ts tests/offlineFlushRecovery.test.ts
+      - name: Label reading and conservative identity regressions
+        run: |
+          npx vitest run --config vitest.release.config.ts
+          node --test scripts/reference/score-label-reading.test.mjs
+          node scripts/reference/label-ocr-runtime-smoke.mjs
       - name: Native PostgreSQL targeted regressions
         run: npx vitest run tests/referenceEvidence.test.ts tests/reportedReferenceHint.test.ts tests/legacyVision.test.ts tests/recognitionRelease.test.ts tests/offlineSyncApi.test.ts tests/pairedOpenings.test.ts tests/providerPurchasing.test.ts
       - name: Build Field App

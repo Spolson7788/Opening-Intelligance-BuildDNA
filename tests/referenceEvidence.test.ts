@@ -1,3 +1,4 @@
+vi.mock('../src/services/labelReading',async(importOriginal)=>({...await importOriginal<typeof import('../src/services/labelReading')>(),readLabels:vi.fn().mockResolvedValue({version:'fixture',status:'no_regions',reads:[],limiting_factor:null})}));
 import {beforeAll,afterAll,describe,it,expect,vi} from 'vitest';
 import {readFileSync,existsSync} from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -7,6 +8,7 @@ const provider=vi.hoisted(()=>({identify:vi.fn(),compare:vi.fn()}));
 vi.mock('../src/services/legacyVision',()=>({legacyVisionHandler:provider.identify}));
 vi.mock('../src/services/referenceEvidence',async(importOriginal)=>({...await importOriginal<any>(),compareWithReferences:provider.compare}));
 vi.mock('../src/services/storage',()=>({getPresignedPrivatePhotoReadUrl:vi.fn(async()=> 'https://storage.example.test/signed-page')}));
+import {readLabels} from '../src/services/labelReading';
 import {pool} from '../src/db/pool';
 import {app,signupTestOrg,createPortfolioHierarchy,createTestOpening} from './helpers';
 import {retrieveReferences,validateCitations,componentType,candidates,conservativeSuggestion} from '../src/services/referenceEvidence';
@@ -59,6 +61,14 @@ describe(privateCorpus?'audited corpus retrieval with recorded provider fixtures
   const r=await analyze();expect(r.status).toBe(200);expect(r.body.requires_technician_review).toBe(true);expect(r.body.status).toBe('reference_evidence');expect(r.body.citations[0].page_id).toBe(p.page_id);
   const run=(await pool.query('SELECT * FROM recognition_runs WHERE id=$1',[r.body.run_id])).rows[0];expect(run.retrieved_pages[0].text_sha256).toBe(p.text_sha256);expect(run.technician_attributes.mounting).toBe('regular_arm');expect(run.component_type).toBe('closer');
   expect((await pool.query("SELECT * FROM audit_log WHERE request_body->>'run_id'=$1",[run.id])).rows).toHaveLength(1);
+ });
+ it('retrieves candidate family references from label evidence without asserting an exact model',async()=>{
+  provider.identify.mockResolvedValueOnce({statusCode:200,body:JSON.stringify({component_class:'DOOR_CLOSER',manufacturer:null,model:null,series:null,visible_text:[],attributes:{}})});
+  vi.mocked(readLabels).mockResolvedValueOnce({version:'fixture-label',status:'completed',limiting_factor:null,reads:[{region:{photo_index:0,x:.1,y:.1,w:.3,h:.1,rotation:180},ocr_text:'LCN 4040',ocr_confidence:70,vision_text:'LCN 4040',agreed_markings:['LCN','4040'],status:'agreement'}]});
+  const r=await analyze();expect(r.status).toBe(200);expect(r.body.status).toBe('reference_evidence');
+  expect(r.body.suggestion).toMatchObject({manufacturer:'LCN',series:'4040',model:null,label_reading:{version:'fixture-label'}});
+  const stored=(await pool.query('SELECT stage_one,suggestion FROM recognition_runs WHERE id=$1',[r.body.run_id])).rows[0];
+  expect(stored.stage_one.label_reading.reads[0].region.rotation).toBe(180);expect(stored.suggestion.model).toBeNull();
  });
  it('strips fabricated page ids and invented quotes, including nested feature citations',async()=>{
   const bad={page_id:p.page_id,doc_sha256:doc.sha256,page_no:1,quote:'This sentence is fabricated.'};

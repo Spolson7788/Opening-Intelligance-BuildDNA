@@ -1,3 +1,4 @@
+vi.mock('../src/services/labelReading',async(importOriginal)=>({...await importOriginal<typeof import('../src/services/labelReading')>(),readLabels:vi.fn().mockResolvedValue({version:'fixture',status:'no_regions',reads:[],limiting_factor:null})}));
 import {beforeEach,describe,it,expect,vi} from 'vitest';
 import express from 'express';
 import request from 'supertest';
@@ -5,13 +6,14 @@ import jwt from 'jsonwebtoken';
 const mocks=vi.hoisted(()=>({query:vi.fn(),engine:vi.fn(),connect:vi.fn()}));
 vi.mock('../src/db/pool',()=>({pool:{query:mocks.query,connect:mocks.connect}}));
 vi.mock('../src/services/legacyVision',()=>({legacyVisionHandler:mocks.engine}));
+import {readLabels} from '../src/services/labelReading';
 import {recognitionRouter} from '../src/routes/recognition';
 const app=express();app.use(express.json({limit:'10mb'}));app.use('/recognition',recognitionRouter);
 const body={opening_id:'11111111-1111-4111-8111-111111111111',images:[Buffer.from([255,216,255,0]).toString('base64')],media_type:'image/jpeg'};
 const token=()=>jwt.sign({userId:'user',organizationId:'org',sessionVersion:0},process.env.JWT_SECRET!);
 const post=(b=body)=>request(app).post('/recognition').set('Authorization',`Bearer ${token()}`).send(b);
 beforeEach(()=>{
- vi.resetAllMocks();process.env.OI_RECOGNITION_ENABLED='true';process.env.ANTHROPIC_API_KEY='test-not-real';
+ vi.resetAllMocks();vi.mocked(readLabels).mockResolvedValue({version:'fixture',status:'no_regions',reads:[],limiting_factor:null});process.env.OI_RECOGNITION_ENABLED='true';process.env.ANTHROPIC_API_KEY='test-not-real';
  mocks.query.mockResolvedValueOnce({rows:[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]}).mockResolvedValue({rows:[{allowed:1}]});
  mocks.connect.mockResolvedValue({query:mocks.query,release:vi.fn()});
  mocks.engine.mockResolvedValue({statusCode:200,body:JSON.stringify({manufacturer:'Example',model:null})});
@@ -31,7 +33,7 @@ describe('recognition release boundary',()=>{
  it('reports both configuration blockers in one check',async()=>{delete process.env.OI_RECOGNITION_ENABLED;delete process.env.ANTHROPIC_API_KEY;const r=await request(app).get('/recognition/availability').set('Authorization',`Bearer ${token()}`);expect(r.body.available).toBe(false);expect(r.body.blocking_reasons).toEqual(['recognition_disabled','recognition_provider_not_configured']);expect(mocks.engine).not.toHaveBeenCalled();});
  it('distinguishes opening access failure without exposing database details',async()=>{mocks.query.mockReset().mockResolvedValueOnce({rows:[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]}).mockRejectedValue(Error('private database detail'));const r=await post();expect(r.status).toBe(503);expect(r.body.error).toBe('recognition_opening_access_unavailable');expect(r.text).not.toContain('private');});
  it('distinguishes recording failure without exposing database details',async()=>{mocks.connect.mockRejectedValue(Error('private database connection detail'));const r=await post();expect(r.status).toBe(503);expect(r.body.error).toBe('recognition_recording_unavailable');expect(r.text).not.toContain('private');});
- it('preserves suggestion as unapproved and scoped',async()=>{const r=await post();expect(r.status).toBe(200);expect(r.body.suggestion).toEqual({manufacturer:'Example',model:null});expect(r.body.requires_technician_review).toBe(true);expect(r.body.status).toBe('no_reference_evidence');expect(mocks.query.mock.calls[1][1]).toEqual([body.opening_id,'org']);expect(mocks.query.mock.calls.some(([sql])=>sql.includes('INSERT INTO recognition_runs'))).toBe(true);expect(mocks.query.mock.calls.every(([sql])=>!sql.includes('INSERT INTO component_purchasing_approvals'))).toBe(true);});
+ it('preserves suggestion as unapproved and scoped',async()=>{const r=await post();expect(r.status).toBe(200);expect(r.body.suggestion).toMatchObject({manufacturer:'Example',model:null,label_reading:{version:'fixture',status:'no_regions'}});expect(r.body.requires_technician_review).toBe(true);expect(r.body.status).toBe('no_reference_evidence');expect(mocks.query.mock.calls[1][1]).toEqual([body.opening_id,'org']);expect(mocks.query.mock.calls.some(([sql])=>sql.includes('INSERT INTO recognition_runs'))).toBe(true);expect(mocks.query.mock.calls.every(([sql])=>!sql.includes('INSERT INTO component_purchasing_approvals'))).toBe(true);});
  it('does not expose provider errors',async()=>{mocks.engine.mockResolvedValue({statusCode:500,body:'sensitive provider detail'});const r=await post();expect(r.status).toBe(502);expect(r.text).not.toContain('sensitive');});
  it('returns only an allowlisted provider failure category',async()=>{mocks.engine.mockResolvedValue({statusCode:502,body:JSON.stringify({error:'recognition_provider_authentication_failed',upstream_message:'private provider detail'})});const r=await post();expect(r.status).toBe(502);expect(r.body).toEqual({error:'recognition_provider_authentication_failed'});expect(r.text).not.toContain('private');});
  it('does not forward arbitrary provider error codes or malformed bodies',async()=>{for(const body of ['private invalid JSON',JSON.stringify({error:'private provider detail'})]){mocks.query.mockReset().mockResolvedValueOnce({rows:[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]}).mockResolvedValue({rows:[{allowed:1}]});mocks.engine.mockResolvedValue({statusCode:502,body});const r=await post();expect(r.body).toEqual({error:'recognition_provider_failed'});}});

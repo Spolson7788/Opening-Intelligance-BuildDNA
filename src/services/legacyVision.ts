@@ -413,7 +413,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
       : "";
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      signal: AbortSignal.timeout(25000),
+      signal: AbortSignal.timeout(Math.max(1000,Math.min(25000,Number(body.timeout_ms)||25000))),
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
         model: "claude-sonnet-4-5-20250929",

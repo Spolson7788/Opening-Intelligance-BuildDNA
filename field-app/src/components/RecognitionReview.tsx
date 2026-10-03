@@ -76,10 +76,14 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
     {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — will attach when you save this hardware.</p>}
     {result&&<div>
       {response?.reported_identity&&<p>Technician-reported product: <strong>{response.reported_identity.manufacturer} {response.reported_identity.model}</strong> — awaiting verification.</p>}
-      <p>Photograph suggestion: {text('model')?`${text('manufacturer')} ${text('model')}`:'Exact manufacturer and model not confirmed from this photograph.'}</p>
+      {response?.label_candidate&&!text('model')&&<p>Label candidate: <strong>{response.label_candidate.manufacturer} {response.label_candidate.model||`${response.label_candidate.series} family`}</strong> — single reader; technician verification required.</p>}
+      <p>Photograph suggestion: {text('model')?`${text('manufacturer')} ${text('model')}`:text('series')?`${text('manufacturer')} ${text('series')} family — exact model unconfirmed.`:text('manufacturer')?`${text('manufacturer')} — exact model unconfirmed.`:'Exact manufacturer and model not confirmed from this photograph.'}</p>
+      {(result.label_reading as any)?.status==='unavailable'&&<p role="status">Label reading could not complete. Photograph analysis remains available.</p>}
+      {(result.label_reading as any)?.status==='no_regions'&&<p>No product label was located in this photograph.</p>}
+      {!!(result.label_reading as any)?.reads?.length&&<section aria-label="Label readings"><h3>Label readings</h3>{(result.label_reading as any).reads.map((read:any,i:number)=><div key={i}><p>{read.agreed_markings?.length?`Two readers agree on: ${read.agreed_markings.join(' ')}`:'Label found; characters remain unconfirmed.'}</p><details><summary>Readings from this label</summary><p>OCR: {read.ocr_text||'Unreadable'}</p><p>Vision: {read.vision_text||'Unreadable'}</p></details></div>)}</section>}
       <details><summary>Recognition evidence</summary><pre style={{whiteSpace:'pre-wrap'}}>{JSON.stringify(result,null,2)}</pre></details>
       {response&&<ReferenceEvidence run={response}/>}
-      <button type="button" disabled={!text('model')&&!response?.reported_identity} onClick={()=>onUse(text('model')?text('manufacturer'):response?.reported_identity?.manufacturer||'',text('model')||response?.reported_identity?.model||'',response?.run_id||'',photographedComponentTypes[text('component_class')]||null)}>{text('model')?'Use photograph suggestion for technician review':'Use reported product for technician review'}</button>
+      <button type="button" disabled={!text('model')&&!response?.reported_identity&&!response?.label_candidate} onClick={()=>onUse(text('model')?text('manufacturer'):response?.reported_identity?.manufacturer||response?.label_candidate?.manufacturer||'',text('model')||response?.reported_identity?.model||response?.label_candidate?.model||'',response?.run_id||'',photographedComponentTypes[text('component_class')]||null)}>{text('model')?'Use photograph suggestion for technician review':response?.reported_identity?'Use reported product for technician review':'Use label candidate for technician review'}</button>
       <p>Identity and review remain pending until you verify them. This does not approve a purchase.</p>
     </div>}
   </section>;
