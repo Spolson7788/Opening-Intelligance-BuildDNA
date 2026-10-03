@@ -435,20 +435,29 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
       /* Provider bodies and recognition results are not logged. */
       return {
         statusCode: 502,
-        body: JSON.stringify({ error: "Anthropic returned an unreadable response", upstream_status: resp.status })
+        body: JSON.stringify({ error: "recognition_provider_invalid_response", upstream_status: resp.status })
       };
     }
 
     if (!resp.ok) {
-      const upstreamMessage = (j.error && j.error.message) || "Anthropic request failed";
+      const message = typeof j.error?.message === 'string' ? j.error.message : '';
+      const code = resp.status === 401 ? 'recognition_provider_authentication_failed'
+        : resp.status === 403 ? 'recognition_provider_permission_denied'
+        : resp.status === 404 ? 'recognition_provider_model_unavailable'
+        : resp.status === 429 ? 'recognition_provider_rate_limited'
+        : resp.status === 413 ? 'recognition_provider_image_rejected'
+        : resp.status === 400 && /credit balance|spend limit|billing|payment/i.test(message) ? 'recognition_provider_billing_blocked'
+        : resp.status === 400 ? 'recognition_provider_request_rejected'
+        : resp.status >= 500 ? 'recognition_provider_temporarily_unavailable'
+        : 'recognition_provider_failed';
       /* Provider bodies and recognition results are not logged. */
       return {
         statusCode: 502,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          error: upstreamMessage,
+          error: code,
           upstream_status: resp.status,
-          upstream_type: (j.error && j.error.type) || null
+          upstream_type: null
         })
       };
     }
@@ -461,7 +470,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
       return {
         statusCode: 502,
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ error: "Recognition response did not contain valid JSON" })
+        body: JSON.stringify({ error: "recognition_provider_invalid_response" })
       };
     }
 
@@ -473,7 +482,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
       return {
         statusCode: 502,
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ error: "Recognition response was not valid JSON" })
+        body: JSON.stringify({ error: "recognition_provider_invalid_response" })
       };
     }
 
@@ -503,7 +512,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
     return {
       statusCode: 500,
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ error: (e && e.message) || String(e) })
+      body: JSON.stringify({ error: e?.name === 'TimeoutError' || e?.name === 'AbortError' ? 'recognition_provider_timeout' : e?.name === 'TypeError' ? 'recognition_provider_connection_failed' : 'recognition_engine_failed' })
     };
   }
 };
