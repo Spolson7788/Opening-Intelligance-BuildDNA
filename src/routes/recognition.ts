@@ -6,7 +6,7 @@ import {openingsForOrgSubquery} from '../db/tenantScope';
 import {legacyVisionHandler} from '../services/legacyVision';
 import {createHash} from 'node:crypto';
 import {readLabels,applyLabelEvidence} from '../services/labelReading';
-import {retrieveReferences,compareWithReferences,validateCitations,componentType,conservativeSuggestion,reportedReferenceHint,REFERENCE_PROMPT_VERSION,RECOGNITION_MODEL} from '../services/referenceEvidence';
+import {retrieveReferences,resolvePartialMarkings,compareWithReferences,validateCitations,componentType,conservativeSuggestion,reportedReferenceHint,REFERENCE_PROMPT_VERSION,RECOGNITION_MODEL} from '../services/referenceEvidence';
 
 const schema=z.object({
   opening_id:z.string().uuid(),
@@ -60,6 +60,15 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     }
     let result=JSON.parse(response.body);
     if(!result||typeof result!=='object'||Array.isArray(result))return res.status(502).json({error:'recognition_provider_failed'});
+    if(labels&&b.mode==='identify'){
+      try{
+        const matches=await resolvePartialMarkings(labels,String(result.manufacturer||''));
+        if(matches.length){
+          const exact=(labels.candidates||[]).filter(c=>c.manufacturer_basis!=='catalog_partial_model_match');
+          labels.candidates=exact.length?exact:matches;
+        }
+      }catch{/* Preserve photograph and raw label evidence if the catalog is unavailable. */}
+    }
     if(labels)result=applyLabelEvidence(result,labels);
     let pages:Awaited<ReturnType<typeof retrieveReferences>>=[];
     let conflicts:unknown[]=[];let comparison:any=null;let status='no_reference_evidence';
@@ -68,6 +77,10 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
         const candidate=labels?.candidates?.length===1?labels.candidates[0]:null;
         const retrievalStage=!result.model&&!result.series&&!reportedReferenceHint(b.technician_attributes)&&candidate?{...result,manufacturer:result.manufacturer||candidate.manufacturer,series:candidate.series,model:candidate.model}:result;
         pages=await retrieveReferences(retrievalStage,b.technician_attributes);
+        if(!result.model&&!result.series&&!reportedReferenceHint(b.technician_attributes)&&(labels?.candidates?.length||0)>1){
+          const groups=await Promise.all(labels!.candidates!.map(c=>retrieveReferences({...result,manufacturer:c.manufacturer,series:c.series,model:c.model},b.technician_attributes)));
+          pages=[...new Map(groups.flat().map(p=>[p.page_id,p])).values()].slice(0,8);
+        }
       }
       if(pages.length){
         conflicts=(await pool.query('SELECT * FROM reference_conflicts WHERE doc_sha256=ANY($1::text[])',[pages.map(p=>p.doc_sha256)])).rows.map(c=>({...c,values:c.values.map((v:any)=>({...v,page_id:`sha256:${c.doc_sha256}#p${v.page}`,doc_sha256:c.doc_sha256}))}));
@@ -124,7 +137,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       await client.query(`INSERT INTO audit_log (organization_id,user_id,action,method,path,request_body,status_code) VALUES ($1,$2,'Recorded recognition evidence','POST','/api/recognition',$3,200)`,[req.auth!.organizationId,req.auth!.userId,JSON.stringify({run_id:run.id,opening_id:b.opening_id,model:RECOGNITION_MODEL,prompt_version:REFERENCE_PROMPT_VERSION,rejected_citation_count:validated.rejected.length})]);
       await client.query('COMMIT');
     }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
-    return res.json({suggestion,label_candidate:labels?.candidates?.length===1?labels.candidates[0]:null,reported_identity:reportedReferenceHint(b.technician_attributes),run_id:run.id,status,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
+    return res.json({suggestion,label_candidates:labels?.candidates||[],label_candidate:labels?.candidates?.length===1?labels.candidates[0]:null,reported_identity:reportedReferenceHint(b.technician_attributes),run_id:run.id,status,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
   }catch{return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':'recognition_provider_failed'});}
 });
 

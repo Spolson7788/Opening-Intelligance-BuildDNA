@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 import sharp from 'sharp';
-import {agreedMarkings,searchRegions,normalizeRegions,cropLabel,applyLabelEvidence,labelCandidates,readLabels, type LabelEvidence} from '../src/services/labelReading';
+import {agreedMarkings,enhanceLabelCrop,searchRegions,normalizeRegions,cropLabel,applyLabelEvidence,labelCandidates,readLabels, type LabelEvidence} from '../src/services/labelReading';
 const region={photo_index:0,x:.1,y:.2,w:.5,h:.2,rotation:180};
 function evidence(ocr:string,vision:string):LabelEvidence{return {version:'fixture',status:'completed',limiting_factor:null,reads:[{region,ocr_text:ocr,ocr_confidence:70,vision_text:vision,agreed_markings:agreedMarkings(ocr,vision),status:'agreement'}]};}
 describe('label reading evidence',()=>{
@@ -71,4 +71,15 @@ it('preserves the live partial 4040X? reading for references without inventing t
 it('does not let a compatible partial crop disable an exact reading from another crop',()=>{
  const readings=[...evidence('', '4040XP').reads,...evidence('', '4040X?').reads];
  expect(labelCandidates(readings)).toEqual([{manufacturer:'LCN',series:'4040',model:'4040XP',verification:'single_reader',manufacturer_basis:'catalog_model_match'}]);
+});
+
+it('enhances low contrast without changing dimensions or overwriting original pixels',async()=>{
+ const pixels=Buffer.from(Array.from({length:40*20*3},(_,i)=>Math.floor(i/3)%40<20?30:60));
+ const source=await sharp(pixels,{raw:{width:40,height:20,channels:3}}).png().toBuffer();
+ const unchanged=Buffer.from(source);
+ const enhanced=await enhanceLabelCrop(source);
+ const metadata=await sharp(enhanced).metadata();
+ expect(metadata.width).toBe(40);expect(metadata.height).toBe(20);expect(source.equals(unchanged)).toBe(true);
+ const output=await sharp(enhanced).raw().toBuffer();
+ expect(Math.max(...output)-Math.min(...output)).toBeGreaterThan(30);
 });

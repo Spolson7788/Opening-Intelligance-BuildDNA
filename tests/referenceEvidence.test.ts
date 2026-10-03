@@ -11,7 +11,7 @@ vi.mock('../src/services/storage',()=>({getPresignedPrivatePhotoReadUrl:vi.fn(as
 import {readLabels} from '../src/services/labelReading';
 import {pool} from '../src/db/pool';
 import {app,signupTestOrg,createPortfolioHierarchy,createTestOpening} from './helpers';
-import {retrieveReferences,validateCitations,componentType,candidates,conservativeSuggestion} from '../src/services/referenceEvidence';
+import {retrieveReferences,resolvePartialMarkings,validateCitations,componentType,candidates,conservativeSuggestion} from '../src/services/referenceEvidence';
 // Full manufacturer inputs remain private. Public CI uses explicitly synthetic
 // SQL fixtures; local corpus integration can point to the audited input folder.
 const fixtureRoot=resolve(process.env.OI_REFERENCE_TEST_MANIFEST_DIR||'reference-data');
@@ -94,6 +94,18 @@ describe(privateCorpus?'audited corpus retrieval with recorded provider fixtures
   expect(r.body.suggestion.model).toBeNull();expect(r.body.requires_technician_review).toBe(true);
   expect((await pool.query('SELECT retrieved_pages FROM recognition_runs WHERE id=$1',[r.body.run_id])).rows[0].retrieved_pages[0].doc_sha256).toBe(hash);
   expect((await pool.query('SELECT * FROM component_purchasing_approvals ORDER BY component_id')).rows).toEqual(before);
+ });
+ it('uses approved catalog matches for a partial dirty-label reading without completing the photographed identity',async()=>{
+  const labels:any={version:'partial-fixture',status:'completed',limiting_factor:null,reads:[{region:{photo_index:0,x:0,y:0,w:1,h:1,rotation:0},ocr_text:'Fae',ocr_confidence:20,vision_text:'4040X?',agreed_markings:[],status:'unconfirmed'}]};
+  expect(await resolvePartialMarkings(labels)).toMatchObject([{manufacturer:'LCN',model:'4040XP',transcribed_marking:'4040X?'}]);
+  expect(await resolvePartialMarkings(labels,'Cal-Royal')).toEqual([]);
+  vi.mocked(readLabels).mockResolvedValueOnce(labels);
+  provider.identify.mockResolvedValueOnce({statusCode:200,body:JSON.stringify({component_class:'DOOR_CLOSER',manufacturer:null,model:null,series:null,visible_text:[]})});
+  const r=await analyze();expect(r.status).toBe(200);
+  expect(r.body.label_candidate).toMatchObject({model:'4040XP',transcribed_marking:'4040X?'});
+  expect(r.body.suggestion.model).toBeNull();expect(r.body.suggestion.manufacturer).toBeNull();
+  expect(r.body.requires_technician_review).toBe(true);
+  expect((await pool.query('SELECT retrieved_pages FROM recognition_runs WHERE id=$1',[r.body.run_id])).rows[0].retrieved_pages).not.toHaveLength(0);
  });
  it('withdrawn documents disappear on the next lookup and page read',async()=>{
   await pool.query("UPDATE reference_documents SET status='draft' WHERE sha256=$1",[doc.sha256]);
