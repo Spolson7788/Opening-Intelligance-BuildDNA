@@ -70,6 +70,21 @@ describe(privateCorpus?'audited corpus retrieval with recorded provider fixtures
   expect(candidates({model:'4040XP-UNSUPPORTED',series:'4040XP'},{})).toEqual(['4040xp-unsupported']);
   expect(await retrieveReferences({manufacturer:'LCN',model:'4040XP-UNSUPPORTED',series:'4040XP'},{})).toEqual([]);
  });
+ it('uses reported CR441 for reference lookup and review while leaving photo identity and purchases unconfirmed',async()=>{
+  const hash=digest('synthetic-reported-cr441'),text='CR441 Series. Synthetic SQL fixture; not manufacturer evidence.';
+  await pool.query(`INSERT INTO reference_documents(sha256,manufacturer,brand,title,doc_type,page_count,storage_key,metadata,status,approved_by,approved_at) VALUES($1,'Cal-Royal','Cal-Royal','Synthetic CR441 fixture','product_data',1,'reference/cr441.pdf','{}','approved',$2,now())`,[hash,user]);
+  await pool.query(`INSERT INTO reference_pages(doc_sha256,page_no,text,text_sha256,page_class,transcription_status,citable) VALUES($1,1,$2,$3,'text','none',true)`,[hash,text,digest(text)]);
+  await pool.query(`INSERT INTO reference_document_models(doc_sha256,model,evidence_page,evidence_quote) VALUES($1,'CR441',1,'CR441')`,[hash]);
+  const before=(await pool.query('SELECT * FROM component_purchasing_approvals ORDER BY component_id')).rows;
+  provider.identify.mockResolvedValueOnce({statusCode:200,body:JSON.stringify({component_class:'DOOR_CLOSER',manufacturer:null,model:null,series:null,visible_text:[]})});
+  provider.compare.mockResolvedValueOnce({candidates:[],citations:[{page_id:`sha256:${hash}#p1`,doc_sha256:hash,page_no:1,quote:'CR441'}],unresolved:['Confirm technician-reported model.']});
+  const r=await request(app).post('/api/recognition').set('Authorization','Bearer '+org.token).send({opening_id:opening,images:[image],media_type:'image/jpeg',technician_attributes:{visible_markings:'CR441',component_type:'lockset',mounting_scope:'opening'}});
+  expect(r.status).toBe(200);expect(r.body.status).toBe('reference_evidence');
+  expect(r.body.reported_identity).toEqual({manufacturer:'Cal-Royal',model:'CR441'});
+  expect(r.body.suggestion.model).toBeNull();expect(r.body.requires_technician_review).toBe(true);
+  expect((await pool.query('SELECT retrieved_pages FROM recognition_runs WHERE id=$1',[r.body.run_id])).rows[0].retrieved_pages[0].doc_sha256).toBe(hash);
+  expect((await pool.query('SELECT * FROM component_purchasing_approvals ORDER BY component_id')).rows).toEqual(before);
+ });
  it('withdrawn documents disappear on the next lookup and page read',async()=>{
   await pool.query("UPDATE reference_documents SET status='draft' WHERE sha256=$1",[doc.sha256]);
   expect(await retrieveReferences({manufacturer:'LCN',model:'4040XP'},{})).toEqual([]);

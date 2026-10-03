@@ -31,6 +31,9 @@ export function conservativeSuggestion(stage:Record<string,any>,comparison:any){
 // These are retrieval hints only. Never copy them into the photographed identity.
 export function reportedReferenceHint(attributes:Record<string,string>){
  const markings=String(attributes.visible_markings||'').slice(0,500);
+ // CR441 is the manufacturer's full catalog identifier and is sufficient
+ // as a reported lookup hint without a separately typed brand.
+ if(/^\s*CR[\s_-]*441\s*$/i.test(markings))return {manufacturer:'Cal-Royal',model:'CR441'};
  if(/\bcal[\s_-]*royal\b/i.test(markings)&&/\b(?:CR[\s_-]*)?441\b/i.test(markings))return {manufacturer:'Cal-Royal',model:'CR441'};
  if(/\blcn\b/i.test(markings)){
   if(/\b4040[\s_-]*XP\b/i.test(markings))return {manufacturer:'LCN',model:'4040XP'};

@@ -11,6 +11,12 @@ series exists. An unsupported explicit model never falls back to these hints.
 Reported hints do not modify photographed identity, confidence, or purchasing
 approval. Existing photo evidence requirements for LCN look-alikes remain.
 
+The complete identifier `CR441` is also sufficient without a typed brand.
+The response exposes `reported_identity` separately from the photo suggestion.
+The Field App displays that reported product and can copy it into the component
+form for technician review, retaining unresolved identity and pending review.
+Unsupported suffixes and partial numeric tokens never match the shorthand.
+
 Validation covers the original markings and unrelated defaults, exact model
 boundaries, missing/wrong brands, LCN spellings, unsupported explicit models,
 and preservation of the photographed identity. Native PostgreSQL reference

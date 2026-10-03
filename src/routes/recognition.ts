@@ -5,7 +5,7 @@ import {requireAuth,requireRole,AuthedRequest} from '../middleware/auth';
 import {openingsForOrgSubquery} from '../db/tenantScope';
 import {legacyVisionHandler} from '../services/legacyVision';
 import {createHash} from 'node:crypto';
-import {retrieveReferences,compareWithReferences,validateCitations,componentType,conservativeSuggestion,REFERENCE_PROMPT_VERSION,RECOGNITION_MODEL} from '../services/referenceEvidence';
+import {retrieveReferences,compareWithReferences,validateCitations,componentType,conservativeSuggestion,reportedReferenceHint,REFERENCE_PROMPT_VERSION,RECOGNITION_MODEL} from '../services/referenceEvidence';
 
 const schema=z.object({
   opening_id:z.string().uuid(),
@@ -114,7 +114,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       await client.query(`INSERT INTO audit_log (organization_id,user_id,action,method,path,request_body,status_code) VALUES ($1,$2,'Recorded recognition evidence','POST','/api/recognition',$3,200)`,[req.auth!.organizationId,req.auth!.userId,JSON.stringify({run_id:run.id,opening_id:b.opening_id,model:RECOGNITION_MODEL,prompt_version:REFERENCE_PROMPT_VERSION,rejected_citation_count:validated.rejected.length})]);
       await client.query('COMMIT');
     }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
-    return res.json({suggestion,run_id:run.id,status,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
+    return res.json({suggestion,reported_identity:reportedReferenceHint(b.technician_attributes),run_id:run.id,status,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
   }catch{return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':'recognition_provider_failed'});}
 });
 

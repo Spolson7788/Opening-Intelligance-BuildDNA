@@ -66,16 +66,17 @@ export function RecognitionReview({openingId,attributes={},onUse}:{openingId:str
     {availabilityError&&<p role="alert">{availabilityError}</p>}
     {availability&&!availability.available&&<div role="alert">{(availability.blocking_reasons||[availability.reason||'recognition_unavailable']).map(reason=><p key={reason}>{recognitionFailureMessage(reason)}</p>)}</div>}
     {availability?.available&&!availability.reference_comparison_enabled&&<p>Photograph recognition is available. Manufacturer reference comparison is switched off on this server.</p>}
-    <label>Readable markings<input value={markings} maxLength={300} onChange={e=>setMarkings(e.target.value)}/></label>
+    <label>Reported model or readable markings<input value={markings} maxLength={300} disabled={busy} onChange={e=>{setMarkings(e.target.value);setResult(null);setResponse(null);}} placeholder="e.g. CR441 or Cal-Royal CR441"/></label>
     <label>Observed features or measurements<input value={features} maxLength={300} onChange={e=>setFeatures(e.target.value)}/></label>
     <input aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;setFiles(Array.from(e.target.files||[]));setResult(null);setError('');}}/>
     <button type="button" disabled={busy||!files.length||!availability?.available} onClick={analyze}>{busy?'Analyzing…':'Analyze photographs'}</button>
     {error&&<p role="alert">{error}</p>}
     {result&&<div>
-      <p>Manufacturer: {text('manufacturer')||'Not established'} · Series: {text('series')||'Not established'} · Model: {text('model')||'Not established'}</p>
+      {response?.reported_identity&&<p>Technician-reported product: <strong>{response.reported_identity.manufacturer} {response.reported_identity.model}</strong> — awaiting verification.</p>}
+      <p>Photograph suggestion: {text('model')?`${text('manufacturer')} ${text('model')}`:'Exact manufacturer and model not confirmed from this photograph.'}</p>
       <details><summary>Recognition evidence</summary><pre style={{whiteSpace:'pre-wrap'}}>{JSON.stringify(result,null,2)}</pre></details>
       {response&&<ReferenceEvidence run={response}/>}
-      <button type="button" onClick={()=>onUse(text('manufacturer'),text('model'),response?.run_id||'')}>Use suggestion for technician review</button>
+      <button type="button" disabled={!text('model')&&!response?.reported_identity} onClick={()=>onUse(text('model')?text('manufacturer'):response?.reported_identity?.manufacturer||'',text('model')||response?.reported_identity?.model||'',response?.run_id||'')}>{text('model')?'Use photograph suggestion for technician review':'Use reported product for technician review'}</button>
       <p>Identity and review remain pending until you verify them. This does not approve a purchase.</p>
     </div>}
   </section>;

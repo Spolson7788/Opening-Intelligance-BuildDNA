@@ -16,6 +16,10 @@ describe('technician markings used only for reference retrieval',()=>{
  it('requires a matching brand and bounded model token',()=>{
   for(const visible_markings of ['441','LCN 441','Cal-Royal 4410','Cal-Royal CR441UNSUPPORTED'])expect(reportedReferenceHint({visible_markings})).toBeNull();
   expect(reportedReferenceHint({visible_markings:'Cal-Royal CR441'})).toEqual({manufacturer:'Cal-Royal',model:'CR441'});
+  expect(reportedReferenceHint({visible_markings:'CR441'})).toEqual({manufacturer:'Cal-Royal',model:'CR441'});
+  expect(candidates({}, {visible_markings:'CR441'})).toEqual(['cr441']);
+  expect(reportedReferenceHint({visible_markings:'CR4410'})).toBeNull();
+  expect(reportedReferenceHint({visible_markings:'CR441-UNSUPPORTED'})).toBeNull();
  });
  it('normalizes LCN lookup spellings without merging the two models',()=>{
   expect(candidates({}, {visible_markings:'LCN 4040 XP'})).toEqual(['4040xp']);
