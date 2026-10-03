@@ -37,7 +37,7 @@ cpSync(resolve(root, "field-app/dist"), resolve(staging, "field"), { recursive: 
 cpSync(resolve(root, "dashboard/dist"), resolve(staging, "dashboard"), { recursive: true });
 buildFacilityDashboard(resolve(staging, "facility-dashboard"));
 writeFileSync(resolve(staging, 'build-info.json'), JSON.stringify({
-  environment: 'isolated-release-validation',
+  environment: process.env.CONTEXT === 'production' ? 'isolated-release-validation' : 'reference-staging-validation',
   commit: process.env.COMMIT_REF || execFileSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf8'}).trim(),
   branch: process.env.HEAD || process.env.BRANCH || 'local',
   checkoutRef: process.env.BRANCH || 'local',

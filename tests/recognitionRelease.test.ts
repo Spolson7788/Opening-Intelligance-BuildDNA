@@ -2,8 +2,8 @@ import {beforeEach,describe,it,expect,vi} from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
-const mocks=vi.hoisted(()=>({query:vi.fn(),engine:vi.fn()}));
-vi.mock('../src/db/pool',()=>({pool:{query:mocks.query}}));
+const mocks=vi.hoisted(()=>({query:vi.fn(),engine:vi.fn(),connect:vi.fn()}));
+vi.mock('../src/db/pool',()=>({pool:{query:mocks.query,connect:mocks.connect}}));
 vi.mock('../src/services/legacyVision',()=>({legacyVisionHandler:mocks.engine}));
 import {recognitionRouter} from '../src/routes/recognition';
 const app=express();app.use(express.json({limit:'10mb'}));app.use('/recognition',recognitionRouter);
@@ -13,6 +13,7 @@ const post=(b=body)=>request(app).post('/recognition').set('Authorization',`Bear
 beforeEach(()=>{
  vi.resetAllMocks();process.env.OI_RECOGNITION_ENABLED='true';process.env.ANTHROPIC_API_KEY='test-not-real';
  mocks.query.mockResolvedValueOnce({rows:[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]}).mockResolvedValue({rows:[{allowed:1}]});
+ mocks.connect.mockResolvedValue({query:mocks.query,release:vi.fn()});
  mocks.engine.mockResolvedValue({statusCode:200,body:JSON.stringify({manufacturer:'Example',model:null})});
 });
 describe('recognition release boundary',()=>{
@@ -24,6 +25,6 @@ describe('recognition release boundary',()=>{
  it('rejects more than five photographs',async()=>{expect((await post({...body,images:Array(6).fill(body.images[0])})).status).toBe(400);expect(mocks.engine).not.toHaveBeenCalled();});
  it('rejects aggregate image payload over two megabytes',async()=>{const image=Buffer.alloc(1100000);image.set([255,216,255]);expect((await post({...body,images:[image.toString('base64'),image.toString('base64')]})).status).toBe(413);expect(mocks.engine).not.toHaveBeenCalled();});
  it('stays disabled unless explicitly enabled',async()=>{delete process.env.OI_RECOGNITION_ENABLED;expect((await post()).status).toBe(503);expect(mocks.engine).not.toHaveBeenCalled();});
- it('preserves suggestion as unapproved and scoped',async()=>{const r=await post();expect(r.status).toBe(200);expect(r.body).toEqual({suggestion:{manufacturer:'Example',model:null},requires_technician_review:true});expect(mocks.query.mock.calls[1][1]).toEqual([body.opening_id,'org']);expect(mocks.query.mock.calls.every(([sql])=>sql.trim().startsWith('SELECT'))).toBe(true);});
+ it('preserves suggestion as unapproved and scoped',async()=>{const r=await post();expect(r.status).toBe(200);expect(r.body.suggestion).toEqual({manufacturer:'Example',model:null});expect(r.body.requires_technician_review).toBe(true);expect(r.body.status).toBe('no_reference_evidence');expect(mocks.query.mock.calls[1][1]).toEqual([body.opening_id,'org']);expect(mocks.query.mock.calls.some(([sql])=>sql.includes('INSERT INTO recognition_runs'))).toBe(true);expect(mocks.query.mock.calls.every(([sql])=>!sql.includes('INSERT INTO component_purchasing_approvals'))).toBe(true);});
  it('does not expose provider errors',async()=>{mocks.engine.mockResolvedValue({statusCode:500,body:'sensitive provider detail'});const r=await post();expect(r.status).toBe(502);expect(r.text).not.toContain('sensitive');});
 });

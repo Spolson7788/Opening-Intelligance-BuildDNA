@@ -60,6 +60,7 @@ export function LogHardwarePage() {
   const [identityStatus, setIdentityStatus] = useState("unresolved");
   const [reviewState, setReviewState] = useState("pending");
   const [replacementRequired, setReplacementRequired] = useState(false);
+  const [recognitionRunId,setRecognitionRunId]=useState('');
 
   useEffect(() => {
     if (id) fetchOpening(id).then((result) => setOpening(result.opening)).catch(() => undefined);
@@ -76,6 +77,7 @@ export function LogHardwarePage() {
         id: componentId,
         opening_id: id,
         component_type: componentType,
+        recognition_run_id: recognitionRunId || undefined,
         manufacturer: manufacturer || undefined,
         model_number: modelNumber || undefined,
         install_date: installDate || undefined,
@@ -135,7 +137,7 @@ export function LogHardwarePage() {
           </div>
         ) : (
           <form onSubmit={onSubmit}>
-            {id && <RecognitionReview key={id} openingId={id} onUse={(brand,model)=>{setManufacturer(brand);setModelNumber(model);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
+            {id && <RecognitionReview key={id} openingId={id} attributes={{component_type:componentType,mounting_scope:mountingScope,position:positionLabel}} onUse={(brand,model,run)=>{setManufacturer(brand);setModelNumber(model);setRecognitionRunId(run);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
             <div className="field">
               <label htmlFor="component-type">Component type</label>
               <select id="component-type" value={componentType} onChange={(e) => setComponentType(e.target.value)}>

@@ -47,24 +47,6 @@ function normalizeResult(obj) {
 }
 
 
-// Targeted second pass. The PDFs are NEVER sent to the API — the app stores the
-// normalized reference features and asks here only about the specific ones that
-// would separate the candidates still in play.
-function focusPrompt(features){
-  var lines=features.slice(0,24).map(function(f,i){
-    return (i+1)+'. field "'+f.field+'" — '+(f.question||('is this present, and what is its value? Documented as: '+f.value));
-  }).join("\n");
-  return "You are re-examining the SAME photographs for a short list of specific features. "+
-    "Do not identify the product. Do not guess. For each numbered feature below, answer ONLY from what is visibly present in the images.\n\n"+
-    lines+"\n\n"+
-    "Return ONLY compact JSON:\n"+
-    '{"observed_features":[{"field":"<the field name exactly as given>","visible":true|false,"value":"<what you actually see, or null>","note":"<where in the image>"}],'+
-    '"measurements":{},"visible_text":["<any further legible markings>"]}\n\n'+
-    "visible:false means you cannot see it — that is a useful and correct answer. Never report a value you cannot see. "+
-    "Do not estimate dimensions from perspective; leave measurements empty unless a rule or scale is visible in frame.";
-}
-
-
 // Label-blind physical analysis. Text is deliberately quarantined: the model is
 // told to describe construction only, and any writing it happens to see goes into
 // a SEPARATE channel the physical scorer never reads.
@@ -426,8 +408,6 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
     const markingMode = body.mode === "marking_regions";
     // mode: "hardware_regions" -> locate components, identify nothing
     const hardwareMode = body.mode === "hardware_regions";
-    // focus_features present -> targeted feature pass instead of identification
-    const focus = Array.isArray(body.focus_features) ? body.focus_features : null;
     const multi = imgs.length > 1
       ? "You are given " + imgs.length + " photographs of the SAME piece of hardware from a short sweep. Examine ALL of them together before answering. A stamp, label or distinguishing feature may be legible in only one frame; transcribe it from whichever frame shows it. Do not treat the frames as separate products. "
       : "";
@@ -443,7 +423,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
           { type: "text", text: hardwareMode ? HARDWARE_PROMPT
                                 : markingMode ? MARKING_PROMPT
                                 : (labelBlind ? (multi + PHYSICAL_PROMPT)
-                                : (focus ? (multi + focusPrompt(focus)) : (multi + PROMPT))) }
+                                : (multi + PROMPT)) + "\nTechnician-reported attributes (not independently verified): " + JSON.stringify(body.technician_attributes || {}) }
         ]}]
       })
     });
