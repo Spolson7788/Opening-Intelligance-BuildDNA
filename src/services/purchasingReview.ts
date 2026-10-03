@@ -1,6 +1,6 @@
 import {PoolClient} from 'pg';
 import {openingsForOrgSubquery} from '../db/tenantScope';
-export async function purchasingReview(client:PoolClient,orgId:string,ids:string[]){
+export async function purchasingReview(client:PoolClient,orgId:string,ids:string[],departmentRequest=false){
  const unique=[...new Set(ids)];
  const ops=await client.query(`SELECT * FROM openings WHERE id=ANY($1::uuid[]) AND id IN (${openingsForOrgSubquery(2)}) ORDER BY id`,[unique,orgId]);
  if(ops.rowCount!==unique.length)return null;
@@ -24,13 +24,13 @@ export async function purchasingReview(client:PoolClient,orgId:string,ids:string
  if(!openingDecisions.find(o=>o.opening_id===h.opening_id)!.opening_complete)reasons.push('opening_not_complete');
  if(h.review_state!=='reviewed')reasons.push('component_not_reviewed');
  if(h.identity_status!=='established'||!h.manufacturer?.trim()||!h.model_number?.trim())reasons.push('identity_unresolved');
- if(!h.approved)reasons.push('approved_document_required');
+ if(!departmentRequest&&!h.approved)reasons.push('approved_document_required');
  }
  return {opening_id:h.opening_id,component_id:h.id,replacement_required:required,eligible:reasons.length===0,reasons,
  ...(reasons.length===0?{manufacturer:h.manufacturer,model_number:h.model_number,document_url:h.document_url,document_sha256:h.document_sha256,provenance:h.provenance}: {})};
  });
  const blocked=openingDecisions.some(o=>!o.opening_complete)||decisions.some(d=>d.replacement_required&&!d.eligible);
- return {review_only:true,nothing_sent_or_ordered:true,blocked,openings:openingDecisions,decisions,
+ return {review_only:true,nothing_sent_or_ordered:true,purchasing_department_verification_required:departmentRequest,blocked,openings:openingDecisions,decisions,
  items:blocked?[]:decisions.filter(d=>d.eligible),excluded:decisions.filter(d=>!d.replacement_required),
  status:blocked?'blocked':decisions.some(d=>d.eligible)?'eligible':'no_replacements'};
 }

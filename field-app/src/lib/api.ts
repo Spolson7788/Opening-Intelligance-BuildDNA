@@ -10,6 +10,9 @@ export async function recognizeHardware(openingId:string,images:string[],mediaTy
 }
 export const fetchReferencePage=(hash:string,n:number)=>authedFetch(`/references/${encodeURIComponent(hash)}/pages/${n}`);
 export const fetchRecognitionRuns=(openingId:string)=>authedFetch(`/recognition/opening/${encodeURIComponent(openingId)}`);
+export const fetchPurchasingRequests=(openingId:string)=>authedFetch(`/purchasing/requests/opening/${encodeURIComponent(openingId)}`);
+export const preparePurchasingRequest=(body:{request_id:string;opening_id:string;recipient_email:string;acknowledged:true})=>authedFetch('/purchasing/requests',{method:'POST',body:JSON.stringify(body)});
+export const confirmPurchasingEmailSent=(id:string)=>authedFetch(`/purchasing/requests/${encodeURIComponent(id)}/email-sent`,{method:'POST',body:JSON.stringify({email_sent:true})});
 
 export class ApiError extends Error {
   status: number;

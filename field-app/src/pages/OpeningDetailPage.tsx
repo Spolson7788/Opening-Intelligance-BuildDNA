@@ -10,6 +10,7 @@ import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
 import { SyncBadge } from "../components/SyncBadge";
 import { PhotoCapture } from "../components/PhotoCapture";
 import { openingCompletionRequirements } from "../lib/openingCompletion";
+import {PurchasingRequest} from '../components/PurchasingRequest';
 
 function healthClass(score: number | null) {
   if (score === null || score === undefined) return "";
@@ -342,6 +343,7 @@ export function OpeningDetailPage() {
           + Add Hardware
         </Link>
 
+        <PurchasingRequest key={opening.id} openingId={opening.id}/>
         {opening.service_events && opening.service_events.length > 0 && (
           <>
             <div className="section-label" style={{ marginTop: 20 }}>Recent Service</div>
