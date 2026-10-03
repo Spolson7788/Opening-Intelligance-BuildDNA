@@ -58,3 +58,17 @@ it('uses an exact model-only reading as a catalog candidate, without asserting a
  expect(result.model).toBeNull();
  expect(labelCandidates(evidence('4041','4040XP').reads)).toEqual([]);
 });
+
+it('preserves the live partial 4040X? reading for references without inventing the missing P',()=>{
+ const labels=evidence('Fae', '4040X?');
+ const candidate=labelCandidates(labels.reads)[0];
+ expect(candidate).toEqual({manufacturer:'LCN',series:'4040',model:null,verification:'single_reader',manufacturer_basis:'catalog_partial_model_match',transcribed_marking:'4040X?'});
+ expect(labelCandidates(evidence('4041', '4040X?').reads)).toEqual([]);
+ expect(labelCandidates(evidence('', '4040X1').reads)).toEqual([]);
+ expect(applyLabelEvidence({manufacturer:null,model:null},labels).model).toBeNull();
+});
+
+it('does not let a compatible partial crop disable an exact reading from another crop',()=>{
+ const readings=[...evidence('', '4040XP').reads,...evidence('', '4040X?').reads];
+ expect(labelCandidates(readings)).toEqual([{manufacturer:'LCN',series:'4040',model:'4040XP',verification:'single_reader',manufacturer_basis:'catalog_model_match'}]);
+});

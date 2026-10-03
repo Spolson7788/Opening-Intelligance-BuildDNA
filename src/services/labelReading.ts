@@ -2,11 +2,11 @@ import sharp from 'sharp';
 import {createWorker,PSM} from 'tesseract.js';
 import {dirname,join} from 'node:path';
 
-export const LABEL_PROMPT_VERSION='oi-label-reading-2';
+export const LABEL_PROMPT_VERSION='oi-label-reading-3';
 const MODEL='claude-sonnet-4-5-20250929';
 export interface LabelRegion {photo_index:number;x:number;y:number;w:number;h:number;rotation:number;kind?:'label'|'search_tile'}
 export interface LabelRead {region:LabelRegion;ocr_text:string;ocr_confidence:number;vision_text:string;agreed_markings:string[];status:'agreement'|'unconfirmed'|'unreadable'}
-export interface LabelEvidence {candidates?:{manufacturer:string;series:string;model:string|null;verification:'single_reader';manufacturer_basis?:'catalog_model_match'}[];version:string;status:'completed'|'partial'|'unavailable'|'no_regions';reads:LabelRead[];limiting_factor:string|null}
+export interface LabelEvidence {candidates?:{manufacturer:string;series:string;model:string|null;verification:'single_reader';manufacturer_basis?:'catalog_model_match'|'catalog_partial_model_match';transcribed_marking?:string}[];version:string;status:'completed'|'partial'|'unavailable'|'no_regions';reads:LabelRead[];limiting_factor:string|null}
 const empty=(status:LabelEvidence['status'],reason:string|null=null):LabelEvidence=>({version:LABEL_PROMPT_VERSION,status,reads:[],limiting_factor:reason});
 export function normalizeRegions(value:any,count:number):LabelRegion[]{
  const out:LabelRegion[]=[];
@@ -25,7 +25,7 @@ export function agreedMarkings(ocr:string,vision:string):string[]{
 }
 async function ask(content:any[],prompt:string,deadline:number,maxMs=12000){
  const timeout=Math.min(maxMs,deadline-Date.now());if(timeout<1000)throw Error('label_timeout');
- const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',signal:AbortSignal.timeout(timeout),headers:{'x-api-key':process.env.ANTHROPIC_API_KEY!,'anthropic-version':'2023-06-01','content-type':'application/json'},body:JSON.stringify({model:MODEL,max_tokens:1600,messages:[{role:'user',content:[...content,{type:'text',text:prompt}]}]})});
+ const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',signal:AbortSignal.timeout(timeout),headers:{'x-api-key':process.env.ANTHROPIC_API_KEY!,'anthropic-version':'2023-06-01','content-type':'application/json'},body:JSON.stringify({model:MODEL,temperature:0,max_tokens:1600,messages:[{role:'user',content:[...content,{type:'text',text:prompt}]}]})});
  if(!r.ok)throw Error('label_provider_unavailable');
  const b=await r.json() as any;const text=(b.content||[]).filter((x:any)=>x.type==='text').map((x:any)=>x.text).join('');
  return JSON.parse(text.slice(text.indexOf('{'),text.lastIndexOf('}')+1));
@@ -110,7 +110,16 @@ export function labelCandidates(reads:LabelRead[]){
   const text=read.vision_text.toUpperCase();
   const brandVisible=/\bLCN\b/.test(text);
   const match=text.match(/\b(4040(?:[- ]?XP)?|4041[- ]?DA)\b/);
-  if(!match)continue;
+  if(!match){
+   // Retain the actual partial marking, never fill in its unreadable suffix.
+   // 4040X? narrows the catalog lookup but does not establish 4040XP.
+   const partial=text.match(/\b4040[- ]?X\?(?![A-Z0-9])/);
+   if(!partial)continue;
+   const ocrModels=read.ocr_text.toUpperCase().match(/\b\d{4}(?:XP|DA)?\b/g)||[];
+   if(ocrModels.some(m=>m.slice(0,4)!=='4040'))continue;
+   candidates.push({manufacturer:'LCN',series:'4040',model:null,verification:'single_reader',manufacturer_basis:'catalog_partial_model_match',transcribed_marking:partial[0]});
+   continue;
+  }
   const printed=match[1].replace(/[- ]/g,'');
   // An exact catalog model can retrieve candidate documents without claiming
   // the manufacturer was read. A bare family number cannot do this.
@@ -120,7 +129,8 @@ export function labelCandidates(reads:LabelRead[]){
   const partial=ocrModels.includes('4040')&&printed==='4040XP';
   candidates.push({manufacturer:'LCN',series:printed.slice(0,4),model:printed==='4040'||partial?null:printed==='4041DA'?'4041 DA':printed,verification:'single_reader',...(!brandVisible?{manufacturer_basis:'catalog_model_match' as const}:{})});
  }
- return [...new Map(candidates.map(c=>[JSON.stringify(c),c])).values()];
+ const unique=[...new Map(candidates.map(c=>[JSON.stringify(c),c])).values()];
+ return unique.filter(c=>c.manufacturer_basis!=='catalog_partial_model_match'||!unique.some(other=>other.manufacturer===c.manufacturer&&other.series===c.series&&other.model==='4040XP'));
 }
 export function applyLabelEvidence(stage:Record<string,any>,labels:LabelEvidence){
  const markings=[...new Set(labels.reads.flatMap(r=>r.agreed_markings))];

@@ -23,3 +23,6 @@ The live v2 replay read `4040XP` in three overlapping regions, but OCR could not
 
 ## Reference explanation alignment
 Reference prompt v4 explicitly treats an exact AI-transcribed model as candidate evidence. The delay-valve discriminator applies when the exact marking is absent, not as a mandatory extra gate after reading 4040XP. OCR disagreement requires verification of the reading; it must not be described as absence of a readable model. The photograph summary likewise acknowledges the model candidate instead of repeating a generic unknown-identity sentence. Exact photographed identity and technician review gates remain unchanged.
+
+## Partial suffix replay and stale interface
+Run 9d9955b0-93e2-4a12-9f4d-9623e0a6f43a transcribed `4040X?`, not the earlier exact `4040XP`. Version 3 retains this partial marking as a catalog family candidate with model null; it does not invent P. This enables candidate reference lookup and technician review, while OCR digit conflicts still suppress candidates. Label API calls now set temperature 0 to reduce sampling variation, without guaranteeing deterministic or correct reads. The screenshot also showed the older repeated-label UI; use the verified immutable deployment URL to test the current client on a fresh origin without erasing existing offline data.

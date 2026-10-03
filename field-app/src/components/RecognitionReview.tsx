@@ -47,7 +47,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
   },[openingId]);
   async function analyze(){
     const current=++generation.current;
-    setError('');setResult(null);setBusy(true);
+    setError('');setResult(null);setResponse(null);setBusy(true);
     try{
       if(!files.length||files.length>5||files.reduce((n,f)=>n+f.size,0)>2*1024*1024)throw Error('Select one to five photographs, totaling at most 2 MB.');
       if(!['image/jpeg','image/png','image/webp'].includes(files[0].type)||files.some(f=>f.type!==files[0].type))throw Error('Use JPEG, PNG or WebP photographs of the same format.');
@@ -79,7 +79,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
     {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — will attach when you save this hardware.</p>}
     {result&&<div>
       {response?.reported_identity&&<p>Technician-reported product: <strong>{response.reported_identity.manufacturer} {response.reported_identity.model}</strong> — awaiting verification.</p>}
-      {response?.label_candidate&&!text('model')&&<p>Label candidate: <strong>{response.label_candidate.manufacturer} {response.label_candidate.model||`${response.label_candidate.series} family`}</strong> — single AI reader; technician verification required.{response.label_candidate.manufacturer_basis==='catalog_model_match'&&' Manufacturer suggested by the catalog model match; manufacturer marking not confirmed.'}</p>}
+      {response?.label_candidate&&!text('model')&&<p>Label candidate: <strong>{response.label_candidate.manufacturer} {response.label_candidate.model||`${response.label_candidate.series} family`}</strong> — single AI reader; technician verification required.{response.label_candidate.manufacturer_basis==='catalog_model_match'&&' Manufacturer suggested by the catalog model match; manufacturer marking not confirmed.'}{response.label_candidate.manufacturer_basis==='catalog_partial_model_match'&&` Partial marking: ${response.label_candidate.transcribed_marking}. Catalog family suggested; exact suffix and manufacturer marking require verification.`}</p>}
       <p>Photograph suggestion: {text('model')?`${text('manufacturer')} ${text('model')}`:text('series')?`${text('manufacturer')} ${text('series')} family — exact model unconfirmed.`:text('manufacturer')?`${text('manufacturer')} — exact model unconfirmed.`:response?.label_candidate?'The model marking supports the candidate above; technician verification is pending.':'Exact manufacturer and model not confirmed from this photograph.'}</p>
       {(result.label_reading as any)?.status==='unavailable'&&<p role="status">Label reading could not complete. Photograph analysis remains available.</p>}
       {(result.label_reading as any)?.status==='no_regions'&&<p>No product label was located in this photograph.</p>}
