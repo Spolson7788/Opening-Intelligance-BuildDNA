@@ -20,3 +20,6 @@ Local replay of the two supplied LCN photographs using manually located crops di
 
 ## Model-only marking candidates
 The live v2 replay read `4040XP` in three overlapping regions, but OCR could not corroborate it and LCN was not transcribed. Exact `4040XP`/`4041 DA` readings now create a single-reader catalog candidate with `manufacturer_basis: catalog_model_match`. Bare `4040` without LCN remains insufficient. This only enables document retrieval and an explicit technician-review action; it does not establish photographed identity or measured accuracy. The interface summarizes unique AI readings and keeps raw search-region details collapsed rather than claiming every region contains a label.
+
+## Reference explanation alignment
+Reference prompt v4 explicitly treats an exact AI-transcribed model as candidate evidence. The delay-valve discriminator applies when the exact marking is absent, not as a mandatory extra gate after reading 4040XP. OCR disagreement requires verification of the reading; it must not be described as absence of a readable model. The photograph summary likewise acknowledges the model candidate instead of repeating a generic unknown-identity sentence. Exact photographed identity and technician review gates remain unchanged.
