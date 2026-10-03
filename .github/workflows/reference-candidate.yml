@@ -46,6 +46,8 @@ jobs:
           npx vitest run --config vitest.offline.config.ts tests/netlifyHosting.test.ts
       - name: Check private preview access recovery
         run: npx vitest run --config vitest.offline.config.ts tests/previewAccess.test.ts tests/authResponse.test.ts tests/openingLoadFailure.test.ts tests/openingCacheAccess.test.ts
+      - name: Recognition photo retention and offline dependencies
+        run: npx vitest run --config vitest.offline.config.ts tests/offlineDb.test.ts tests/offlineDependencies.test.ts tests/offlineFlushRecovery.test.ts
       - name: Native PostgreSQL targeted regressions
         run: npx vitest run tests/referenceEvidence.test.ts tests/reportedReferenceHint.test.ts tests/legacyVision.test.ts tests/recognitionRelease.test.ts tests/offlineSyncApi.test.ts tests/pairedOpenings.test.ts tests/providerPurchasing.test.ts
       - name: Build Field App

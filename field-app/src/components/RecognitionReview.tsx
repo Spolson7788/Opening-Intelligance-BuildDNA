@@ -28,7 +28,7 @@ export function recognitionFailureMessage(code:string){
   return messages[code]||code;
 }
 
-export function RecognitionReview({openingId,attributes={},onUse}:{openingId:string;attributes?:Record<string,string>;onUse:(manufacturer:string,model:string,runId:string,componentType:string|null)=>void}) {
+export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:{openingId:string;attributes?:Record<string,string>;onFilesChange:(files:File[])=>void;onUse:(manufacturer:string,model:string,runId:string,componentType:string|null)=>void}) {
   const [files,setFiles]=useState<File[]>([]);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
@@ -63,16 +63,17 @@ export function RecognitionReview({openingId,attributes={},onUse}:{openingId:str
   const text=(key:string)=>typeof result?.[key]==='string'?String(result[key]):'';
   return <section className="card" aria-label="Photograph recognition">
     <h2>Identify from photographs</h2>
-    <p>Photograph the same component from up to five views. Review the suggestion before using it. Save photographs to the component record separately.</p>
+    <p>Photograph the same component from up to five views. Review the suggestion before using it. Selected photographs are attached automatically when you save the hardware.</p>
     {!availability&&!availabilityError&&<p role="status">Checking recognition availability…</p>}
     {availabilityError&&<p role="alert">{availabilityError}</p>}
     {availability&&!availability.available&&<div role="alert">{(availability.blocking_reasons||[availability.reason||'recognition_unavailable']).map(reason=><p key={reason}>{recognitionFailureMessage(reason)}</p>)}</div>}
     {availability?.available&&!availability.reference_comparison_enabled&&<p>Photograph recognition is available. Manufacturer reference comparison is switched off on this server.</p>}
     <label>Reported model or readable markings<input value={markings} maxLength={300} disabled={busy} onChange={e=>{setMarkings(e.target.value);setResult(null);setResponse(null);}} placeholder="e.g. CR441 or Cal-Royal CR441"/></label>
     <label>Observed features or measurements<input value={features} maxLength={300} onChange={e=>setFeatures(e.target.value)}/></label>
-    <input aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;setFiles(Array.from(e.target.files||[]));setResult(null);setError('');}}/>
+    <input aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;const selected=Array.from(e.target.files||[]);setFiles(selected);onFilesChange(selected);setResult(null);setError('');}}/>
     <button type="button" disabled={busy||!files.length||!availability?.available} onClick={analyze}>{busy?'Analyzing…':'Analyze photographs'}</button>
     {error&&<p role="alert">{error}</p>}
+    {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — will attach when you save this hardware.</p>}
     {result&&<div>
       {response?.reported_identity&&<p>Technician-reported product: <strong>{response.reported_identity.manufacturer} {response.reported_identity.model}</strong> — awaiting verification.</p>}
       <p>Photograph suggestion: {text('model')?`${text('manufacturer')} ${text('model')}`:'Exact manufacturer and model not confirmed from this photograph.'}</p>

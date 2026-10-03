@@ -61,6 +61,7 @@ export function LogHardwarePage() {
   const [reviewState, setReviewState] = useState("pending");
   const [replacementRequired, setReplacementRequired] = useState(false);
   const [recognitionRunId,setRecognitionRunId]=useState('');
+  const [recognitionPhotos,setRecognitionPhotos]=useState<File[]>([]);
 
   useEffect(() => {
     if (id) fetchOpening(id).then((result) => setOpening(result.opening)).catch(() => undefined);
@@ -100,18 +101,18 @@ export function LogHardwarePage() {
       };
       await queueOpeningMutation("hardware_component", id!, {
         ...payload,
-      }, operationId);
+      }, operationId, recognitionPhotos);
       await updateCachedOpening(id!, (cached) => ({
         ...cached,
         hardware_components: [
           ...(cached.hardware_components || []).filter((item: any) => item.id !== componentId),
           { ...payload, pending_sync: true },
         ],
-      }));
+      })).catch(()=>undefined); // The hardware/photo bundle is already durably queued.
       setSaved(true);
       setTimeout(() => navigate(`/opening/${id}`), 700);
-    } catch {
-      setError("Couldn't save — check your connection and try again.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Couldn't save — try again.");
     } finally {
       setSubmitting(false);
     }
@@ -133,11 +134,11 @@ export function LogHardwarePage() {
 
         {saved ? (
           <div className="card" style={{ textAlign: "center", color: "var(--success)" }}>
-            Saved. Returning to the opening…
+            Saved{recognitionPhotos.length ? ` with ${recognitionPhotos.length} photograph${recognitionPhotos.length===1?"":"s"}` : ""}. Returning to the opening…
           </div>
         ) : (
           <form onSubmit={onSubmit}>
-            {id && <RecognitionReview key={id} openingId={id} attributes={{component_type:componentType,mounting_scope:mountingScope,position:positionLabel}} onUse={(brand,model,run,recognizedType)=>{if(recognizedType)setComponentType(recognizedType);setManufacturer(brand);setModelNumber(model);setRecognitionRunId(run);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
+            {id && <RecognitionReview key={id} openingId={id} onFilesChange={files=>{setRecognitionPhotos(files);setRecognitionRunId('');}} attributes={{component_type:componentType,mounting_scope:mountingScope,position:positionLabel}} onUse={(brand,model,run,recognizedType)=>{if(recognizedType)setComponentType(recognizedType);setManufacturer(brand);setModelNumber(model);setRecognitionRunId(run);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
             <div className="field">
               <label htmlFor="component-type">Component type</label>
               <select id="component-type" value={componentType} onChange={(e) => setComponentType(e.target.value)}>

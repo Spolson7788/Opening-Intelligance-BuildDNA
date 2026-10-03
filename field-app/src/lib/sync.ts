@@ -1,9 +1,9 @@
 import { claimSyncOperation, getAllSyncOperations, getOfflineMedia, getOfflineSetting, getSyncOperationsForPrincipal, loadAuth, putOfflineSetting, putSyncConflict, putSyncOperation, putSyncReceipt, reconcileRecoveredMediaOperationId, saveEntityAndOperation } from "./db";
 import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, uploadPrivatePhoto, ApiError } from "./api";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
-import type { OfflineEntityEnvelope, OfflineEntityType, SyncConflict, SyncOperation, SyncOperationState, SyncReceipt } from "./offlineTypes";
+import type { OfflineEntityEnvelope, OfflineMediaRecord, OfflineEntityType, SyncConflict, SyncOperation, SyncOperationState, SyncReceipt } from "./offlineTypes";
 import { readyOperations, retryDelayMs } from "./offlineSyncModel";
-import { MEDIA_TOO_LARGE, maximumMediaBytes } from "./mediaLimits";
+import { MEDIA_TOO_LARGE, MAX_IMAGE_BYTES, maximumMediaBytes } from "./mediaLimits";
 import type { OutboxItem } from "./db";
 
 type SyncListener = (state: SyncState) => void;
@@ -55,7 +55,12 @@ function entityTypeForKind(kind: OutboxItem["kind"]): OfflineEntityType {
   if (kind === "inspection_event") return "inspection_event";
   return "completion";
 }
-export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: string, payload: any, id = crypto.randomUUID()) {
+export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: string, payload: any, id = crypto.randomUUID(), photographs: File[] = []) {
+  if(photographs.length && (kind!=="hardware_component" || photographs.length>5 ||
+     photographs.reduce((total,file)=>total+file.size,0)>MAX_IMAGE_BYTES ||
+     photographs.some(file=>!["image/jpeg","image/png","image/webp"].includes(file.type)))) {
+    throw new Error("Select up to five JPEG, PNG or WebP recognition photographs, totaling at most 2 MB.");
+  }
   const auth = await loadAuth(); if (!auth) throw new Error("auth_required");
   const now = new Date().toISOString(); const entityType = entityTypeForKind(kind); const entityId = payload.id ?? id;
   const deviceId = await getOrCreateDeviceId(); const semanticPayload = { kind, ...payload };
@@ -71,7 +76,22 @@ export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: 
     createdByUserId: auth.userId, createdByDeviceId: deviceId, createdAtLocal: now, updatedAtLocal: now,
     serverRevision: null, baseSnapshotHash: null, schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: APP_VERSION,
     syncState: "queued", retryCount: 0, payload: semanticPayload };
-  await saveEntityAndOperation(entity, operation); await refreshPendingCount(); void flushOutbox(); return id;
+  const attachments = await Promise.all(photographs.map(async file=>{
+    const photoId=crypto.randomUUID(), photoOperationId=crypto.randomUUID();
+    const checksum=await checksumBlob(file);
+    const media:OfflineMediaRecord={photoId,openingId,organizationId:auth.organizationId,
+      targetType:"hardware_component",targetId:entityId,capturedAtDevice:now,capturedByUserId:auth.userId,capturedByDeviceId:deviceId,
+      originalFilename:file.name,generatedCaptureName:`${photoId}.${file.type.split("/")[1]}`,contentType:file.type,
+      byteSize:file.size,sha256Checksum:checksum,blob:file,localBlobState:"retained",uploadState:"queued",
+      provenanceState:"original",reviewState:"pending",createdAtLocal:now,updatedAtLocal:now};
+    const photoOperation:SyncOperation={operationId:photoOperationId,operationType:"confirm_media",entityType:"photo",entityId:photoId,
+      openingId,organizationId:auth.organizationId,actorUserId:auth.userId,deviceId,baseServerRevision:null,
+      payload:{target_type:"hardware_component",target_id:entityId,original_filename:file.name,content_type:file.type,byte_size:file.size,sha256_checksum:checksum},
+      payloadHash:checksum,dependencyOperationIds:[id],createdAtLocal:now,state:"blocked_dependency",attemptCount:0,
+      schemaVersion:OFFLINE_SCHEMA_VERSION,appVersion:APP_VERSION,protocolVersion:SYNC_PROTOCOL_VERSION};
+    return {media,operation:photoOperation};
+  }));
+  await saveEntityAndOperation(entity, operation, attachments); await refreshPendingCount(); void flushOutbox(); return id;
 }
 export function dependencyIdsForOperation(
   operations: SyncOperation[], entityType: OfflineEntityType, openingId: string, payload: Record<string, any>,
