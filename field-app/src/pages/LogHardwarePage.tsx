@@ -137,7 +137,7 @@ export function LogHardwarePage() {
           </div>
         ) : (
           <form onSubmit={onSubmit}>
-            {id && <RecognitionReview key={id} openingId={id} attributes={{component_type:componentType,mounting_scope:mountingScope,position:positionLabel}} onUse={(brand,model,run)=>{setManufacturer(brand);setModelNumber(model);setRecognitionRunId(run);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
+            {id && <RecognitionReview key={id} openingId={id} attributes={{component_type:componentType,mounting_scope:mountingScope,position:positionLabel}} onUse={(brand,model,run,recognizedType)=>{if(recognizedType)setComponentType(recognizedType);setManufacturer(brand);setModelNumber(model);setRecognitionRunId(run);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
             <div className="field">
               <label htmlFor="component-type">Component type</label>
               <select id="component-type" value={componentType} onChange={(e) => setComponentType(e.target.value)}>

@@ -2,6 +2,8 @@ import {useEffect,useRef,useState} from 'react';
 import {fetchRecognitionAvailability,recognizeHardware} from '../lib/api';
 import {ReferenceEvidence} from './ReferenceEvidence';
 
+const photographedComponentTypes:Record<string,string>={DOOR_CLOSER:'closer',EXIT_DEVICE:'exit_device',LOCKSET:'lockset',HINGE_BUTT:'hinge',HINGE_CONT:'hinge',FLUSH_BOLT:'other',ELECTRIC_STRIKE:'electric_strike',POWER_TRANSFER:'power_transfer'};
+
 export function recognitionFailureMessage(code:string){
   const messages:Record<string,string>={
     recognition_disabled:'Photograph recognition is switched off on this server. The staging administrator must enable OI_RECOGNITION_ENABLED for this preview.',
@@ -26,7 +28,7 @@ export function recognitionFailureMessage(code:string){
   return messages[code]||code;
 }
 
-export function RecognitionReview({openingId,attributes={},onUse}:{openingId:string;attributes?:Record<string,string>;onUse:(manufacturer:string,model:string,runId:string)=>void}) {
+export function RecognitionReview({openingId,attributes={},onUse}:{openingId:string;attributes?:Record<string,string>;onUse:(manufacturer:string,model:string,runId:string,componentType:string|null)=>void}) {
   const [files,setFiles]=useState<File[]>([]);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
@@ -76,7 +78,7 @@ export function RecognitionReview({openingId,attributes={},onUse}:{openingId:str
       <p>Photograph suggestion: {text('model')?`${text('manufacturer')} ${text('model')}`:'Exact manufacturer and model not confirmed from this photograph.'}</p>
       <details><summary>Recognition evidence</summary><pre style={{whiteSpace:'pre-wrap'}}>{JSON.stringify(result,null,2)}</pre></details>
       {response&&<ReferenceEvidence run={response}/>}
-      <button type="button" disabled={!text('model')&&!response?.reported_identity} onClick={()=>onUse(text('model')?text('manufacturer'):response?.reported_identity?.manufacturer||'',text('model')||response?.reported_identity?.model||'',response?.run_id||'')}>{text('model')?'Use photograph suggestion for technician review':'Use reported product for technician review'}</button>
+      <button type="button" disabled={!text('model')&&!response?.reported_identity} onClick={()=>onUse(text('model')?text('manufacturer'):response?.reported_identity?.manufacturer||'',text('model')||response?.reported_identity?.model||'',response?.run_id||'',photographedComponentTypes[text('component_class')]||null)}>{text('model')?'Use photograph suggestion for technician review':'Use reported product for technician review'}</button>
       <p>Identity and review remain pending until you verify them. This does not approve a purchase.</p>
     </div>}
   </section>;
