@@ -47,7 +47,7 @@ jobs:
       - name: Check private preview access recovery
         run: npx vitest run --config vitest.offline.config.ts tests/previewAccess.test.ts tests/authResponse.test.ts tests/openingLoadFailure.test.ts tests/openingCacheAccess.test.ts
       - name: Native PostgreSQL targeted regressions
-        run: npx vitest run tests/referenceEvidence.test.ts tests/recognitionRelease.test.ts tests/offlineSyncApi.test.ts tests/pairedOpenings.test.ts tests/providerPurchasing.test.ts
+        run: npx vitest run tests/referenceEvidence.test.ts tests/legacyVision.test.ts tests/recognitionRelease.test.ts tests/offlineSyncApi.test.ts tests/pairedOpenings.test.ts tests/providerPurchasing.test.ts
       - name: Build Field App
         run: npm ci --include=dev --prefix field-app && npm run build --prefix field-app
       - name: Generate Facility Dashboard

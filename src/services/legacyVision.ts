@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Preserved production recognition engine; source SHA256 9da330e98a2f1646f5bd825bd6fa4987a270c04d5c8b5ceb4ff6d06bd4e2cae7.
+// Adapted production recognition engine; original source SHA256 9da330e98a2f1646f5bd825bd6fa4987a270c04d5c8b5ceb4ff6d06bd4e2cae7.
 // Internal only: exposed through authenticated, opening-scoped recognition route.
 // Opening Intelligence — vision proxy (Netlify Function, zero dependencies).
 // Holds the API key server-side; the app POSTs base64 images and gets a structured
@@ -491,24 +491,6 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
 
     if (labelBlind) {
       const out = normalizePhysical(parsed);
-      /* Provider bodies and recognition results are not logged. */
-      return { statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(out) };
-    }
-
-    if (focus) {
-      const feats = Array.isArray(parsed.observed_features) ? parsed.observed_features : [];
-      const out = {
-        observed_features: feats
-          .filter((f) => f && f.field)
-          .map((f) => ({
-            field: String(f.field).trim(),
-            visible: f.visible === true,
-            value: (f.value == null || String(f.value).toLowerCase() === "null") ? null : String(f.value).trim(),
-            note: f.note == null ? null : String(f.note).trim()
-          })),
-        measurements: (parsed.measurements && typeof parsed.measurements === "object") ? parsed.measurements : {},
-        visible_text: Array.isArray(parsed.visible_text) ? parsed.visible_text.map((t) => String(t).trim()).filter(Boolean) : []
-      };
       /* Provider bodies and recognition results are not logged. */
       return { statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(out) };
     }
