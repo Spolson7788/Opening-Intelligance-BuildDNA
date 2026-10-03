@@ -4,7 +4,7 @@ export function ReferenceEvidence({run}:{run:any}){
  const [page,setPage]=useState<any>(null),[error,setError]=useState('');
  async function open(c:any){setPage(null);setError('');try{setPage((await fetchReferencePage(c.doc_sha256,c.page_no)).page);}catch{setError('Reference unavailable. It may have been withdrawn or superseded.');}}
  return <section aria-label="Manufacturer reference evidence">
-  <p>{run.status==='reference_evidence'?'Manufacturer reference evidence — technician review required':'No reference evidence — preliminary photograph analysis only'}</p>
+  <p>{run.status==='reference_evidence'?'Manufacturer reference evidence — technician review required':run.status==='no_valid_reference_citations'?'Reference documents found, but the analysis did not produce valid source citations. Product identity remains unverified.':run.status==='reference_comparison_unavailable'?'Reference documents found, but comparison is temporarily unavailable.':run.status==='reference_comparison_disabled'?'Reference documents found; comparison is disabled.':'No reference evidence — preliminary photograph analysis only'}</p>
   {(run.citations||[]).map((c:any,i:number)=><div key={i}><button type="button" onClick={()=>open(c)}>Open supporting page {c.page_no}</button><blockquote>{c.quote}</blockquote></div>)}
   {(run.conflicts||[]).map((c:any,i:number)=><p key={i}>Unresolved specification: {c.field} — {(c.values||[]).map((v:any)=>`${v.value} (page ${v.page})`).join(' / ')}</p>)}
   {(run.comparison?.unresolved||run.stage_two?.unresolved||[]).map((v:any,i:number)=><p key={i}>{String(v)}</p>)}
