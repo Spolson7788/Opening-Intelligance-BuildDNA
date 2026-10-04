@@ -53,8 +53,8 @@ jobs:
           npx vitest run --config vitest.release.config.ts
           node --test scripts/reference/score-label-reading.test.mjs
           node scripts/reference/label-ocr-runtime-smoke.mjs
-      - name: Native PostgreSQL targeted regressions
-        run: npx vitest run tests/referenceEvidence.test.ts tests/reportedReferenceHint.test.ts tests/legacyVision.test.ts tests/recognitionRelease.test.ts tests/offlineSyncApi.test.ts tests/pairedOpenings.test.ts tests/providerPurchasing.test.ts
+      - name: Full API regression suite with native PostgreSQL
+        run: npm test
       - name: Build Field App
         run: npm ci --include=dev --prefix field-app && npm run build --prefix field-app
       - name: Generate Facility Dashboard
