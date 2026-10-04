@@ -7,6 +7,7 @@ const photographedComponentTypes:Record<string,string>={DOOR_CLOSER:'closer',EXI
 export function recognitionFailureMessage(code:string){
   const messages:Record<string,string>={
     request_failed_504:'Analysis took too long and the server stopped the request. No identification result was returned. Your selected photograph remains available.',
+    recognition_result_missing:'The server returned no usable analysis result. No identification was applied. Your selected photograph remains available.',
     recognition_saved_result_not_found:'The connection timed out and no saved result was found for this request. Your photograph remains selected. No analysis was retried automatically.',
     recognition_disabled:'Photograph recognition is switched off on this server. The staging administrator must enable OI_RECOGNITION_ENABLED for this preview.',
     recognition_provider_not_configured:'The recognition provider key is missing from this server. The staging administrator must configure ANTHROPIC_API_KEY for this preview.',
@@ -33,7 +34,7 @@ export function recognitionFailureMessage(code:string){
   return messages[code]||code;
 }
 
-export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:{openingId:string;attributes?:Record<string,string>;onFilesChange:(files:File[])=>void;onUse:(manufacturer:string,model:string,runId:string,componentType:string|null)=>void}) {
+export function RecognitionReview({openingId,attributes={},onUse,onFilesChange,onBusyChange}:{openingId:string;attributes?:Record<string,string>;onBusyChange?:(busy:boolean)=>void;onFilesChange:(files:File[])=>void;onUse:(manufacturer:string,model:string,runId:string,componentType:string|null)=>void}) {
   const [files,setFiles]=useState<File[]>([]);
   const [progress,setProgress]=useState('');
   const [busy,setBusy]=useState(false);
@@ -43,6 +44,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
   const [markings,setMarkings]=useState('');
   const [features,setFeatures]=useState('');
   const generation=useRef(0);
+  useEffect(()=>{onBusyChange?.(busy);},[busy,onBusyChange]);
   const [availability,setAvailability]=useState<{available:boolean;blocking_reasons:string[];reason:string|null;reference_comparison_enabled:boolean}|null>(null);
   const [availabilityError,setAvailabilityError]=useState('');
   useEffect(()=>{
@@ -63,14 +65,14 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
       })));
       const response=await recognizeHardware(openingId,images,files[0].type,{...attributes,visible_markings:markings,observed_features:features},()=>{if(current===generation.current)setProgress('Retrieving saved analysis…');});
       if(current===generation.current){setResult(response.suggestion);setResponse(response);}
-    }catch(e){if(current===generation.current)setError(recognitionFailureMessage(e instanceof Error?e.message:'Recognition unavailable.'));}
+    }catch(e){if(current===generation.current)setError(recognitionFailureMessage(e instanceof Error&&e.message?e.message:'recognition_provider_failed'));}
     finally{if(current===generation.current)setBusy(false);}
   }
   const text=(key:string)=>typeof result?.[key]==='string'?String(result[key]):'';
   const labelReads:any[]=(result?.label_reading as any)?.reads||[];
   const labelTexts=[...new Set(labelReads.map(read=>read.vision_text?.trim()).filter(Boolean))] as string[];
   const agreedTexts=[...new Set(labelReads.flatMap(read=>read.agreed_markings||[]))] as string[];
-  return <section className="card" aria-label="Photograph recognition">
+  return <section className="card" aria-label="Photograph recognition" onKeyDown={e=>{if(e.key==='Enter'&&e.target instanceof HTMLInputElement&&e.target.type!=='file')e.preventDefault();}}>
     <h2>Identify from photographs</h2>
     <p>Photograph the same component from up to five views. Review the suggestion before using it. Selected photographs are attached automatically when you save the hardware.</p>
     {!availability&&!availabilityError&&<p role="status">Checking recognition availability…</p>}

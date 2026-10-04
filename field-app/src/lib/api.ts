@@ -1,3 +1,4 @@
+import {requireRecognitionResult} from './recognitionResponse';
 import { loadAuth, cacheOpening, getCachedOpening } from "./db";
 import {isUnverifiedSiteAccess, readResponseBody, requestPreviewAccess} from './previewAccess';
 
@@ -8,14 +9,14 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 export async function recognizeHardware(openingId:string,images:string[],mediaType:string,attributes:Record<string,string>={},onRecovery?:()=>void) {
   const principal=await loadAuth();if(!principal)throw new ApiError(401,'missing_token');
   const requestId=crypto.randomUUID();
-  try{return await authedFetch('/recognition',{method:'POST',body:JSON.stringify({request_id:requestId,opening_id:openingId,images,media_type:mediaType,technician_attributes:attributes})},principal);}
+  try{return requireRecognitionResult(await authedFetch('/recognition',{method:'POST',body:JSON.stringify({request_id:requestId,opening_id:openingId,images,media_type:mediaType,technician_attributes:attributes})},principal));}
   catch(error){
     if(!(error instanceof ApiError)||error.status!==504||error.hostingAccessRequired)throw error;
     onRecovery?.();
     const deadline=Date.now()+30000;
     while(Date.now()<deadline){
       const result=await authedFetch(`/recognition/request/${requestId}?opening_id=${encodeURIComponent(openingId)}`,{signal:AbortSignal.timeout(5000)},principal);
-      if(result?.run_id&&result.request_id===requestId)return result;
+      if(result?.run_id&&result.request_id===requestId)return requireRecognitionResult(result);
       if(result?.status!=='awaiting_saved_result')throw new ApiError(502,'recognition_recovery_invalid_response');
       await new Promise(resolve=>setTimeout(resolve,1500));
     }

@@ -60,6 +60,7 @@ export function LogHardwarePage() {
   const [identityStatus, setIdentityStatus] = useState("unresolved");
   const [reviewState, setReviewState] = useState("pending");
   const [replacementRequired, setReplacementRequired] = useState(false);
+  const [recognitionBusy,setRecognitionBusy]=useState(false);
   const [recognitionRunId,setRecognitionRunId]=useState('');
   const [recognitionPhotos,setRecognitionPhotos]=useState<File[]>([]);
 
@@ -69,6 +70,7 @@ export function LogHardwarePage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if(recognitionBusy){setError('Wait for photograph analysis to finish before saving the hardware.');return;}
     setSubmitting(true);
     setError(null);
     try {
@@ -138,7 +140,7 @@ export function LogHardwarePage() {
           </div>
         ) : (
           <form onSubmit={onSubmit}>
-            {id && <RecognitionReview key={id} openingId={id} onFilesChange={files=>{setRecognitionPhotos(files);setRecognitionRunId('');}} attributes={{component_type:componentType,mounting_scope:mountingScope,position:positionLabel}} onUse={(brand,model,run,recognizedType)=>{if(recognizedType)setComponentType(recognizedType);setManufacturer(brand);setModelNumber(model);setRecognitionRunId(run);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
+            {id && <RecognitionReview key={id} openingId={id} onBusyChange={setRecognitionBusy} onFilesChange={files=>{setRecognitionPhotos(files);setRecognitionRunId('');}} attributes={{component_type:componentType,mounting_scope:mountingScope,position:positionLabel}} onUse={(brand,model,run,recognizedType)=>{if(recognizedType)setComponentType(recognizedType);setManufacturer(brand);setModelNumber(model);setRecognitionRunId(run);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
             <div className="field">
               <label htmlFor="component-type">Component type</label>
               <select id="component-type" value={componentType} onChange={(e) => setComponentType(e.target.value)}>
@@ -233,7 +235,7 @@ export function LogHardwarePage() {
             </div>
 
             {error && <p className="error-text">{error}</p>}
-            <button type="submit" className="btn btn-primary" disabled={submitting}>
+            <button type="submit" className="btn btn-primary" disabled={submitting||recognitionBusy}>
               {submitting ? "Saving…" : "Save"}
             </button>
           </form>
