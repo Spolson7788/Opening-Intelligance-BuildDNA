@@ -83,3 +83,12 @@ it('enhances low contrast without changing dimensions or overwriting original pi
  const output=await sharp(enhanced).raw().toBuffer();
  expect(Math.max(...output)-Math.min(...output)).toBeGreaterThan(30);
 });
+
+it('isolates a reader-located label and supplies both orientations without modifying its source',async()=>{
+ const {focusedLabelViews}=await import('../src/services/labelReading');
+ const input=await sharp({create:{width:240,height:160,channels:3,background:'white'}}).png().toBuffer();const copy=Buffer.from(input);
+ const views=await focusedLabelViews(input,{x:.1,y:.2,w:.3,h:.2},90);
+ expect(views).toHaveLength(2);expect(input.equals(copy)).toBe(true);
+ const rotated=await sharp(views[0]).rotate(180).png().toBuffer();expect(views[1].equals(rotated)).toBe(true);
+ expect(await focusedLabelViews(input,{x:-1,y:0,w:.3,h:.2},0)).toEqual([]);
+});

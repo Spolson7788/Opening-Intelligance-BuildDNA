@@ -38,3 +38,16 @@ describe('layout-safe source citations',()=>{
   }finally{vi.unstubAllGlobals();}
  });
 });
+
+it.each([[401,'reference_provider_authentication_failed'],[429,'reference_provider_rate_limited'],[503,'reference_provider_unavailable'],[400,'reference_provider_request_rejected']])('reports safe provider failure %s without exposing its body',async(status,code)=>{
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status,json:async()=>({private:'credential detail'})}));
+ try{await expect(compareWithReferences({images:[],media_type:'image/jpeg',stage_one:{},attributes:{},pages:[page],conflicts:[]})).rejects.toThrow(code);}finally{vi.unstubAllGlobals();}
+});
+it.each([['max_tokens','{}','reference_response_truncated'],['end_turn','broken JSON','reference_response_invalid']])('separates truncated responses from invalid JSON',async(stop,text,code)=>{
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({stop_reason:stop,content:[{type:'text',text}]})}));
+ try{await expect(compareWithReferences({images:[],media_type:'image/jpeg',stage_one:{},attributes:{},pages:[page],conflicts:[]})).rejects.toThrow(code);}finally{vi.unstubAllGlobals();}
+});
+it('retains the timeout category without provider exception text',async()=>{
+ vi.stubGlobal('fetch',vi.fn().mockRejectedValue(Object.assign(Error('private transport detail'),{name:'TimeoutError'})));
+ try{await expect(compareWithReferences({images:[],media_type:'image/jpeg',stage_one:{},attributes:{},pages:[page],conflicts:[]})).rejects.toThrow('reference_comparison_timeout');}finally{vi.unstubAllGlobals();}
+});
