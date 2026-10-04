@@ -18,6 +18,7 @@ export function recognitionFailureMessage(code:string){
     recognition_provider_model_unavailable:'The configured recognition model is unavailable to this server. The staging administrator must check model access.',
     recognition_provider_rate_limited:'The recognition provider has reached a usage rate limit. Wait before trying again.',
     recognition_provider_image_rejected:'The recognition provider rejected the image size. Try a smaller JPEG or PNG photograph.',
+    recognition_provider_usage_limit_reached:'Recognition is paused because the AI provider’s API usage limit has been reached. The account owner must review the API spending limits before testing again.',
     recognition_provider_billing_blocked:'The recognition provider reports an API credit or spending limit problem. The provider account owner must check API billing and limits.',
     recognition_provider_image_format_rejected:'The recognition provider could not decode an image or rejected its format. No identification was returned.',
     recognition_provider_image_dimensions_rejected:'The recognition provider rejected an image’s dimensions. The staging image preparation needs correction.',

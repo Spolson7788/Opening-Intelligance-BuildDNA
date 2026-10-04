@@ -61,3 +61,8 @@ it('returns only an opt-in redacted rejection reason, never credentials or quote
  fetchMock.mockResolvedValue(new Response(JSON.stringify({error:{message:'messages.0.content: invalid parameter'}}),{status:400}));
  expect(JSON.parse((await legacyVisionHandler(event)).body).provider_diagnostic).toBeUndefined();
 });
+
+it('classifies the observed monthly API usage block instead of blaming the image format',async()=>{
+ fetchMock.mockResolvedValue(new Response(JSON.stringify({error:{message:'You have reached your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC.'}}),{status:400}));
+ expect(JSON.parse((await legacyVisionHandler(event)).body).error).toBe('recognition_provider_usage_limit_reached');
+});

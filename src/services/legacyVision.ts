@@ -472,6 +472,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
         : resp.status === 404 ? 'recognition_provider_model_unavailable'
         : resp.status === 429 ? 'recognition_provider_rate_limited'
         : resp.status === 413 ? 'recognition_provider_image_rejected'
+        : resp.status === 400 && /specified API usage limits|regain access|monthly.*(?:spend|usage).*limit/i.test(message) ? 'recognition_provider_usage_limit_reached'
         : resp.status === 400 && /credit balance|spend limit|billing|payment/i.test(message) ? 'recognition_provider_billing_blocked'
         : resp.status === 400 && /media.?type|mime.?type|image.*(?:format|decode|valid)|(?:decode|invalid).*image|base64/i.test(message) ? 'recognition_provider_image_format_rejected'
         : resp.status === 400 && /image.*(?:dimension|resolution|pixel|size)|(?:dimension|resolution|pixel).*image/i.test(message) ? 'recognition_provider_image_dimensions_rejected'
