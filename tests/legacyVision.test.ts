@@ -35,3 +35,15 @@ it('requests geometry landmarks in the exact identification schema and retains o
  expect(JSON.parse(response.body).attributes.arm_type).toBe('standard');
  expect(JSON.parse(response.body).evidence[0].observation).toBe('Two-piece articulated arm');
 });
+
+it.each([
+ ['Could not decode image from base64','recognition_provider_image_format_rejected'],
+ ['Image dimensions exceed maximum allowed resolution','recognition_provider_image_dimensions_rejected'],
+ ['Too many tokens in request','recognition_provider_context_limit'],
+ ['model is not supported','recognition_provider_model_unavailable'],
+])('classifies a safe request rejection category without exposing the upstream message: %s',async(message,code)=>{
+ process.env.ANTHROPIC_API_KEY='test';
+ const fetchMock=vi.fn().mockResolvedValue(new Response(JSON.stringify({error:{message:message+' private-input'}}),{status:400}));
+ vi.stubGlobal('fetch',fetchMock);
+ try{const r=await legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({images:['aW1hZ2U='],media_type:'image/png'})});expect(JSON.parse(r.body).error).toBe(code);expect(r.body).not.toContain('private-input');}finally{vi.unstubAllGlobals();}
+});
