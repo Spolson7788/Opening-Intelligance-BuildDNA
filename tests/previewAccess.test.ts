@@ -81,3 +81,25 @@ describe('network-only access navigation', () => {
     expect(isUnverifiedSiteAccess(json(403, {error: 'forbidden'}), {error: 'forbidden'})).toBe(false);
   });
 });
+
+it('recovers the exact saved analysis after a gateway timeout without replaying the photo POST',async()=>{
+ const calls: {url:string;options:any}[]=[];
+ const recovery=vi.fn();
+ vi.stubGlobal('fetch',vi.fn(async(url:string,options:any)=>{
+  calls.push({url,options});
+  if(options.method==='POST')return json(504,{error:'request_failed_504'});
+  const requestId=JSON.parse(calls[0].options.body).request_id;
+  expect(url).toContain(`/request/${requestId}?opening_id=synthetic-opening`);
+  return json(200,{request_id:requestId,run_id:'saved-run',suggestion:{model:'fixture'},recovered:true});
+ }));
+ try{
+  const result=await recognizeHardware('synthetic-opening',['AAAA'],'image/png',{},recovery);
+  expect(result.run_id).toBe('saved-run');expect(recovery).toHaveBeenCalledOnce();
+  expect(calls.filter(c=>c.options.method==='POST')).toHaveLength(1);
+  expect(calls[1].options.body).toBeUndefined();
+ }finally{vi.unstubAllGlobals();}
+});
+it('rejects a recovered result belonging to a different request',async()=>{
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce(json(504,{})).mockResolvedValueOnce(json(200,{request_id:'different',run_id:'wrong-run'})));
+ try{await expect(recognizeHardware('synthetic-opening',['AAAA'],'image/png')).rejects.toMatchObject({message:'recognition_recovery_invalid_response'});}finally{vi.unstubAllGlobals();}
+});

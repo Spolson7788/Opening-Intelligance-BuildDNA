@@ -12,6 +12,7 @@ import {retrieveReferences,referenceFailureCode,resolvePartialMarkings,compareWi
 
 const schema=z.object({
   opening_id:z.string().uuid(),
+  request_id:z.string().uuid().optional(),
   images:z.array(z.string().min(4).max(2800000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/)).min(1).max(5),
   media_type:z.enum(['image/jpeg','image/png','image/webp']),
   mode:z.enum(['identify','label_blind','marking_regions','hardware_regions']).default('identify'),
@@ -73,6 +74,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       }catch{/* Preserve photograph and raw label evidence if the catalog is unavailable. */}
     }
     if(labels)result=applyLabelEvidence(result,labels);
+    if(b.request_id)result.request_id=b.request_id;
     let pages:Awaited<ReturnType<typeof retrieveReferences>>=[];
     let conflicts:unknown[]=[];let comparison:any=null;let status='no_reference_evidence';let comparisonStarted=false;
     try{
@@ -157,6 +159,21 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
     return res.json({suggestion,label_candidates:labels?.candidates||[],label_candidate:labels?.candidates?.length===1?labels.candidates[0]:null,reported_identity:reportedReferenceHint(b.technician_attributes),run_id:run.id,status,reference_comparison_failure:result.reference_comparison_failure||null,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
   }catch{return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':'recognition_provider_failed'});}
+});
+
+// Recover a committed response after a gateway timeout, never start another AI call.
+recognitionRouter.get('/request/:id',async(req:AuthedRequest,res)=>{
+ res.setHeader('Cache-Control','no-store');
+ const opening=z.string().uuid().safeParse(req.query.opening_id);
+ if(!z.string().uuid().safeParse(req.params.id).success||!opening.success)return res.status(400).json({error:'invalid_recognition_request'});
+ try{
+  const allowed=await pool.query(`SELECT 1 FROM (${openingsForOrgSubquery(2)}) a WHERE a.id=$1`,[opening.data,req.auth!.organizationId]);
+  if(!allowed.rows.length)return res.status(404).json({error:'opening_not_found'});
+  const r=(await pool.query(`SELECT * FROM recognition_runs WHERE organization_id=$1 AND user_id=$2 AND opening_id=$3 AND stage_one->>'request_id'=$4 ORDER BY created_at DESC LIMIT 1`,[req.auth!.organizationId,req.auth!.userId,opening.data,req.params.id])).rows[0];
+  if(!r)return res.status(202).json({status:'awaiting_saved_result'});
+  const labels=r.stage_one?.label_reading?.candidates||[];
+  return res.json({request_id:req.params.id,recovered:true,suggestion:r.suggestion,label_candidates:labels,label_candidate:labels.length===1?labels[0]:null,reported_identity:reportedReferenceHint(r.technician_attributes||{}),run_id:r.id,status:r.status,reference_comparison_failure:r.stage_one?.reference_comparison_failure||null,comparison:r.stage_two,citations:r.citations||[],conflicts:r.conflicts||[],requires_technician_review:true});
+ }catch{return res.status(503).json({error:'recognition_history_unavailable'});}
 });
 
 recognitionRouter.get('/opening/:id',async(req:AuthedRequest,res)=>{

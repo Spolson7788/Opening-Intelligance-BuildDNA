@@ -52,3 +52,16 @@ it('returns the photo analysis when label processing stalls instead of waiting f
   expect(response.body.suggestion.label_reading.limiting_factor).toBe('label_processing_timeout');
  }finally{vi.useRealTimers();}
 });
+
+it('recovers only the current actor’s exact request on a currently authorized opening',async()=>{
+ const requestId='22222222-2222-4222-8222-222222222222';
+ mocks.query.mockReset().mockResolvedValueOnce({rows:[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]}).mockResolvedValueOnce({rows:[{allowed:1}]}).mockResolvedValueOnce({rows:[{id:'run',suggestion:{model:null},stage_one:{label_reading:{candidates:[]}},status:'reference_comparison_unavailable'}]});
+ const response=await request(app).get(`/recognition/request/${requestId}?opening_id=${body.opening_id}`).set('Authorization',`Bearer ${token()}`);
+ expect(response.status).toBe(200);expect(response.body.request_id).toBe(requestId);
+ expect(mocks.query.mock.calls[2][1]).toEqual(['org','user',body.opening_id,requestId]);expect(mocks.engine).not.toHaveBeenCalled();
+});
+it('does not expose another actor’s run when no exact request match is found',async()=>{
+ mocks.query.mockReset().mockResolvedValueOnce({rows:[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]}).mockResolvedValueOnce({rows:[{allowed:1}]}).mockResolvedValueOnce({rows:[]});
+ const response=await request(app).get(`/recognition/request/22222222-2222-4222-8222-222222222222?opening_id=${body.opening_id}`).set('Authorization',`Bearer ${token()}`);
+ expect(response.status).toBe(202);expect(response.body).toEqual({status:'awaiting_saved_result'});expect(mocks.engine).not.toHaveBeenCalled();
+});

@@ -7,6 +7,7 @@ const photographedComponentTypes:Record<string,string>={DOOR_CLOSER:'closer',EXI
 export function recognitionFailureMessage(code:string){
   const messages:Record<string,string>={
     request_failed_504:'Analysis took too long and the server stopped the request. No identification result was returned. Your selected photograph remains available.',
+    recognition_saved_result_not_found:'The connection timed out and no saved result was found for this request. Your photograph remains selected. No analysis was retried automatically.',
     recognition_disabled:'Photograph recognition is switched off on this server. The staging administrator must enable OI_RECOGNITION_ENABLED for this preview.',
     recognition_provider_not_configured:'The recognition provider key is missing from this server. The staging administrator must configure ANTHROPIC_API_KEY for this preview.',
     recognition_opening_access_unavailable:'Recognition could not check opening access. Please try again when the server connection is restored.',
@@ -31,6 +32,7 @@ export function recognitionFailureMessage(code:string){
 
 export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:{openingId:string;attributes?:Record<string,string>;onFilesChange:(files:File[])=>void;onUse:(manufacturer:string,model:string,runId:string,componentType:string|null)=>void}) {
   const [files,setFiles]=useState<File[]>([]);
+  const [progress,setProgress]=useState('');
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [result,setResult]=useState<Record<string,unknown>|null>(null);
@@ -49,7 +51,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
   },[openingId]);
   async function analyze(){
     const current=++generation.current;
-    setError('');setResult(null);setResponse(null);setBusy(true);
+    setError('');setResult(null);setResponse(null);setProgress('');setBusy(true);
     try{
       if(!files.length||files.length>5||files.reduce((n,f)=>n+f.size,0)>2*1024*1024)throw Error('Select one to five photographs, totaling at most 2 MB.');
       if(!['image/jpeg','image/png','image/webp'].includes(files[0].type)||files.some(f=>f.type!==files[0].type))throw Error('Use JPEG, PNG or WebP photographs of the same format.');
@@ -57,7 +59,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
         const reader=new FileReader();reader.onerror=()=>reject(Error('Could not read photograph.'));
         reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.readAsDataURL(f);
       })));
-      const response=await recognizeHardware(openingId,images,files[0].type,{...attributes,visible_markings:markings,observed_features:features,scale_marker_same_plane:String(scalePlacement)});
+      const response=await recognizeHardware(openingId,images,files[0].type,{...attributes,visible_markings:markings,observed_features:features,scale_marker_same_plane:String(scalePlacement)},()=>{if(current===generation.current)setProgress('Retrieving saved analysis…');});
       if(current===generation.current){setResult(response.suggestion);setResponse(response);}
     }catch(e){if(current===generation.current)setError(recognitionFailureMessage(e instanceof Error?e.message:'Recognition unavailable.'));}
     finally{if(current===generation.current)setBusy(false);}
@@ -77,7 +79,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange}:
     <label>Observed features or measurements<input value={features} maxLength={300} onChange={e=>setFeatures(e.target.value)}/></label>
     <details><summary>Use a size marker for dimension estimates</summary><p><a href={`${import.meta.env.BASE_URL}scale-marker.html`} target="_blank" rel="noopener noreferrer">Print the OI size marker</a> at 100% / Actual size. Place it beside the component surface being measured, in the same plane. A marker on the door face behind a protruding closer body gives misleading dimensions.</p><label><input type="checkbox" checked={scalePlacement} disabled={busy} onChange={e=>{setScalePlacement(e.target.checked);setResult(null);setResponse(null);}}/> I verified the printed marker size and placed it in the same plane as the measured surface.</label></details>
     <input aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;const selected=Array.from(e.target.files||[]);setFiles(selected);onFilesChange(selected);setResult(null);setError('');}}/>
-    <button type="button" disabled={busy||!files.length||!availability?.available} onClick={analyze}>{busy?'Analyzing…':'Analyze photographs'}</button>
+    <button type="button" disabled={busy||!files.length||!availability?.available} onClick={analyze}>{busy?progress||'Analyzing…':'Analyze photographs'}</button>
     {error&&<p role="alert">{error}</p>}
     {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — will attach when you save this hardware.</p>}
     {result&&<div>
