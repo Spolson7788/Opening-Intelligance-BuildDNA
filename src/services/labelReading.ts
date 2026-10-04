@@ -2,11 +2,11 @@ import sharp from 'sharp';
 import {createWorker,PSM} from 'tesseract.js';
 import {dirname,join} from 'node:path';
 
-export const LABEL_PROMPT_VERSION='oi-label-reading-5';
+export const LABEL_PROMPT_VERSION='oi-label-reading-6';
 const MODEL='claude-sonnet-4-5-20250929';
 export interface LabelRegion {photo_index:number;x:number;y:number;w:number;h:number;rotation:number;kind?:'label'|'search_tile'}
 export interface LabelRead {region:LabelRegion;ocr_text:string;ocr_confidence:number;vision_text:string;vision_initial_text?:string;agreed_markings:string[];status:'agreement'|'unconfirmed'|'unreadable'}
-export interface LabelEvidence {enhancement?:{method:'contrast_sharpen';regions:number;original_preserved:true};source_dimensions?:{width:number;height:number}[];candidates?:{manufacturer:string;series:string;model:string|null;verification:'single_reader';manufacturer_basis?:'catalog_model_match'|'catalog_partial_model_match';transcribed_marking?:string}[];version:string;status:'completed'|'partial'|'unavailable'|'no_regions';reads:LabelRead[];limiting_factor:string|null}
+export interface LabelEvidence {locator_preprocessing?:{enlarged_views:number;original_preserved:true};enhancement?:{method:'contrast_sharpen';regions:number;original_preserved:true};source_dimensions?:{width:number;height:number}[];candidates?:{manufacturer:string;series:string;model:string|null;verification:'single_reader';manufacturer_basis?:'catalog_model_match'|'catalog_partial_model_match';transcribed_marking?:string}[];version:string;status:'completed'|'partial'|'unavailable'|'no_regions';reads:LabelRead[];limiting_factor:string|null}
 const empty=(status:LabelEvidence['status'],reason:string|null=null):LabelEvidence=>({version:LABEL_PROMPT_VERSION,status,reads:[],limiting_factor:reason});
 export function normalizeRegions(value:any,count:number):LabelRegion[]{
  const out:LabelRegion[]=[];
@@ -87,9 +87,17 @@ export function searchRegions():LabelRegion[]{
   {photo_index:0,x:.35,y:.35,w:.65,h:.65,rotation:180,kind:'search_tile'},
  ];
 }
+// Prepare a larger full-frame view before the locator sees small photographs.
+// The source stays intact; full-frame scaling preserves normalized coordinates.
+export async function enlargeForLabelLocation(image:Buffer):Promise<Buffer|null>{
+ const m=await sharp(image,{limitInputPixels:16_000_000}).metadata();
+ if(!m.width||!m.height||Math.max(m.width,m.height)>=1600)return null;
+ return sharp(image,{limitInputPixels:16_000_000}).resize({width:Math.min(1600,m.width*3),height:Math.min(1600,m.height*3),fit:'inside'}).png().toBuffer();
+}
 export async function readLabels(images:Buffer[],mediaType:string,deadline=Date.now()+35000):Promise<LabelEvidence>{
  try{
-  const located=await ask(images.flatMap((data,i)=>[{type:'text',text:`Photograph ${i}`},{type:'image',source:{type:'base64',media_type:mediaType,data:data.toString('base64')}}]),'Locate identification markings ON THE HARDWARE ITSELF. Exclude installation paper, tools, packaging, captions, and background text. Do not identify a manufacturer or product, and do not read from memory. Return JSON {regions:[{photo_index,x,y,w,h,rotation}],limiting_factor}. Bound the ENTIRE physical sticker or stamped text area, including its edges and all text lines, not one small character group or a nearby screw. Coordinates are fractions of the submitted image. rotation is clockwise 0,90,180,270 to make label text upright. Include upside-down labels and partially readable markings; maximum six regions, favor one per photograph. Do not omit a visible label merely because it is hard to read.',deadline).catch(()=>({regions:[],limiting_factor:'label_localization_unavailable'}));
+  const enlarged=await Promise.all(images.map(data=>enlargeForLabelLocation(data).catch(()=>null)));
+  const located=await ask(images.flatMap((data,i)=>[{type:'text',text:`Original photograph ${i}`},{type:'image',source:{type:'base64',media_type:mediaType,data:data.toString('base64')}},...(enlarged[i]?[{type:'text',text:`Enlarged full-frame view of photograph ${i}, prepared before label location. Same pixels and normalized coordinates as its original; not independent evidence.`},{type:'image',source:{type:'base64',media_type:'image/png',data:enlarged[i]!.toString('base64')}}]:[])]),'Locate identification markings ON THE HARDWARE ITSELF. Exclude installation paper, tools, packaging, captions, and background text. Do not identify a manufacturer or product, and do not read from memory. Return JSON {regions:[{photo_index,x,y,w,h,rotation}],limiting_factor}. Bound the ENTIRE physical sticker or stamped text area, including its edges and all text lines, not one small character group or a nearby screw. Coordinates are fractions of the submitted image. rotation is clockwise 0,90,180,270 to make label text upright. Include upside-down labels and partially readable markings; maximum six regions, favor one per photograph. Do not omit a visible label merely because it is hard to read.',deadline).catch(()=>({regions:[],limiting_factor:'label_localization_unavailable'}));
   const regions=normalizeRegions(located.regions,images.length);
   // Overlapping search tiles retain context and do not rely on a guessed label box.
   // Include both orientations of the first image's bottom-left region, where a
@@ -135,7 +143,7 @@ export async function readLabels(images:Buffer[],mediaType:string,deadline=Date.
    return {region:x.region,ocr_text:ocrText,ocr_confidence:o?.confidence||0,vision_text:visionText,...(typeof v?.initial_text==='string'?{vision_initial_text:v.initial_text.slice(0,1200)}:{}),agreed_markings:agreed,status:agreed.length?'agreement':ocrText||visionText?'unconfirmed':'unreadable'};
   });
   const candidates=labelCandidates(reads);
-  return {enhancement:{method:'contrast_sharpen',regions:enhanced.filter(Boolean).length,original_preserved:true},source_dimensions:dimensions,candidates,version:LABEL_PROMPT_VERSION,status:ocr.status==='fulfilled'&&vision.status==='fulfilled'?'completed':'partial',reads,limiting_factor:ocr.status==='rejected'?'ocr_unavailable':vision.status==='rejected'?'label_vision_unavailable':null};
+  return {locator_preprocessing:{enlarged_views:enlarged.filter(Boolean).length,original_preserved:true},enhancement:{method:'contrast_sharpen',regions:enhanced.filter(Boolean).length,original_preserved:true},source_dimensions:dimensions,candidates,version:LABEL_PROMPT_VERSION,status:ocr.status==='fulfilled'&&vision.status==='fulfilled'?'completed':'partial',reads,limiting_factor:ocr.status==='rejected'?'ocr_unavailable':vision.status==='rejected'?'label_vision_unavailable':null};
  }catch{return empty('unavailable','label_reading_unavailable');}
 }
 export function labelCandidates(reads:LabelRead[]){

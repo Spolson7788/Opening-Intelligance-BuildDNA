@@ -92,3 +92,24 @@ it('isolates a reader-located label and supplies both orientations without modif
  const rotated=await sharp(views[0]).rotate(180).png().toBuffer();expect(views[1].equals(rotated)).toBe(true);
  expect(await focusedLabelViews(input,{x:-1,y:0,w:.3,h:.2},0)).toEqual([]);
 });
+
+it('enlarges the whole small image before label location, preserving aspect ratio and source bytes',async()=>{
+ const {enlargeForLabelLocation}=await import('../src/services/labelReading');
+ const input=await sharp({create:{width:438,height:238,channels:3,background:'grey'}}).png().toBuffer();const copy=Buffer.from(input);
+ const enlarged=await enlargeForLabelLocation(input);expect(enlarged).not.toBeNull();
+ const m=await sharp(enlarged!).metadata();expect(m.width).toBe(1314);expect(m.height).toBe(714);expect(input.equals(copy)).toBe(true);
+ const large=await sharp({create:{width:1700,height:1000,channels:3,background:'grey'}}).png().toBuffer();
+ expect(await enlargeForLabelLocation(large)).toBeNull();
+});
+it('supplies the enlarged full-frame image to the first locator call with original coordinate mapping',async()=>{
+ const input=await sharp({create:{width:100,height:60,channels:3,background:'grey'}}).png().toBuffer();
+ const deadline=Date.now()+10000;const clock=vi.spyOn(Date,'now');
+ const fetch=vi.fn().mockImplementation(async()=>{clock.mockReturnValue(deadline+1);throw Error('provider unavailable');});vi.stubGlobal('fetch',fetch);
+ try{
+  await readLabels([input],'image/png',deadline);
+  const body=JSON.parse(fetch.mock.calls[0][1].body);const content=body.messages[0].content;const images=content.filter((c:any)=>c.type==='image');
+  expect(images).toHaveLength(2);expect(images[0].source.data).toBe(input.toString('base64'));
+  expect((await sharp(Buffer.from(images[1].source.data,'base64')).metadata()).width).toBe(300);
+  expect(content.some((c:any)=>c.type==='text'&&c.text.includes('Same pixels and normalized coordinates'))).toBe(true);
+ }finally{clock.mockRestore();vi.unstubAllGlobals();}
+});
