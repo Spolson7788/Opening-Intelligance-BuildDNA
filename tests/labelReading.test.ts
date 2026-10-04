@@ -1,5 +1,7 @@
 import {describe,it,expect,vi} from 'vitest';
 import sharp from 'sharp';
+import {createWorker} from 'tesseract.js';
+vi.mock('tesseract.js',async importOriginal=>{const actual=await importOriginal<typeof import('tesseract.js')>();return {...actual,createWorker:vi.fn(actual.createWorker)};});
 import {agreedMarkings,enhanceLabelCrop,searchRegions,normalizeRegions,cropLabel,applyLabelEvidence,labelCandidates,readLabels, type LabelEvidence} from '../src/services/labelReading';
 const region={photo_index:0,x:.1,y:.2,w:.5,h:.2,rotation:180};
 function evidence(ocr:string,vision:string):LabelEvidence{return {version:'fixture',status:'completed',limiting_factor:null,reads:[{region,ocr_text:ocr,ocr_confidence:70,vision_text:vision,agreed_markings:agreedMarkings(ocr,vision),status:'agreement'}]};}
@@ -112,4 +114,38 @@ it('supplies the enlarged full-frame image to the first locator call with origin
   expect((await sharp(Buffer.from(images[1].source.data,'base64')).metadata()).width).toBe(300);
   expect(content.some((c:any)=>c.type==='text'&&c.text.includes('Same pixels and normalized coordinates'))).toBe(true);
  }finally{clock.mockRestore();vi.unstubAllGlobals();}
+});
+
+
+it('validates a model-line location inside the observed label and rejects invented/outside boxes',()=>{
+ const line={x:.2,y:.22,w:.25,h:.04};
+ expect(normalizeRegions([{...region,model_line_box:line}],1)[0].model_line_box).toEqual(line);
+ expect(normalizeRegions([{...region,model_line_box:{...line,x:.9}}],1)[0].model_line_box).toBeUndefined();
+ expect(normalizeRegions([{...region,model_line_box:{...line,x:NaN}}],1)[0].model_line_box).toBeUndefined();
+});
+it('gives OCR original and enhanced focused model-line pixels in both orientations without inserting reference text',async()=>{
+ const {modelLineViews,LABEL_LAYOUT_REFERENCE}=await import('../src/services/labelReading');
+ const input=await sharp({create:{width:500,height:375,channels:3,background:'white'}}).png().toBuffer();const copy=Buffer.from(input);
+ const views=await modelLineViews(input,{photo_index:0,x:.63,y:.38,w:.26,h:.18,rotation:0,model_line_box:{x:.65,y:.39,w:.12,h:.04}});
+ expect(views).toHaveLength(4);expect(input.equals(copy)).toBe(true);
+ expect((await sharp(views[0]).metadata()).width!).toBeGreaterThan((await sharp(views[0]).metadata()).height!);
+ expect(LABEL_LAYOUT_REFERENCE.guide).not.toMatch(/4040|LCN|XP/);
+ expect(await modelLineViews(input,region)).toEqual([]);
+});
+
+it('retains completed OCR reads when a later crop times out and identifies unattempted crops',async()=>{
+ const {readLabelCropsOcr}=await import('../src/services/labelReading');
+ const setParameters=vi.fn().mockResolvedValue(undefined);const terminate=vi.fn().mockResolvedValue(undefined);
+ const recognize=vi.fn().mockResolvedValueOnce({data:{text:'4040XP',confidence:82}}).mockImplementationOnce(()=>new Promise(()=>{}));
+ vi.mocked(createWorker).mockResolvedValueOnce({setParameters,recognize,terminate} as any);
+ const result=await readLabelCropsOcr([Buffer.alloc(0),Buffer.alloc(0),Buffer.alloc(0)],Date.now()+100,['model_line','model_line','label']);
+ expect(result[0]).toMatchObject({text:'4040XP',status:'read'});
+ expect(result[1].status).toBe('timeout');expect(result[2].status).toBe('not_attempted');
+ expect(setParameters.mock.calls[0][0].tessedit_pageseg_mode).toBe('7');
+});
+it('distinguishes a failed OCR worker from an unreadable completed crop',async()=>{
+ const {readLabelCropsOcr}=await import('../src/services/labelReading');
+ vi.mocked(createWorker).mockRejectedValueOnce(Error('private detail'));
+ const result=await readLabelCropsOcr([Buffer.alloc(0)],Date.now()+1000);
+ expect(result[0].status).toBe('unavailable');expect(JSON.stringify(result)).not.toContain('private detail');
 });
