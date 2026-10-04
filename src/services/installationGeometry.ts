@@ -35,7 +35,7 @@ export function compareInstallationGeometry(value:unknown,photoCount:number,sour
  return {version:INSTALLATION_GEOMETRY_VERSION,status:compatible?'shared_pattern_compatible':observations.length?'pattern_not_supported':'insufficient_visible_landmarks',observations,
   candidates:compatible?sources.flatMap(s=>s.models.map(model=>({manufacturer:s.manufacturer,model,basis:'shared_mounting_pattern',source:s}))):[],
   absolute_photo_dimensions:null,identity_verified:false,
-  limitation:compatible?'This shared pattern cannot distinguish these models. Verify markings, valve configuration and arm features.':observations.length?'The visible layout did not support the pilot pattern. Other mounting arrangements and products remain possible.':'A coplanar rectangular mounting face and four mounting holes were not all visible. Label and visual-feature comparison continue.',
+  limitation:compatible?'This shared pattern cannot distinguish these models. Verify markings, valve configuration and arm features.':observations.length?'The visible layout did not support the pilot pattern. Other mounting arrangements and products remain possible.':'Perspective correction could not be established from the detected landmarks. This does not mean the mounting holes are hidden. No dimension match was computed; see the label, arm and reference results separately.',
   reference_dimensions:sources,
  };
 }

@@ -25,3 +25,13 @@ it('keeps the original photograph and adds bounded detail views to identificatio
  expect(images).toHaveLength(3);expect(images[0].source.data).toBe(source.toString('base64'));
  expect(sent.messages[0].content.some((v:any)=>v.type==='text'&&v.text.includes('Detail view of photograph 0'))).toBe(true);
 });
+
+it('requests geometry landmarks in the exact identification schema and retains observed arm features',async()=>{
+ provider({component_class:'DOOR_CLOSER',attributes:{arm_type:'standard',mounting:'regular_arm'},evidence:[{supports:'arm_type',observation:'Two-piece articulated arm'}],installation_geometry_views:[]});
+ const response=await legacyVisionHandler(event);
+ const sent=JSON.parse(fetchMock.mock.calls[0][1].body);
+ const exact=sent.messages[0].content.filter((c:any)=>c.type==='text').find((c:any)=>c.text.includes('in exactly this shape'));
+ expect(exact.text).toContain('"installation_geometry_views"');
+ expect(JSON.parse(response.body).attributes.arm_type).toBe('standard');
+ expect(JSON.parse(response.body).evidence[0].observation).toBe('Two-piece articulated arm');
+});

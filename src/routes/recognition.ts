@@ -49,7 +49,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     if(!availability.available)return res.status(503).json({error:availability.reason});
     phase='provider';
     const started=Date.now();
-    const deadline=started+34000;
+    const deadline=started+42000;
     const [response,labels]=await Promise.all([
       withinRecognitionBudget(legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,timeout_ms:18000})}),started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})})),
       b.mode==='identify'?withinRecognitionBudget(readLabels(images,b.media_type,started+24000),started+24000,()=>({version:'oi-label-reading-4',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null),
@@ -105,7 +105,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
         // can be shown as reference evidence.
         conflicts=conflicts.filter((c:any)=>c.values.every((v:any)=>pages.some(p=>p.page_id===v.page_id)));
         if(process.env.OI_REFERENCE_COMPARISON_ENABLED==='true'){
-          comparison=await compareWithReferences({images:b.images,media_type:b.media_type,stage_one:result,attributes:b.technician_attributes,pages,conflicts,timeout_ms:Math.max(1000,Math.min(8000,deadline-Date.now()))});
+          comparison=await compareWithReferences({images:b.images,media_type:b.media_type,stage_one:result,attributes:b.technician_attributes,pages,conflicts,timeout_ms:Math.max(1000,Math.min(16000,deadline-Date.now()))});
           status='reference_evidence';
         }else status='reference_comparison_disabled';
       }
