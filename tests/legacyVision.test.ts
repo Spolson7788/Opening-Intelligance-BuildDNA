@@ -66,3 +66,9 @@ it('classifies the observed monthly API usage block instead of blaming the image
  fetchMock.mockResolvedValue(new Response(JSON.stringify({error:{message:'You have reached your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC.'}}),{status:400}));
  expect(JSON.parse((await legacyVisionHandler(event)).body).error).toBe('recognition_provider_usage_limit_reached');
 });
+it('keeps technician identity and free text out of the visual classification request',async()=>{
+ provider({component_class:'DOOR_CLOSER',manufacturer:null,model:null});
+ await legacyVisionHandler({...event,body:JSON.stringify({...JSON.parse(event.body),technician_attributes:{model:'private-reported-model',manufacturer:'private-reported-brand',visible_markings:'private-typed-marking',observed_features:'private-free-text'}})});
+ const sent=fetchMock.mock.calls[0][1].body;
+ for(const value of ['private-reported-model','private-reported-brand','private-typed-marking','private-free-text'])expect(sent).not.toContain(value);
+});

@@ -53,7 +53,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     const deadline=started+42000;
     const [response,labels]=await Promise.all([
       withinRecognitionBudget(legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})}),started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})})),
-      b.mode==='identify'?withinRecognitionBudget(readLabels(images,b.media_type,started+24000),started+24000,()=>({version:'oi-label-reading-7',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null),
+      b.mode==='identify'?withinRecognitionBudget(readLabels(images,b.media_type,started+24000),started+24000,()=>({version:'oi-label-reading-8',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null),
     ]);
     if(response.statusCode!==200){
       // Only allow known safe categories through; never forward provider bodies.

@@ -3,7 +3,23 @@ import sharp from 'sharp';
 import {createWorker} from 'tesseract.js';
 vi.mock('tesseract.js',async importOriginal=>{const actual=await importOriginal<typeof import('tesseract.js')>();return {...actual,createWorker:vi.fn(actual.createWorker)};});
 import {agreedMarkings,enhanceLabelCrop,searchRegions,normalizeRegions,cropLabel,applyLabelEvidence,labelCandidates,readLabels, type LabelEvidence} from '../src/services/labelReading';
+import {modelLineViews,conflictingModelReadings} from '../src/services/labelReading';
 const region={photo_index:0,x:.1,y:.2,w:.5,h:.2,rotation:180};
+it.each([90,180,270])('crops the original model-line pixels before rotation by %s degrees',async rotation=>{
+ const raw=Buffer.alloc(120*80*3);
+ for(let y=0;y<80;y++)for(let x=0;x<120;x++){const i=(y*120+x)*3;raw[i]=x*2;raw[i+1]=y*3;raw[i+2]=(x+y)%256;}
+ const source=await sharp(raw,{raw:{width:120,height:80,channels:3}}).png().toBuffer();
+ const box={x:.1,y:.6,w:.3,h:.2};
+ const expectedCrop=await sharp(source).extract({left:12,top:48,width:36,height:16}).png().toBuffer();
+ const expected=await sharp(expectedCrop).rotate(rotation).resize({height:96,width:1200,fit:'inside'}).extend({top:10,bottom:10,left:10,right:10,background:'white'}).png().toBuffer();
+ const actual=(await modelLineViews(source,{...region,rotation,model_line_box:box}))[0];
+ expect(await sharp(actual).raw().toBuffer()).toEqual(await sharp(expected).raw().toBuffer());
+});
+it('retains the visual candidate and exposes a stray conflicting OCR model',()=>{
+ expect(labelCandidates(evidence('4040XP 2040xp','LCN 4040XP').reads)[0].model).toBe('4040XP');
+ expect(conflictingModelReadings('4040XP 2040xp','LCN 4040XP')).toEqual(['2040XP']);
+ expect(conflictingModelReadings('4040','4040XP')).toEqual([]);
+});
 function evidence(ocr:string,vision:string):LabelEvidence{return {version:'fixture',status:'completed',limiting_factor:null,reads:[{region,ocr_text:ocr,ocr_confidence:70,vision_text:vision,agreed_markings:agreedMarkings(ocr,vision),status:'agreement'}]};}
 describe('label reading evidence',()=>{
  it('keeps exact agreed characters without completing model suffixes',()=>{
@@ -36,10 +52,10 @@ describe('label reading evidence',()=>{
  });
 });
 
-it('keeps a single-reader label candidate separate and suppresses conflicting model digits',()=>{
+it('keeps a single-reader label candidate available despite conflicting model digits',()=>{
  const labels=evidence('', 'LCN 4040XP');
  expect(labelCandidates(labels.reads)).toEqual([{manufacturer:'LCN',series:'4040',model:'4040XP',verification:'single_reader'}]);
- expect(labelCandidates(evidence('4041','LCN 4040XP').reads)).toEqual([]);
+ expect(labelCandidates(evidence('4041','LCN 4040XP').reads)[0].model).toBe('4040XP');
  expect(labelCandidates(evidence('4040','LCN 4040XP').reads)[0].model).toBeNull();
 });
 
@@ -58,14 +74,14 @@ it('uses an exact model-only reading as a catalog candidate, without asserting a
  const result=applyLabelEvidence({manufacturer:null,model:null,series:null}, {...evidence('', '4040XP'), candidates:labelCandidates(reads)});
  expect(result.manufacturer).toBeNull();
  expect(result.model).toBeNull();
- expect(labelCandidates(evidence('4041','4040XP').reads)).toEqual([]);
+ expect(labelCandidates(evidence('4041','4040XP').reads)[0].model).toBe('4040XP');
 });
 
 it('preserves the live partial 4040X? reading for references without inventing the missing P',()=>{
  const labels=evidence('Fae', '4040X?');
  const candidate=labelCandidates(labels.reads)[0];
  expect(candidate).toEqual({manufacturer:'LCN',series:'4040',model:null,verification:'single_reader',manufacturer_basis:'catalog_partial_model_match',transcribed_marking:'4040X?'});
- expect(labelCandidates(evidence('4041', '4040X?').reads)).toEqual([]);
+ expect(labelCandidates(evidence('4041', '4040X?').reads)[0].transcribed_marking).toBe('4040X?');
  expect(labelCandidates(evidence('', '4040X1').reads)).toEqual([]);
  expect(applyLabelEvidence({manufacturer:null,model:null},labels).model).toBeNull();
 });

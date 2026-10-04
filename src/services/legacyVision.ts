@@ -449,7 +449,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
           { type: "text", text: hardwareMode ? HARDWARE_PROMPT
                                 : markingMode ? MARKING_PROMPT
                                 : (labelBlind ? (multi + PHYSICAL_PROMPT)
-                                : (CLASSIFICATION_CONTEXT + multi + PROMPT)) + "\nTechnician-reported attributes (not independently verified): " + JSON.stringify(body.technician_attributes || {}) }
+                                : (CLASSIFICATION_CONTEXT + multi + PROMPT)) }
         ]}]
       })
     });
