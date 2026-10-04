@@ -4,7 +4,10 @@ import {pool} from '../src/db/pool';
 it('restricted API role can read new tables while public clients cannot',async()=>{
  const c=await pool.connect();try{
  await c.query('DO $role$ BEGIN CREATE ROLE oi_pr2_api; EXCEPTION WHEN duplicate_object THEN NULL; END $role$');await c.query('GRANT USAGE ON SCHEMA public TO oi_pr2_api');
- await c.query(readFileSync('migrations/20260926183557_api_branch_provider_privileges.sql','utf8'));
+ // Global setup already applies this migration when the API role is precreated.
+ // Apply it here only for fixtures that created the role after global setup.
+ const policy=await c.query("SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='company_branches' AND policyname='oi_pr2_api_select'");
+ if(!policy.rows.length)await c.query(readFileSync('migrations/20260926183557_api_branch_provider_privileges.sql','utf8'));
  await c.query('BEGIN');await c.query('SET LOCAL ROLE oi_pr2_api');
  for(const t of ['company_branches','user_branch_assignments','facility_provider_assignments','component_purchasing_approvals'])expect((await c.query(`SELECT * FROM ${t}`)).rows).toBeDefined();
  await c.query('ROLLBACK');
