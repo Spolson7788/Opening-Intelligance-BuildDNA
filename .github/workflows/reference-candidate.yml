@@ -55,6 +55,8 @@ jobs:
           node scripts/reference/label-ocr-runtime-smoke.mjs
       - name: Full API regression suite with native PostgreSQL
         run: npm test
+      - name: Native Node tooling regressions
+        run: node --test scripts/dashboard-health-bands.test.mjs scripts/function-evidence.test.cjs scripts/hosted-acceptance-config.test.cjs scripts/migration-preflight.test.cjs scripts/protected-staging-context.test.mjs scripts/release/legacy-plan.test.cjs scripts/reference/preview-context.test.mjs scripts/reference/score-label-reading.test.mjs tests/databaseConnectionConfig.node.test.mjs
       - name: Build Field App
         run: npm ci --include=dev --prefix field-app && npm run build --prefix field-app
       - name: Generate Facility Dashboard
