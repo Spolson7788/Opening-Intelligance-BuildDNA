@@ -14,3 +14,12 @@ it('rejects empty successful responses instead of leaving the recognition form b
  const valid={run_id:'run',status:'no_reference_match',suggestion:{manufacturer:null,model:null}};
  expect(requireRecognitionResult(valid)).toBe(valid);
 });
+
+it('reserves enough comparison time and skips late paid work while preserving recording time',async()=>{
+ const {referenceComparisonBudget}=await import('../src/services/recognitionDeadline');
+ expect(referenceComparisonBudget(1000,25000)).toBe(25000);
+ expect(referenceComparisonBudget(1000,10000)).toBe(26000);
+ expect(referenceComparisonBudget(1000,44000)).toBe(6000);
+ expect(referenceComparisonBudget(1000,44001)).toBe(0);
+ expect(referenceComparisonBudget(1000,60000)).toBe(0);
+});

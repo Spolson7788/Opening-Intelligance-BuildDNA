@@ -51,3 +51,16 @@ it('retains the timeout category without provider exception text',async()=>{
  vi.stubGlobal('fetch',vi.fn().mockRejectedValue(Object.assign(Error('private transport detail'),{name:'TimeoutError'})));
  try{await expect(compareWithReferences({images:[],media_type:'image/jpeg',stage_one:{},attributes:{},pages:[page],conflicts:[]})).rejects.toThrow('reference_comparison_timeout');}finally{vi.unstubAllGlobals();}
 });
+
+it('bounds source excerpts and output, excludes typed identity and product-specific prompt answers, and retains provider usage',async()=>{
+ const fetch=vi.fn().mockResolvedValue({ok:true,json:async()=>({usage:{input_tokens:123,output_tokens:45},content:[{type:'text',text:'{"candidates":[],"citations":[],"unresolved":[]}'}]})});
+ vi.stubGlobal('fetch',fetch);
+ try{
+ const result=await compareWithReferences({images:[],media_type:'image/jpeg',stage_one:{component_class:'DOOR_CLOSER',private_debug:'not-for-provider'},attributes:{model:'EXPECTED-ANSWER'},pages:[{...page,text:'source '.repeat(5000)}],conflicts:[]});
+ const body=JSON.parse(fetch.mock.calls[0][1].body),prompt=body.messages[0].content[0].text,payload=JSON.parse(prompt.slice(prompt.indexOf('\n')+1));
+ expect(body.max_tokens).toBe(1400);expect(payload.pages[0].text.length).toBe(2100);expect(payload.pages[0].excerpt_only).toBe(true);
+ expect(prompt).not.toMatch(/EXPECTED-ANSWER|not-for-provider|4040XP|4041|LCN/);
+ expect(result.processing.provider_usage).toEqual({input_tokens:123,output_tokens:45});
+ expect(result.processing.excerpted_pages).toBe(1);
+ }finally{vi.unstubAllGlobals();}
+});

@@ -1,4 +1,4 @@
-import {withinRecognitionBudget} from '../services/recognitionDeadline';
+import {withinRecognitionBudget,referenceComparisonBudget} from '../services/recognitionDeadline';
 import {approvedInstallationGeometry} from '../services/installationGeometry';
 import {Router} from 'express';
 import {z} from 'zod';
@@ -50,10 +50,9 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     if(!availability.available)return res.status(503).json({error:availability.reason});
     phase='provider';
     const started=Date.now();
-    const deadline=started+42000;
     const [response,labels]=await Promise.all([
       withinRecognitionBudget(legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})}),started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})})),
-      b.mode==='identify'?withinRecognitionBudget(readLabels(images,b.media_type,started+24000),started+24000,()=>({version:'oi-label-reading-8',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null),
+      b.mode==='identify'?withinRecognitionBudget(readLabels(images,b.media_type,started+24000),started+24000,()=>({version:'oi-label-reading-9',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null),
     ]);
     if(response.statusCode!==200){
       // Only allow known safe categories through; never forward provider bodies.
@@ -78,7 +77,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     if(labels)result=applyLabelEvidence(result,labels);
     if(b.request_id)result.request_id=b.request_id;
     let pages:Awaited<ReturnType<typeof retrieveReferences>>=[];
-    let conflicts:unknown[]=[];let comparison:any=null;let status='no_reference_evidence';let comparisonStarted=false;
+    let conflicts:unknown[]=[];let comparison:any=null;let status='no_reference_evidence';let comparisonStarted=false;let comparisonAt=0;let comparisonBudget=0;
     try{
       if(b.mode==='identify'){
         if(result.component_class==='DOOR_CLOSER'){
@@ -109,12 +108,16 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
         // can be shown as reference evidence.
         conflicts=conflicts.filter((c:any)=>c.values.every((v:any)=>pages.some(p=>p.page_id===v.page_id)));
         if(process.env.OI_REFERENCE_COMPARISON_ENABLED==='true'){
+          comparisonBudget=referenceComparisonBudget(started);
+          if(!comparisonBudget)throw Error('reference_comparison_budget_exhausted');
           comparisonStarted=true;
-          comparison=await compareWithReferences({images:b.images,media_type:b.media_type,stage_one:result,attributes:b.technician_attributes,pages,conflicts,timeout_ms:Math.max(1000,Math.min(16000,deadline-Date.now()))});
+          comparisonAt=Date.now();
+          comparison=await compareWithReferences({images:b.images,media_type:b.media_type,stage_one:result,attributes:b.technician_attributes,pages,conflicts,timeout_ms:comparisonBudget});
+          comparison.processing={...comparison.processing,elapsed_ms:Date.now()-comparisonAt,budget_ms:comparisonBudget};
           status='reference_evidence';
         }else status='reference_comparison_disabled';
       }
-    }catch(error){status=pages.length?'reference_comparison_unavailable':'reference_store_unavailable';if(comparisonStarted)result.reference_comparison_failure={code:referenceFailureCode(error)};}
+    }catch(error){status=pages.length?'reference_comparison_unavailable':'reference_store_unavailable';if(comparisonStarted||(error as any)?.message==='reference_comparison_budget_exhausted')result.reference_comparison_failure={code:referenceFailureCode(error),budget_ms:comparisonBudget,elapsed_ms:comparisonAt?Date.now()-comparisonAt:0};}
     const proposed:any[]=Array.isArray(comparison?.citations)?[...comparison.citations]:[];
     const collect=(value:any):void=>{
       if(Array.isArray(value)){value.forEach(collect);return;}
@@ -143,6 +146,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     if(comparison&&conflicts.length)comparison.unresolved=[...(Array.isArray(comparison.unresolved)?comparison.unresolved:[]),...conflicts.map((c:any)=>`Conflicting source specifications for ${c.field}; no controlling value selected.`)];
     if(comparison)comparison.citations=validated.accepted;
     if(status==='reference_evidence'&&!validated.accepted.length)status='no_valid_reference_citations';
+    result.processing={version:'oi-recognition-budget-2',analysis_elapsed_ms:Date.now()-started};
     const suggestion=conservativeSuggestion(result,comparison);
     phase='recording';
     const client=await pool.connect();let run;

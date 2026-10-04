@@ -4,3 +4,9 @@ export async function withinRecognitionBudget<T>(work:Promise<T>,deadline:number
  try{return await Promise.race([work,new Promise<T>(resolve=>{timer=setTimeout(()=>resolve(fallback()),Math.max(0,deadline-Date.now()));})]);}
  finally{if(timer)clearTimeout(timer);}
 }
+
+// Reserve recording time and avoid starting paid work too close to the deadline.
+export function referenceComparisonBudget(started:number,now=Date.now()){
+ const remaining=started+52000-now-3000;
+ return remaining>=6000?Math.min(26000,remaining):0;
+}

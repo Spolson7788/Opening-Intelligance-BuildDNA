@@ -165,3 +165,12 @@ it('distinguishes a failed OCR worker from an unreadable completed crop',async()
  const result=await readLabelCropsOcr([Buffer.alloc(0)],Date.now()+1000);
  expect(result[0].status).toBe('unavailable');expect(JSON.stringify(result)).not.toContain('private detail');
 });
+
+it('sends the cropped model heading to vision before noisy search-tile variants without expected characters',async()=>{
+ const {labelVisionContent}=await import('../src/services/labelReading');
+ const content=labelVisionContent([{region,crop:Buffer.from('label')},{region:{...region,kind:'search_tile'},crop:Buffer.from('tile')}],[Buffer.from('enhanced'),Buffer.from('noisy')],[[Buffer.from('heading')],[]]);
+ const images=content.filter(x=>x.type==='image').map(x=>(x as any).source.data);
+ expect(images).toEqual(['label','heading','tile'].map(x=>Buffer.from(x).toString('base64')));
+ const instructions=content.filter(x=>x.type==='text').map(x=>(x as any).text).join(' ');
+ expect(instructions).toContain('Read these characters first');expect(instructions).not.toMatch(/LCN|4040|XP|CR441/);
+});
