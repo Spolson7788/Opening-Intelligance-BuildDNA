@@ -43,6 +43,8 @@ it('offline known identity replays without changing attribution or producing rec
  expect((await save()).status).toBe(200);
  const second=(await pool.query('SELECT * FROM hardware_components WHERE id=$1',[body.entity_id])).rows[0];
  expect(second.identity_acknowledged_at).toEqual(first.identity_acknowledged_at);
+ const rejected=await request(app).post('/api/sync/components').set(auth).send({...body,operation_id:randomUUID(),entity_id:randomUUID(),payload:{...body.payload,identity_source:'photo_suggestion',recognition_run_id:randomUUID()}});
+ expect(rejected.status).toBe(400);expect(rejected.body.error).toBe('invalid_recognition_run');
  expect((await pool.query('SELECT count(*)::int n FROM recognition_runs WHERE opening_id=$1',[o.id])).rows[0].n).toBe(0);
  expect((await request(app).post('/api/hardware').set(auth).send({opening_id:o.id,component_type:'closer',manufacturer:'LCN',model_number:'4040XP',identity_source:'photo_suggestion',identity_acknowledged:true,recognition_run_id:randomUUID()})).status).toBe(400);
 });

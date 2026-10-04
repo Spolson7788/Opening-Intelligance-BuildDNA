@@ -130,6 +130,10 @@ syncRouter.post("/components", async (req: AuthedRequest, res) => {
     }
     const identityError=identityInputError(b.payload);
     if(identityError){await client.query('ROLLBACK');return res.status(400).json({error:identityError});}
+    if(b.payload.recognition_run_id){
+      const run=await client.query('SELECT id FROM recognition_runs WHERE id=$1 AND opening_id=$2 AND user_id=$3 AND organization_id=$4 AND (component_id IS NULL OR component_id=$5)',[b.payload.recognition_run_id,b.opening_id,userId,orgId,b.entity_id]);
+      if(!run.rows.length){await client.query('ROLLBACK');return res.status(400).json({error:'invalid_recognition_run'});}
+    }
     const provenance=identityValues(b.payload,userId);
 
     const component = await client.query(
