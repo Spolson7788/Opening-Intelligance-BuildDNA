@@ -64,3 +64,15 @@ it('bounds source excerpts and output, excludes typed identity and product-speci
  expect(result.processing.excerpted_pages).toBe(1);
  }finally{vi.unstubAllGlobals();}
 });
+
+it('does not count a removed cover as contradictory identity evidence and retains actual feature differences',async()=>{
+ const {sanitizeReferenceComparison}=await import('../src/services/referenceEvidence');
+ const absent={observation:'No snap-fit cover visible on body; reference describes patented snap-fit cover feature',citation};
+ const visible={observation:'Installed cover is curved; reference cover is rectangular',citation};
+ const original={candidates:[{manufacturer:'Example',model:'QA',contradicting_features:[absent,visible,{observation:'Arm mounting differs',citation}]}]};
+ const result=sanitizeReferenceComparison(original);
+ expect(result.candidates[0].contradicting_features).toEqual([visible,{observation:'Arm mounting differs',citation}]);
+ expect(result.cover_comparison).toBe('unavailable_without_installed_cover');
+ expect(result.reasoning_adjustments[0].feature).toEqual(absent);
+ expect(original.candidates[0].contradicting_features).toHaveLength(3);
+});

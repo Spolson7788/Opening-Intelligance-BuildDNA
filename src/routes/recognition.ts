@@ -8,7 +8,7 @@ import {openingsForOrgSubquery} from '../db/tenantScope';
 import {legacyVisionHandler} from '../services/legacyVision';
 import {createHash} from 'node:crypto';
 import {readLabels,applyLabelEvidence} from '../services/labelReading';
-import {retrieveReferences,referenceFailureCode,resolvePartialMarkings,compareWithReferences,validateCitations,componentType,conservativeSuggestion,reportedReferenceHint,REFERENCE_PROMPT_VERSION,RECOGNITION_MODEL} from '../services/referenceEvidence';
+import {retrieveReferences,referenceFailureCode,resolvePartialMarkings,compareWithReferences,validateCitations,componentType,conservativeSuggestion,reportedReferenceHint,sanitizeReferenceComparison,REFERENCE_PROMPT_VERSION,RECOGNITION_MODEL} from '../services/referenceEvidence';
 
 const schema=z.object({
   opening_id:z.string().uuid(),
@@ -52,7 +52,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     const started=Date.now();
     const [response,labels]=await Promise.all([
       withinRecognitionBudget(legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})}),started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})})),
-      b.mode==='identify'?withinRecognitionBudget(readLabels(images,b.media_type,started+24000),started+24000,()=>({version:'oi-label-reading-9',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null),
+      b.mode==='identify'?withinRecognitionBudget(readLabels(images,b.media_type,started+24000),started+24000,()=>({version:'oi-label-reading-10',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null),
     ]);
     if(response.statusCode!==200){
       // Only allow known safe categories through; never forward provider bodies.
@@ -139,7 +139,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       if('page_id' in value)return validateCitations([value],pages).accepted[0]||null;
       return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,k==='citation'?(validateCitations([v],pages).accepted[0]||null):clean(v)]));
     };
-    comparison=clean(comparison);
+    comparison=sanitizeReferenceComparison(clean(comparison));
     const conflictFields=new Set(conflicts.map((c:any)=>c.field));
     const unresolve=(v:any):any=>Array.isArray(v)?v.map(unresolve):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,conflictFields.has(k)?null:unresolve(x)])):v;
     comparison=unresolve(comparison);

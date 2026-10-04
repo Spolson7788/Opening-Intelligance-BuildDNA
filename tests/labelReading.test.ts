@@ -174,3 +174,23 @@ it('sends the cropped model heading to vision before noisy search-tile variants 
  const instructions=content.filter(x=>x.type==='text').map(x=>(x as any).text).join(' ');
  expect(instructions).toContain('Read these characters first');expect(instructions).not.toMatch(/LCN|4040|XP|CR441/);
 });
+
+it('rejects smooth background as a model line and retains broad marking regions for fallback',async()=>{
+ const {hasModelLineDetail}=await import('../src/services/labelReading');
+ const gradient=Buffer.from(Array.from({length:80*20},(_,i)=>100+Math.floor(i%80/2)));
+ const background=await sharp(gradient,{raw:{width:80,height:20,channels:1}}).png().toBuffer();
+ expect(await hasModelLineDetail(background)).toBe(false);
+ const stripes=Buffer.from(Array.from({length:80*20},(_,i)=>(Math.floor(i%80/4)%2?230:30)));
+ const detail=await sharp(stripes,{raw:{width:80,height:20,channels:1}}).png().toBuffer();
+ expect(await hasModelLineDetail(detail)).toBe(true);
+ const patch={photo_index:0,x:0,y:0,w:1,h:1,rotation:0,model_line_box:{x:0,y:0,w:1,h:1}};
+ expect(await modelLineViews(background,patch,true)).toEqual([]);
+ expect((await modelLineViews(detail,patch,true)).length).toBe(4);
+ expect((await cropLabel(background,patch)).length).toBeGreaterThan(0);
+});
+it('keeps alternate orientation available when locator rotation is wrong',async()=>{
+ const {labelVisionContent}=await import('../src/services/labelReading');
+ const content=labelVisionContent([{region,crop:Buffer.from('whole-label')}],[null],[[]],[Buffer.from('rotated-label')]);
+ expect(content.filter(c=>c.type==='image').map(c=>(c as any).source.data)).toEqual(['whole-label','rotated-label'].map(s=>Buffer.from(s).toString('base64')));
+ expect(content.filter(c=>c.type==='text').map(c=>(c as any).text).join(' ')).toContain('locator orientation may be wrong');
+});

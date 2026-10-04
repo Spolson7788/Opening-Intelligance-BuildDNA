@@ -10,6 +10,14 @@ export async function mountReferenceEvidence(container,openingId){
    const details=document.createElement('details'),summary=document.createElement('summary');
    summary.textContent=(run.component_id?'Component '+run.component_id:'Opening recognition')+' — '+(run.suggestion?.manufacturer||'Unknown')+' '+(run.suggestion?.model||'');details.append(summary);
    const status=document.createElement('p');status.textContent=run.status==='reference_evidence'?'Manufacturer reference evidence — technician review required':'No reference evidence — preliminary photograph analysis only';details.append(status);
+   const candidates=Array.isArray(run.stage_two?.candidates)?run.stage_two.candidates.filter(c=>c&&typeof c==='object').slice(0,3):[];
+   if(candidates.length){const heading=document.createElement('h4'),note=document.createElement('p'),list=document.createElement('ul');heading.textContent='Possible products in the compared reference set';note.textContent='These are possibilities, not confirmed identities. Other products may also fit.';
+    for(const candidate of candidates){const item=document.createElement('li'),name=document.createElement('strong');name.textContent=[candidate.manufacturer,candidate.model||candidate.series].filter(Boolean).join(' ')||'Unspecified candidate';item.append(name);
+     for(const feature of Array.isArray(candidate.supporting_features)?candidate.supporting_features:[]){const p=document.createElement('p');p.textContent=(feature?.citation?'Consistent observation: ':'Visual hypothesis without a supporting source citation: ')+String(feature?.observation||'');item.append(p);}
+     for(const feature of Array.isArray(candidate.contradicting_features)?candidate.contradicting_features:[]){const p=document.createElement('p');p.textContent='Possible difference: '+String(feature?.observation||'');item.append(p);}list.append(item);
+    }details.append(heading,note,list);
+   }
+   if(run.stage_two?.cover_comparison==='unavailable_without_installed_cover'){const p=document.createElement('p');p.textContent='The cover is removed or not visible. Cover style cannot be compared and does not rule out these products.';details.append(p);}
    for(const c of run.citations||[]){
     const button=document.createElement('button'),quote=document.createElement('blockquote');button.type='button';button.textContent='Open supporting page '+c.page_no;quote.textContent=c.quote;details.append(button,quote);
     button.onclick=async()=>{button.disabled=true;const view=document.createElement('section');details.append(view);try{
