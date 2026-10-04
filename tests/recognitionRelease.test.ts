@@ -38,3 +38,17 @@ describe('recognition release boundary',()=>{
  it('returns only an allowlisted provider failure category',async()=>{mocks.engine.mockResolvedValue({statusCode:502,body:JSON.stringify({error:'recognition_provider_authentication_failed',upstream_message:'private provider detail'})});const r=await post();expect(r.status).toBe(502);expect(r.body).toEqual({error:'recognition_provider_authentication_failed'});expect(r.text).not.toContain('private');});
  it('does not forward arbitrary provider error codes or malformed bodies',async()=>{for(const body of ['private invalid JSON',JSON.stringify({error:'private provider detail'})]){mocks.query.mockReset().mockResolvedValueOnce({rows:[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]}).mockResolvedValue({rows:[{allowed:1}]});mocks.engine.mockResolvedValue({statusCode:502,body});const r=await post();expect(r.body).toEqual({error:'recognition_provider_failed'});}});
 });
+
+it('returns the photo analysis when label processing stalls instead of waiting for the hosting timeout',async()=>{
+ vi.useFakeTimers({toFake:['setTimeout','clearTimeout','Date']});
+ try{
+  vi.mocked(readLabels).mockImplementationOnce(()=>new Promise(()=>{}));
+  const pending=post().then(r=>r);
+  await vi.waitFor(()=>expect(mocks.engine).toHaveBeenCalled());
+  await vi.advanceTimersByTimeAsync(24000);
+  const response=await pending;
+  expect(response.status).toBe(200);
+  expect(response.body.suggestion.manufacturer).toBe('Example');
+  expect(response.body.suggestion.label_reading.limiting_factor).toBe('label_processing_timeout');
+ }finally{vi.useRealTimers();}
+});

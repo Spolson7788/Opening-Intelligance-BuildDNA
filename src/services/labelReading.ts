@@ -69,7 +69,7 @@ export async function readLabelCropsOcr(crops:Buffer[],deadline:number){
  })();
  let timer:ReturnType<typeof setTimeout>|undefined;
  try{return await Promise.race([job,new Promise<never>((_,reject)=>{timer=setTimeout(()=>{cancelled=true;void worker?.terminate();reject(Error('label_timeout'));},Math.max(1,deadline-Date.now()));})]);}
- finally{if(timer)clearTimeout(timer);cancelled=true;await worker?.terminate().catch(()=>undefined);}
+ finally{if(timer)clearTimeout(timer);cancelled=true;void worker?.terminate().catch(()=>undefined);}
 }
 export function searchRegions():LabelRegion[]{
  return [
@@ -90,7 +90,7 @@ export async function readLabels(images:Buffer[],mediaType:string,deadline=Date.
   // claimed label locations. Other quadrants cover any location in the frame.
   regions.push(...searchRegions());
   const usable:{region:LabelRegion;crop:Buffer}[]=[];
-  for(const region of regions.slice(0,11)){try{usable.push({region,crop:await cropLabel(images[region.photo_index],region)});}catch{}}
+  for(const region of regions.slice(0,11)){if(Date.now()>=deadline-1000)break;try{usable.push({region,crop:await cropLabel(images[region.photo_index],region)});}catch{}}
   if(!usable.length)return empty('unavailable','label_crop_unavailable');
   const enhanced=await Promise.all(usable.map(x=>enhanceLabelCrop(x.crop).catch(()=>null)));
   const dimensions=await Promise.all(images.map(async data=>{const m=await sharp(data,{limitInputPixels:16_000_000}).metadata();return {width:m.width||0,height:m.height||0};}));
