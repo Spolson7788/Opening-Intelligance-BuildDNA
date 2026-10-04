@@ -5,8 +5,10 @@ import {requireAuth,AuthedRequest} from '../middleware/auth';
 import {enforceRolePermissions} from '../middleware/permissions';
 import {auditLog} from '../middleware/auditLog';
 import {purchasingReview} from '../services/purchasingReview';
+import {purchasingRequestsRouter} from './purchasingRequests';
 export const purchasingRouter=Router();
 purchasingRouter.use(requireAuth,enforceRolePermissions,auditLog);
+purchasingRouter.use('/requests',purchasingRequestsRouter);
 purchasingRouter.post('/review',async(req:AuthedRequest,res)=>{
  const p=z.object({opening_ids:z.array(z.string().uuid()).min(1).max(100)}).strict().safeParse(req.body);
  if(!p.success)return res.status(400).json({error:'invalid_review'});

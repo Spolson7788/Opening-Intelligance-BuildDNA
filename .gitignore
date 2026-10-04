@@ -41,3 +41,7 @@ Thumbs.db
 __pycache__/
 *.py[cod]
 elevenlabs/audio/*.mp3
+
+# Manufacturer corpus and derived reference assets are private inputs.
+reference-data/
+reference-page-assets/

@@ -183,6 +183,7 @@ table:has(#rows) thead{display:none;} .ohead .obadge{float:none;display:block;}
 <div class="lbov" id="lbov" onclick="this.style.display='none'"><img id="lbimg" src=""></div>
 
 <script type="module">
+import {mountReferenceEvidence} from './reference-evidence.mjs';
 import {url,key} from "./preview-config.mjs";
 import {loadAuthorizedFacilities,defaultHomeState,loadTerritoryContext,mountFacilitySearch} from "./facility-search.mjs";
 import {loadDashboardRows,correctiveSummary,loadQuarterServiceSummary,formatCalendarDate,photoScopeLabel} from "./connected.mjs";
@@ -465,7 +466,7 @@ async function render(ops){
       var serv=p.work_completed_at?'<span style="color:var(--good);font-weight:700">✓ '+formatCalendarDate(p.work_completed_at)+'</span>':'<span style="color:var(--muted)">No service date</span>';
       html+='<tr class="prow" data-op="'+oi+'"><td class="cpt"></td>'+
         '<td data-label="Component">'+esc((p.component_class||'').replace(/_/g,' '))+'<small style="display:block">'+esc((p.hierarchy||'opening').replace(/_/g,' '))+'</small>'+'</td>'+
-        '<td class="mm" data-label="Manufacturer / model">'+esc(p.manufacturer||'')+'<span class="mdl">'+esc(p.model||'')+'</span></td>'+
+        '<td class="mm" data-label="Manufacturer / model">'+esc(p.manufacturer||'')+'<span class="mdl">'+esc(p.model||'')+'</span><span class="mdl">'+esc(p.identity_source==='technician_identified'?'Technician identified':p.identity_source==='photo_suggestion'?'Photo suggestion':'Identity source not recorded')+'</span></td>'+
         '<td data-label="Condition"><span class="cond '+(CONDCLS[cond]||'cn')+'">'+(CONDLBL[cond]||cond)+'</span></td>'+
         '<td class="hc" data-label="Health"><span class="hb" style="color:'+PB[2]+'">'+PB[1]+'</span> <span class="hl">'+PB[0]+'</span><div class="scorebar"><i style="width:'+(s===null?0:s)+'%;background:'+PB[2]+'"></i></div><span class="sc">'+(s===null?'—':s)+'</span></td>'+
         '<td class="vc" data-label="Last serviced">'+serv+'</td></tr>';
@@ -516,6 +517,9 @@ function openDetail(oi){
   body+='<div id="detsvcsec" style="margin-top:14px;display:none"></div>';
   body+='<div class="detrec" style="margin-top:14px;color:'+rec[1]+';background:'+rec[2]+';border:1px solid '+rec[1]+'44"><b>Priority:</b> '+rec[0]+'</div></div>';
   document.getElementById('detcard').innerHTML=body;
+  const evidence=document.createElement('section');
+  document.querySelector('#detcard .detbd').append(evidence);
+  if(o.parts[0]?.assembly_id)mountReferenceEvidence(evidence,o.parts[0].assembly_id);
   function _addPhoto(path,label){
     var container=document.getElementById('detphotos');
     sb.storage.from('opening-photos').createSignedUrl(path,3600).then(function(r){

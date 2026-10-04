@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   closeFieldAppDb,
   claimSyncOperation,
@@ -73,6 +73,7 @@ function record(): { entity: OfflineEntityEnvelope; operation: SyncOperation } {
 }
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await closeFieldAppDb();
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.deleteDatabase("opening-intel-field");
@@ -271,4 +272,65 @@ describe('opening cache principal isolation',()=>{
   await cacheOpening({id:'late-a'}, {userId:'a',organizationId:'company-a'});
   expect(await getCachedOpening('late-a')).toBeUndefined();
  });
+});
+
+
+describe("recognition photographs saved with hardware",()=>{
+  it("retains every selected photo and blocks upload until the same hardware is verified",async()=>{
+    vi.stubGlobal("navigator",{onLine:false});
+    await saveAuth({token:"test",userId:ids.user,organizationId:ids.organization,role:"technician"});
+    const {queueOpeningMutation}=await import("../field-app/src/lib/sync");
+    const files=[new File([new Uint8Array([255,216,255,1])],"closer.jpg",{type:"image/jpeg"}),new File([new Uint8Array([255,216,255,2])],"label.jpg",{type:"image/jpeg"})];
+    await queueOpeningMutation("hardware_component",ids.opening,{id:ids.entity,component_type:"closer",manufacturer:"LCN",model_number:"4040XP",identity_source:"technician_identified",identity_acknowledged:true},ids.operation,files);
+    await closeFieldAppDb();
+    const operations=await getSyncOperationsForOpening(ids.opening);
+    const photos=operations.filter(o=>o.entityType==="photo");
+    expect(photos).toHaveLength(2);
+    expect(operations.filter(o=>o.entityType==="component")).toHaveLength(1);
+    expect(operations.find(o=>o.entityType==="component")?.payload).toMatchObject({identity_source:"technician_identified",identity_acknowledged:true,manufacturer:"LCN",model_number:"4040XP"});
+    for(const photo of photos){
+      expect(photo.dependencyOperationIds).toEqual([ids.operation]);
+      expect(photo.state).toBe("blocked_dependency");
+      const media=await getOfflineMedia(photo.entityId);
+      expect(media?.targetId).toBe(ids.entity);
+      expect(media?.targetType).toBe("hardware_component");
+      expect(media?.blob?.size).toBe(4);
+      expect(media?.sha256Checksum).toBe(photo.payload.sha256_checksum);
+      expect(media?.operationId).toBe(photo.operationId);
+    }
+  });
+  it("leaves no hardware or photos queued when selection is invalid",async()=>{
+    const {queueOpeningMutation}=await import("../field-app/src/lib/sync");
+    await expect(queueOpeningMutation("hardware_component",ids.opening,{id:ids.entity},ids.operation,[new File(["bad"],"bad.pdf",{type:"application/pdf"})])).rejects.toThrow("JPEG");
+    expect(await getOfflineEntitiesForOpening(ids.opening)).toEqual([]);
+    expect(await getSyncOperationsForOpening(ids.opening)).toEqual([]);
+  });
+  it("rejects photos attributed to another user before any bundle is saved",async()=>{
+    const {entity,operation}=record();
+    const media:any={photoId:"photo",openingId:ids.opening,organizationId:ids.organization,targetType:"hardware_component",targetId:ids.entity,capturedByUserId:"other"};
+    const photoOperation:SyncOperation={...operation,entityId:"photo",entityType:"photo",operationId:"photo-op",payload:{target_id:ids.entity},dependencyOperationIds:[ids.operation]};
+    await expect(saveEntityAndOperation(entity,operation,[{media,operation:photoOperation}])).rejects.toThrow("hardware_photo_identity_mismatch");
+    expect(await getSyncOperationsForOpening(ids.opening)).toEqual([]);
+  });
+  it("rejects an account switch at the atomic commit boundary",async()=>{
+    const {entity,operation}=record();
+    await saveAuth({token:"other",userId:"other",organizationId:ids.organization,role:"technician"});
+    const media:any={photoId:"photo",openingId:ids.opening,organizationId:ids.organization,targetType:"hardware_component",targetId:ids.entity,capturedByUserId:ids.user};
+    const photoOperation:SyncOperation={...operation,entityId:"photo",entityType:"photo",operationId:"photo-op",payload:{target_id:ids.entity},dependencyOperationIds:[ids.operation]};
+    await expect(saveEntityAndOperation(entity,operation,[{media,operation:photoOperation}])).rejects.toThrow("active_principal_changed");
+    expect(await getOfflineEntitiesForOpening(ids.opening)).toEqual([]);
+    expect(await getSyncOperationsForOpening(ids.opening)).toEqual([]);
+    expect(await getOfflineMedia("photo")).toBeUndefined();
+  });
+});
+
+it("rolls back the hardware and every photo if local storage cannot store the bundle",async()=>{
+  const {entity,operation}=record();
+  await saveAuth({token:"owner",userId:ids.user,organizationId:ids.organization,role:"technician"});
+  const media:any={photoId:"photo",openingId:ids.opening,organizationId:ids.organization,targetType:"hardware_component",targetId:ids.entity,capturedByUserId:ids.user,blob:()=>undefined};
+  const photoOperation:SyncOperation={...operation,entityId:"photo",entityType:"photo",operationId:"photo-op",payload:{target_id:ids.entity},dependencyOperationIds:[ids.operation]};
+  await expect(saveEntityAndOperation(entity,operation,[{media,operation:photoOperation}])).rejects.toThrow();
+  expect(await getOfflineEntitiesForOpening(ids.opening)).toEqual([]);
+  expect(await getSyncOperationsForOpening(ids.opening)).toEqual([]);
+  expect(await getOfflineMedia("photo")).toBeUndefined();
 });

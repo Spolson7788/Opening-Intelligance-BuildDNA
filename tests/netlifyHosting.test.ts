@@ -13,4 +13,10 @@ describe("nonproduction hosting package", () => {
   it("declares the bounded deletion retry schedule", () => {
     expect(retryConfig.schedule).toBe("* * * * *");
   });
+
+  it("refuses a deploy preview before routing when staging is unconfigured", async () => {
+    const response = await apiHandler(new Request("https://example.invalid/health"), { deploy: { context: "deploy-preview" } } as any);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "reference_staging_not_configured" });
+  });
 });

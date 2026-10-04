@@ -1,11 +1,16 @@
 // @ts-nocheck
-// Preserved production recognition engine; source SHA256 9da330e98a2f1646f5bd825bd6fa4987a270c04d5c8b5ceb4ff6d06bd4e2cae7.
+import {auditedFetch} from './recognitionAudit';
+import {GEOMETRY_OBSERVATION_PROMPT} from './installationGeometry';
+import {recognitionDetailViews} from './recognitionViews';
+import {detectScaleMarkers,scaleMeasurements} from './scaleMarker';
+// Adapted production recognition engine; original source SHA256 9da330e98a2f1646f5bd825bd6fa4987a270c04d5c8b5ceb4ff6d06bd4e2cae7.
 // Internal only: exposed through authenticated, opening-scoped recognition route.
-// Opening Intelligence — vision proxy (Netlify Function, zero dependencies).
+// Opening Intelligence — vision proxy; detail crops retain original source pixels.
 // Holds the API key server-side; the app POSTs base64 images and gets a structured
 // identification back: manufacturer / series / model, transcribed visible text,
 // the evidence behind each call, and per-level confidence.
-const PROMPT = "You are identifying a piece of commercial door hardware from photographs of an installed door or a loose part.\n\nWORK IN THIS ORDER. Do not skip step 1.\n\nSTEP 1 - TRANSCRIBE BEFORE YOU IDENTIFY.\nExamine every submitted photograph together; a marking may be legible in only one frame. Read and transcribe EVERY legible or partially legible marking you can see: body stamps, cast or forged lettering, adhesive labels, date codes, patent numbers, UL/cUL marks, logos, wordmarks, part numbers, size digits, and fragments. Record fragments exactly as seen, including partials such as \"CR4__\" or \"...441\". Do this before forming any opinion about what the product is.\n\nSTEP 2 - IDENTIFY ONLY FROM EVIDENCE.\nName a manufacturer, series or model ONLY when it is supported by transcribed visible text, or by a distinctive combination of physical features that is specific to that product. If the evidence does not reach a level, return null for that level. Returning null is correct and expected; guessing is a failure.\n\nSTEP 3 - DO NOT COLLAPSE LOOK-ALIKES.\nMany door hardware products are visually similar or are sold as cross-references / replacements for one another. A cross-reference means two products may be interchangeable in an order - it does NOT mean they are the same product, and it is NOT evidence that one is the other. Keep them distinct. Only name a specific member of a look-alike family when a marking or a feature unique to that member supports it.\n\nRETURN ONLY COMPACT JSON, no prose, in exactly this shape:\n{\"component_class\":<one class code>,\"manufacturer\":<brand or null>,\"series\":<series or null>,\"model\":<model or null>,\"visible_text\":[<every legible or partial marking, as a string>],\"attributes\":{<field>:<value>,...},\"evidence\":[{\"observation\":<specific visible feature or transcribed text>,\"supports\":<\"manufacturer\" | \"series\" | \"model\" | the attribute field name>}],\"confidence\":{\"manufacturer\":<0-1>,\"series\":<0-1>,\"model\":<0-1>}}\n\nRULES FOR THE FIELDS.\nvisible_text: an array of strings. Empty array if nothing is legible. Never invent text.\nseries: the product family (for example the base line a model belongs to), or null.\nmodel: the specific model designation, or null. A model is not the same as a series - return the series and a null model when you can read the family but not the exact variant.\nevidence: one entry per observation that actually drove a conclusion. Cite what you saw, not what you inferred.\nconfidence: three independent numbers between 0 and 1. Do not report high manufacturer confidence when several brands remain plausible. Do not report model confidence above 0.6 without a visible model marking.\nattributes: the class-specific attributes below. Omit any attribute you cannot clearly see; never guess a value that is not visible.\n\nUse ONLY these class codes, and for the chosen class ONLY these attribute values.\n\nCOORDINATOR -> coordinator_type: bar | gravity; accessory_role: carry_bar | mounting_bracket | filler_bar | not_applicable\nDOOR_CLOSER -> closer_type: surface | concealed_overhead | concealed_in_door | floor_spring; mounting: regular_arm | parallel_arm | top_jamb (parallel_arm = arm folds back flat against the door on the push side with a bracket on the door face; regular_arm = arm projects out to a shoe on the frame/soffit); arm_type: standard | hold_open | cush_stop | spring_stop | fusible_link (READ THE ARM AND ANY TRACK to choose: cush_stop = heavy forearm that rides INSIDE a metal track/channel with a bumper stop at the end; spring_stop = rigid stop arm with a built-in mechanical dead-stop but NO track; hold_open = a regular two-piece scissor/forearm fitted with a friction knob or slider used to hold the door open; standard = a plain two-piece scissor/forearm with no track, no stop, and no hold-open knob; fusible_link = arm carries a small heat-release fusible link); cover_type: plastic | metal | none\nEDGE_GUARD -> guard_profile: mortise | non_mortise | overlap | semi_overlap | astragal; beveled: yes | no; wrap: none | wrap | bullnose; cutouts_present: yes | no\nEXIT_DEVICE -> device_type: rim | surface_vertical_rod | concealed_vertical_rod | mortise (rim = push bar on the door FACE at latch height, latches to the frame edge, no vertical rods; surface_vertical_rod = metal RODS run UP and DOWN the door face to top and bottom latches; concealed_vertical_rod = top and bottom latch points but rods are hidden inside the door, none visible on the face; mortise = lock case buried in the door EDGE, latches from the edge, no rods); chassis_style: touchpad | crossbar (touchpad = flat push pad or paddle; crossbar = round or square bar that projects off the door, older style); mount: surface | concealed; outside_trim: none_exit_only | lever | night_latch | pull\nEXTERIOR -> guard_style: solid_bar | chain | privacy_swing | not_applicable; device_type: lock_guard | door_guard | door_viewer | knocker | mail_slot\nFLUSH_BOLT -> operation: automatic | constant_latching | manual; lever_present: yes | no; bolt_end_shape: square | round; aux_fire_latch: yes | no; faceplate_shape: rectangular | rounded | narrow\nFLUSH_PULL -> pull_shape: round | rectangular | oblong | square; recess_style: cup | rectangular_recess | edge_pull | flush_ring\nHINGE_BUTT -> knuckle_count: 3 | 5 (count the knuckles on the barrel); bearing_type: ball_bearing | concealed_bearing | plain_bearing | spring (ball_bearing = visible bearing bands between the knuckles; plain_bearing = plain knuckles, no bearing bands; concealed_bearing = smooth barrel with the bearing hidden; spring = spring hinge with a tension-adjust hole in the barrel); leaf_profile: standard | swing_clear | wide_throw | half_mortise | electrified (standard = two flat rectangular leaves set in the door edge; swing_clear = cranked or offset leaf that swings the door clear of the opening; wide_throw = extra-deep leaves; electrified = wires or an electric transfer at the barrel); pin_type: standard | non_removable_pin (non_removable_pin has a small set screw in the barrel)\nHINGE_CONT -> hinge_type: geared | pin_and_barrel; mount_position: full_mortise | full_surface | half_surface; cover_present: yes | no\nLATCH_CATCH_BOLT -> device_type: roller_latch | roller_catch | ball_catch | magnetic_catch | elbow_catch | surface_bolt | angle_stop | invisible_latch\nLOCKSET -> lock_type: cylindrical | mortise | interconnected | deadbolt | tubular (cylindrical = lever or knob on a round rose through a bore in the door FACE, latch in the edge; mortise = large rectangular lock case in the door EDGE with a tall edge faceplate, trim on a rose or escutcheon; interconnected = a lever and a deadbolt linked in one vertical trim; deadbolt = just a bolt with a thumbturn or cylinder, no lever or latch; tubular = light residential-grade latch through a small bore); trim: lever | knob; rose_shape: round | square; keyed: yes | no (a keyway or cylinder visible on the outside = yes)\nPIVOT -> pivot_type: offset | center_hung | intermediate | pocket | power_transfer; electrified: yes | no\nPROTECTION_PLATE -> plate_role: kick | armor | mop | stretcher; bevel_edges: beveled | square\nPULL_PUSH -> form: pull_handle | push_bar | push_plate | pull_plate | offset_pull | flush_pull; mounting_visible: exposed | concealed; grip_profile: round | square | flat | rectangular\nRESCUE -> rescue_type: adjustable | breakaway | removable\nSTOP_HOLDER -> stop_type: floor | wall | hinge_pin | overhead | kick_down | roller_bumper | silencer | crash; hold_open: yes | no; bumper_material: rubber | plastic | none\nVANDAL_TRIM -> trim_function: night_latch | dummy | mortise | passage; grip_edge: with_grip | without_grip; device_compatibility: rim_vertical | mortise_exit | mortise_lock";
+const CLASSIFICATION_CONTEXT = `Examine the complete hardware assembly, not just its most conspicuous horizontal bar. The supplied detail views are overlapping crops of the original photograph, not separate products or independent evidence. A surface closer has a hydraulic/spring body connected through a spindle or pinion to an operating arm. A visible projecting cylinder, valve end, casting and body-to-arm connection support DOOR_CLOSER even with the decorative cover removed. A coordinator sequences paired doors; choose COORDINATOR only when its coordinating mechanism is visible. Being horizontal or mounted near the header alone is insufficient. Do not treat an installation plate or a closer arm as the whole product. Describe the actual body and linkage you can see. If the component class itself is uncertain, return component_class:null rather than a confident guess. Never infer the manufacturer or model from these generic features. Enlargement supplies no missing detail.\n`;
+const PROMPT = "You are identifying a piece of commercial door hardware from photographs of an installed door or a loose part.\n\nWORK IN THIS ORDER. Do not skip step 1.\n\nSTEP 1 - TRANSCRIBE BEFORE YOU IDENTIFY.\nExamine every submitted photograph together; a marking may be legible in only one frame. Read and transcribe EVERY legible or partially legible marking you can see: body stamps, cast or forged lettering, adhesive labels, date codes, patent numbers, UL/cUL marks, logos, wordmarks, part numbers, size digits, and fragments. Record fragments exactly as seen, including partials such as \"CR4__\" or \"...441\". Do this before forming any opinion about what the product is.\n\nSTEP 2 - IDENTIFY ONLY FROM EVIDENCE.\nName a manufacturer, series or model ONLY when it is supported by transcribed visible text, or by a distinctive combination of physical features that is specific to that product. If the evidence does not reach a level, return null for that level. Returning null is correct and expected; guessing is a failure.\n\nSTEP 3 - DO NOT COLLAPSE LOOK-ALIKES.\nMany door hardware products are visually similar or are sold as cross-references / replacements for one another. A cross-reference means two products may be interchangeable in an order - it does NOT mean they are the same product, and it is NOT evidence that one is the other. Keep them distinct. Only name a specific member of a look-alike family when a marking or a feature unique to that member supports it.\n\nRETURN ONLY COMPACT JSON, no prose, in exactly this shape:\n{\"component_class\":<one class code>,\"manufacturer\":<brand or null>,\"series\":<series or null>,\"model\":<model or null>,\"visible_text\":[<every legible or partial marking, as a string>],\"installation_geometry_views\":[<visible geometry landmarks using the separately supplied schema; empty if unavailable>],\"attributes\":{<field>:<value>,...},\"evidence\":[{\"observation\":<specific visible feature or transcribed text>,\"supports\":<\"manufacturer\" | \"series\" | \"model\" | the attribute field name>}],\"confidence\":{\"manufacturer\":<0-1>,\"series\":<0-1>,\"model\":<0-1>}}\n\nRULES FOR THE FIELDS.\nvisible_text: an array of strings. Empty array if nothing is legible. Never invent text.\nseries: the product family (for example the base line a model belongs to), or null.\nmodel: the specific model designation, or null. A model is not the same as a series - return the series and a null model when you can read the family but not the exact variant.\nevidence: one entry per observation that actually drove a conclusion. Cite what you saw, not what you inferred.\nconfidence: three independent numbers between 0 and 1. Do not report high manufacturer confidence when several brands remain plausible. Do not report model confidence above 0.6 without a visible model marking.\nattributes: the class-specific attributes below. Omit any attribute you cannot clearly see; never guess a value that is not visible.\n\nUse ONLY these class codes, and for the chosen class ONLY these attribute values.\n\nCOORDINATOR -> coordinator_type: bar | gravity; accessory_role: carry_bar | mounting_bracket | filler_bar | not_applicable\nDOOR_CLOSER -> closer_type: surface | concealed_overhead | concealed_in_door | floor_spring; mounting: regular_arm | parallel_arm | top_jamb (parallel_arm = arm folds back flat against the door on the push side with a bracket on the door face; regular_arm = arm projects out to a shoe on the frame/soffit); arm_type: standard | hold_open | cush_stop | spring_stop | fusible_link (READ THE ARM AND ANY TRACK to choose: cush_stop = heavy-duty parallel arm with a built-in mechanical stop in its frame/soffit shoe, no track required; spring_stop = parallel arm with a visibly spring-loaded stop in its frame/soffit shoe; hold_open = a regular two-piece scissor/forearm fitted with a friction knob or slider used to hold the door open; standard = a plain two-piece scissor/forearm with no track, no stop, and no hold-open knob; fusible_link = arm carries a small heat-release fusible link); cover_type: plastic | metal | none\nEDGE_GUARD -> guard_profile: mortise | non_mortise | overlap | semi_overlap | astragal; beveled: yes | no; wrap: none | wrap | bullnose; cutouts_present: yes | no\nEXIT_DEVICE -> device_type: rim | surface_vertical_rod | concealed_vertical_rod | mortise (rim = push bar on the door FACE at latch height, latches to the frame edge, no vertical rods; surface_vertical_rod = metal RODS run UP and DOWN the door face to top and bottom latches; concealed_vertical_rod = top and bottom latch points but rods are hidden inside the door, none visible on the face; mortise = lock case buried in the door EDGE, latches from the edge, no rods); chassis_style: touchpad | crossbar (touchpad = flat push pad or paddle; crossbar = round or square bar that projects off the door, older style); mount: surface | concealed; outside_trim: none_exit_only | lever | night_latch | pull\nEXTERIOR -> guard_style: solid_bar | chain | privacy_swing | not_applicable; device_type: lock_guard | door_guard | door_viewer | knocker | mail_slot\nFLUSH_BOLT -> operation: automatic | constant_latching | manual; lever_present: yes | no; bolt_end_shape: square | round; aux_fire_latch: yes | no; faceplate_shape: rectangular | rounded | narrow\nFLUSH_PULL -> pull_shape: round | rectangular | oblong | square; recess_style: cup | rectangular_recess | edge_pull | flush_ring\nHINGE_BUTT -> knuckle_count: 3 | 5 (count the knuckles on the barrel); bearing_type: ball_bearing | concealed_bearing | plain_bearing | spring (ball_bearing = visible bearing bands between the knuckles; plain_bearing = plain knuckles, no bearing bands; concealed_bearing = smooth barrel with the bearing hidden; spring = spring hinge with a tension-adjust hole in the barrel); leaf_profile: standard | swing_clear | wide_throw | half_mortise | electrified (standard = two flat rectangular leaves set in the door edge; swing_clear = cranked or offset leaf that swings the door clear of the opening; wide_throw = extra-deep leaves; electrified = wires or an electric transfer at the barrel); pin_type: standard | non_removable_pin (non_removable_pin has a small set screw in the barrel)\nHINGE_CONT -> hinge_type: geared | pin_and_barrel; mount_position: full_mortise | full_surface | half_surface; cover_present: yes | no\nLATCH_CATCH_BOLT -> device_type: roller_latch | roller_catch | ball_catch | magnetic_catch | elbow_catch | surface_bolt | angle_stop | invisible_latch\nLOCKSET -> lock_type: cylindrical | mortise | interconnected | deadbolt | tubular (cylindrical = lever or knob on a round rose through a bore in the door FACE, latch in the edge; mortise = large rectangular lock case in the door EDGE with a tall edge faceplate, trim on a rose or escutcheon; interconnected = a lever and a deadbolt linked in one vertical trim; deadbolt = just a bolt with a thumbturn or cylinder, no lever or latch; tubular = light residential-grade latch through a small bore); trim: lever | knob; rose_shape: round | square; keyed: yes | no (a keyway or cylinder visible on the outside = yes)\nPIVOT -> pivot_type: offset | center_hung | intermediate | pocket | power_transfer; electrified: yes | no\nPROTECTION_PLATE -> plate_role: kick | armor | mop | stretcher; bevel_edges: beveled | square\nPULL_PUSH -> form: pull_handle | push_bar | push_plate | pull_plate | offset_pull | flush_pull; mounting_visible: exposed | concealed; grip_profile: round | square | flat | rectangular\nRESCUE -> rescue_type: adjustable | breakaway | removable\nSTOP_HOLDER -> stop_type: floor | wall | hinge_pin | overhead | kick_down | roller_bumper | silencer | crash; hold_open: yes | no; bumper_material: rubber | plastic | none\nVANDAL_TRIM -> trim_function: night_latch | dummy | mortise | passage; grip_edge: with_grip | without_grip; device_compatibility: rim_vertical | mortise_exit | mortise_lock";
 
 // Anything the model omits still has to arrive in a predictable shape, because the
 // browser reads these fields directly. Never fabricate a value here — absent means null.
@@ -44,24 +49,6 @@ function normalizeResult(obj) {
       model: num(conf.model)
     }
   };
-}
-
-
-// Targeted second pass. The PDFs are NEVER sent to the API — the app stores the
-// normalized reference features and asks here only about the specific ones that
-// would separate the candidates still in play.
-function focusPrompt(features){
-  var lines=features.slice(0,24).map(function(f,i){
-    return (i+1)+'. field "'+f.field+'" — '+(f.question||('is this present, and what is its value? Documented as: '+f.value));
-  }).join("\n");
-  return "You are re-examining the SAME photographs for a short list of specific features. "+
-    "Do not identify the product. Do not guess. For each numbered feature below, answer ONLY from what is visibly present in the images.\n\n"+
-    lines+"\n\n"+
-    "Return ONLY compact JSON:\n"+
-    '{"observed_features":[{"field":"<the field name exactly as given>","visible":true|false,"value":"<what you actually see, or null>","note":"<where in the image>"}],'+
-    '"measurements":{},"visible_text":["<any further legible markings>"]}\n\n'+
-    "visible:false means you cannot see it — that is a useful and correct answer. Never report a value you cannot see. "+
-    "Do not estimate dimensions from perspective; leave measurements empty unless a rule or scale is visible in frame.";
 }
 
 
@@ -411,6 +398,22 @@ function normalizeHardwareRegions(parsed){
   };
 }
 
+// Diagnostic text is opt-in for the current authenticated administrator only.
+// Never return provider bodies, credentials, image data or quoted input values.
+export function redactProviderReason(message:string,secret=''){
+ let value=String(message||'');if(secret)value=value.split(secret).join('[redacted]');
+ value=value.replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/gi,'[image data removed]')
+  .replace(/Bearer\s+[^\s,;]+/gi,'[credential removed]')
+  .replace(/(?:sk-|sb_secret_)[A-Za-z0-9_-]+/g,'[credential removed]')
+  .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,'[token removed]')
+  .replace(/https?:\/\/[^\s]+/gi,'[link removed]')
+  .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[email removed]')
+  .replace(/"[^"\n]*"|'[^'\n]*'/g,'[quoted value removed]')
+  .replace(/[A-Za-z0-9+/=_-]{40,}/g,'[long value removed]')
+  .replace(/[\x00-\x1f\x7f]/g,' ').replace(/\s+/g,' ').trim();
+ return value.slice(0,400)||'The provider supplied no rejection reason.';
+}
+
 export const legacyVisionHandler = async (event: {httpMethod:string;body:string}) => {
   if (event.httpMethod !== "POST") return { statusCode: 405, body: "POST only" };
   try {
@@ -426,27 +429,31 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
     const markingMode = body.mode === "marking_regions";
     // mode: "hardware_regions" -> locate components, identify nothing
     const hardwareMode = body.mode === "hardware_regions";
-    // focus_features present -> targeted feature pass instead of identification
-    const focus = Array.isArray(body.focus_features) ? body.focus_features : null;
     const multi = imgs.length > 1
       ? "You are given " + imgs.length + " photographs of the SAME piece of hardware from a short sweep. Examine ALL of them together before answering. A stamp, label or distinguishing feature may be legible in only one frame; transcribe it from whichever frame shows it. Do not treat the frames as separate products. "
       : "";
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    const scaleMarkers=!labelBlind&&!markingMode&&!hardwareMode?await detectScaleMarkers(imgs.map(d=>Buffer.from(d,'base64'))):[];
+    const detailViews=!labelBlind&&!markingMode&&!hardwareMode?await recognitionDetailViews(imgs.map(d=>Buffer.from(d,'base64'))):[];
+    const resp = await auditedFetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      signal: AbortSignal.timeout(25000),
+      signal: AbortSignal.timeout(Math.max(1000,Math.min(25000,Number(body.timeout_ms)||25000))),
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
         model: "claude-sonnet-4-5-20250929",
-        max_tokens: labelBlind ? 2500 : (markingMode ? 1800 : (hardwareMode ? 2000 : 1200)),
+        temperature: 0,
+        max_tokens: labelBlind ? 2500 : (markingMode ? 1800 : (hardwareMode ? 2000 : 2000)),
         messages: [{ role: "user", content: [
           ...imgs.map(function(d){ return { type: "image", source: { type: "base64", media_type: media_type || "image/jpeg", data: d } }; }),
+          ...(!labelBlind&&!markingMode&&!hardwareMode?[{type:'text',text:GEOMETRY_OBSERVATION_PROMPT}]:[]),
+          ...(scaleMarkers.length?[{type:'text',text:`Known-size marker detections: ${JSON.stringify(scaleMarkers)}. If you can clearly locate the endpoints of a straight closer body length, body height or mounting-hole spacing in the ORIGINAL photograph, append measurement_segments:[{feature:"closer_body_length|closer_body_height|mounting_hole_spacing",photo_index,points:[{x,y},{x,y}]}] to the identification JSON. Coordinates are fractions of that original photograph, not a detail crop. Only endpoints visibly lying in the marker's plane are eligible. Do not report a dimension yourself; the server computes marker-plane estimates. Omit obscured endpoints. Never use the printed marker's text as a product marking. Marker detections do not verify placement or print scale.`}]:[]),
+          ...detailViews.flatMap(view=>[{type:'text',text:`Detail view of photograph ${view.photo_index}, source region ${JSON.stringify(view.region)}; same pixels, not additional independent evidence`},{type:'image',source:{type:'base64',media_type:'image/png',data:view.image.toString('base64')}}]),
           { type: "text", text: hardwareMode ? HARDWARE_PROMPT
                                 : markingMode ? MARKING_PROMPT
                                 : (labelBlind ? (multi + PHYSICAL_PROMPT)
-                                : (focus ? (multi + focusPrompt(focus)) : (multi + PROMPT))) }
+                                : (CLASSIFICATION_CONTEXT + multi + PROMPT)) }
         ]}]
       })
-    });
+    },'photo_analysis');
     const responseText = await resp.text();
     let j;
     try {
@@ -455,20 +462,35 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
       /* Provider bodies and recognition results are not logged. */
       return {
         statusCode: 502,
-        body: JSON.stringify({ error: "Anthropic returned an unreadable response", upstream_status: resp.status })
+        body: JSON.stringify({ error: "recognition_provider_invalid_response", upstream_status: resp.status })
       };
     }
 
     if (!resp.ok) {
-      const upstreamMessage = (j.error && j.error.message) || "Anthropic request failed";
+      const message = typeof j.error?.message === 'string' ? j.error.message : '';
+      const code = resp.status === 401 ? 'recognition_provider_authentication_failed'
+        : resp.status === 403 ? 'recognition_provider_permission_denied'
+        : resp.status === 404 ? 'recognition_provider_model_unavailable'
+        : resp.status === 429 ? 'recognition_provider_rate_limited'
+        : resp.status === 413 ? 'recognition_provider_image_rejected'
+        : resp.status === 400 && /specified API usage limits|regain access|monthly.*(?:spend|usage).*limit/i.test(message) ? 'recognition_provider_usage_limit_reached'
+        : resp.status === 400 && /credit balance|spend limit|billing|payment/i.test(message) ? 'recognition_provider_billing_blocked'
+        : resp.status === 400 && /media.?type|mime.?type|image.*(?:format|decode|valid)|(?:decode|invalid).*image|base64/i.test(message) ? 'recognition_provider_image_format_rejected'
+        : resp.status === 400 && /image.*(?:dimension|resolution|pixel|size)|(?:dimension|resolution|pixel).*image/i.test(message) ? 'recognition_provider_image_dimensions_rejected'
+        : resp.status === 400 && /too (?:many|long)|token.*(?:limit|maximum)|context.*(?:length|limit)|request.*too large/i.test(message) ? 'recognition_provider_context_limit'
+        : resp.status === 400 && /model.*(?:not found|not supported|invalid|unavailable)/i.test(message) ? 'recognition_provider_model_unavailable'
+        : resp.status === 400 ? 'recognition_provider_request_rejected'
+        : resp.status >= 500 ? 'recognition_provider_temporarily_unavailable'
+        : 'recognition_provider_failed';
       /* Provider bodies and recognition results are not logged. */
       return {
         statusCode: 502,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          error: upstreamMessage,
+          error: code,
           upstream_status: resp.status,
-          upstream_type: (j.error && j.error.type) || null
+          upstream_type: null,
+          ...(body.include_provider_diagnostic===true&&resp.status===400?{provider_diagnostic:redactProviderReason(message,key)}:{})
         })
       };
     }
@@ -481,7 +503,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
       return {
         statusCode: 502,
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ error: "Recognition response did not contain valid JSON" })
+        body: JSON.stringify({ error: "recognition_provider_invalid_response" })
       };
     }
 
@@ -493,7 +515,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
       return {
         statusCode: 502,
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ error: "Recognition response was not valid JSON" })
+        body: JSON.stringify({ error: "recognition_provider_invalid_response" })
       };
     }
 
@@ -515,25 +537,11 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
       return { statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(out) };
     }
 
-    if (focus) {
-      const feats = Array.isArray(parsed.observed_features) ? parsed.observed_features : [];
-      const out = {
-        observed_features: feats
-          .filter((f) => f && f.field)
-          .map((f) => ({
-            field: String(f.field).trim(),
-            visible: f.visible === true,
-            value: (f.value == null || String(f.value).toLowerCase() === "null") ? null : String(f.value).trim(),
-            note: f.note == null ? null : String(f.note).trim()
-          })),
-        measurements: (parsed.measurements && typeof parsed.measurements === "object") ? parsed.measurements : {},
-        visible_text: Array.isArray(parsed.visible_text) ? parsed.visible_text.map((t) => String(t).trim()).filter(Boolean) : []
-      };
-      /* Provider bodies and recognition results are not logged. */
-      return { statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(out) };
-    }
-
     const obj = normalizeResult(parsed);
+    obj.installation_geometry_views=Array.isArray(parsed.installation_geometry_views)?parsed.installation_geometry_views.slice(0,5):[];
+    obj.scale_markers=scaleMarkers;
+    obj.scale_measurements=scaleMeasurements(parsed.measurement_segments,scaleMarkers,body.technician_attributes?.scale_marker_same_plane==='true');
+    obj.scale_placement_confirmed=body.technician_attributes?.scale_marker_same_plane==='true';
     /* Provider bodies and recognition results are not logged. */
     return { statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(obj) };
   } catch (e) {
@@ -541,7 +549,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
     return {
       statusCode: 500,
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ error: (e && e.message) || String(e) })
+      body: JSON.stringify({ error: e?.name === 'TimeoutError' || e?.name === 'AbortError' ? 'recognition_provider_timeout' : e?.name === 'TypeError' ? 'recognition_provider_connection_failed' : 'recognition_engine_failed' })
     };
   }
 };
