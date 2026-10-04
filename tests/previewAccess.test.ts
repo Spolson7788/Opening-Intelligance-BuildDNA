@@ -90,7 +90,7 @@ it('recovers the exact saved analysis after a gateway timeout without replaying 
   if(options.method==='POST')return json(504,{error:'request_failed_504'});
   const requestId=JSON.parse(calls[0].options.body).request_id;
   expect(url).toContain(`/request/${requestId}?opening_id=synthetic-opening`);
-  return json(200,{request_id:requestId,run_id:'saved-run',suggestion:{model:'fixture'},recovered:true});
+  return json(200,{request_id:requestId,run_id:'saved-run',status:'reference_evidence',suggestion:{model:'fixture'},recovered:true});
  }));
  try{
   const result=await recognizeHardware('synthetic-opening',['AAAA'],'image/png',{},recovery);
@@ -102,4 +102,9 @@ it('recovers the exact saved analysis after a gateway timeout without replaying 
 it('rejects a recovered result belonging to a different request',async()=>{
  vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce(json(504,{})).mockResolvedValueOnce(json(200,{request_id:'different',run_id:'wrong-run'})));
  try{await expect(recognizeHardware('synthetic-opening',['AAAA'],'image/png')).rejects.toMatchObject({message:'recognition_recovery_invalid_response'});}finally{vi.unstubAllGlobals();}
+});
+
+it('surfaces an empty successful analysis response without replaying the photograph',async()=>{
+ const request=vi.fn().mockResolvedValue(json(200,{}));vi.stubGlobal('fetch',request);
+ try{await expect(recognizeHardware('synthetic-opening',['AAAA'],'image/png')).rejects.toThrow('recognition_result_missing');expect(request).toHaveBeenCalledOnce();}finally{vi.unstubAllGlobals();}
 });
