@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { Router } from "express";
+import {identityInputError,identityValues} from '../services/hardwareIdentity';
 import { z } from "zod";
 import { pool } from "../db/pool";
 import { openingsForOrgSubquery } from "../db/tenantScope";
@@ -38,6 +39,8 @@ const syncComponentCreate = z.object({
   payload: z.object({
     component_type: componentType,
     recognition_run_id: z.string().uuid().optional(),
+    identity_source: z.enum(['unknown','technician_identified','photo_suggestion']).optional(),
+    identity_acknowledged: z.boolean().optional(),
     manufacturer: z.string().optional(),
     model_number: z.string().optional(),
     install_date: z.string().optional(),
@@ -125,13 +128,17 @@ syncRouter.post("/components", async (req: AuthedRequest, res) => {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: targetError });
     }
+    const identityError=identityInputError(b.payload);
+    if(identityError){await client.query('ROLLBACK');return res.status(400).json({error:identityError});}
+    const provenance=identityValues(b.payload,userId);
 
     const component = await client.query(
       `INSERT INTO hardware_components
         (id, opening_id, component_type, manufacturer, model_number, finish, notes, tracker_id,
          mounting_scope, door_leaf_id, frame_id, position_label, client_operation_id,
-         condition, identity_status, review_state, replacement_required, revision, install_date, unit_cost, supplier_name, supplier_contact, serial_number, carrier, tracking_number, shipment_status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,1,$18,$19,$20,$21,$22,$23,$24,$25)
+         condition, identity_status, review_state, replacement_required, revision, install_date, unit_cost, supplier_name, supplier_contact, serial_number, carrier, tracking_number, shipment_status,
+         identity_source,identity_acknowledged_by,identity_acknowledged_at,identity_recognition_run_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,1,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
        RETURNING *`,
       [b.entity_id, b.opening_id, b.payload.component_type, b.payload.manufacturer ?? null,
         b.payload.model_number ?? null, b.payload.finish ?? null, b.payload.notes ?? null,
@@ -140,7 +147,8 @@ syncRouter.post("/components", async (req: AuthedRequest, res) => {
         b.payload.condition, b.payload.identity_status, b.payload.review_state,
         b.payload.replacement_required, b.payload.install_date ?? null, b.payload.unit_cost ?? null,
         b.payload.supplier_name ?? null, b.payload.supplier_contact ?? null, b.payload.serial_number ?? null,
-        b.payload.carrier ?? null, b.payload.tracking_number ?? null, b.payload.shipment_status ?? "not_shipped"],
+        b.payload.carrier ?? null, b.payload.tracking_number ?? null, b.payload.shipment_status ?? "not_shipped",
+        provenance.identity_source,provenance.identity_acknowledged_by,provenance.identity_acknowledged_at,provenance.identity_recognition_run_id],
     );
     if (b.payload.recognition_run_id) {
       const linked = await client.query(`UPDATE recognition_runs SET component_id=$1

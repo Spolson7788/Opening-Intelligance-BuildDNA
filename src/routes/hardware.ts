@@ -6,6 +6,7 @@ import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
 import { openingsForOrgSubquery } from "../db/tenantScope";
+import {identityInputError,identityValues} from '../services/hardwareIdentity';
 
 export const hardwareRouter = Router();
 hardwareRouter.use(requireAuth);
@@ -73,6 +74,22 @@ const createHardwareSchema = z.object({
   identity_status: z.enum(["established", "unresolved"]).optional(),
   review_state: z.enum(["pending", "reviewed"]).optional(),
   replacement_required: z.boolean().optional(),
+  identity_source: z.enum(['unknown','technician_identified','photo_suggestion']).optional(),
+  identity_acknowledged: z.boolean().optional(),
+  recognition_run_id: z.string().uuid().optional(),
+});
+
+// Shared approved catalog choices. Selection is a technician assertion, not AI evidence.
+hardwareRouter.get('/catalog',async(req,res)=>{
+ const q=typeof req.query.q==='string'?req.query.q.trim().slice(0,200):'';
+ try{const result=await pool.query(`SELECT DISTINCT d.brand AS manufacturer,m.model AS model_number,m.series
+  FROM reference_document_models m JOIN reference_documents d ON d.sha256=m.doc_sha256
+  JOIN reference_pages p ON p.doc_sha256=m.doc_sha256 AND p.page_no=m.evidence_page
+  WHERE d.status='approved' AND p.citable AND NOT p.fraction_unverified
+   AND ($1='' OR d.brand ILIKE $2 OR m.model ILIKE $2)
+  ORDER BY manufacturer,model_number LIMIT 200`,[q,'%'+q+'%']);
+  res.setHeader('Cache-Control','no-store');return res.json({products:result.rows});
+ }catch{return res.status(503).json({error:'product_catalog_unavailable'});}
 });
 
 async function validateMountingTarget(
@@ -106,6 +123,13 @@ hardwareRouter.post("/", async (req: AuthedRequest, res) => {
       return res.status(403).json({ error: "forbidden" });
     }
     const mountingScope = b.mounting_scope ?? "opening";
+    const identityError=identityInputError(b);
+    if(identityError)return res.status(400).json({error:identityError});
+    if(b.recognition_run_id){
+      const run=await pool.query('SELECT id FROM recognition_runs WHERE id=$1 AND opening_id=$2 AND user_id=$3 AND organization_id=$4',[b.recognition_run_id,b.opening_id,req.auth!.userId,orgId]);
+      if(!run.rows.length)return res.status(400).json({error:'invalid_recognition_run'});
+    }
+    const provenance=identityValues(b,req.auth!.userId);
     const targetError = await validateMountingTarget(b.opening_id, mountingScope, b.door_leaf_id, b.frame_id);
     if (targetError) return res.status(400).json({ error: targetError });
     const trackerId = generateTrackerId();
@@ -115,8 +139,9 @@ hardwareRouter.post("/", async (req: AuthedRequest, res) => {
          unit_cost, supplier_name, supplier_contact, tracker_id, serial_number, carrier, tracking_number,
          shipment_status, expected_delivery_date, shipped_date, delivered_date,
          mounting_scope, door_leaf_id, frame_id, position_label, client_operation_id,
-         condition, identity_status, review_state, replacement_required)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
+         condition, identity_status, review_state, replacement_required,
+         identity_source,identity_acknowledged_by,identity_acknowledged_at,identity_recognition_run_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
        ON CONFLICT (opening_id, client_operation_id) WHERE client_operation_id IS NOT NULL
        DO UPDATE SET opening_id=EXCLUDED.opening_id RETURNING *`,
       [
@@ -130,6 +155,7 @@ hardwareRouter.post("/", async (req: AuthedRequest, res) => {
         b.position_label ?? null, b.client_operation_id ?? null,
         b.condition ?? "unverified", b.identity_status ?? "unresolved",
         b.review_state ?? "pending", b.replacement_required ?? false,
+        provenance.identity_source,provenance.identity_acknowledged_by,provenance.identity_acknowledged_at,provenance.identity_recognition_run_id,
       ]
     );
     res.status(201).json(result.rows[0]);
@@ -209,12 +235,15 @@ hardwareRouter.patch("/:id", async (req: AuthedRequest, res) => {
   const parsed = updateHardwareSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
+  const client=await pool.connect();let committed=false;
   try {
-    const openingId = await assertHardwareInOrg(id, orgId);
-    if (!openingId) return res.status(404).json({ error: "not_found" });
+    await client.query("BEGIN");
+    const currentIdentity=(await client.query(`SELECT * FROM hardware_components WHERE id=$1 AND opening_id IN (${openingsForOrgSubquery(2)}) FOR UPDATE`,[id,orgId])).rows[0];
+    if(!currentIdentity)return res.status(404).json({error:"not_found"});
+    const openingId=currentIdentity.opening_id;
 
     if (parsed.data.mounting_scope !== undefined || parsed.data.door_leaf_id !== undefined || parsed.data.frame_id !== undefined) {
-      const current = await pool.query(
+      const current = await client.query(
         "SELECT mounting_scope, door_leaf_id, frame_id FROM hardware_components WHERE id=$1",
         [id]
       );
@@ -228,22 +257,36 @@ hardwareRouter.patch("/:id", async (req: AuthedRequest, res) => {
       if (targetError) return res.status(400).json({ error: targetError });
     }
 
-    const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined);
+    const {identity_acknowledged,recognition_run_id,...updates}=parsed.data;
+    const identityChanged=['manufacturer','model_number','component_type'].some(k=>k in updates&&(updates as any)[k]!==currentIdentity[k]);
+    const sourceChanged=updates.identity_source!==undefined&&updates.identity_source!==currentIdentity.identity_source;
+    const valuesToSave:Record<string,unknown>={...updates};
+    if(identity_acknowledged===true){
+      const merged={...currentIdentity,...updates,identity_acknowledged:true,recognition_run_id:recognition_run_id||(updates.identity_source==='technician_identified'?undefined:currentIdentity.identity_recognition_run_id)||undefined};
+      const error=identityInputError(merged);if(error)return res.status(400).json({error});
+      if(merged.recognition_run_id){const run=await client.query('SELECT id FROM recognition_runs WHERE id=$1 AND opening_id=$2 AND user_id=$3 AND organization_id=$4',[merged.recognition_run_id,openingId,req.auth!.userId,orgId]);if(!run.rows.length)return res.status(400).json({error:'invalid_recognition_run'});}
+      Object.assign(valuesToSave,identityValues(merged,req.auth!.userId));
+    }else if(identityChanged&&currentIdentity.identity_source!=='unknown'||sourceChanged||identity_acknowledged===false){
+      if(updates.identity_source==='technician_identified'||updates.identity_source==='photo_suggestion')return res.status(400).json({error:'identity_acknowledgment_required'});
+      Object.assign(valuesToSave,{identity_source:'unknown',identity_acknowledged_by:null,identity_acknowledged_at:null,identity_recognition_run_id:null,identity_status:'unresolved',review_state:'pending'});
+    }
+    const fields = Object.entries(valuesToSave).filter(([, v]) => v !== undefined);
     if (fields.length === 0) return res.status(400).json({ error: "no_fields_to_update" });
 
     const setClause = fields.map(([k], i) => `${k} = $${i + 1}`).join(", ");
     const values = fields.map(([, v]) => v);
     values.push(id);
 
-    const result = await pool.query(
+    const result = await client.query(
       `UPDATE hardware_components SET ${setClause} WHERE id = $${values.length} RETURNING *`,
       values
     );
+    await client.query("COMMIT");committed=true;
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
-  }
+  }finally{if(!committed)await client.query("ROLLBACK");client.release();}
 });
 
 hardwareRouter.delete("/:id", async (req: AuthedRequest, res) => {

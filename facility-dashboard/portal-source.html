@@ -466,7 +466,7 @@ async function render(ops){
       var serv=p.work_completed_at?'<span style="color:var(--good);font-weight:700">✓ '+formatCalendarDate(p.work_completed_at)+'</span>':'<span style="color:var(--muted)">No service date</span>';
       html+='<tr class="prow" data-op="'+oi+'"><td class="cpt"></td>'+
         '<td data-label="Component">'+esc((p.component_class||'').replace(/_/g,' '))+'<small style="display:block">'+esc((p.hierarchy||'opening').replace(/_/g,' '))+'</small>'+'</td>'+
-        '<td class="mm" data-label="Manufacturer / model">'+esc(p.manufacturer||'')+'<span class="mdl">'+esc(p.model||'')+'</span></td>'+
+        '<td class="mm" data-label="Manufacturer / model">'+esc(p.manufacturer||'')+'<span class="mdl">'+esc(p.model||'')+'</span><span class="mdl">'+esc(p.identity_source==='technician_identified'?'Technician identified':p.identity_source==='photo_suggestion'?'Photo suggestion':'Identity source not recorded')+'</span></td>'+
         '<td data-label="Condition"><span class="cond '+(CONDCLS[cond]||'cn')+'">'+(CONDLBL[cond]||cond)+'</span></td>'+
         '<td class="hc" data-label="Health"><span class="hb" style="color:'+PB[2]+'">'+PB[1]+'</span> <span class="hl">'+PB[0]+'</span><div class="scorebar"><i style="width:'+(s===null?0:s)+'%;background:'+PB[2]+'"></i></div><span class="sc">'+(s===null?'—':s)+'</span></td>'+
         '<td class="vc" data-label="Last serviced">'+serv+'</td></tr>';

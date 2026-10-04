@@ -304,6 +304,7 @@ export function OpeningDetailPage() {
                     <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-secondary)" }}>
                       {hw.manufacturer} {hw.model_number}
                     </p>
+                    <p style={{margin:'4px 0 0',fontSize:13}}>Identity source: {hw.identity_source==='technician_identified'?'Technician identified':hw.identity_source==='photo_suggestion'?'Photo suggestion':'Not recorded'}{hw.identity_acknowledged_at?' — acknowledged':''}</p>
                     {(hw.unit_cost || hw.supplier_name) && (
                       <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--accent)" }}>
                         {hw.unit_cost ? `$${Number(hw.unit_cost).toFixed(2)}` : ""}

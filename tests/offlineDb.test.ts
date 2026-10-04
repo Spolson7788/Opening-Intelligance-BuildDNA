@@ -281,12 +281,13 @@ describe("recognition photographs saved with hardware",()=>{
     await saveAuth({token:"test",userId:ids.user,organizationId:ids.organization,role:"technician"});
     const {queueOpeningMutation}=await import("../field-app/src/lib/sync");
     const files=[new File([new Uint8Array([255,216,255,1])],"closer.jpg",{type:"image/jpeg"}),new File([new Uint8Array([255,216,255,2])],"label.jpg",{type:"image/jpeg"})];
-    await queueOpeningMutation("hardware_component",ids.opening,{id:ids.entity,component_type:"closer"},ids.operation,files);
+    await queueOpeningMutation("hardware_component",ids.opening,{id:ids.entity,component_type:"closer",manufacturer:"LCN",model_number:"4040XP",identity_source:"technician_identified",identity_acknowledged:true},ids.operation,files);
     await closeFieldAppDb();
     const operations=await getSyncOperationsForOpening(ids.opening);
     const photos=operations.filter(o=>o.entityType==="photo");
     expect(photos).toHaveLength(2);
     expect(operations.filter(o=>o.entityType==="component")).toHaveLength(1);
+    expect(operations.find(o=>o.entityType==="component")?.payload).toMatchObject({identity_source:"technician_identified",identity_acknowledged:true,manufacturer:"LCN",model_number:"4040XP"});
     for(const photo of photos){
       expect(photo.dependencyOperationIds).toEqual([ids.operation]);
       expect(photo.state).toBe("blocked_dependency");
