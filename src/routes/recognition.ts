@@ -52,15 +52,17 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     const started=Date.now();
     const deadline=started+42000;
     const [response,labels]=await Promise.all([
-      withinRecognitionBudget(legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,timeout_ms:18000})}),started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})})),
+      withinRecognitionBudget(legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})}),started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})})),
       b.mode==='identify'?withinRecognitionBudget(readLabels(images,b.media_type,started+24000),started+24000,()=>({version:'oi-label-reading-7',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null),
     ]);
     if(response.statusCode!==200){
       // Only allow known safe categories through; never forward provider bodies.
       const safeErrors=new Set(['recognition_provider_authentication_failed','recognition_provider_permission_denied','recognition_provider_model_unavailable','recognition_provider_rate_limited','recognition_provider_image_rejected','recognition_provider_billing_blocked','recognition_provider_request_rejected','recognition_provider_image_format_rejected','recognition_provider_image_dimensions_rejected','recognition_provider_context_limit','recognition_provider_temporarily_unavailable','recognition_provider_invalid_response','recognition_provider_timeout','recognition_provider_connection_failed','recognition_engine_failed']);
-      let error='recognition_provider_failed';
-      try{const code=JSON.parse(response.body)?.error;if(safeErrors.has(code))error=code;}catch{}
-      return res.status(502).json({error});
+      let error='recognition_provider_failed';let providerDiagnostic:string|undefined;
+      try{const failed=JSON.parse(response.body);if(safeErrors.has(failed?.error))error=failed.error;
+       if(req.auth!.role==='admin'&&typeof failed.provider_diagnostic==='string')providerDiagnostic=failed.provider_diagnostic.slice(0,400);
+      }catch{}
+      return res.status(502).json({error,...(providerDiagnostic?{provider_diagnostic:providerDiagnostic}:{})});
     }
     let result=JSON.parse(response.body);
     if(!result||typeof result!=='object'||Array.isArray(result))return res.status(502).json({error:'recognition_provider_failed'});

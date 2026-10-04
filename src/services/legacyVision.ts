@@ -397,6 +397,22 @@ function normalizeHardwareRegions(parsed){
   };
 }
 
+// Diagnostic text is opt-in for the current authenticated administrator only.
+// Never return provider bodies, credentials, image data or quoted input values.
+export function redactProviderReason(message:string,secret=''){
+ let value=String(message||'');if(secret)value=value.split(secret).join('[redacted]');
+ value=value.replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]+/gi,'[image data removed]')
+  .replace(/Bearer\s+[^\s,;]+/gi,'[credential removed]')
+  .replace(/(?:sk-|sb_secret_)[A-Za-z0-9_-]+/g,'[credential removed]')
+  .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,'[token removed]')
+  .replace(/https?:\/\/[^\s]+/gi,'[link removed]')
+  .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[email removed]')
+  .replace(/"[^"\n]*"|'[^'\n]*'/g,'[quoted value removed]')
+  .replace(/[A-Za-z0-9+/=_-]{40,}/g,'[long value removed]')
+  .replace(/[\x00-\x1f\x7f]/g,' ').replace(/\s+/g,' ').trim();
+ return value.slice(0,400)||'The provider supplied no rejection reason.';
+}
+
 export const legacyVisionHandler = async (event: {httpMethod:string;body:string}) => {
   if (event.httpMethod !== "POST") return { statusCode: 405, body: "POST only" };
   try {
@@ -471,7 +487,8 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
         body: JSON.stringify({
           error: code,
           upstream_status: resp.status,
-          upstream_type: null
+          upstream_type: null,
+          ...(body.include_provider_diagnostic===true&&resp.status===400?{provider_diagnostic:redactProviderReason(message,key)}:{})
         })
       };
     }

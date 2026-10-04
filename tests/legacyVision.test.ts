@@ -47,3 +47,17 @@ it.each([
  vi.stubGlobal('fetch',fetchMock);
  try{const r=await legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({images:['aW1hZ2U='],media_type:'image/png'})});expect(JSON.parse(r.body).error).toBe(code);expect(r.body).not.toContain('private-input');}finally{vi.unstubAllGlobals();}
 });
+
+it('returns only an opt-in redacted rejection reason, never credentials or quoted input',async()=>{
+ const {redactProviderReason}=await import('../src/services/legacyVision');
+ const secret='test-credential-only';
+ const message=`messages.0.content: invalid parameter "private photo content" ${secret} sk-exampleSecret stephan@example.test ${'A'.repeat(100)}`;
+ const redacted=redactProviderReason(message,secret);
+ expect(redacted).toContain('invalid parameter');
+ for(const value of ['private photo content',secret,'sk-exampleSecret','stephan@example.test','A'.repeat(100)])expect(redacted).not.toContain(value);
+ fetchMock.mockResolvedValue(new Response(JSON.stringify({error:{message:'messages.0.content: invalid parameter'}}),{status:400}));
+ const r=await legacyVisionHandler({...event,body:JSON.stringify({...JSON.parse(event.body),include_provider_diagnostic:true})});
+ expect(JSON.parse(r.body).provider_diagnostic).toContain('invalid parameter');
+ fetchMock.mockResolvedValue(new Response(JSON.stringify({error:{message:'messages.0.content: invalid parameter'}}),{status:400}));
+ expect(JSON.parse((await legacyVisionHandler(event)).body).provider_diagnostic).toBeUndefined();
+});

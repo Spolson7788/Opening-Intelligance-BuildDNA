@@ -32,6 +32,7 @@ export const confirmPurchasingEmailSent=(id:string)=>authedFetch(`/purchasing/re
 export class ApiError extends Error {
   status: number;
   reference?: string;
+  providerDiagnostic?: string;
   hostingAccessRequired: boolean;
   constructor(status: number, message: string, reference?: string, hostingAccessRequired = false) {
     super(message);
@@ -82,10 +83,12 @@ async function responseFailure(response: Response): Promise<ApiError> {
   const body = await readResponseBody(response);
   const hosting = isUnverifiedSiteAccess(response, body);
   if (hosting) requestPreviewAccess();
-  return new ApiError(response.status,
+  const error=new ApiError(response.status,
     hosting ? 'Staging website access needs renewal. Use Renew staging access above.' : body?.error || `request_failed_${response.status}`,
     typeof body?.reference === 'string' && /^[0-9a-f-]{36}$/i.test(body.reference) ? body.reference : undefined,
     hosting);
+  if(typeof body?.provider_diagnostic==='string')error.providerDiagnostic=body.provider_diagnostic.slice(0,400);
+  return error;
 }
 
 // Check the actual protected server, not the service worker's cached app shell.

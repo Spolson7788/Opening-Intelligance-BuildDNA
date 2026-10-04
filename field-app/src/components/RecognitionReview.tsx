@@ -36,6 +36,7 @@ export function recognitionFailureMessage(code:string){
 
 export function RecognitionReview({openingId,attributes={},onUse,onFilesChange,onBusyChange}:{openingId:string;attributes?:Record<string,string>;onBusyChange?:(busy:boolean)=>void;onFilesChange:(files:File[])=>void;onUse:(manufacturer:string,model:string,runId:string,componentType:string|null)=>void}) {
   const [files,setFiles]=useState<File[]>([]);
+  const [providerDiagnostic,setProviderDiagnostic]=useState('');
   const [progress,setProgress]=useState('');
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
@@ -55,7 +56,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange,o
   },[openingId]);
   async function analyze(){
     const current=++generation.current;
-    setError('');setResult(null);setResponse(null);setProgress('');setBusy(true);
+    setError('');setProviderDiagnostic('');setResult(null);setResponse(null);setProgress('');setBusy(true);
     try{
       if(!files.length||files.length>5||files.reduce((n,f)=>n+f.size,0)>2*1024*1024)throw Error('Select one to five photographs, totaling at most 2 MB.');
       if(!['image/jpeg','image/png','image/webp'].includes(files[0].type)||files.some(f=>f.type!==files[0].type))throw Error('Use JPEG, PNG or WebP photographs of the same format.');
@@ -65,7 +66,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange,o
       })));
       const response=await recognizeHardware(openingId,images,files[0].type,{...attributes,visible_markings:markings,observed_features:features},()=>{if(current===generation.current)setProgress('Retrieving saved analysis…');});
       if(current===generation.current){setResult(response.suggestion);setResponse(response);}
-    }catch(e){if(current===generation.current)setError(recognitionFailureMessage(e instanceof Error&&e.message?e.message:'recognition_provider_failed'));}
+    }catch(e){if(current===generation.current){setError(recognitionFailureMessage(e instanceof Error&&e.message?e.message:'recognition_provider_failed'));setProviderDiagnostic(typeof (e as any)?.providerDiagnostic==='string'?(e as any).providerDiagnostic:'');}}
     finally{if(current===generation.current)setBusy(false);}
   }
   const text=(key:string)=>typeof result?.[key]==='string'?String(result[key]):'';
@@ -84,6 +85,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onFilesChange,o
     <input aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;const selected=Array.from(e.target.files||[]);setFiles(selected);onFilesChange(selected);setResult(null);setError('');}}/>
     <button type="button" disabled={busy||!files.length||!availability?.available} onClick={analyze}>{busy?progress||'Analyzing…':'Analyze photographs'}</button>
     {error&&<p role="alert">{error}</p>}
+    {providerDiagnostic&&<p>Administrator diagnostic: {providerDiagnostic}</p>}
     {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — will attach when you save this hardware.</p>}
     {result&&<div>
       {response?.reported_identity&&<p>Technician-reported product: <strong>{response.reported_identity.manufacturer} {response.reported_identity.model}</strong> — awaiting verification.</p>}
