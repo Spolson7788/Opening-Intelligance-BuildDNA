@@ -78,3 +78,30 @@ it('does not count a removed cover as contradictory identity evidence and retain
  expect(result.reasoning_adjustments[0].feature).toEqual(absent);
  expect(original.candidates[0].contradicting_features).toHaveLength(3);
 });
+
+it('keeps classifier-only markings out of comparison evidence and rejects their conflicts',async()=>{
+ const {applyLabelEvidence}=await import('../src/services/labelReading');
+ const {comparisonPayload,sanitizeReferenceComparison}=await import('../src/services/referenceEvidence');
+ const stage=applyLabelEvidence({visible_text:['RYOBI'],evidence:[{supports:'visible_text',observation:'RYOBI label'},{supports:'arm_type',observation:'scissor arm'}]}, {version:'test',status:'completed',reads:[],limiting_factor:null});
+ expect(stage.visible_text).toEqual([]);
+ expect(stage.classifier_visible_text).toEqual(['RYOBI']);
+ expect(stage.classifier_text_evidence).toHaveLength(1);
+ const payload=comparisonPayload({stage_one:stage,pages:[],conflicts:[]});
+ expect(JSON.stringify(payload)).not.toContain('RYOBI');
+ expect(JSON.stringify(payload)).toContain('scissor arm');
+ const result=sanitizeReferenceComparison({candidates:[{model:'4040XP',contradicting_features:[{observation:'Visible RYOBI differs from LCN'},{observation:'Mounting pattern differs'}]}],unresolved:['RYOBI text conflicts','Model is unconfirmed']},stage);
+ expect(result.candidates[0].contradicting_features).toEqual([{observation:'Mounting pattern differs'}]);
+ expect(result.unresolved).toEqual(['Model is unconfirmed']);
+ expect(result.reasoning_adjustments).toHaveLength(2);
+ expect(result.cover_comparison).toBeUndefined();
+});
+it('preserves a corroborated marking conflict without treating repeated AI views as confirmation',async()=>{
+ const {applyLabelEvidence}=await import('../src/services/labelReading');
+ const {sanitizeReferenceComparison}=await import('../src/services/referenceEvidence');
+ const read={region:{photo_index:0,x:0,y:0,w:1,h:1,rotation:0},ocr_text:'RYOBI',ocr_confidence:90,vision_text:'RYOBI',agreed_markings:['RYOBI'],status:'agreement' as const};
+ const stage=applyLabelEvidence({visible_text:['RYOBI']},{version:'test',status:'completed',reads:[read],limiting_factor:null});
+ const comparison={candidates:[{contradicting_features:[{observation:'RYOBI differs from LCN'}]}]};
+ expect(sanitizeReferenceComparison(comparison,stage).candidates[0].contradicting_features).toHaveLength(1);
+ const unconfirmed=applyLabelEvidence({visible_text:['RYOBI']},{version:'test',status:'completed',reads:[{...read,ocr_text:'',agreed_markings:[]},{...read,ocr_text:'',agreed_markings:[]}],limiting_factor:null});
+ expect(unconfirmed.visible_text).toEqual([]);
+});

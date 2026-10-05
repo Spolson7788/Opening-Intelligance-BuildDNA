@@ -5,7 +5,7 @@ import sharp from 'sharp';
 import {createWorker,PSM} from 'tesseract.js';
 import {dirname,join} from 'node:path';
 
-export const LABEL_PROMPT_VERSION='oi-label-reading-12';
+export const LABEL_PROMPT_VERSION='oi-label-reading-13';
 // Layout transcribed from the user-supplied clean label photograph. No expected
 // characters enter either reader: the reference guides location only.
 export const LABEL_LAYOUT_REFERENCE={id:'bold-heading-over-diagrams-v1',source_sha256:'7683137c6e82674d157816e2e4747e640ecc520da3983c95cf905204fb5e60c2',guide:'For a rectangular sticker with bold headings above dense adjustment diagrams, locate the model heading separately from the diagrams and brand heading. Check the photograph for this layout; do not assume it is present. Other layouts remain valid. Never supply expected characters from the reference.'};
@@ -239,8 +239,9 @@ export function labelCandidates(reads:LabelRead[],catalog:{manufacturer:string;m
 }
 export function applyLabelEvidence(stage:Record<string,any>,labels:LabelEvidence){
  const markings=[...new Set(labels.reads.flatMap(r=>r.agreed_markings))];
- const result:Record<string,any>={...stage,photograph_identity:{manufacturer:stage.manufacturer??null,series:stage.series??null,model:stage.model??null},label_reading:labels,visible_text:[...new Set([...(Array.isArray(stage.visible_text)?stage.visible_text:[]),...markings])]};
+ const result:Record<string,any>={...stage,photograph_identity:{manufacturer:stage.manufacturer??null,series:stage.series??null,model:stage.model??null},label_reading:labels,classifier_visible_text:Array.isArray(stage.visible_text)?stage.visible_text:[],visible_text:markings};
  // Catalog associations stay hypotheses, never overwrite photographic identity.
- result.evidence=[...(Array.isArray(stage.evidence)?stage.evidence:[]),...labels.reads.filter(r=>r.agreed_markings.length).map(r=>({observation:`Two readers agree on label characters: ${r.agreed_markings.join(' ')}.`,supports:'visible_text',photo_index:r.region.photo_index,region:r.region}))];
+ result.classifier_text_evidence=(Array.isArray(stage.evidence)?stage.evidence:[]).filter((e:any)=>e.supports==='visible_text');
+ result.evidence=[...(Array.isArray(stage.evidence)?stage.evidence:[]).filter((e:any)=>e.supports!=='visible_text'),...labels.reads.filter(r=>r.agreed_markings.length).map(r=>({observation:`Two readers agree on label characters: ${r.agreed_markings.join(' ')}.`,supports:'visible_text',photo_index:r.region.photo_index,region:r.region}))];
  return result;
 }

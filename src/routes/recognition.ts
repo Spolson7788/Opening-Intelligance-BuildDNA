@@ -155,7 +155,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       if('page_id' in value)return validateCitations([value],pages).accepted[0]||null;
       return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,k==='citation'?(validateCitations([v],pages).accepted[0]||null):clean(v)]));
     };
-    comparison=sanitizeReferenceComparison(clean(comparison));
+    comparison=sanitizeReferenceComparison(clean(comparison),result);
     const conflictFields=new Set(conflicts.map((c:any)=>c.field));
     const unresolve=(v:any):any=>Array.isArray(v)?v.map(unresolve):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,conflictFields.has(k)?null:unresolve(x)])):v;
     comparison=unresolve(comparison);
