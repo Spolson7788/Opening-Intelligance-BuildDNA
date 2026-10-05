@@ -81,3 +81,19 @@ it('rejects unknown/omitted established identities and status-only promotion, in
  const review=await purchasingReview(pool as any,org.organizationId,[o.id],true);
  expect(review?.blocked).toBe(true);expect(review?.decisions[0].reasons).toContain('identity_source_required');expect(review?.decisions[0].reasons).toContain('identity_acknowledgment_required');
 });
+
+it('persists AI component-type provenance separately, rejects mismatches, and keeps replay idempotent',async()=>{
+ const org=await signupTestOrg(),f=await createPortfolioHierarchy(org.token),o=await createTestOpening(org.token,f.buildingId),auth={Authorization:`Bearer ${org.token}`};
+ const user=(await pool.query('SELECT id FROM users WHERE organization_id=$1',[org.organizationId])).rows[0];
+ const runId=randomUUID();
+ await pool.query(`INSERT INTO recognition_runs(id,organization_id,opening_id,user_id,photo_hashes,technician_attributes,component_type,stage_one,suggestion,retrieved_pages,citations,rejected_citations,conflicts,status,model_id,prompt_version) VALUES($1,$2,$3,$4,'[]','{}','closer','{}','{"component_class":"DOOR_CLOSER"}','[]','[]','[]','[]','no_reference_evidence','test','test')`,[runId,org.organizationId,o.id,user.id]);
+ const body={operation_id:randomUUID(),entity_id:randomUUID(),opening_id:o.id,device_id:randomUUID(),base_server_revision:null,schema_version:3,app_version:'type-test',protocol_version:1,payload:{component_type:'closer',component_type_provenance:{source:'AI',run_id:runId}}};
+ const save=(value:any=body)=>request(app).post('/api/sync/components').set(auth).send(value);
+ expect((await save()).status).toBe(201);expect((await save()).status).toBe(200);
+ const saved=(await pool.query('SELECT * FROM hardware_components WHERE id=$1',[body.entity_id])).rows[0];
+ expect(saved.identity_source).toBe('unknown');expect(saved.identity_acknowledged_at).toBeNull();
+ const audit=(await pool.query("SELECT request_body FROM audit_log WHERE action='component_type_provenance' AND request_body->>'component_id'=$1",[body.entity_id])).rows;
+ expect(audit).toHaveLength(1);expect(audit[0].request_body).toMatchObject({source:'AI',recognition_run_id:runId,component_type:'closer'});
+ const rejected=await save({...body,operation_id:randomUUID(),entity_id:randomUUID(),payload:{...body.payload,component_type:'lockset'}});
+ expect(rejected.status).toBe(400);expect(rejected.body.error).toBe('invalid_component_type_provenance');
+});

@@ -177,7 +177,7 @@ it('sends the cropped model heading to vision before noisy search-tile variants 
  const images=content.filter(x=>x.type==='image').map(x=>(x as any).source.data);
  expect(images).toEqual(['label','heading','tile'].map(x=>Buffer.from(x).toString('base64')));
  const instructions=content.filter(x=>x.type==='text').map(x=>(x as any).text).join(' ');
- expect(instructions).toContain('Read these characters first');expect(instructions).not.toMatch(/LCN|4040|XP|CR441/);
+ expect(instructions).not.toContain('Read these characters first');expect(instructions).toContain('Prefer the complete label crop');expect(instructions).not.toMatch(/LCN|4040|XP|CR441/);
 });
 
 it('rejects smooth background as a model line and retains broad marking regions for fallback',async()=>{
@@ -198,4 +198,17 @@ it('keeps alternate orientation available when locator rotation is wrong',async(
  const content=labelVisionContent([{region,crop:Buffer.from('whole-label')}],[null],[[]],[Buffer.from('rotated-label')]);
  expect(content.filter(c=>c.type==='image').map(c=>(c as any).source.data)).toEqual(['whole-label','rotated-label'].map(s=>Buffer.from(s).toString('base64')));
  expect(content.filter(c=>c.type==='text').map(c=>(c as any).text).join(' ')).toContain('locator orientation may be wrong');
+});
+
+it('reports a locator timeout as partial even when tile reading and OCR return successfully',async()=>{
+ const originalFetch=globalThis.fetch;
+ vi.mocked(createWorker).mockResolvedValueOnce({setParameters:vi.fn(),terminate:vi.fn().mockResolvedValue(undefined),recognize:vi.fn().mockResolvedValue({data:{text:'',confidence:0}})} as any);
+ globalThis.fetch=vi.fn().mockRejectedValueOnce(new DOMException('timed out','TimeoutError')).mockResolvedValueOnce(new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify({reads:Array.from({length:5},(_,crop_index)=>({crop_index,text:''}))})}]})));
+ try{
+  const input=await sharp({create:{width:100,height:80,channels:3,background:'white'}}).png().toBuffer();
+  const result=await readLabels([input],'image/png');
+  expect(result.status).toBe('partial');expect(result.limiting_factor).toBe('label_timeout');
+  expect(result.stage_outcomes?.label_locator).toMatchObject({status:'failed',reason:'label_timeout'});
+  expect(result.stage_outcomes?.label_reader.status).toBe('succeeded');
+ }finally{globalThis.fetch=originalFetch;}
 });

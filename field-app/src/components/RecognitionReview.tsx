@@ -35,7 +35,7 @@ export function recognitionFailureMessage(code:string){
   return messages[code]||code;
 }
 
-export function RecognitionReview({openingId,attributes={},onUse,onComponentType,onFilesChange,onBusyChange}:{openingId:string;onComponentType?:(type:string)=>void;attributes?:Record<string,string>;onBusyChange?:(busy:boolean)=>void;onFilesChange:(files:File[])=>void;onUse:(manufacturer:string,model:string,runId:string,componentType:string|null)=>void}) {
+export function RecognitionReview({openingId,attributes={},onUse,onComponentType,onFilesChange,onBusyChange}:{openingId:string;onComponentType?:(type:string,runId:string)=>boolean;attributes?:Record<string,string>;onBusyChange?:(busy:boolean)=>void;onFilesChange:(files:File[])=>void;onUse:(manufacturer:string,model:string,runId:string,componentType:string|null)=>void}) {
   const [files,setFiles]=useState<File[]>([]);
   const [providerDiagnostic,setProviderDiagnostic]=useState('');
   const [progress,setProgress]=useState('');
@@ -46,6 +46,8 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
   const [markings,setMarkings]=useState('');
   const [features,setFeatures]=useState('');
   const generation=useRef(0);
+  const [typeApplied,setTypeApplied]=useState(false);
+  useEffect(()=>()=>{generation.current++;},[openingId]);
   useEffect(()=>{onBusyChange?.(busy);},[busy,onBusyChange]);
   const [availability,setAvailability]=useState<{available:boolean;blocking_reasons:string[];reason:string|null;reference_comparison_enabled:boolean}|null>(null);
   const [availabilityError,setAvailabilityError]=useState('');
@@ -57,7 +59,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
   },[openingId]);
   async function analyze(){
     const current=++generation.current;
-    setError('');setProviderDiagnostic('');setResult(null);setResponse(null);setProgress('');setBusy(true);
+    setTypeApplied(false);setError('');setProviderDiagnostic('');setResult(null);setResponse(null);setProgress('');setBusy(true);
     try{
       if(!files.length||files.length>5||files.reduce((n,f)=>n+f.size,0)>2*1024*1024)throw Error('Select one to five photographs, totaling at most 2 MB.');
       if(!['image/jpeg','image/png','image/webp'].includes(files[0].type)||files.some(f=>f.type!==files[0].type))throw Error('Use JPEG, PNG or WebP photographs of the same format.');
@@ -69,7 +71,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
       if(current===generation.current){
         setResult(response.suggestion);setResponse(response);
         const componentType=photographedComponentTypes[String(response.suggestion.component_class||'')];
-        if(componentType)onComponentType?.(componentType);
+        if(componentType)setTypeApplied(onComponentType?.(componentType,response.run_id)===true);
       }
     }catch(e){if(current===generation.current){setError(recognitionFailureMessage(e instanceof Error&&e.message?e.message:'recognition_provider_failed'));setProviderDiagnostic(typeof (e as any)?.providerDiagnostic==='string'?(e as any).providerDiagnostic:'');}}
     finally{if(current===generation.current)setBusy(false);}
@@ -93,12 +95,13 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     {providerDiagnostic&&<p>Administrator diagnostic: {providerDiagnostic}</p>}
     {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — will attach when you save this hardware.</p>}
     {result&&<div>
-      {onComponentType&&photographedComponentTypes[text('component_class')]&&<p>Photograph component type: <strong>{photographedComponentTypes[text('component_class')].replace(/_/g,' ')}</strong>. Component type filled automatically. You can change it below.</p>}
+      {onComponentType&&photographedComponentTypes[text('component_class')]&&<p>Photograph component type: <strong>{photographedComponentTypes[text('component_class')].replace(/_/g,' ')}</strong>. {typeApplied?'Component type filled automatically. You can change it below.':'Your selected component type was preserved. You can change it below.'}</p>}
       {response?.reported_identity&&<p>Technician-reported product: <strong>{response.reported_identity.manufacturer} {response.reported_identity.model}</strong> — awaiting verification.</p>}
       {labelReads.some(read=>read.ocr_model_conflicts?.length>0)&&<p role="alert">The readers disagree on model characters. The candidate is retained for your review; verify the label before accepting it. OCR alternatives: {[...new Set(labelReads.flatMap(read=>read.ocr_model_conflicts||[]))].join(', ')}.</p>}
       {response?.label_candidate&&!text('model')&&<p>Label candidate: <strong>{response.label_candidate.manufacturer} {response.label_candidate.model||`${response.label_candidate.series} family`}</strong> — single AI reader; technician verification required.{response.label_candidate.manufacturer_basis==='catalog_model_match'&&' Manufacturer suggested by the catalog model match; manufacturer marking not confirmed.'}{response.label_candidate.manufacturer_basis==='catalog_partial_model_match'&&` Partial marking: ${response.label_candidate.transcribed_marking}. Catalog candidate suggested from readable characters; missing characters and manufacturer marking require verification.`}</p>}
       {response?.label_candidates?.length>1&&<div><p>Partial markings match several catalog products. Reference comparison follows; no exact model selected.</p><ul>{response.label_candidates.map((c:any,i:number)=><li key={i}>{c.manufacturer} {c.model||c.catalog_model||c.series} — read: {c.transcribed_marking||'partial marking'}</li>)}</ul></div>}
       <p>Photograph suggestion: {text('model')?`${text('manufacturer')} ${text('model')}`:text('series')?`${text('manufacturer')} ${text('series')} family — exact model unconfirmed.`:text('manufacturer')?`${text('manufacturer')} — exact model unconfirmed.`:response?.label_candidate?'The model marking supports the candidate above; technician verification is pending.':'Exact manufacturer and model not confirmed from this photograph.'}</p>
+      {(result.label_reading as any)?.status==='partial'&&<p role="status">Label reading did not finish successfully. Missing text does not mean the label is unreadable.</p>}
       {(result.label_reading as any)?.status==='unavailable'&&<p role="status">Label reading could not complete. Photograph analysis remains available.</p>}
       {(result.label_reading as any)?.status==='no_regions'&&<p>No product label was located in this photograph.</p>}
       {(result.label_reading as any)?.locator_preprocessing?.enlarged_views>0&&<p>Full photograph enlarged automatically before locating the label. Original photograph preserved.</p>}

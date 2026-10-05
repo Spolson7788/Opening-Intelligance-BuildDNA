@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { fetchOpening } from "../lib/api";
@@ -40,6 +40,13 @@ export function LogHardwarePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [componentType, setComponentType] = useState("lockset");
+  const typeProvenance=useRef<{source:'default'|'technician'|'AI';run_id?:string}>({source:'default'});
+  const currentType=useRef('lockset');
+  function applyPhotoType(type:string,runId:string){
+    if(typeProvenance.current.source==='technician')return false;
+    if(currentType.current!==type){setIdentityAcknowledged(false);setIdentityStatus('unresolved');setReviewState('pending');setRecognitionRunId('');setIdentitySource('unknown');}
+    currentType.current=type;typeProvenance.current={source:'AI',run_id:runId};setComponentType(type);return true;
+  }
   const [manufacturer, setManufacturer] = useState("");
   const [modelNumber, setModelNumber] = useState("");
   const [installDate, setInstallDate] = useState("");
@@ -87,6 +94,7 @@ export function LogHardwarePage() {
         id: componentId,
         opening_id: id,
         component_type: componentType,
+        component_type_provenance: typeProvenance.current,
         recognition_run_id: recognitionRunId || undefined,
         identity_source:identityAcknowledged?identitySource:identityMode==='known'?'technician_identified':'unknown',
         identity_acknowledged:identityAcknowledged,
@@ -151,10 +159,10 @@ export function LogHardwarePage() {
           <form onSubmit={onSubmit}>
             <div className="field"><label htmlFor="identity-path">How will you identify this product?</label><select id="identity-path" value={identityMode} disabled={recognitionBusy} onChange={e=>{const mode=e.target.value as 'known'|'photo';setIdentityMode(mode);setIdentitySource(mode==='known'?'technician_identified':'unknown');setIdentityAcknowledged(false);setIdentityStatus('unresolved');setRecognitionRunId('');}}><option value="known">I know this product</option><option value="photo">Identify from photographs</option></select></div>
             {identityMode==='known'&&<><KnownProductPicker onSelect={(brand,model)=>{setManufacturer(brand);setModelNumber(model);editIdentity();}}/><div className="field"><label htmlFor="documentation-photo">Documentation photographs</label><input id="documentation-photo" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={e=>setRecognitionPhotos(Array.from(e.target.files||[]))}/><p>Photographs attach when you save. Image recognition is not required.</p>{recognitionPhotos.length>0&&<p>{recognitionPhotos.length} photograph{recognitionPhotos.length===1?'':'s'} selected.</p>}</div></>}
-            {identityMode==='photo'&&id && <RecognitionReview key={id} openingId={id} onComponentType={setComponentType} onBusyChange={setRecognitionBusy} onFilesChange={files=>{setRecognitionPhotos(files);setRecognitionRunId('');setIdentityAcknowledged(false);setIdentitySource('unknown');setIdentityStatus('unresolved');}} attributes={{component_type:componentType,mounting_scope:mountingScope,position:positionLabel}} onUse={(brand,model,run,recognizedType)=>{if(recognizedType)setComponentType(recognizedType);setManufacturer(brand);setModelNumber(model);setRecognitionRunId(run);setIdentitySource('photo_suggestion');setIdentityAcknowledged(false);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
+            {identityMode==='photo'&&id && <RecognitionReview key={id} openingId={id} onComponentType={applyPhotoType} onBusyChange={setRecognitionBusy} onFilesChange={files=>{setRecognitionPhotos(files);setRecognitionRunId('');setIdentityAcknowledged(false);setIdentitySource('unknown');setIdentityStatus('unresolved');}} attributes={{component_type:componentType,mounting_scope:mountingScope,position:positionLabel}} onUse={(brand,model,run,recognizedType)=>{if(recognizedType)setComponentType(recognizedType);setManufacturer(brand);setModelNumber(model);setRecognitionRunId(run);setIdentitySource('photo_suggestion');setIdentityAcknowledged(false);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
             <div className="field">
               <label htmlFor="component-type">Component type</label>
-              <select id="component-type" value={componentType} onChange={(e) => {setComponentType(e.target.value);editIdentity();}}>
+              <select id="component-type" value={componentType} onChange={(e) => {currentType.current=e.target.value;typeProvenance.current={source:'technician'};setComponentType(e.target.value);editIdentity();}}>
                 {COMPONENT_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>
                 ))}

@@ -7,7 +7,7 @@ interface AuditContext {runId:string;deadline:number;signal?:AbortSignal}
 export const recognitionAudit=new AsyncLocalStorage<AuditContext>();
 // Persist before sending. If accounting is unavailable, do not make a paid call.
 // Usage/cost remain unknown on interrupted responses; never report them as zero.
-export async function auditedFetch(url:string,init:RequestInit,stage:string):Promise<Response>{
+export async function auditedFetch(url:string,init:RequestInit,stage:string,validateOutput?:(body:any)=>unknown):Promise<Response>{
  const context=recognitionAudit.getStore();
  if(!context)throw Error('recognition_audit_context_required');
  const request=JSON.parse(String(init.body||'{}'));
@@ -26,7 +26,7 @@ export async function auditedFetch(url:string,init:RequestInit,stage:string):Pro
   let body:any;try{body=JSON.parse(raw);}catch{}
   const usage=body?.usage||null;
   let validOutput=false;
-  try{const text=(body?.content||[]).filter((c:any)=>c.type==='text').map((c:any)=>c.text).join('');JSON.parse(text.slice(text.indexOf('{'),text.lastIndexOf('}')+1));validOutput=true;}catch{}
+  try{const text=(body?.content||[]).filter((c:any)=>c.type==='text').map((c:any)=>c.text).join('');JSON.parse(text.slice(text.indexOf('{'),text.lastIndexOf('}')+1));if(validateOutput)validateOutput(body);validOutput=true;}catch{}
   const input=Number(process.env.OI_PROVIDER_INPUT_USD_PER_MILLION),output=Number(process.env.OI_PROVIDER_OUTPUT_USD_PER_MILLION);
   const validTokens=(n:unknown)=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0;
   const priced=usage&&validTokens(usage.input_tokens)&&validTokens(usage.output_tokens)&&Number.isFinite(input)&&Number.isFinite(output)&&input>0&&output>0&&!usage.cache_creation_input_tokens&&!usage.cache_read_input_tokens;

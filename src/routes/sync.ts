@@ -38,6 +38,7 @@ const syncComponentCreate = z.object({
   protocol_version: z.number().int().positive(),
   payload: z.object({
     component_type: componentType,
+    component_type_provenance: z.object({source:z.enum(['default','technician','AI']),run_id:z.string().uuid().optional()}).optional(),
     recognition_run_id: z.string().uuid().optional(),
     identity_source: z.enum(['unknown','technician_identified','photo_suggestion']).optional(),
     identity_acknowledged: z.boolean().optional(),
@@ -136,6 +137,13 @@ syncRouter.post("/components", async (req: AuthedRequest, res) => {
       if(!run.rows.length){await client.query('ROLLBACK');return res.status(400).json({error:'invalid_recognition_run'});}
       identityRun=run.rows[0];
     }
+    const typeProvenance=b.payload.component_type_provenance;
+    if(typeProvenance?.source==='AI'){
+      const run=await client.query("SELECT component_type,status FROM recognition_runs WHERE id=$1 AND opening_id=$2 AND user_id=$3 AND organization_id=$4",[typeProvenance.run_id,b.opening_id,userId,orgId]);
+      if(!run.rows.length||run.rows[0].component_type!==b.payload.component_type||['running','failed'].includes(run.rows[0].status)){
+        await client.query('ROLLBACK');return res.status(400).json({error:'invalid_component_type_provenance'});
+      }
+    }
     const provenance=identityValues(b.payload,userId,identityRun);
 
     const component = await client.query(
@@ -166,6 +174,9 @@ syncRouter.post("/components", async (req: AuthedRequest, res) => {
         return res.status(400).json({error:'invalid_recognition_run'});
       }
     }
+    // Persist classification provenance separately from product identity, in the
+    // same transaction as the save. Old clients are explicitly unknown.
+    await client.query(`INSERT INTO audit_log (organization_id,user_id,action,method,path,request_body,status_code) VALUES ($1,$2,'component_type_provenance','POST','/api/sync/components',$3,201)`,[orgId,userId,JSON.stringify({component_id:b.entity_id,operation_id:b.operation_id,component_type:b.payload.component_type,source:typeProvenance?.source||'unknown',recognition_run_id:typeProvenance?.source==='AI'?typeProvenance.run_id:null})]);
     const changedFields = Object.keys(b.payload).sort();
     const receipt = await writeSyncReceiptAndAudit(client, {
       organizationId: orgId,

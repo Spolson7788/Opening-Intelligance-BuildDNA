@@ -111,3 +111,32 @@ it.each([undefined,'unknown','technician_identified','photo_suggestion'])('requi
  const {identityInputError}=await import('../src/services/hardwareIdentity');
  expect(identityInputError({identity_status:'established',identity_source:source as any,manufacturer:'LCN',model_number:'4040XP'})).toBe('identity_acknowledgment_required');
 });
+
+it('validates label replies and preserves a string-index transcription without repairing characters',async()=>{
+ const {parseLabelResponse}=await import('../src/services/labelResponse');
+ const body=(v:any)=>({content:[{type:'text',text:JSON.stringify(v)}]});
+ expect(parseLabelResponse(body({reads:[{crop_index:'0',text:'4040XP'}]}),'label_reader',1).reads[0]).toEqual({crop_index:0,text:'4040XP'});
+ for(const value of [{}, {reads:[]},{reads:[{crop_index:0,text:null}]},{reads:[{crop_index:0,text:''},{crop_index:0,text:'4040XP'}]}])expect(()=>parseLabelResponse(body(value),'label_reader',1)).toThrow();
+ expect(()=>parseLabelResponse({stop_reason:'refusal'},'label_locator',1)).toThrow('label_refused');
+ expect(()=>parseLabelResponse(body({regions:[{photo_index:0,x:2,y:0,w:1,h:1,rotation:0}]}),'label_locator',1)).toThrow('label_invalid_regions');
+ expect(parseLabelResponse(body({regions:[]}), 'label_locator',1).regions).toEqual([]);
+});
+it('records a parseable but invalid label reply as invalid_response',async()=>{
+ const {parseLabelResponse}=await import('../src/services/labelResponse');
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({content:[{type:'text',text:'{"reads":[]}'}]}))));
+ await recognitionAudit.run({runId:'run',deadline:Date.now()+2000},()=>auditedFetch('https://provider.test',{method:'POST',body:JSON.stringify({model:'fixture',messages:[]})},'label_reader',b=>parseLabelResponse(b,'label_reader',1)));
+ const values=vi.mocked(pool.query).mock.calls.find(c=>String(c[0]).includes('raw_output'))![1] as any[];
+ expect(values[1]).toBe('invalid_response');
+});
+it('rejects a sharp frame edge as model-line detail',async()=>{
+ const {hasModelLineDetail}=await import('../src/services/labelReading');
+ const pixels=Buffer.from(Array.from({length:80*20},(_,i)=>i%80<40?0:255));
+ expect(await hasModelLineDetail(await sharp(pixels,{raw:{width:80,height:20,channels:1}}).png().toBuffer())).toBe(false);
+});
+it('removes unmatched geometry dimensions and unsupported geometry prose with a reason',async()=>{
+ const {comparisonPayload,sanitizeReferenceComparison}=await import('../src/services/referenceEvidence');
+ const stage={installation_geometry:{status:'insufficient_visible_landmarks',candidates:[],reference_dimensions:[{model:'fixture',width:12}]}};
+ expect((comparisonPayload({stage_one:stage,pages:[],conflicts:[]}).stage_one.installation_geometry as any).reference_dimensions).toBeUndefined();
+ const result=sanitizeReferenceComparison({candidates:[{supporting_features:[{observation:'catalog geometry matches'}]}],unresolved:['Identification relies on catalog geometry only','No dimensional match.']},stage);
+ expect(result.candidates[0].supporting_features).toEqual([]);expect(result.unresolved).toEqual(['No dimensional match.']);expect(result.reasoning_adjustments).toHaveLength(2);
+});

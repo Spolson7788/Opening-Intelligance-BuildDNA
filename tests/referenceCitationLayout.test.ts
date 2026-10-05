@@ -90,9 +90,9 @@ it('keeps classifier-only markings out of comparison evidence and rejects their 
  expect(JSON.stringify(payload)).not.toContain('RYOBI');
  expect(JSON.stringify(payload)).toContain('scissor arm');
  const result=sanitizeReferenceComparison({candidates:[{model:'4040XP',contradicting_features:[{observation:'Visible RYOBI differs from LCN'},{observation:'Mounting pattern differs'}]}],unresolved:['RYOBI text conflicts','Model is unconfirmed']},stage);
- expect(result.candidates[0].contradicting_features).toEqual([{observation:'Mounting pattern differs'}]);
+ expect(result.candidates[0].contradicting_features).toEqual([]);
  expect(result.unresolved).toEqual(['Model is unconfirmed']);
- expect(result.reasoning_adjustments).toHaveLength(2);
+ expect(result.reasoning_adjustments).toHaveLength(3);
  expect(result.cover_comparison).toBeUndefined();
 });
 it('preserves a corroborated marking conflict without treating repeated AI views as confirmation',async()=>{
