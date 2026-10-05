@@ -3,7 +3,7 @@ import {pool} from '../db/pool';
 
 // Numerical facts visually checked against the original, hash-matched drawings.
 // These dimensions describe installation holes, not the outside of the casting.
-export const INSTALLATION_GEOMETRY_VERSION='oi-installation-geometry-2';
+export const INSTALLATION_GEOMETRY_VERSION='oi-installation-geometry-3';
 import geometryCatalog from '../data/installationGeometryCatalog.json';
 export const geometrySources=geometryCatalog;
 
@@ -11,6 +11,7 @@ export const GEOMETRY_OBSERVATION_PROMPT=`For a DOOR_CLOSER also return installa
 
 function point(v:any):v is Point{return !!v&&Number.isFinite(v.x)&&Number.isFinite(v.y)&&v.x>=0&&v.x<=1&&v.y>=0&&v.y<=1;}
 export function compareInstallationGeometry(value:unknown,photoCount:number,sources=geometrySources){
+ const malformed=!Array.isArray(value)||value.some(v=>!v||!Number.isInteger(v.photo_index)||v.photo_index<0||v.photo_index>=photoCount||!['pull_side','other','unknown'].includes(v.mount)||typeof v.coplanar!=='boolean'||!Array.isArray(v.face_corners)||v.face_corners.length!==4||!v.face_corners.every(point)||!Array.isArray(v.mounting_holes)||v.mounting_holes.length!==4||!v.mounting_holes.every(point));
  const matchedSources=new Set<(typeof sources)[number]>();
  const observations:{photo_index:number;relative_intervals:number[];max_relative_error:number;layout_compatible:boolean}[]=[];
  for(const v of Array.isArray(value)?value.slice(0,5):[]){
@@ -39,10 +40,10 @@ export function compareInstallationGeometry(value:unknown,photoCount:number,sour
   observations.push({photo_index:v.photo_index,relative_intervals:relative.map((d:number)=>Number(d.toFixed(3))),max_relative_error:Number(error.toFixed(3)),layout_compatible:error<=.2});
  }
  const compatible=observations.some(o=>o.layout_compatible);
- return {version:INSTALLATION_GEOMETRY_VERSION,status:compatible?'shared_pattern_compatible':observations.length?'pattern_not_supported':'insufficient_visible_landmarks',observations,
-  candidates:compatible?[...matchedSources].flatMap(s=>s.models.map(model=>({manufacturer:s.manufacturer,model,basis:'shared_mounting_pattern',source:s}))):[],
+ return {version:INSTALLATION_GEOMETRY_VERSION,status:malformed?'invalid_geometry_input':compatible?'shared_pattern_compatible':observations.length?'pattern_not_supported':'insufficient_visible_landmarks',observations,
+  candidates:compatible&&!malformed?[...matchedSources].flatMap(s=>s.models.map(model=>({manufacturer:s.manufacturer,model,basis:'shared_mounting_pattern',source:s}))):[],
   absolute_photo_dimensions:null,identity_verified:false,
-  limitation:compatible?'This shared pattern cannot distinguish these models. Verify markings, valve configuration and arm features.':observations.length?'The visible layout did not support the pilot pattern. Other mounting arrangements and products remain possible.':'Perspective correction could not be established from the detected landmarks. This does not mean the mounting holes are hidden. No dimension match was computed; see the label, arm and reference results separately.',
+  limitation:malformed?'Geometry analysis received invalid landmark data. No dimensional conclusion was made about the photograph.':compatible?'This shared pattern cannot distinguish these models. Verify markings, valve configuration and arm features.':observations.length?'The visible layout did not support the pilot pattern. Other mounting arrangements and products remain possible.':'Perspective correction could not be established from the detected landmarks. This does not mean the mounting holes are hidden. No dimension match was computed; see the label, arm and reference results separately.',
   reference_dimensions:sources,
  };
 }

@@ -98,7 +98,7 @@ describe(privateCorpus?'audited corpus retrieval with recorded provider fixtures
  });
  it('strips fabricated page ids and invented quotes, including nested feature citations',async()=>{
   const bad={page_id:p.page_id,doc_sha256:doc.sha256,page_no:1,quote:'This sentence is fabricated.'};
-  provider.compare.mockResolvedValueOnce({citations:[bad],candidates:[{supporting_features:[{citation:bad}]}],unresolved:[]});
+  provider.compare.mockResolvedValueOnce({citations:[bad],candidates:[{manufacturer:'LCN',model:'4040XP',supporting_features:[{observation:'Body shape',citation:bad}]}],unresolved:[]});
   const r=await analyze();expect(r.body.citations).toEqual([]);expect(r.body.comparison.candidates[0].supporting_features[0].citation).toBeNull();
   expect((await pool.query('SELECT rejected_citations FROM recognition_runs WHERE id=$1',[r.body.run_id])).rows[0].rejected_citations).toHaveLength(2);
  });
@@ -194,9 +194,9 @@ describe(privateCorpus?'audited corpus retrieval with recorded provider fixtures
   await pool.query('INSERT INTO reference_document_models(doc_sha256,model,evidence_page,evidence_quote) VALUES($1,\'1260\',1,$2)',[d.sha256,page.text]);
   await pool.query('INSERT INTO reference_conflicts(doc_sha256,field,values) VALUES($1,$2,$3)',[d.sha256,conflict.field,JSON.stringify(conflict.values)]);
   vi.mocked(readLabels).mockResolvedValueOnce({version:'fixture',status:'completed',reads:[{region:{photo_index:0,x:0,y:0,w:1,h:1,rotation:0},ocr_text:'LCN 1260',vision_text:'LCN 1260',ocr_confidence:90,agreed_markings:['LCN','1260'],status:'agreement'}],limiting_factor:null});
-  provider.identify.mockResolvedValueOnce({statusCode:200,body:JSON.stringify({manufacturer:'LCN',model:'1260',visible_text:['1260']})});
+  provider.identify.mockResolvedValueOnce({statusCode:200,body:JSON.stringify({component_class:'DOOR_CLOSER',manufacturer:'LCN',model:'1260',visible_text:['1260']})});
   provider.compare.mockResolvedValueOnce({citations:conflict.values.map((v:any)=>({page_id:page.page_id,doc_sha256:d.sha256,page_no:1,quote:v.quote})),measurements:{spring_size:'1-6'},unresolved:[]});
-  const r=await analyze();expect(r.status).toBe(200);expect(r.body.conflicts[0].values.map((v:any)=>v.value)).toEqual(['1-5','1-6']);expect(r.body.comparison.measurements.spring_size).toBeNull();expect(r.body.citations).toHaveLength(2);expect(r.body.comparison.unresolved).toHaveLength(1);
+  const r=await analyze();expect(r.status).toBe(200);expect(r.body.conflicts[0].values.map((v:any)=>v.value)).toEqual(['1-5','1-6']);expect(r.body.comparison.measurements).toBeUndefined();expect(r.body.citations).toHaveLength(2);expect(r.body.comparison.unresolved).toHaveLength(1);
  });
  it('superseded and duplicate references never appear in retrieval',async()=>{
   const target=documents.find(d=>d.path==='LCN/1260/LCN_1260_cut_sheet.pdf').sha256;
@@ -257,4 +257,17 @@ it('does not compare classifier-only identity after label timeout',async()=>{
  const r=await analyze();expect(r.status).toBe(200);expect(r.body.status).toBe('no_reference_evidence');
  expect(provider.compare.mock.calls.length).toBe(calls);
  expect(r.body.suggestion.manufacturer).toBeNull();expect(r.body.suggestion.model).toBeNull();
+});
+
+
+it('rejects empty classifier output and stores no invented component type',async()=>{
+ provider.identify.mockResolvedValueOnce({statusCode:200,body:'{}'});
+ const r=await analyze();expect(r.status).toBe(502);
+ const row=(await pool.query("SELECT status,component_type FROM recognition_runs WHERE opening_id=$1 ORDER BY created_at DESC LIMIT 1",[opening])).rows[0];
+ expect(row).toMatchObject({status:'failed',component_type:null});
+});
+it('stores an explicitly unknown class as null rather than Other',async()=>{
+ provider.identify.mockResolvedValueOnce({statusCode:200,body:JSON.stringify({component_class:null,manufacturer:null,model:null})});
+ const r=await analyze();expect(r.status).toBe(200);
+ expect((await pool.query('SELECT component_type FROM recognition_runs WHERE id=$1',[r.body.run_id])).rows[0].component_type).toBeNull();
 });

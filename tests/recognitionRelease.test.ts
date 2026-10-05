@@ -19,7 +19,7 @@ beforeEach(async()=>{
  vi.resetAllMocks();vi.mocked(readLabels).mockResolvedValue({version:'fixture',status:'no_regions',reads:[],limiting_factor:null});process.env.OI_RECOGNITION_ENABLED='true';process.env.ANTHROPIC_API_KEY='test-not-real';
  mocks.query.mockResolvedValueOnce({rows:[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]}).mockResolvedValue({rows:[{allowed:1}]});
  mocks.connect.mockResolvedValue({query:mocks.query,release:vi.fn()});
- mocks.engine.mockResolvedValue({statusCode:200,body:JSON.stringify({manufacturer:'Example',model:null})});
+ mocks.engine.mockResolvedValue({statusCode:200,body:JSON.stringify({component_class:null,manufacturer:'Example',model:null})});
 });
 describe('recognition release boundary',()=>{
  it('requires login before any engine call',async()=>{expect((await request(app).post('/recognition').send(body)).status).toBe(401);expect(mocks.engine).not.toHaveBeenCalled();});

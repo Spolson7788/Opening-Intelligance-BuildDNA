@@ -1,3 +1,5 @@
+import {providerObject} from './providerReply';
+import {comparisonShape} from './comparisonShape';
 import {catalogTranscription} from './catalogMarking';
 import {auditedFetch} from './recognitionAudit';
 import {pool} from '../db/pool';
@@ -13,7 +15,7 @@ export interface ReferencePage {
 }
 export interface Citation {page_id:string;doc_sha256:string;page_no:number;quote:string}
 export const classTypes:Record<string,string>={DOOR_CLOSER:'closer',EXIT_DEVICE:'exit_device',LOCKSET:'lockset',HINGE_BUTT:'hinge',HINGE_CONT:'hinge',FLUSH_BOLT:'other',ELECTRIC_STRIKE:'electric_strike',POWER_TRANSFER:'power_transfer'};
-export function componentType(code:unknown){return classTypes[String(code)]||'other';}
+export function componentType(code:unknown){return code==null?null:classTypes[String(code)]||'other';}
 export function conservativeSuggestion(stage:Record<string,any>,comparison:any){
  const suggestion={...stage};
  const norm=(s:string)=>s.toUpperCase().replace(/[\s_-]/g,'');
@@ -122,28 +124,28 @@ export async function compareWithReferences(input:{images:string[];media_type:st
   body:JSON.stringify({model:RECOGNITION_MODEL,temperature:0,max_tokens:1400,messages:[{role:'user',content:[
    ...input.images.map(data=>({type:'image',source:{type:'base64',media_type:input.media_type,data}})),
    {type:'text',text:COMPARISON_PROMPT+'\n'+JSON.stringify(payload)}
-  ]} ]})},'comparison');
+  ]} ]})},'comparison',body=>{const value=providerObject(body);if(!['candidates','citations','unresolved'].some(k=>k in value))throw Error('reference_response_invalid');});
  if(!response.ok)throw Error(response.status===401||response.status===403?'reference_provider_authentication_failed':response.status===429?'reference_provider_rate_limited':response.status>=500?'reference_provider_unavailable':'reference_provider_request_rejected');
  const body=await response.json() as any;
  if(body.stop_reason==='max_tokens')throw Error('reference_response_truncated');
- const text=(body.content||[]).filter((b:any)=>b.type==='text').map((b:any)=>b.text).join('');
- let parsed:any;try{parsed=JSON.parse(text.replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch{throw Error('reference_response_invalid');}
- if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw Error('reference_response_invalid');
+ let parsed:any;try{const value=providerObject(body);if(!['candidates','citations','unresolved'].some(k=>k in value))throw Error();parsed=comparisonShape(value,input.pages);}catch{throw Error('reference_response_invalid');}
  return {...parsed,processing:{input_characters:JSON.stringify(payload).length,reference_excerpts:payload.pages.length,excerpted_pages:payload.pages.filter(p=>p.excerpt_only).length,...(body.usage?{provider_usage:{input_tokens:body.usage.input_tokens,output_tokens:body.usage.output_tokens}}:{})}};
  }catch(error){throw Error(referenceFailureCode(error));}
 }
 
 // Citation validity does not make every inference valid. Enforce this removable
 // accessory rule server-side even if a provider repeats the prohibited inference.
-export function sanitizeReferenceComparison(comparison:any,stage:Record<string,any>={}){
+export function sanitizeReferenceComparison(comparison:any,stage:Record<string,any>={},pages?:ReferencePage[]){
  if(!comparison||typeof comparison!=='object')return comparison;
- const adjustments:any[]=[];
+ const shaped=comparisonShape(comparison,pages);
+ const adjustments:any[]=[...shaped.reasoning_adjustments];
+ comparison={...shaped};
  const noGeometry=!stage.installation_geometry?.candidates?.length;
  const unsupportedGeometry=(text:unknown)=>noGeometry&&/geometr|dimension|mounting.pattern|hole.pattern/i.test(String(text||''))&&!/^no (?:dimensional|geometry) match[.!]?$/i.test(String(text||'').trim());
  const geometryFilter=(entry:any)=>{const text=typeof entry==='string'?entry:entry?.observation;if(!unsupportedGeometry(text))return true;adjustments.push({feature:entry,reason:'no_geometry_match'});return false;};
  const tokens=(values:unknown)=>Array.isArray(values)?values.filter((v):v is string=>typeof v==='string').flatMap(v=>v.toUpperCase().match(/[A-Z0-9]+(?:[-_][A-Z0-9]+)*/g)||[]):[];
  const confirmed=new Set(tokens(stage.visible_text));
- const unsupported=new Set(tokens(stage.classifier_visible_text).filter(t=>t.length>1&&!confirmed.has(t)));
+ const unsupported=new Set(tokens([...(stage.classifier_visible_text||[]),...(stage.classifier_text_evidence||[]).map((e:any)=>e.observation)]).filter(t=>t.length>1&&!confirmed.has(t)));
  const citesUnsupported=(text:unknown)=>tokens([String(text||'')]).some(t=>unsupported.has(t));
  const candidates=(Array.isArray(comparison.candidates)?comparison.candidates:[]).map((candidate:any)=>{
   if(!candidate||typeof candidate!=='object')return candidate;

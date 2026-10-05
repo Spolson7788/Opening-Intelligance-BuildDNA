@@ -1,3 +1,4 @@
+import {classifierObject} from '../services/providerReply';
 import sharp from 'sharp';
 import {normalizeRecognitionImage} from '../services/recognitionImage';
 import {recognitionAudit,recordRecognitionEvidence} from '../services/recognitionAudit';
@@ -59,7 +60,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     phase='recording';
     const initial=(await pool.query(`INSERT INTO recognition_runs
      (organization_id,opening_id,user_id,photo_hashes,technician_attributes,component_type,stage_one,suggestion,retrieved_pages,citations,rejected_citations,conflicts,status,model_id,prompt_version)
-     VALUES($1,$2,$3,$4,$5,'other',$6,'{}','[]','[]','[]','[]','running',$7,$8) RETURNING id`,[
+     VALUES($1,$2,$3,$4,$5,NULL,$6,'{}','[]','[]','[]','[]','running',$7,$8) RETURNING id`,[
      req.auth!.organizationId,b.opening_id,req.auth!.userId,JSON.stringify(sourceHashes),JSON.stringify(b.technician_attributes),JSON.stringify({request_id:b.request_id,shadow_mode:true,libraries:{sharp:sharp.versions,tesseract:require('tesseract.js/package.json').version}}),RECOGNITION_MODEL,REFERENCE_PROMPT_VERSION])).rows[0];
     return await recognitionAudit.run({runId:initial.id,deadline:started+49000},async()=>{try{
     phase='provider';
@@ -79,7 +80,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       await recordRecognitionEvidence('failure',{http_status:502,code:error});
       return res.status(502).json({error,...(providerDiagnostic?{provider_diagnostic:providerDiagnostic}:{})});
     }
-    let result:any;try{result=JSON.parse(response.body);}catch{}
+    let result:any;try{result=JSON.parse(response.body);if(b.mode==='identify')result=classifierObject(result);}catch{result=null;}
     if(!result||typeof result!=='object'||Array.isArray(result)){await recordRecognitionEvidence('failure',{http_status:502,code:'recognition_provider_failed'});return res.status(502).json({error:'recognition_provider_failed'});}
     if(labels&&b.mode==='identify'){
       try{
@@ -156,7 +157,11 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       if('page_id' in value)return validateCitations([value],pages).accepted[0]||null;
       return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,k==='citation'?(validateCitations([v],pages).accepted[0]||null):clean(v)]));
     };
-    comparison=sanitizeReferenceComparison(clean(comparison),result);
+    const comparisonProcessing=comparison?.processing;
+    const shapeAdjustments=comparison?.reasoning_adjustments;
+    if(comparison){delete comparison.processing;delete comparison.reasoning_adjustments;}
+    comparison=sanitizeReferenceComparison(clean(comparison),result,pages);
+    if(comparison){comparison.processing=comparisonProcessing;comparison.reasoning_adjustments=[...(shapeAdjustments||[]),...(comparison.reasoning_adjustments||[])];}
     const conflictFields=new Set(conflicts.map((c:any)=>c.field));
     const unresolve=(v:any):any=>Array.isArray(v)?v.map(unresolve):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,conflictFields.has(k)?null:unresolve(x)])):v;
     comparison=unresolve(comparison);

@@ -1,4 +1,5 @@
 // @ts-nocheck
+import {providerObject,classifierObject} from './providerReply';
 import {auditedFetch} from './recognitionAudit';
 import {GEOMETRY_OBSERVATION_PROMPT} from './installationGeometry';
 import {recognitionDetailViews} from './recognitionViews';
@@ -18,12 +19,11 @@ function normalizeResult(obj) {
   const out = obj && typeof obj === "object" ? obj : {};
   const conf = (out.confidence && typeof out.confidence === "object") ? out.confidence : {};
   const num = (v) => {
-    const n = typeof v === "number" ? v : parseFloat(v);
-    return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null;
+    return typeof v === "number" && Number.isFinite(v) && v>=0 && v<=1 ? v : null;
   };
   const str = (v) => {
-    if (v == null) return null;
-    const s = String(v).trim();
+    if (typeof v !== "string") return null;
+    const s = v.trim();
     return s && s.toLowerCase() !== "null" && s.toLowerCase() !== "unknown" ? s : null;
   };
   return {
@@ -32,12 +32,12 @@ function normalizeResult(obj) {
     series: str(out.series),
     model: str(out.model),
     visible_text: Array.isArray(out.visible_text)
-      ? out.visible_text.map((t) => String(t).trim()).filter(Boolean)
+      ? out.visible_text.filter(t=>typeof t==='string').map(t=>t.trim()).filter(Boolean)
       : [],
-    attributes: (out.attributes && typeof out.attributes === "object") ? out.attributes : {},
+    attributes: (out.attributes && typeof out.attributes === 'object'&&!Array.isArray(out.attributes)) ? Object.fromEntries(Object.entries(out.attributes).filter(([,v])=>typeof v==='string'||typeof v==='boolean'||typeof v==='number'&&Number.isFinite(v))) : {},
     evidence: Array.isArray(out.evidence)
       ? out.evidence
-          .filter((e) => e && (e.observation || e.supports))
+          .filter((e) => e && typeof e.observation==='string' && typeof e.supports==='string')
           .map((e) => ({
             observation: String(e.observation == null ? "" : e.observation).trim(),
             supports: String(e.supports == null ? "" : e.supports).trim()
@@ -453,7 +453,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
                                 : (CLASSIFICATION_CONTEXT + multi + PROMPT)) }
         ]}]
       })
-    },'photo_analysis');
+    },'photo_analysis',b=>{const p=providerObject(b);if(!hardwareMode&&!markingMode&&!labelBlind)classifierObject(p);});
     const responseText = await resp.text();
     let j;
     try {
@@ -495,29 +495,9 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
       };
     }
 
-    const txt = (j.content && j.content[0] && j.content[0].text) || "";
-    const firstBrace = txt.indexOf("{");
-    const lastBrace = txt.lastIndexOf("}");
-    if (firstBrace < 0 || lastBrace <= firstBrace) {
-      /* Provider bodies and recognition results are not logged. */
-      return {
-        statusCode: 502,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ error: "recognition_provider_invalid_response" })
-      };
-    }
-
     let parsed;
-    try {
-      parsed = JSON.parse(txt.slice(firstBrace, lastBrace + 1));
-    } catch (err) {
-      /* Provider bodies and recognition results are not logged. */
-      return {
-        statusCode: 502,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ error: "recognition_provider_invalid_response" })
-      };
-    }
+    try{parsed=providerObject(j);if(!hardwareMode&&!markingMode&&!labelBlind)parsed=classifierObject(parsed);}
+    catch{return {statusCode:502,headers:{"content-type":"application/json"},body:JSON.stringify({error:"recognition_provider_invalid_response"})};}
 
     if (hardwareMode) {
       const out = normalizeHardwareRegions(parsed);
@@ -538,7 +518,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
     }
 
     const obj = normalizeResult(parsed);
-    obj.installation_geometry_views=Array.isArray(parsed.installation_geometry_views)?parsed.installation_geometry_views.slice(0,5):[];
+    obj.installation_geometry_views=parsed.installation_geometry_views===undefined?[]:parsed.installation_geometry_views;
     obj.scale_markers=scaleMarkers;
     obj.scale_measurements=scaleMeasurements(parsed.measurement_segments,scaleMarkers,body.technician_attributes?.scale_marker_same_plane==='true');
     obj.scale_placement_confirmed=body.technician_attributes?.scale_marker_same_plane==='true';

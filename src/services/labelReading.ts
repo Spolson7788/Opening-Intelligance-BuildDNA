@@ -252,7 +252,15 @@ export function applyLabelEvidence(stage:Record<string,any>,labels:LabelEvidence
  const markings=[...new Set(labels.reads.flatMap(r=>r.agreed_markings))];
  const result:Record<string,any>={...stage,photograph_identity:{manufacturer:stage.manufacturer??null,series:stage.series??null,model:stage.model??null},label_reading:labels,classifier_visible_text:Array.isArray(stage.visible_text)?stage.visible_text:[],visible_text:markings};
  // Catalog associations stay hypotheses, never overwrite photographic identity.
- result.classifier_text_evidence=(Array.isArray(stage.evidence)?stage.evidence:[]).filter((e:any)=>e.supports==='visible_text');
- result.evidence=[...(Array.isArray(stage.evidence)?stage.evidence:[]).filter((e:any)=>e.supports!=='visible_text'),...labels.reads.filter(r=>r.agreed_markings.length).map(r=>({observation:`Two readers agree on label characters: ${r.agreed_markings.join(' ')}.`,supports:'visible_text',photo_index:r.region.photo_index,region:r.region}))];
+ const tokens=(v:unknown)=>typeof v==='string'?(v.toUpperCase().match(/[A-Z0-9]+(?:[-_][A-Z0-9]+)*/g)||[]):[];
+ const confirmed=new Set(markings.flatMap(tokens));
+ const unsupported=new Set([...result.classifier_visible_text,stage.manufacturer,stage.series,stage.model].flatMap(tokens).filter(t=>t.length>1&&!confirmed.has(t)));
+ const quarantine=(e:any)=>{
+  const tag=String(e?.supports||'').toLowerCase().trim();
+  return ['visible_text','manufacturer','series','model'].includes(tag)||/label|marking|text|reads|stamp|logo/i.test(String(e?.observation||''))||tokens(e?.observation).some(t=>unsupported.has(t));
+ };
+ const evidence=(Array.isArray(stage.evidence)?stage.evidence:[]).filter((e:any)=>e&&typeof e.observation==='string'&&typeof e.supports==='string');
+ result.classifier_text_evidence=evidence.filter(quarantine);
+ result.evidence=[...evidence.filter(e=>!quarantine(e)),...labels.reads.filter(r=>r.agreed_markings.length).map(r=>({observation:`Two readers agree on label characters: ${r.agreed_markings.join(' ')}.`,supports:'visible_text',photo_index:r.region.photo_index,region:r.region}))];
  return result;
 }

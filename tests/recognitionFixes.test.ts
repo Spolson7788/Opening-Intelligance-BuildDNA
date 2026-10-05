@@ -140,3 +140,27 @@ it('removes unmatched geometry dimensions and unsupported geometry prose with a 
  const result=sanitizeReferenceComparison({candidates:[{supporting_features:[{observation:'catalog geometry matches'}]}],unresolved:['Identification relies on catalog geometry only','No dimensional match.']},stage);
  expect(result.candidates[0].supporting_features).toEqual([]);expect(result.unresolved).toEqual(['No dimensional match.']);expect(result.reasoning_adjustments).toHaveLength(2);
 });
+
+it.each(['manufacturer','Visible_Text','arm_type'])('quarantines unsupported brand evidence regardless of tag %s',async supports=>{
+ const {applyLabelEvidence}=await import('../src/services/labelReading');const {sanitizeReferenceComparison}=await import('../src/services/referenceEvidence');
+ const stage=applyLabelEvidence({evidence:[{supports,observation:'Label reads RYOBI, not LCN.'}]},{version:'test',status:'completed',reads:[],limiting_factor:null});
+ expect(stage.evidence).toEqual([]);expect(stage.classifier_text_evidence).toHaveLength(1);
+ const clean=sanitizeReferenceComparison({candidates:[{contradicting_features:[{observation:'Label reads RYOBI, not LCN.'}]}]},stage);
+ expect(clean.candidates[0].contradicting_features).toEqual([]);
+});
+it('normalizes comparison shapes, excludes off-reference candidates and provider decision fields',async()=>{
+ const {comparisonShape}=await import('../src/services/comparisonShape');
+ const pages=[{brand:'LCN',models:['4040XP']}];
+ const clean=comparisonShape({candidates:[{manufacturer:'RYOBI',model:'P1'},{manufacturer:'LCN',model:'4040XP',identity_verified:true,contradicting_features:['RYOBI',{},null,{observation:'Valve differs'}]}],unresolved:{text:'bad'},cover_comparison:'unavailable_without_installed_cover',identity_verified:true},pages);
+ expect(clean.candidates).toHaveLength(1);expect(clean.candidates[0].contradicting_features).toEqual([{observation:'Valve differs',citation:null}]);
+ expect(clean.unresolved).toEqual([]);expect(clean).not.toHaveProperty('cover_comparison');expect(clean).not.toHaveProperty('identity_verified');expect(clean.reasoning_adjustments.length).toBeGreaterThan(4);
+ expect(comparisonShape({candidates:'bad',unresolved:['ok',{}]}).unresolved).toEqual(['ok']);
+});
+it('shares fenced JSON parsing and rejects refusal/prose objects, while class aliases are explicit',async()=>{
+ const {providerObject,classifierObject}=await import('../src/services/providerReply');
+ expect(providerObject({content:[{type:'text',text:'```JSON\n{"candidates":[]}\n```'}]})).toEqual({candidates:[]});
+ expect(()=>providerObject({stop_reason:'refusal',content:[{type:'text',text:'{"component_class":null}'}]})).toThrow();
+ expect(()=>providerObject({content:[{type:'text',text:'I refuse {"component_class":null}'}]})).toThrow();
+ expect(()=>classifierObject({})).toThrow();expect(()=>classifierObject({component_class:'random'})).toThrow();
+ expect(classifierObject({component_class:'door closer'}).component_class).toBe('DOOR_CLOSER');expect(classifierObject({component_class:null}).component_class).toBeNull();
+});

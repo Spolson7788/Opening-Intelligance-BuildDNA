@@ -1,3 +1,4 @@
+import {providerObject} from './providerReply';
 import {prepareProviderRequest} from './recognitionImage';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {pool} from '../db/pool';
@@ -26,7 +27,7 @@ export async function auditedFetch(url:string,init:RequestInit,stage:string,vali
   let body:any;try{body=JSON.parse(raw);}catch{}
   const usage=body?.usage||null;
   let validOutput=false;
-  try{const text=(body?.content||[]).filter((c:any)=>c.type==='text').map((c:any)=>c.text).join('');JSON.parse(text.slice(text.indexOf('{'),text.lastIndexOf('}')+1));if(validateOutput)validateOutput(body);validOutput=true;}catch{}
+  try{providerObject(body);if(validateOutput)validateOutput(body);validOutput=true;}catch{}
   const input=Number(process.env.OI_PROVIDER_INPUT_USD_PER_MILLION),output=Number(process.env.OI_PROVIDER_OUTPUT_USD_PER_MILLION);
   const validTokens=(n:unknown)=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0;
   const priced=usage&&validTokens(usage.input_tokens)&&validTokens(usage.output_tokens)&&Number.isFinite(input)&&Number.isFinite(output)&&input>0&&output>0&&!usage.cache_creation_input_tokens&&!usage.cache_read_input_tokens;

@@ -26,7 +26,8 @@ describe('installation geometry from independent visible landmarks',()=>{
   expect(r.status).toBe('pattern_not_supported');expect(r.candidates).toEqual([]);
  });
  it.each([{mounting_holes:holes.slice(0,3)},{face_corners:[]},{coplanar:false},{mount:'unknown'},{photo_index:1},{face_corners:[corners[0],corners[2],corners[1],corners[3]]},{mounting_holes:[...holes.slice(0,3),{x:2,y:.3}]}])('abstains for unavailable or invalid landmarks: %j',change=>{
-  expect(compareInstallationGeometry([{...view,...change}],1).status).toBe('insufficient_visible_landmarks');
+  const malformed=('mounting_holes' in change)||('photo_index' in change)||('face_corners' in change&&change.face_corners.length!==4);
+  expect(compareInstallationGeometry([{...view,...change}],1).status).toBe(malformed?'invalid_geometry_input':'insufficient_visible_landmarks');
  });
  it('does not filter out a photo based on pixel dimensions',()=>{
   expect(compareInstallationGeometry([{...view,image_width:165,image_height:220}],1).status).toBe('shared_pattern_compatible');
