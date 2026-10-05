@@ -66,7 +66,11 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
         reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.readAsDataURL(f);
       })));
       const response=await recognizeHardware(openingId,images,files[0].type,{...attributes,visible_markings:markings,observed_features:features},()=>{if(current===generation.current)setProgress('Retrieving saved analysis…');});
-      if(current===generation.current){setResult(response.suggestion);setResponse(response);}
+      if(current===generation.current){
+        setResult(response.suggestion);setResponse(response);
+        const componentType=photographedComponentTypes[String(response.suggestion.component_class||'')];
+        if(componentType)onComponentType?.(componentType);
+      }
     }catch(e){if(current===generation.current){setError(recognitionFailureMessage(e instanceof Error&&e.message?e.message:'recognition_provider_failed'));setProviderDiagnostic(typeof (e as any)?.providerDiagnostic==='string'?(e as any).providerDiagnostic:'');}}
     finally{if(current===generation.current)setBusy(false);}
   }
@@ -89,7 +93,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     {providerDiagnostic&&<p>Administrator diagnostic: {providerDiagnostic}</p>}
     {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — will attach when you save this hardware.</p>}
     {result&&<div>
-      {onComponentType&&photographedComponentTypes[text('component_class')]&&<p>Photograph component type: <strong>{photographedComponentTypes[text('component_class')].replace(/_/g,' ')}</strong>. <button type="button" onClick={()=>onComponentType(photographedComponentTypes[text('component_class')])}>Use {photographedComponentTypes[text('component_class')].replace(/_/g,' ')} as component type</button> This changes only the component type, not product identity or review status.</p>}
+      {onComponentType&&photographedComponentTypes[text('component_class')]&&<p>Photograph component type: <strong>{photographedComponentTypes[text('component_class')].replace(/_/g,' ')}</strong>. Component type filled automatically. You can change it below.</p>}
       {response?.reported_identity&&<p>Technician-reported product: <strong>{response.reported_identity.manufacturer} {response.reported_identity.model}</strong> — awaiting verification.</p>}
       {labelReads.some(read=>read.ocr_model_conflicts?.length>0)&&<p role="alert">The readers disagree on model characters. The candidate is retained for your review; verify the label before accepting it. OCR alternatives: {[...new Set(labelReads.flatMap(read=>read.ocr_model_conflicts||[]))].join(', ')}.</p>}
       {response?.label_candidate&&!text('model')&&<p>Label candidate: <strong>{response.label_candidate.manufacturer} {response.label_candidate.model||`${response.label_candidate.series} family`}</strong> — single AI reader; technician verification required.{response.label_candidate.manufacturer_basis==='catalog_model_match'&&' Manufacturer suggested by the catalog model match; manufacturer marking not confirmed.'}{response.label_candidate.manufacturer_basis==='catalog_partial_model_match'&&` Partial marking: ${response.label_candidate.transcribed_marking}. Catalog candidate suggested from readable characters; missing characters and manufacturer marking require verification.`}</p>}
