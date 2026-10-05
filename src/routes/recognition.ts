@@ -83,14 +83,15 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     if(!result||typeof result!=='object'||Array.isArray(result)){await recordRecognitionEvidence('failure',{http_status:502,code:'recognition_provider_failed'});return res.status(502).json({error:'recognition_provider_failed'});}
     if(labels&&b.mode==='identify'){
       try{
-        const matches=await resolvePartialMarkings(labels,String(result.manufacturer||''));
+        const matches=await resolvePartialMarkings(labels);
         if(matches.length){
           const exact=(labels.candidates||[]).filter(c=>c.manufacturer_basis!=='catalog_partial_model_match');
           labels.candidates=exact.length?exact:matches;
         }
       }catch{/* Preserve photograph and raw label evidence if the catalog is unavailable. */}
     }
-    if(labels)result=applyLabelEvidence(result,labels);
+    result=applyLabelEvidence(result,labels||{version:'unavailable',status:'unavailable',reads:[],limiting_factor:'label_evidence_unavailable'});
+    result=conservativeSuggestion(result,null);
     if(b.request_id)result.request_id=b.request_id;
     let pages:Awaited<ReturnType<typeof retrieveReferences>>=[];
     let conflicts:unknown[]=[];let comparison:any=null;let status='no_reference_evidence';let comparisonStarted=false;let comparisonAt=0;let comparisonBudget=0;
@@ -100,15 +101,15 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
           try{result.installation_geometry=await approvedInstallationGeometry(result.installation_geometry_views,b.images.length);}catch{result.installation_geometry={status:'reference_geometry_unavailable',candidates:[],limitation:'Installation geometry could not be retrieved. Label reading continues.'};}
         }
         const candidate=labels?.candidates?.length===1?labels.candidates[0]:null;
-        const retrievalStage=!result.model&&!result.series&&candidate?{...result,manufacturer:result.manufacturer||candidate.manufacturer,series:candidate.series,model:candidate.model}:result;
+        const retrievalStage=!result.model&&!result.series&&candidate?{...result,manufacturer:candidate.manufacturer,series:candidate.series,model:candidate.model||candidate.catalog_model}:result;
         pages=await retrieveReferences(retrievalStage,{});
         if(!result.model&&!result.series&&(labels?.candidates?.length||0)>1){
-          const groups=await Promise.all(labels!.candidates!.map(c=>retrieveReferences({...result,manufacturer:c.manufacturer,series:c.series,model:c.model},{})));
+          const groups=await Promise.all(labels!.candidates!.map(c=>retrieveReferences({...result,manufacturer:c.manufacturer,series:c.series,model:c.model||c.catalog_model},{})));
           pages=[...new Map(groups.flat().map(p=>[p.page_id,p])).values()].slice(0,8);
         }
       }
       if(!pages.length&&b.mode==='identify'&&result.component_class==='DOOR_CLOSER'&&result.installation_geometry?.status==='shared_pattern_compatible'&&result.installation_geometry?.candidates?.length){
-        const groups=await Promise.all(result.installation_geometry.candidates.map((c:any)=>retrieveReferences({manufacturer:c.manufacturer,model:c.model},{})));
+        const groups=await Promise.all(result.installation_geometry.candidates.map((c:any)=>retrieveReferences({manufacturer:c.manufacturer,model:c.model||c.catalog_model},{})));
         pages=[...new Map(groups.flat().map((p:any)=>[p.page_id,p])).values()].slice(0,8) as any;
         result.reference_lookup_basis='installation_geometry_pilot_candidates';
       }

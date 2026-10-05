@@ -20,8 +20,8 @@ export function partialCatalogCandidates(reads:LabelRead[],catalog:CatalogModel[
    const relevant=reads.filter(r=>normalized(r.vision_text).includes(pattern));
    const digits=model.match(/\d{4}/)?.[0];
    if(digits&&relevant.some(r=>(r.ocr_text.match(/\b\d{4}\b/g)||[]).some(v=>v!==digits)))continue;
-   result.push({manufacturer:entry.manufacturer,model:null,series:entry.series||marking,verification:'single_reader',manufacturer_basis:'catalog_partial_model_match',transcribed_marking:marking});
+   result.push({manufacturer:entry.manufacturer,model:null,catalog_model:entry.model,series:entry.series||marking,verification:'single_reader',manufacturer_basis:'catalog_partial_model_match',transcribed_marking:marking});
   }
  }
- return [...new Map(result.map(c=>[`${c.manufacturer}:${c.series}:${c.transcribed_marking}`,c])).values()].slice(0,6);
+ return [...new Map(result.map(c=>[`${c.manufacturer}:${c.catalog_model}:${c.series}:${c.transcribed_marking}`,c])).values()].slice(0,6);
 }

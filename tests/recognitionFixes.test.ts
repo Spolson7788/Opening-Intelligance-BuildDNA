@@ -88,3 +88,26 @@ it('refuses to call a provider without an audit context',async()=>{
  await expect(auditedFetch('https://provider.test',{body:'{}'},'label')).rejects.toThrow('recognition_audit_context_required');
  expect(fetch).not.toHaveBeenCalled();expect(pool.query).not.toHaveBeenCalled();
 });
+
+it('rejects tiny numeric catalog matches and numeric fragments',async()=>{
+ const {catalogTranscription}=await import('../src/services/catalogMarking');
+ for(const [text,model] of [['SIZE 1-98','98'],['1','1'],['SIZE 1-980','980']])expect(catalogTranscription(text,model)).toBeNull();
+ expect(catalogTranscription('CR 441','CR441')).toBe('CR 441');
+ expect(catalogTranscription('7500','7500')).toBe('7500');
+});
+it('quarantines uncorroborated classifier identity before retrieval and display',async()=>{
+ const {conservativeSuggestion,candidates,resolvePartialMarkings}=await import('../src/services/referenceEvidence');
+ const {applyLabelEvidence}=await import('../src/services/labelReading');
+ const stage=applyLabelEvidence({manufacturer:'RYOBI',series:'2000',model:'2001',visible_text:['RYOBI'],confidence:{}},{version:'test',status:'completed',reads:[],limiting_factor:null});
+ const safe=conservativeSuggestion(stage,null);
+ expect(safe).toMatchObject({manufacturer:null,series:null,model:null});expect(candidates(safe)).toEqual([]);
+ expect(safe.photograph_identity.manufacturer).toBe('RYOBI');
+ vi.mocked(pool.query).mockResolvedValueOnce({rows:[{manufacturer:'LCN',model:'4040XP'}]} as any);
+ const matches=await resolvePartialMarkings({version:'test',status:'completed',reads:[read('4040XP')],limiting_factor:null});
+ expect(matches[0].manufacturer).toBe('LCN');
+ expect(vi.mocked(pool.query).mock.calls.at(-1)?.[1]).toEqual(['']);
+});
+it.each([undefined,'unknown','technician_identified','photo_suggestion'])('requires acknowledgement for established identity from %s',async source=>{
+ const {identityInputError}=await import('../src/services/hardwareIdentity');
+ expect(identityInputError({identity_status:'established',identity_source:source as any,manufacturer:'LCN',model_number:'4040XP'})).toBe('identity_acknowledgment_required');
+});

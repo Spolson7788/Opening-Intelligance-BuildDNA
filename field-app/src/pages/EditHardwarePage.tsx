@@ -194,7 +194,7 @@ export function EditHardwarePage() {
               <div className="field">
                 <label htmlFor="identity-status">Product identity</label>
                 <select id="identity-status" value={identityStatus} onChange={(e) => setIdentityStatus(e.target.value)}>
-                  <option value="unresolved">Unresolved</option><option value="established">Established</option>
+                  <option value="unresolved">Unresolved</option><option value="established" disabled={!identityAcknowledged}>Established</option>
                 </select>
               </div>
               <div className="field">

@@ -85,7 +85,7 @@ it('uses an exact model-only reading as a catalog candidate, without asserting a
 it('preserves the live partial 4040X? reading for references without inventing the missing P',()=>{
  const labels=evidence('Fae', '4040X?');
  const candidate=partialCatalogCandidates(labels.reads,catalog)[0];
- expect(candidate).toEqual({manufacturer:'LCN',series:'4040',model:null,verification:'single_reader',manufacturer_basis:'catalog_partial_model_match',transcribed_marking:'4040X?'});
+ expect(candidate).toEqual({catalog_model:'4040XP',manufacturer:'LCN',series:'4040',model:null,verification:'single_reader',manufacturer_basis:'catalog_partial_model_match',transcribed_marking:'4040X?'});
  expect(partialCatalogCandidates(evidence('4041', '4040X?').reads,catalog)).toEqual([]);
  expect(match(evidence('', '4040X1').reads)).toEqual([]);
  expect(applyLabelEvidence({manufacturer:null,model:null},labels).model).toBeNull();

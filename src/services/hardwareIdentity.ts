@@ -1,6 +1,7 @@
 export type IdentitySource='unknown'|'technician_identified'|'photo_suggestion';
 export interface IdentityInput {manufacturer?:string|null;model_number?:string|null;component_type?:string;identity_status?:string;identity_source?:IdentitySource;identity_acknowledged?:boolean;recognition_run_id?:string}
 export function identityInputError(input:IdentityInput):string|null{
+ if(input.identity_status==='established'&&!input.identity_acknowledged)return 'identity_acknowledgment_required';
  if(input.identity_source==='technician_identified'&&!input.identity_acknowledged)return 'identity_acknowledgment_required';
  if(input.identity_source==='photo_suggestion'&&!input.recognition_run_id)return 'recognition_run_required';
  if(input.identity_acknowledged){

@@ -1,4 +1,4 @@
-vi.mock('../src/services/labelReading',async(importOriginal)=>({...await importOriginal<typeof import('../src/services/labelReading')>(),readLabels:vi.fn().mockResolvedValue({version:'fixture',status:'no_regions',reads:[],limiting_factor:null})}));
+vi.mock('../src/services/labelReading',async(importOriginal)=>({...await importOriginal<typeof import('../src/services/labelReading')>(),readLabels:vi.fn().mockResolvedValue({version:'fixture',status:'completed',reads:[{region:{photo_index:0,x:0,y:0,w:1,h:1,rotation:0},ocr_text:'LCN 4040XP',vision_text:'LCN 4040XP',ocr_confidence:90,agreed_markings:['LCN','4040XP'],status:'agreement'}],limiting_factor:null})}));
 import {beforeAll,afterAll,describe,it,expect,vi} from 'vitest';
 import {readFileSync,existsSync} from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -65,6 +65,7 @@ describe(privateCorpus?'audited corpus retrieval with recorded provider fixtures
   expect((await pool.query("SELECT * FROM audit_log WHERE request_body->>'run_id'=$1",[run.id])).rows).toHaveLength(1);
  });
  it('does not retrieve an approved LCN geometry page for a Norton closer with no geometry evidence',async()=>{
+  vi.mocked(readLabels).mockResolvedValueOnce({version:'fixture',status:'no_regions',reads:[],limiting_factor:null});
   const {geometrySources,approvedInstallationGeometry}=await import('../src/services/installationGeometry');
   const source=geometrySources[0],text='4040XP. Synthetic geometry retrieval fixture, not manufacturer evidence.';
   const exists=(await pool.query('SELECT sha256 FROM reference_documents WHERE sha256=$1',[source.doc_sha256])).rows.length;
@@ -106,6 +107,7 @@ describe(privateCorpus?'audited corpus retrieval with recorded provider fixtures
   expect(await retrieveReferences({manufacturer:'LCN',model:'4040XP-UNSUPPORTED',series:'4040XP'},{})).toEqual([]);
  });
  it('excludes technician reported identity from photo-only retrieval',async()=>{
+  vi.mocked(readLabels).mockResolvedValueOnce({version:'fixture',status:'no_regions',reads:[],limiting_factor:null});
   const hash=digest('synthetic-reported-cr441'),text='CR441 Series. Synthetic SQL fixture; not manufacturer evidence.';
   await pool.query(`INSERT INTO reference_documents(sha256,manufacturer,brand,title,doc_type,page_count,storage_key,metadata,status,approved_by,approved_at) VALUES($1,'Cal-Royal','Cal-Royal','Synthetic CR441 fixture','product_data',1,'reference/cr441.pdf','{}','approved',$2,now())`,[hash,user]);
   await pool.query(`INSERT INTO reference_pages(doc_sha256,page_no,text,text_sha256,page_class,transcription_status,citable) VALUES($1,1,$2,$3,'text','none',true)`,[hash,text,digest(text)]);
@@ -132,6 +134,7 @@ describe(privateCorpus?'audited corpus retrieval with recorded provider fixtures
   expect((await pool.query('SELECT retrieved_pages FROM recognition_runs WHERE id=$1',[r.body.run_id])).rows[0].retrieved_pages).not.toHaveLength(0);
  });
  it('retrieves approved closer candidates for marker estimates without a readable product label',async()=>{
+  vi.mocked(readLabels).mockResolvedValueOnce({version:'fixture',status:'no_regions',reads:[],limiting_factor:null});
   provider.identify.mockResolvedValueOnce({statusCode:200,body:JSON.stringify({component_class:'DOOR_CLOSER',manufacturer:null,model:null,series:null,visible_text:[],scale_measurements:[{feature:'closer_body_length',estimate_mm:200,basis:'marker_plane_estimate'}]})});
   const r=await analyze();expect(r.status).toBe(200);expect(r.body.suggestion.model).toBeNull();
   expect(r.body.suggestion.reference_lookup_basis).toBe('marker_dimensions_candidate_search');
@@ -190,6 +193,7 @@ describe(privateCorpus?'audited corpus retrieval with recorded provider fixtures
   await pool.query(`INSERT INTO reference_pages(doc_sha256,page_no,text,text_sha256,page_class,transcription_status,citable) VALUES($1,1,$2,$3,'text','none',true)`,[d.sha256,page.text,page.text_sha256]);
   await pool.query('INSERT INTO reference_document_models(doc_sha256,model,evidence_page,evidence_quote) VALUES($1,\'1260\',1,$2)',[d.sha256,page.text]);
   await pool.query('INSERT INTO reference_conflicts(doc_sha256,field,values) VALUES($1,$2,$3)',[d.sha256,conflict.field,JSON.stringify(conflict.values)]);
+  vi.mocked(readLabels).mockResolvedValueOnce({version:'fixture',status:'completed',reads:[{region:{photo_index:0,x:0,y:0,w:1,h:1,rotation:0},ocr_text:'LCN 1260',vision_text:'LCN 1260',ocr_confidence:90,agreed_markings:['LCN','1260'],status:'agreement'}],limiting_factor:null});
   provider.identify.mockResolvedValueOnce({statusCode:200,body:JSON.stringify({manufacturer:'LCN',model:'1260',visible_text:['1260']})});
   provider.compare.mockResolvedValueOnce({citations:conflict.values.map((v:any)=>({page_id:page.page_id,doc_sha256:d.sha256,page_no:1,quote:v.quote})),measurements:{spring_size:'1-6'},unresolved:[]});
   const r=await analyze();expect(r.status).toBe(200);expect(r.body.conflicts[0].values.map((v:any)=>v.value)).toEqual(['1-5','1-6']);expect(r.body.comparison.measurements.spring_size).toBeNull();expect(r.body.citations).toHaveLength(2);expect(r.body.comparison.unresolved).toHaveLength(1);
@@ -237,4 +241,20 @@ describe(privateCorpus?'audited corpus retrieval with recorded provider fixtures
   }catch(e){await c.query('ROLLBACK');throw e;}finally{await c.query('RESET ROLE');c.release();}
   expect((await pool.query("SELECT * FROM audit_log WHERE user_id=$1 AND action='Approved manufacturer reference'",[user])).rows).toHaveLength(1);
  });
+});
+
+it('does not let a hallucinated classifier brand filter a label catalog candidate',async()=>{
+ provider.identify.mockResolvedValueOnce({statusCode:200,body:JSON.stringify({component_class:'DOOR_CLOSER',manufacturer:'RYOBI',series:'2000',model:'2001',visible_text:['RYOBI']})});
+ vi.mocked(readLabels).mockResolvedValueOnce({version:'fixture',status:'completed',reads:[{region:{photo_index:0,x:0,y:0,w:1,h:1,rotation:0},ocr_text:'',vision_text:'4040XP',ocr_confidence:0,agreed_markings:[],status:'unconfirmed'}],limiting_factor:null});
+ const r=await analyze();expect(r.status).toBe(200);
+ expect(r.body.label_candidate).toMatchObject({manufacturer:'LCN',model:'4040XP'});
+ expect(r.body.suggestion.manufacturer).toBeNull();expect(r.body.suggestion.model).toBeNull();
+ expect(r.body.status).toBe('reference_evidence');
+});
+it('does not compare classifier-only identity after label timeout',async()=>{
+ vi.mocked(readLabels).mockResolvedValueOnce({version:'fixture',status:'unavailable',reads:[],limiting_factor:'label_reading_timeout'});
+ const calls=provider.compare.mock.calls.length;
+ const r=await analyze();expect(r.status).toBe(200);expect(r.body.status).toBe('no_reference_evidence');
+ expect(provider.compare.mock.calls.length).toBe(calls);
+ expect(r.body.suggestion.manufacturer).toBeNull();expect(r.body.suggestion.model).toBeNull();
 });

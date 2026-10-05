@@ -46,7 +46,7 @@ function componentOperation(openingId: string, overrides: Record<string, unknown
       mounting_scope: "opening",
       position_label: "top",
       condition: "good",
-      identity_status: "established",
+      identity_status: "unresolved",
       review_state: "reviewed",
       replacement_required: false,
     },

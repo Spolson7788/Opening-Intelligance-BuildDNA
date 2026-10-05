@@ -17,13 +17,21 @@ export function componentType(code:unknown){return classTypes[String(code)]||'ot
 export function conservativeSuggestion(stage:Record<string,any>,comparison:any){
  const suggestion={...stage};
  const norm=(s:string)=>s.toUpperCase().replace(/[\s_-]/g,'');
+ const markingsForIdentity=Array.isArray(stage.visible_text)?stage.visible_text:[];
+ for(const key of ['manufacturer','series']){
+  const value=String(stage[key]||'');
+  if(value&&!markingsForIdentity.some((v:any)=>typeof v==='string'&&catalogTranscription(v,value))){
+   suggestion[key]=null;
+   suggestion.confidence={...suggestion.confidence,[key]:0};
+  }
+ }
  const model=norm(String(stage.model||''));
  const markings=Array.isArray(stage.visible_text)?stage.visible_text:[];
  const partialOnly=stage.label_reading?.reads?.some((r:any)=>String(r.vision_text).includes('?'))&&!stage.label_reading?.candidates?.some((c:any)=>norm(String(c.model||''))===model);
  const marked=!partialOnly&&model&&markings.some((v:any)=>typeof v==='string'&&catalogTranscription(v,model));
  if(model&&!marked){
   suggestion.model=null;
-  suggestion.confidence={...stage.confidence,model:Math.min(Number(stage.confidence?.model)||0,.4)};
+  suggestion.confidence={...suggestion.confidence,model:Math.min(Number(stage.confidence?.model)||0,.4)};
   if(comparison)comparison.unresolved=[...(comparison.unresolved||[]),'Exact model requires a complete readable marking and technician confirmation.'];
  }
  return suggestion;

@@ -24,7 +24,8 @@ export async function purchasingReview(client:PoolClient,orgId:string,ids:string
  if(!openingDecisions.find(o=>o.opening_id===h.opening_id)!.opening_complete)reasons.push('opening_not_complete');
  if(h.review_state!=='reviewed')reasons.push('component_not_reviewed');
  if(h.identity_status!=='established'||!h.manufacturer?.trim()||!h.model_number?.trim())reasons.push('identity_unresolved');
- if(['technician_identified','photo_suggestion'].includes(h.identity_source)&&(!h.identity_acknowledged_by||!h.identity_acknowledged_at))reasons.push('identity_acknowledgment_required');
+ if(!['technician_identified','photo_suggestion'].includes(h.identity_source))reasons.push('identity_source_required');
+ if(!h.identity_acknowledged_by||!h.identity_acknowledged_at)reasons.push('identity_acknowledgment_required');
  if(!departmentRequest&&!h.approved)reasons.push('approved_document_required');
  }
  return {opening_id:h.opening_id,component_id:h.id,replacement_required:required,eligible:reasons.length===0,reasons,

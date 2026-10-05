@@ -9,7 +9,8 @@ it('resolves obscured suffixes against catalog candidates while preserving actua
 });
 it('keeps multiple matching products unresolved, including cross-brand lookalikes',()=>{
  const values=partialCatalogCandidates([read('404? ??')],catalog);
- expect(values.map(c=>c.model)).toEqual([null]);
+ expect(values.map(c=>c.model)).toEqual([null,null]);
+ expect(values.map(c=>c.catalog_model)).toEqual(['4040XP','4041 DA']);
  expect(partialCatalogCandidates([read('CR4?1')],[...catalog,{manufacturer:'Other',model:'CR441'}])).toHaveLength(2);
 });
 it('does not replace known characters, accept weak fragments, or bypass a known brand or conflicting OCR',()=>{

@@ -31,7 +31,7 @@ it('technician prepares and confirms a purchasing email request without owner ap
  const org=await signupTestOrg(),other=await signupTestOrg();const f=await createPortfolioHierarchy(org.token),o=await createTestOpening(org.token,f.buildingId);
  await request(app).put(`/api/openings/${o.id}/frame`).set(auth(org.token)).send({material:'Steel',condition:'good'});
  await request(app).post(`/api/openings/${o.id}/door-leaves`).set(auth(org.token)).send({leaf_role:'single',condition:'good'});
- const h=await request(app).post('/api/hardware').set(auth(org.token)).send({opening_id:o.id,component_type:'closer',manufacturer:'SYNTHETIC',model_number:'QA',condition:'worn',identity_status:'established',review_state:'reviewed',replacement_required:true});
+ const h=await request(app).post('/api/hardware').set(auth(org.token)).send({opening_id:o.id,component_type:'closer',manufacturer:'SYNTHETIC',model_number:'QA',condition:'worn',identity_source:'technician_identified',identity_acknowledged:true,identity_status:'established',review_state:'reviewed',replacement_required:true});
  expect((await request(app).post(`/api/openings/${o.id}/complete`).set(auth(org.token))).status).toBe(200);
  await pool.query("UPDATE users SET role='technician' WHERE organization_id=$1",[org.organizationId]);
  const b={request_id:randomUUID(),opening_id:o.id,recipient_email:'purchasing@example.test',acknowledged:true};
@@ -48,7 +48,11 @@ it('technician prepares and confirms a purchasing email request without owner ap
  await request(app).patch('/api/hardware/'+h.body.id).set(auth(org.token)).send({model_number:'CHANGED'});
  expect((await request(app).post(`/api/purchasing/requests/${b.request_id}/email-sent`).set(auth(org.token)).send({email_sent:true})).status).toBe(409);
  expect((await prepare()).status).toBe(409);
- await request(app).patch('/api/hardware/'+h.body.id).set(auth(org.token)).send({model_number:'QA'});
+ await request(app).patch('/api/hardware/'+h.body.id).set(auth(org.token)).send({model_number:'QA',identity_source:'technician_identified',identity_acknowledged:true,identity_status:'established',review_state:'reviewed'});
+ await request(app).post(`/api/openings/${o.id}/complete`).set(auth(org.token));
+ expect((await prepare()).status).toBe(409);
+ b.request_id=randomUUID();
+ expect((await prepare()).status).toBe(201);
  const sent=()=>request(app).post(`/api/purchasing/requests/${b.request_id}/email-sent`).set(auth(org.token)).send({email_sent:true});
  expect((await sent()).body).toMatchObject({status:'submitted_for_purchasing_review',delivery_confirmation:'technician_reported',purchase_authorized:false});
  expect((await sent()).status).toBe(200);
@@ -62,7 +66,7 @@ it('purchasing requires owner-approved exact identity/document, excludes service
  const o=await createTestOpening(owner.token,f.buildingId),unfinished=await createTestOpening(owner.token,f.buildingId);
  await request(app).put(`/api/openings/${o.id}/frame`).set(auth(owner.token)).send({material:'Steel',condition:'good'});
  await request(app).post(`/api/openings/${o.id}/door-leaves`).set(auth(owner.token)).send({leaf_role:'single',condition:'good'});
- const h=await request(app).post('/api/hardware').set(auth(owner.token)).send({opening_id:o.id,component_type:'closer',manufacturer:'SYNTHETIC',model_number:'QA',condition:'worn',identity_status:'established',review_state:'reviewed',replacement_required:true});
+ const h=await request(app).post('/api/hardware').set(auth(owner.token)).send({opening_id:o.id,component_type:'closer',manufacturer:'SYNTHETIC',model_number:'QA',condition:'worn',identity_source:'technician_identified',identity_acknowledged:true,identity_status:'established',review_state:'reviewed',replacement_required:true});
  const good=await request(app).post('/api/hardware').set(auth(owner.token)).send({opening_id:o.id,component_type:'hinge',condition:'good',review_state:'reviewed',replacement_required:true});
  expect((await request(app).post(`/api/openings/${o.id}/complete`).set(auth(owner.token))).status).toBe(200);
  const review=(ids=[o.id])=>request(app).post('/api/purchasing/review').set(auth(owner.token)).send({opening_ids:ids});
@@ -75,7 +79,8 @@ it('purchasing requires owner-approved exact identity/document, excludes service
  await request(app).patch('/api/hardware/'+h.body.id).set(auth(owner.token)).send({model_number:'CHANGED'});
  expect((await review()).body.blocked).toBe(true);
  expect((await request(app).get(`/api/openings/${o.id}/purchasing-eligibility`).set(auth(owner.token))).body.blocked).toBe(true);
- await request(app).patch('/api/hardware/'+h.body.id).set(auth(owner.token)).send({condition:'good'});
+ await request(app).patch('/api/hardware/'+h.body.id).set(auth(owner.token)).send({condition:'good',review_state:'reviewed'});
+ await request(app).post(`/api/openings/${o.id}/complete`).set(auth(owner.token));
  expect((await review()).body).toMatchObject({status:'no_replacements',items:[]});
  await pool.query("UPDATE users SET role='technician' WHERE organization_id=$1",[owner.organizationId]);
  expect((await request(app).put('/api/purchasing/approvals/'+h.body.id).set(auth(owner.token)).send(approval)).status).toBe(403);

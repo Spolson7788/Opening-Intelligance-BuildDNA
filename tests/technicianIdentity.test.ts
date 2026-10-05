@@ -62,3 +62,22 @@ it('catalog offers only approved citable product references and requires authent
  await pool.query("UPDATE reference_pages SET citable=false WHERE doc_sha256=$1",[sha]);
  expect((await get()).body.products).toEqual([]);
 });
+
+it('rejects unknown/omitted established identities and status-only promotion, including legacy purchasing',async()=>{
+ const org=await signupTestOrg(),f=await createPortfolioHierarchy(org.token),o=await createTestOpening(org.token,f.buildingId),auth={Authorization:`Bearer ${org.token}`};
+ const body={opening_id:o.id,component_type:'closer',manufacturer:'LCN',model_number:'4040XP',condition:'worn',review_state:'reviewed',replacement_required:true};
+ for(const source of [undefined,'unknown']){
+  const response=await request(app).post('/api/hardware').set(auth).send({...body,identity_source:source,identity_status:'established'});
+  expect(response.status).toBe(400);expect(response.body.error).toBe('identity_acknowledgment_required');
+ }
+ const saved=await request(app).post('/api/hardware').set(auth).send(body);expect(saved.status).toBe(201);
+ const statusOnly=await request(app).patch('/api/hardware/'+saved.body.id).set(auth).send({identity_status:'established'});
+ expect(statusOnly.status).toBe(400);expect(statusOnly.body.error).toBe('identity_acknowledgment_required');
+ await request(app).put(`/api/openings/${o.id}/frame`).set(auth).send({material:'Steel',condition:'good'});
+ await request(app).post(`/api/openings/${o.id}/door-leaves`).set(auth).send({leaf_role:'single',condition:'good'});
+ await request(app).post(`/api/openings/${o.id}/complete`).set(auth);
+ await pool.query("UPDATE hardware_components SET identity_status='established',identity_source='unknown' WHERE id=$1",[saved.body.id]);
+ const {purchasingReview}=await import('../src/services/purchasingReview');
+ const review=await purchasingReview(pool as any,org.organizationId,[o.id],true);
+ expect(review?.blocked).toBe(true);expect(review?.decisions[0].reasons).toContain('identity_source_required');expect(review?.decisions[0].reasons).toContain('identity_acknowledgment_required');
+});
