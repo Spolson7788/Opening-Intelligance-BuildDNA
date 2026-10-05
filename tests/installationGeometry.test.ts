@@ -32,9 +32,20 @@ describe('installation geometry from independent visible landmarks',()=>{
   expect(compareInstallationGeometry([{...view,image_width:165,image_height:220}],1).status).toBe('shared_pattern_compatible');
  });
  it('uses only approved hash-matched documents',async()=>{
-  vi.mocked(pool.query).mockResolvedValueOnce({rows:[{sha256:geometrySources[1].doc_sha256}]} as any);
+  vi.mocked(pool.query).mockResolvedValueOnce({rows:[{sha256:geometrySources[1].doc_sha256,page_no:geometrySources[1].page_no,model:geometrySources[1].models[0]}]} as any);
   expect((await approvedInstallationGeometry([view],1)).candidates.map(c=>c.model)).toEqual(['CR441']);
   vi.mocked(pool.query).mockResolvedValueOnce({rows:[]} as any);
   expect((await approvedInstallationGeometry([view],1)).status).toBe('reference_geometry_unavailable');
  });
+});
+
+it('does not supply any catalog identity without observed geometry',()=>{
+ expect(compareInstallationGeometry([],1).candidates).toEqual([]);
+ expect(compareInstallationGeometry([{component_class:'DOOR_CLOSER',manufacturer:'Norton'}],1).candidates).toEqual([]);
+});
+it('uses each catalog pattern rather than the historical pilot ratio',()=>{
+ const source={...geometrySources[0],manufacturer:'Norton',models:['7500'],horizontal_intervals_inches:[1,1,1]};
+ const observed={...view,mounting_holes:[{x:.1,y:.7},{x:.3,y:.7},{x:.5,y:.3},{x:.7,y:.3}]};
+ expect(compareInstallationGeometry([observed],1,[source]).candidates.map(c=>c.model)).toEqual(['7500']);
+ expect(compareInstallationGeometry([view],1,[source]).candidates).toEqual([]);
 });

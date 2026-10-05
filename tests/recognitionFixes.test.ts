@@ -43,19 +43,19 @@ it('records raw responses, token usage, cost and latency with a pre-existing run
  process.env.OI_PROVIDER_INPUT_USD_PER_MILLION='3';process.env.OI_PROVIDER_OUTPUT_USD_PER_MILLION='15';
  const fetch=vi.fn(async()=>{expect(vi.mocked(pool.query).mock.calls[0][0]).toContain('INSERT INTO recognition_provider_attempts');return new Response(raw);});vi.stubGlobal('fetch',fetch);
  expect(await (await invoke()).text()).toBe(raw);
- const values=vi.mocked(pool.query).mock.calls[1][1] as any[];
+ const values=vi.mocked(pool.query).mock.calls.find(c=>String(c[0]).includes('raw_output'))![1] as any[];
  expect(values[1]).toBe('response_received');expect(values[4]).toBeCloseTo(.0006);expect(values[5]).toBe('estimated');expect(values[6]).toBe(raw);
 });
 it('aborts the underlying provider call and persists timeout with unknown usage and cost',async()=>{
  let aborted=false;
  vi.stubGlobal('fetch',vi.fn((_url,init)=>new Promise((_resolve,reject)=>init.signal.addEventListener('abort',()=>{aborted=true;reject(init.signal.reason);},{once:true}))));
  await expect(invoke(Date.now()+30)).rejects.toThrow();expect(aborted).toBe(true);
- expect(vi.mocked(pool.query).mock.calls[1][1]?.[1]).toBe('timeout');
+ expect(vi.mocked(pool.query).mock.calls.filter(c=>String(c[0]).includes('SET outcome'))[0][1]?.[1]).toBe('timeout');
 });
 it('records transport and provider failures without inventing token counts',async()=>{
  vi.stubGlobal('fetch',vi.fn().mockRejectedValueOnce(Error('network')).mockResolvedValueOnce(new Response('{"error":"unavailable"}',{status:503})));
- await expect(invoke()).rejects.toThrow('network');expect(vi.mocked(pool.query).mock.calls[1][1]?.[1]).toBe('error');
- await invoke();expect(vi.mocked(pool.query).mock.calls[3][1]?.[1]).toBe('provider_error');expect(vi.mocked(pool.query).mock.calls[3][1]?.[4]).toBeNull();
+ await expect(invoke()).rejects.toThrow('network');expect(vi.mocked(pool.query).mock.calls.filter(c=>String(c[0]).includes('SET outcome'))[0][1]?.[1]).toBe('error');
+ await invoke();expect(vi.mocked(pool.query).mock.calls.filter(c=>String(c[0]).includes('SET outcome'))[1][1]?.[1]).toBe('provider_error');expect(vi.mocked(pool.query).mock.calls.filter(c=>String(c[0]).includes('SET outcome'))[1][1]?.[4]).toBeNull();
 });
 it('makes no paid call when durable attempt creation fails',async()=>{
  vi.mocked(pool.query).mockRejectedValueOnce(Error('audit unavailable'));const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
@@ -74,4 +74,17 @@ it('matches spaced model markings without completing unknown suffixes',()=>{
 });
 it('does not promote shadow-run hypotheses into operational photo provenance',()=>{
  expect(identityValues({manufacturer:'Norton',model_number:'7500',identity_source:'photo_suggestion',identity_acknowledged:true},'actor',{stage_one:{shadow_mode:true},suggestion:{manufacturer:'Norton',model:'7500'}})).toMatchObject({identity_source:'technician_identified',identity_value_producer:'technician'});
+});
+
+it.each([{input_tokens:10},{output_tokens:10},{input_tokens:null,output_tokens:10},{input_tokens:'10',output_tokens:2},{input_tokens:-1,output_tokens:2},{input_tokens:1,output_tokens:1.2}])('records unknown cost for incomplete or invalid usage %j',async usage=>{
+ process.env.OI_PROVIDER_INPUT_USD_PER_MILLION='3';process.env.OI_PROVIDER_OUTPUT_USD_PER_MILLION='15';
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({content:[{type:'text',text:'{}'}],usage})));
+ await invoke();
+ const values=vi.mocked(pool.query).mock.calls.find(c=>String(c[0]).includes('raw_output'))![1] as any[];
+ expect(values[4]).toBeNull();expect(values[5]).toBe('unknown');expect(JSON.parse(values[3])).toEqual(usage);
+});
+it('refuses to call a provider without an audit context',async()=>{
+ const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
+ await expect(auditedFetch('https://provider.test',{body:'{}'},'label')).rejects.toThrow('recognition_audit_context_required');
+ expect(fetch).not.toHaveBeenCalled();expect(pool.query).not.toHaveBeenCalled();
 });

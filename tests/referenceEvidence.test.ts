@@ -64,6 +64,29 @@ describe(privateCorpus?'audited corpus retrieval with recorded provider fixtures
   const run=(await pool.query('SELECT * FROM recognition_runs WHERE id=$1',[r.body.run_id])).rows[0];expect(run.retrieved_pages[0].text_sha256).toBe(p.text_sha256);expect(run.technician_attributes.mounting).toBe('regular_arm');expect(run.component_type).toBe('closer');
   expect((await pool.query("SELECT * FROM audit_log WHERE request_body->>'run_id'=$1",[run.id])).rows).toHaveLength(1);
  });
+ it('does not retrieve an approved LCN geometry page for a Norton closer with no geometry evidence',async()=>{
+  const {geometrySources,approvedInstallationGeometry}=await import('../src/services/installationGeometry');
+  const source=geometrySources[0],text='4040XP. Synthetic geometry retrieval fixture, not manufacturer evidence.';
+  const exists=(await pool.query('SELECT sha256 FROM reference_documents WHERE sha256=$1',[source.doc_sha256])).rows.length;
+  if(!exists){
+   await pool.query(`INSERT INTO reference_documents(sha256,manufacturer,brand,title,doc_type,page_count,storage_key,metadata,status,approved_by,approved_at) VALUES($1,'Allegion','LCN','Synthetic geometry fixture','installation',1,'reference/geometry-fixture.pdf','{}','approved',$2,now())`,[source.doc_sha256,user]);
+   await pool.query(`INSERT INTO reference_pages(doc_sha256,page_no,text,text_sha256,page_class,transcription_status,citable) VALUES($1,1,$2,$3,'text','none',true)`,[source.doc_sha256,text,digest(text)]);
+   await pool.query(`INSERT INTO reference_document_models(doc_sha256,model,evidence_page,evidence_quote) VALUES($1,'4040XP',1,'4040XP')`,[source.doc_sha256]);
+  }
+  try{
+   expect((await approvedInstallationGeometry([],1)).reference_dimensions.length).toBeGreaterThan(0);
+   provider.identify.mockResolvedValueOnce({statusCode:200,body:JSON.stringify({component_class:'DOOR_CLOSER',manufacturer:'Norton',model:null,series:null,visible_text:[],installation_geometry_views:[]})});
+   const calls=provider.compare.mock.calls.length;
+   const r=await analyze();expect(r.status).toBe(200);expect(r.body.status).toBe('no_reference_evidence');
+   expect(provider.compare.mock.calls.length).toBe(calls);
+   const run=(await pool.query('SELECT stage_one,retrieved_pages FROM recognition_runs WHERE id=$1',[r.body.run_id])).rows[0];
+   expect(run.retrieved_pages).toEqual([]);expect(run.stage_one.installation_geometry.candidates).toEqual([]);
+  }finally{if(!exists){
+   await pool.query('DELETE FROM reference_document_models WHERE doc_sha256=$1',[source.doc_sha256]);
+   await pool.query('DELETE FROM reference_pages WHERE doc_sha256=$1',[source.doc_sha256]);
+   await pool.query('DELETE FROM reference_documents WHERE sha256=$1',[source.doc_sha256]);
+  }}
+ });
  it('retrieves candidate family references from label evidence without asserting an exact model',async()=>{
   provider.identify.mockResolvedValueOnce({statusCode:200,body:JSON.stringify({component_class:'DOOR_CLOSER',manufacturer:null,model:null,series:null,visible_text:[],attributes:{}})});
   vi.mocked(readLabels).mockResolvedValueOnce({version:'fixture-label',status:'completed',limiting_factor:null,reads:[{region:{photo_index:0,x:.1,y:.1,w:.3,h:.1,rotation:180},ocr_text:'LCN 4040',ocr_confidence:70,vision_text:'LCN 4040',agreed_markings:['LCN','4040'],status:'agreement'}]});

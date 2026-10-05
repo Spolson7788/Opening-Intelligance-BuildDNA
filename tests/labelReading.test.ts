@@ -1,3 +1,5 @@
+// Unit boundary: provider/audit integration is covered by recognitionAuditApi and recognitionFixes.
+vi.mock('../src/services/recognitionAudit',()=>({auditedFetch:(url:string,init:RequestInit)=>fetch(url,init),recordRecognitionEvidence:vi.fn()}));
 import {describe,it,expect,vi} from 'vitest';
 import sharp from 'sharp';
 import {createWorker} from 'tesseract.js';

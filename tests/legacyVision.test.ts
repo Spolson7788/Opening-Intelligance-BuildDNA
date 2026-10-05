@@ -1,3 +1,5 @@
+// Unit boundary: provider/audit integration is covered by recognitionAuditApi and recognitionFixes.
+vi.mock('../src/services/recognitionAudit',()=>({auditedFetch:(url:string,init:RequestInit)=>fetch(url,init),recordRecognitionEvidence:vi.fn()}));
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {legacyVisionHandler} from '../src/services/legacyVision';
 const fetchMock=vi.fn();

@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 import {normalizeRecognitionImage} from '../services/recognitionImage';
-import {recognitionAudit} from '../services/recognitionAudit';
+import {recognitionAudit,recordRecognitionEvidence} from '../services/recognitionAudit';
 import {withinRecognitionBudget,referenceComparisonBudget} from '../services/recognitionDeadline';
 import {approvedInstallationGeometry} from '../services/installationGeometry';
 import {Router} from 'express';
@@ -10,7 +10,7 @@ import {requireAuth,requireRole,AuthedRequest} from '../middleware/auth';
 import {openingsForOrgSubquery} from '../db/tenantScope';
 import {legacyVisionHandler} from '../services/legacyVision';
 import {createHash} from 'node:crypto';
-import {readLabels,applyLabelEvidence} from '../services/labelReading';
+import {readLabels,applyLabelEvidence,LABEL_PROMPT_VERSION} from '../services/labelReading';
 import {retrieveReferences,referenceFailureCode,resolvePartialMarkings,compareWithReferences,validateCitations,componentType,conservativeSuggestion,reportedReferenceHint,sanitizeReferenceComparison,REFERENCE_PROMPT_VERSION,RECOGNITION_MODEL} from '../services/referenceEvidence';
 
 const schema=z.object({
@@ -66,7 +66,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     const bounded=<T>(work:()=>Promise<T>,deadline:number,fallback:()=>T)=>withinRecognitionBudget(signal=>recognitionAudit.run({...recognitionAudit.getStore()!,signal},work),deadline,fallback);
     const [response,labels]=await Promise.all([
       bounded(()=>legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,technician_attributes:{},timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})}),started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})})),
-      b.mode==='identify'?bounded(()=>readLabels(images,b.media_type,started+24000),started+24000,()=>({version:'oi-label-reading-11',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null),
+      b.mode==='identify'?bounded(()=>readLabels(images,b.media_type,started+24000),started+24000,()=>({version:LABEL_PROMPT_VERSION,status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null),
     ]);
     await pool.query(`UPDATE recognition_runs SET stage_one=stage_one || $2::jsonb WHERE id=$1`,[initial.id,JSON.stringify({label_reading:labels})]);
     if(response.statusCode!==200){
@@ -76,10 +76,11 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       try{const failed=JSON.parse(response.body);if(safeErrors.has(failed?.error))error=failed.error;
        if(req.auth!.role==='admin'&&typeof failed.provider_diagnostic==='string')providerDiagnostic=failed.provider_diagnostic.slice(0,400);
       }catch{}
+      await recordRecognitionEvidence('failure',{http_status:502,code:error});
       return res.status(502).json({error,...(providerDiagnostic?{provider_diagnostic:providerDiagnostic}:{})});
     }
-    let result=JSON.parse(response.body);
-    if(!result||typeof result!=='object'||Array.isArray(result))return res.status(502).json({error:'recognition_provider_failed'});
+    let result:any;try{result=JSON.parse(response.body);}catch{}
+    if(!result||typeof result!=='object'||Array.isArray(result)){await recordRecognitionEvidence('failure',{http_status:502,code:'recognition_provider_failed'});return res.status(502).json({error:'recognition_provider_failed'});}
     if(labels&&b.mode==='identify'){
       try{
         const matches=await resolvePartialMarkings(labels,String(result.manufacturer||''));
@@ -106,8 +107,8 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
           pages=[...new Map(groups.flat().map(p=>[p.page_id,p])).values()].slice(0,8);
         }
       }
-      if(!pages.length&&b.mode==='identify'&&result.component_class==='DOOR_CLOSER'&&result.installation_geometry?.reference_dimensions?.length){
-        const groups=await Promise.all(result.installation_geometry.reference_dimensions.flatMap((s:any)=>s.models.map((model:string)=>retrieveReferences({manufacturer:s.manufacturer,model},{}))));
+      if(!pages.length&&b.mode==='identify'&&result.component_class==='DOOR_CLOSER'&&result.installation_geometry?.status==='shared_pattern_compatible'&&result.installation_geometry?.candidates?.length){
+        const groups=await Promise.all(result.installation_geometry.candidates.map((c:any)=>retrieveReferences({manufacturer:c.manufacturer,model:c.model},{})));
         pages=[...new Map(groups.flat().map((p:any)=>[p.page_id,p])).values()].slice(0,8) as any;
         result.reference_lookup_basis='installation_geometry_pilot_candidates';
       }

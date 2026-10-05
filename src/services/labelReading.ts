@@ -5,7 +5,7 @@ import sharp from 'sharp';
 import {createWorker,PSM} from 'tesseract.js';
 import {dirname,join} from 'node:path';
 
-export const LABEL_PROMPT_VERSION='oi-label-reading-11';
+export const LABEL_PROMPT_VERSION='oi-label-reading-12';
 // Layout transcribed from the user-supplied clean label photograph. No expected
 // characters enter either reader: the reference guides location only.
 export const LABEL_LAYOUT_REFERENCE={id:'bold-heading-over-diagrams-v1',source_sha256:'7683137c6e82674d157816e2e4747e640ecc520da3983c95cf905204fb5e60c2',guide:'For a rectangular sticker with bold headings above dense adjustment diagrams, locate the model heading separately from the diagrams and brand heading. Check the photograph for this layout; do not assume it is present. Other layouts remain valid. Never supply expected characters from the reference.'};
@@ -52,7 +52,10 @@ export async function cropLabel(image:Buffer,region:LabelRegion):Promise<Buffer>
  // Retain original pixels. Enlargement improves OCR sampling but creates no detail.
  const extracted=await input.extract({left,top,width,height}).png().toBuffer();
  const swap=region.rotation===90||region.rotation===270;
- return sharp(extracted).rotate(region.rotation).resize({width:Math.min(1400,(swap?height:width)*3),height:Math.min(1400,(swap?width:height)*3),fit:'inside',withoutEnlargement:false}).png().toBuffer();
+ const w=swap?height:width,h=swap?width:height;
+ // OCR may enlarge small glyphs, but never discard native crop resolution.
+ const scale=Math.max(1,Math.min(3,1400/w,1400/h));
+ return sharp(extracted).rotate(region.rotation).resize({width:Math.round(w*scale),height:Math.round(h*scale),fit:'inside'}).png().toBuffer();
 }
 // Refine a reader-located label within a search crop, never a product-specific ROI.
 export async function focusedLabelViews(crop:Buffer,box:unknown,rotation:unknown){
@@ -114,9 +117,11 @@ export async function modelLineViews(image:Buffer,region:LabelRegion,rejectBackg
  // the source-coordinate crop first so rotated labels retain the correct pixels.
  const extracted=await sharp(image,{limitInputPixels:16_000_000}).extract({left,top,width,height}).png().toBuffer();
  if(rejectBackground&&!await hasModelLineDetail(extracted))return [];
- const crop=await sharp(extracted).rotate(region.rotation).resize({height:96,width:1200,fit:'inside'}).extend({top:10,bottom:10,left:10,right:10,background:'white'}).png().toBuffer();
+ const swap=region.rotation===90||region.rotation===270;
+ const nativeWidth=swap?height:width,nativeHeight=swap?width:height;
+ const crop=await sharp(extracted).rotate(region.rotation).resize({height:Math.max(96,nativeHeight),width:Math.max(1200,nativeWidth),fit:'inside'}).extend({top:10,bottom:10,left:10,right:10,background:'white'}).png().toBuffer();
  const enhanced=await enhanceLabelCrop(crop);
- const binary=await sharp(crop).resize({height:64}).greyscale().threshold(140).png().toBuffer();
+ const binary=await sharp(crop).greyscale().threshold(140).png().toBuffer();
  return [crop,enhanced,binary,await sharp(binary).rotate(180).png().toBuffer()];
 }
 export function searchRegions():LabelRegion[]{
@@ -168,7 +173,7 @@ export async function readLabels(images:Buffer[],mediaType:string,deadline=Date.
   const dimensions=await Promise.all(images.map(async data=>{const m=await sharp(data,{limitInputPixels:16_000_000}).metadata();return {width:m.width||0,height:m.height||0};}));
   const ocrTasks:{index:number;crop:Buffer;scope:'model_line'|'label';transform:string}[]=[];
   const lineViews=await Promise.all(usable.map(x=>modelLineViews(images[x.region.photo_index],x.region,true).catch(()=>[])));
-  for(let i=0;i<usable.length;i++)for(const [j,crop] of lineViews[i].entries())ocrTasks.push({index:i,crop,scope:'model_line',transform:['original','contrast_sharpen','threshold_140','threshold_140_rotate_180'][j]});
+  for(let i=0;i<usable.length;i++)for(const [j,crop] of lineViews[i].entries())ocrTasks.push({index:i,crop,scope:'model_line',transform:`crop_then_rotate_${usable[i].region.rotation}_resize_pad_${['original','contrast_sharpen','threshold_140','threshold_140_rotate_180'][j]}`});
   const rotated=await Promise.all(usable.map(x=>x.region.kind==='search_tile'?Promise.resolve(null):sharp(x.crop).rotate(180).png().toBuffer().catch(()=>null)));
   for(let i=0;i<usable.length;i++)if(!ocrTasks.some(t=>t.index===i)){
    ocrTasks.push({index:i,crop:enhanced[i]||usable[i].crop,scope:'label',transform:enhanced[i]?'contrast_sharpen':'original'});
