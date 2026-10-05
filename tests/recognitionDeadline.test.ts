@@ -10,7 +10,7 @@ it('does not conceal an actual failure before the deadline',async()=>{await expe
 
 it('rejects empty successful responses instead of leaving the recognition form blank',async()=>{
  const {requireRecognitionResult}=await import('../field-app/src/lib/recognitionResponse');
- for(const value of [null,{},[],{run_id:'run',status:'reference_evidence',suggestion:null},{run_id:'run',status:'reference_evidence',suggestion:[]}])expect(()=>requireRecognitionResult(value)).toThrow('recognition_result_missing');
+ for(const value of [null,{},[],{run_id:'run',status:'reference_evidence',suggestion:null},{run_id:'run',status:'reference_evidence',suggestion:[]},{run_id:'run',status:'reference_evidence',suggestion:{}},...['running','failed','awaiting_saved_result'].map(status=>({run_id:'run',status,suggestion:{model:null}}))])expect(()=>requireRecognitionResult(value)).toThrow('recognition_result_missing');
  const valid={run_id:'run',status:'no_reference_match',suggestion:{manufacturer:null,model:null}};
  expect(requireRecognitionResult(valid)).toBe(valid);
 });

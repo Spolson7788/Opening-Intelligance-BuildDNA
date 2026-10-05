@@ -193,7 +193,10 @@ recognitionRouter.get('/request/:id',async(req:AuthedRequest,res)=>{
   const allowed=await pool.query(`SELECT 1 FROM (${openingsForOrgSubquery(2)}) a WHERE a.id=$1`,[opening.data,req.auth!.organizationId]);
   if(!allowed.rows.length)return res.status(404).json({error:'opening_not_found'});
   const r=(await pool.query(`SELECT * FROM recognition_runs WHERE organization_id=$1 AND user_id=$2 AND opening_id=$3 AND stage_one->>'request_id'=$4 ORDER BY created_at DESC LIMIT 1`,[req.auth!.organizationId,req.auth!.userId,opening.data,req.params.id])).rows[0];
-  if(!r)return res.status(202).json({status:'awaiting_saved_result'});
+  if(!r||r.status==='running')return res.status(202).json({status:'awaiting_saved_result'});
+  if(r.status==='failed')return res.status(502).json({error:'recognition_provider_failed'});
+  if(!r.suggestion||typeof r.suggestion!=='object'||Array.isArray(r.suggestion)||!Object.keys(r.suggestion).length)
+    return res.status(502).json({error:'recognition_result_missing'});
   const labels=r.stage_one?.label_reading?.candidates||[];
   return res.json({request_id:req.params.id,recovered:true,shadow_mode:r.stage_one?.shadow_mode===true,suggestion:r.suggestion,label_candidates:labels,label_candidate:labels.length===1?labels[0]:null,reported_identity:reportedReferenceHint(r.technician_attributes||{}),run_id:r.id,status:r.status,reference_comparison_failure:r.stage_one?.reference_comparison_failure||null,comparison:r.stage_two,citations:r.citations||[],conflicts:r.conflicts||[],requires_technician_review:true});
  }catch{return res.status(503).json({error:'recognition_history_unavailable'});}

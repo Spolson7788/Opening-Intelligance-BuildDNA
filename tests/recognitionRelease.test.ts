@@ -69,3 +69,28 @@ it('does not expose another actor’s run when no exact request match is found',
  const response=await request(app).get(`/recognition/request/22222222-2222-4222-8222-222222222222?opening_id=${body.opening_id}`).set('Authorization',`Bearer ${token()}`);
  expect(response.status).toBe(202);expect(response.body).toEqual({status:'awaiting_saved_result'});expect(mocks.engine).not.toHaveBeenCalled();
 });
+
+
+it('waits through a persisted running placeholder and returns the later committed result without paid work',async()=>{
+ const requestId='22222222-2222-4222-8222-222222222222';
+ const url=`/recognition/request/${requestId}?opening_id=${body.opening_id}`;
+ for(const [row,status] of [
+  [{id:'run',status:'running',suggestion:{},stage_one:{}},202],
+  [{id:'run',status:'reference_evidence',suggestion:{component_class:'DOOR_CLOSER'},stage_one:{label_reading:{candidates:[{model:'4040XP'}]}}},200]
+ ] as const){
+  mocks.query.mockReset().mockResolvedValueOnce({rows:[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]}).mockResolvedValueOnce({rows:[{allowed:1}]}).mockResolvedValueOnce({rows:[row]});
+  const response=await request(app).get(url).set('Authorization',`Bearer ${token()}`);
+  expect(response.status).toBe(status);
+  if(status===202)expect(response.body).toEqual({status:'awaiting_saved_result'});
+  else {expect(response.body.suggestion.component_class).toBe('DOOR_CLOSER');expect(response.body.label_candidate.model).toBe('4040XP');}
+ }
+ expect(mocks.engine).not.toHaveBeenCalled();expect(readLabels).not.toHaveBeenCalled();
+});
+it('rejects failed and empty terminal recovery records',async()=>{
+ for(const status of ['failed','reference_evidence']){
+  mocks.query.mockReset().mockResolvedValueOnce({rows:[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]}).mockResolvedValueOnce({rows:[{allowed:1}]}).mockResolvedValueOnce({rows:[{id:'run',status,suggestion:{},stage_one:{}}]});
+  const response=await request(app).get(`/recognition/request/22222222-2222-4222-8222-222222222222?opening_id=${body.opening_id}`).set('Authorization',`Bearer ${token()}`);
+  expect(response.status).toBe(502);expect(response.body.suggestion).toBeUndefined();
+ }
+ expect(mocks.engine).not.toHaveBeenCalled();
+});
