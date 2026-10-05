@@ -82,17 +82,18 @@ it('does not count a removed cover as contradictory identity evidence and retain
 it('keeps classifier-only markings out of comparison evidence and rejects their conflicts',async()=>{
  const {applyLabelEvidence}=await import('../src/services/labelReading');
  const {comparisonPayload,sanitizeReferenceComparison}=await import('../src/services/referenceEvidence');
- const stage=applyLabelEvidence({visible_text:['RYOBI'],evidence:[{supports:'visible_text',observation:'RYOBI label'},{supports:'arm_type',observation:'scissor arm'}]}, {version:'test',status:'completed',reads:[],limiting_factor:null});
+ const stage=applyLabelEvidence({manufacturer:'RYOBI',visible_text:['RYOBI'],evidence:[{supports:'visible_text',observation:'RYOBI label'},{supports:'arm_type',observation:'scissor arm'}]}, {version:'test',status:'completed',reads:[],limiting_factor:null});
  expect(stage.visible_text).toEqual([]);
  expect(stage.classifier_visible_text).toEqual(['RYOBI']);
  expect(stage.classifier_text_evidence).toHaveLength(1);
+ stage.manufacturer=null; // Route conservative gate strips the uncorroborated identity before comparison.
  const payload=comparisonPayload({stage_one:stage,pages:[],conflicts:[]});
  expect(JSON.stringify(payload)).not.toContain('RYOBI');
  expect(JSON.stringify(payload)).toContain('scissor arm');
  const result=sanitizeReferenceComparison({candidates:[{model:'4040XP',contradicting_features:[{observation:'Visible RYOBI differs from LCN'},{observation:'Mounting pattern differs'}]}],unresolved:['RYOBI text conflicts','Model is unconfirmed']},stage);
- expect(result.candidates[0].contradicting_features).toEqual([]);
+ expect(result.candidates[0].contradicting_features).toEqual([{observation:'Mounting pattern differs',citation:null}]);
  expect(result.unresolved).toEqual(['Model is unconfirmed']);
- expect(result.reasoning_adjustments).toHaveLength(3);
+ expect(result.reasoning_adjustments).toHaveLength(2);
  expect(result.cover_comparison).toBeUndefined();
 });
 it('preserves a corroborated marking conflict without treating repeated AI views as confirmation',async()=>{

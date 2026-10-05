@@ -138,12 +138,12 @@ it('removes unmatched geometry dimensions and unsupported geometry prose with a 
  const stage={installation_geometry:{status:'insufficient_visible_landmarks',candidates:[],reference_dimensions:[{model:'fixture',width:12}]}};
  expect((comparisonPayload({stage_one:stage,pages:[],conflicts:[]}).stage_one.installation_geometry as any).reference_dimensions).toBeUndefined();
  const result=sanitizeReferenceComparison({candidates:[{supporting_features:[{observation:'catalog geometry matches'}]}],unresolved:['Identification relies on catalog geometry only','No dimensional match.']},stage);
- expect(result.candidates[0].supporting_features).toEqual([]);expect(result.unresolved).toEqual(['No dimensional match.']);expect(result.reasoning_adjustments).toHaveLength(2);
+ expect(result.candidates[0].supporting_features).toEqual([]);expect(result.unresolved).toEqual(['Identification relies on catalog geometry only','No dimensional match.']);expect(result.reasoning_adjustments).toHaveLength(1);
 });
 
 it.each(['manufacturer','Visible_Text','arm_type'])('quarantines unsupported brand evidence regardless of tag %s',async supports=>{
  const {applyLabelEvidence}=await import('../src/services/labelReading');const {sanitizeReferenceComparison}=await import('../src/services/referenceEvidence');
- const stage=applyLabelEvidence({evidence:[{supports,observation:'Label reads RYOBI, not LCN.'}]},{version:'test',status:'completed',reads:[],limiting_factor:null});
+ const stage=applyLabelEvidence({manufacturer:'RYOBI',evidence:[{supports,observation:'Label reads RYOBI, not LCN.'}]},{version:'test',status:'completed',reads:[],limiting_factor:null});
  expect(stage.evidence).toEqual([]);expect(stage.classifier_text_evidence).toHaveLength(1);
  const clean=sanitizeReferenceComparison({candidates:[{contradicting_features:[{observation:'Label reads RYOBI, not LCN.'}]}]},stage);
  expect(clean.candidates[0].contradicting_features).toEqual([]);
@@ -163,4 +163,13 @@ it('shares fenced JSON parsing and rejects refusal/prose objects, while class al
  expect(()=>providerObject({content:[{type:'text',text:'I refuse {"component_class":null}'}]})).toThrow();
  expect(()=>classifierObject({})).toThrow();expect(()=>classifierObject({component_class:'random'})).toThrow();
  expect(classifierObject({component_class:'door closer'}).component_class).toBe('DOOR_CLOSER');expect(classifierObject({component_class:null}).component_class).toBeNull();
+});
+
+it('preserves physical contradictions and geometry cautions when quarantining label text',async()=>{
+ const {sanitizeReferenceComparison}=await import('../src/services/referenceEvidence');
+ const observations=['Label reads RYOBI, not LCN.','The closer body differs','Arm shape differs','Mounting pattern differs'];
+ const result=sanitizeReferenceComparison({candidates:[{supporting_features:[{observation:'Geometry matches'}],contradicting_features:observations.map(observation=>({observation}))}],unresolved:['Catalog geometry alone cannot establish identity']},{photograph_identity:{manufacturer:'RYOBI'},classifier_text_evidence:[{observation:"Text 'RYOBI' visible on the closer body"}],installation_geometry:{candidates:[]}});
+ expect(result.candidates[0].contradicting_features.map((f:any)=>f.observation)).toEqual(observations.slice(1));
+ expect(result.candidates[0].supporting_features).toEqual([]);
+ expect(result.unresolved).toEqual(['Catalog geometry alone cannot establish identity']);
 });

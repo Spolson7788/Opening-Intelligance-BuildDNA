@@ -145,7 +145,10 @@ export function sanitizeReferenceComparison(comparison:any,stage:Record<string,a
  const geometryFilter=(entry:any)=>{const text=typeof entry==='string'?entry:entry?.observation;if(!unsupportedGeometry(text))return true;adjustments.push({feature:entry,reason:'no_geometry_match'});return false;};
  const tokens=(values:unknown)=>Array.isArray(values)?values.filter((v):v is string=>typeof v==='string').flatMap(v=>v.toUpperCase().match(/[A-Z0-9]+(?:[-_][A-Z0-9]+)*/g)||[]):[];
  const confirmed=new Set(tokens(stage.visible_text));
- const unsupported=new Set(tokens([...(stage.classifier_visible_text||[]),...(stage.classifier_text_evidence||[]).map((e:any)=>e.observation)]).filter(t=>t.length>1&&!confirmed.has(t)));
+ const identity=stage.photograph_identity||{};
+ const identityTokens=tokens([identity.manufacturer,identity.series,identity.model]);
+ const markingTokens=tokens([...(Array.isArray(stage.classifier_visible_text)?stage.classifier_visible_text:[]),...(Array.isArray(stage.classifier_text_evidence)?stage.classifier_text_evidence:[]).map((e:any)=>e.observation)]).filter(t=>/\d/.test(t));
+ const unsupported=new Set([...identityTokens,...markingTokens].filter(t=>t.length>1&&!confirmed.has(t)));
  const citesUnsupported=(text:unknown)=>tokens([String(text||'')]).some(t=>unsupported.has(t));
  const candidates=(Array.isArray(comparison.candidates)?comparison.candidates:[]).map((candidate:any)=>{
   if(!candidate||typeof candidate!=='object')return candidate;
@@ -156,11 +159,11 @@ export function sanitizeReferenceComparison(comparison:any,stage:Record<string,a
    const unsupportedText=citesUnsupported(observation);
    if(unsupportedText)adjustments.push({manufacturer:candidate.manufacturer,model:candidate.model,feature,reason:'unsupported_classifier_text'});
    if(absentCover)adjustments.push({manufacturer:candidate.manufacturer,model:candidate.model,feature,reason:'removed_cover_is_not_model_evidence'});
-   return !absentCover&&!unsupportedText&&geometryFilter(feature);
+   return !absentCover&&!unsupportedText;
   });
   return {...candidate,contradicting_features:retained,...(Array.isArray(candidate.supporting_features)?{supporting_features:candidate.supporting_features.filter(geometryFilter)}:{})};
  });
-  const unresolved=(Array.isArray(comparison.unresolved)?comparison.unresolved:[]).filter(geometryFilter).filter((text:any)=>{
+  const unresolved=(Array.isArray(comparison.unresolved)?comparison.unresolved:[]).filter((text:any)=>{
   if(!citesUnsupported(text))return true;
   adjustments.push({text,reason:'unsupported_classifier_text'});return false;
  });
