@@ -15,8 +15,11 @@ function stabilityEnv(key:string):string|undefined {
 export const STABILITY_MODEL='claude-sonnet-4-5-20250929';
 export const STABILITY_INPUT_CEILING=200000;
 export function stabilityTrialId():string|null {
- if(stabilityEnv('OI_STABILITY_TRIAL_REQUIRED')!=='true')return null;
  const runtime=stabilityRuntime.getStore();
+ if(stabilityEnv('OI_STABILITY_TRIAL_REQUIRED')!=='true'){
+  if(runtime==='deploy-preview')throw Error('stability_trial_not_configured');
+  return null;
+ }
  if(runtime!=='deploy-preview' && !(runtime===undefined&&process.env.NODE_ENV==='test'&&process.env.OI_STABILITY_LOCAL_TEST==='true'))throw Error('stability_nonproduction_required');
  const id=stabilityEnv('OI_STABILITY_TRIAL_ID')||'';
  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))throw Error('stability_trial_not_configured');

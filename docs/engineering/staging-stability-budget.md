@@ -5,6 +5,8 @@ limit. The stability trial adds a durable reservation before each provider send.
 It is enabled only by Functions-scoped preview configuration and trusted Netlify
 `context.deploy.context`; the build-only `CONTEXT` variable cannot authorize it.
 The existing API wrapper also verifies the designated staging database.
+Recognition in this preview refuses provider work when trial configuration is
+absent, so an incomplete activation cannot silently run without the cap.
 
 Each trial binds one existing organization, actor, opening and original image
 SHA-256. It admits at most ten distinct request IDs. PostgreSQL locks the trial
@@ -22,7 +24,7 @@ Insufficient headroom stops the test, even if fewer than ten runs completed.
 The migration enables RLS and restricts access to the existing server API role;
 it creates no active trial. Production configuration and deployment are unchanged.
 
-Validation: 24 budget tests with real PGlite SQL and mocked provider fetches,
+Validation: 25 budget tests with real PGlite SQL and mocked provider fetches,
 including reservation-before-send, duplicate requests, scope and run limits,
 competing reservations, explicit settlement and interrupted responses. PGlite
 serializes its one session; this is not a native multi-connection PostgreSQL
