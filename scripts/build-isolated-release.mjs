@@ -8,6 +8,10 @@ import { buildFacilityDashboard } from './build-facility-dashboard.mjs';
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 assertIsolatedReleaseContext(process.env);
+const buildSha=process.env.COMMIT_REF || execFileSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf8'}).trim();
+if(!/^[a-f0-9]{40}$/i.test(buildSha))throw new Error('Recognition build SHA is invalid');
+mkdirSync(resolve(root,'src/generated'),{recursive:true});
+writeFileSync(resolve(root,'src/generated/recognitionBuild.json'),JSON.stringify({build_sha:buildSha,source:'build_checkout'})+'\n');
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 function run(args, dir = root, extra = {}) {
@@ -38,7 +42,7 @@ cpSync(resolve(root, "dashboard/dist"), resolve(staging, "dashboard"), { recursi
 buildFacilityDashboard(resolve(staging, "facility-dashboard"));
 writeFileSync(resolve(staging, 'build-info.json'), JSON.stringify({
   environment: process.env.CONTEXT === 'production' ? 'isolated-release-validation' : 'reference-staging-validation',
-  commit: process.env.COMMIT_REF || execFileSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf8'}).trim(),
+  commit: buildSha,
   branch: process.env.HEAD || process.env.BRANCH || 'local',
   checkoutRef: process.env.BRANCH || 'local',
   context: process.env.CONTEXT || 'local',

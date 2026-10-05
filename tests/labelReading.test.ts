@@ -7,6 +7,21 @@ vi.mock('tesseract.js',async importOriginal=>{const actual=await importOriginal<
 import {agreedMarkings,enhanceLabelCrop,searchRegions,normalizeRegions,cropLabel,applyLabelEvidence,labelCandidates,readLabels, type LabelEvidence} from '../src/services/labelReading';
 import {modelLineViews,conflictingModelReadings} from '../src/services/labelReading';
 import {partialCatalogCandidates} from '../src/services/partialMarkings';
+it('retains valid vision text and reports missing crops as partial throughout the label pipeline',async()=>{
+ const image=await sharp({create:{width:60,height:40,channels:3,background:'white'}}).png().toBuffer();
+ const worker={setParameters:vi.fn(),recognize:vi.fn().mockResolvedValue({data:{text:'',confidence:0}}),terminate:vi.fn().mockResolvedValue(undefined)};
+ vi.mocked(createWorker).mockResolvedValueOnce(worker as any);
+ const fetch=vi.fn().mockResolvedValueOnce(Response.json({content:[{type:'text',text:JSON.stringify({regions:[]})}]})).mockResolvedValueOnce(Response.json({content:[{type:'text',text:JSON.stringify({reads:[{crop_index:0,text:'1040XP'}]})}]}));
+ vi.stubGlobal('fetch',fetch);
+ try{
+  const result=await readLabels([image],'image/png');
+  expect(result.status).toBe('partial');expect(result.stage_outcomes?.label_reader).toMatchObject({status:'partial',reason:'label_partial_reads'});
+  expect(result.reads[0]).toMatchObject({vision_text:'1040XP',vision_status:'read'});
+  expect(result.reads.slice(1).every(r=>r.vision_status==='not_returned')).toBe(true);
+  const prompt=JSON.parse(fetch.mock.calls[1][1].body).messages[0].content.at(-1).text;
+  expect(prompt).toContain('exactly 5 reads');expect(prompt).toContain('[0,1,2,3,4]');
+ }finally{vi.unstubAllGlobals();}
+});
 const catalog=[{manufacturer:'LCN',model:'4040XP',series:'4040'}];
 const match=(reads:any[])=>labelCandidates(reads,catalog);
 const region={photo_index:0,x:.1,y:.2,w:.5,h:.2,rotation:180};

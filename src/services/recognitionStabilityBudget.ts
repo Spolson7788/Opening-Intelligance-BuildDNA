@@ -2,7 +2,7 @@ import {pool} from '../db/pool';
 import {AsyncLocalStorage} from 'node:async_hooks';
 
 // Populated only by the Netlify handler from its trusted request context.
-export const stabilityRuntime=new AsyncLocalStorage<string>();
+export const stabilityRuntime=new AsyncLocalStorage<string|undefined>();
 function stabilityEnv(key:string):string|undefined {
  const netlify=(globalThis as any).Netlify;
  if(netlify?.env?.get)return netlify.env.get(key);

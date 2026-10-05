@@ -1,4 +1,6 @@
 import {classifierObject} from '../services/providerReply';
+import recognitionBuild from '../generated/recognitionBuild.json';
+import {LABEL_RESPONSE_VERSION} from '../services/labelResponse';
 import sharp from 'sharp';
 import {normalizeRecognitionImage} from '../services/recognitionImage';
 import {recognitionAudit,recordRecognitionEvidence} from '../services/recognitionAudit';
@@ -62,7 +64,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     const initial=(await pool.query(`INSERT INTO recognition_runs
      (organization_id,opening_id,user_id,photo_hashes,technician_attributes,component_type,stage_one,suggestion,retrieved_pages,citations,rejected_citations,conflicts,status,model_id,prompt_version)
      VALUES($1,$2,$3,$4,$5,NULL,$6,'{}','[]','[]','[]','[]','running',$7,$8) RETURNING id`,[
-     req.auth!.organizationId,b.opening_id,req.auth!.userId,JSON.stringify(sourceHashes),JSON.stringify(b.technician_attributes),JSON.stringify({request_id:b.request_id,shadow_mode:true,libraries:{sharp:sharp.versions,tesseract:require('tesseract.js/package.json').version}}),RECOGNITION_MODEL,REFERENCE_PROMPT_VERSION])).rows[0];
+     req.auth!.organizationId,b.opening_id,req.auth!.userId,JSON.stringify(sourceHashes),JSON.stringify(b.technician_attributes),JSON.stringify({request_id:b.request_id,shadow_mode:true,recognition_versions:{...recognitionBuild,label_prompt:LABEL_PROMPT_VERSION,label_response:LABEL_RESPONSE_VERSION,reference_prompt:REFERENCE_PROMPT_VERSION},libraries:{sharp:sharp.versions,tesseract:require('tesseract.js/package.json').version}}),RECOGNITION_MODEL,REFERENCE_PROMPT_VERSION])).rows[0];
     return await recognitionAudit.run({runId:initial.id,deadline:started+49000},async()=>{try{
     if(stabilityTrialId()&&b.mode!=='identify')throw Error('stability_identify_mode_required');
     await registerStabilityRun(initial.id,b.request_id);

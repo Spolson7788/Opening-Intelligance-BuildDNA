@@ -1,5 +1,10 @@
 // Validate provider envelopes separately from transport success. Never repair text.
 import {providerObject} from './providerReply';
+export const LABEL_RESPONSE_VERSION='oi-label-response-2';
+export interface LabelValidationIssue {reason:string;entry_index?:number;crop_index?:number}
+export function labelReadContract(indices:number[]){
+ return ` Return exactly ${indices.length} reads, one for each crop_index in [${indices.join(',')}], with no duplicate or extra indices. Use a string text for every entry, including an empty string when unreadable or no label is visible. Never omit an unreadable crop or use null text.`;
+}
 export function parseLabelResponse(body:any,stage:string,expected:number|number[]){
  if(body?.stop_reason==='refusal')throw Error('label_refused');
  if(body?.stop_reason==='max_tokens')throw Error('label_truncated');
@@ -13,14 +18,27 @@ export function parseLabelResponse(body:any,stage:string,expected:number|number[
  }else{
   if(!Array.isArray(value.reads))throw Error('label_invalid_reads');
   const indices=Array.isArray(expected)?expected:Array.from({length:expected},(_,i)=>i);
-  const seen=new Set<number>();
-  for(const r of value.reads){
+  const valid=new Map<number,any>(),seen=new Set<number>(),invalid=new Set<number>();
+  const issues:LabelValidationIssue[]=[];
+  for(const [entry_index,entry] of value.reads.entries()){
+   const r=entry&&typeof entry==='object'?{...entry}:entry;
    // A decimal index string is unambiguous; normalize its type, never its text.
    if(r&&typeof r.crop_index==='string'&&/^(0|[1-9]\d*)$/.test(r.crop_index))r.crop_index=Number(r.crop_index);
-   if(!r||!Number.isInteger(r.crop_index)||!indices.includes(r.crop_index)||seen.has(r.crop_index)||typeof r.text!=='string')throw Error('label_invalid_reads');
+   if(!r||!Number.isInteger(r.crop_index)){issues.push({entry_index,reason:'invalid_crop_index'});continue;}
+   if(!indices.includes(r.crop_index)){issues.push({entry_index,crop_index:r.crop_index,reason:'crop_index_out_of_range'});continue;}
+   if(seen.has(r.crop_index)){
+    // Neither duplicate is unambiguous. Preserve other crops, not a guessed winner.
+    valid.delete(r.crop_index);invalid.add(r.crop_index);
+    issues.push({entry_index,crop_index:r.crop_index,reason:'duplicate_crop_index'});continue;
+   }
    seen.add(r.crop_index);
+   if(typeof r.text!=='string'){invalid.add(r.crop_index);issues.push({entry_index,crop_index:r.crop_index,reason:'invalid_text'});continue;}
+   valid.set(r.crop_index,r);
   }
-  if(seen.size!==indices.length)throw Error('label_incomplete_reads');
+  const not_returned=indices.filter(i=>!seen.has(i));
+  for(const crop_index of not_returned)issues.push({crop_index,reason:'not_returned'});
+  value.reads=indices.flatMap(i=>valid.has(i)?[valid.get(i)]:[]);
+  value.validation={version:LABEL_RESPONSE_VERSION,status:issues.length?'partial':'completed',issues,not_returned,invalid_crops:[...invalid]};
  }
  return value;
 }

@@ -116,14 +116,15 @@ it('validates label replies and preserves a string-index transcription without r
  const {parseLabelResponse}=await import('../src/services/labelResponse');
  const body=(v:any)=>({content:[{type:'text',text:JSON.stringify(v)}]});
  expect(parseLabelResponse(body({reads:[{crop_index:'0',text:'4040XP'}]}),'label_reader',1).reads[0]).toEqual({crop_index:0,text:'4040XP'});
- for(const value of [{}, {reads:[]},{reads:[{crop_index:0,text:null}]},{reads:[{crop_index:0,text:''},{crop_index:0,text:'4040XP'}]}])expect(()=>parseLabelResponse(body(value),'label_reader',1)).toThrow();
+ expect(()=>parseLabelResponse(body({}),'label_reader',1)).toThrow('label_invalid_reads');
+ for(const value of [{reads:[]},{reads:[{crop_index:0,text:null}]},{reads:[{crop_index:0,text:''},{crop_index:0,text:'4040XP'}]}])expect(parseLabelResponse(body(value),'label_reader',1)).toMatchObject({reads:[],validation:{status:'partial'}});
  expect(()=>parseLabelResponse({stop_reason:'refusal'},'label_locator',1)).toThrow('label_refused');
  expect(()=>parseLabelResponse(body({regions:[{photo_index:0,x:2,y:0,w:1,h:1,rotation:0}]}),'label_locator',1)).toThrow('label_invalid_regions');
  expect(parseLabelResponse(body({regions:[]}), 'label_locator',1).regions).toEqual([]);
 });
 it('records a parseable but invalid label reply as invalid_response',async()=>{
  const {parseLabelResponse}=await import('../src/services/labelResponse');
- vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({content:[{type:'text',text:'{"reads":[]}'}]}))));
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({content:[{type:'text',text:'{"reads":null}'}]}))));
  await recognitionAudit.run({runId:'run',deadline:Date.now()+2000},()=>auditedFetch('https://provider.test',{method:'POST',body:JSON.stringify({model:'fixture',messages:[]})},'label_reader',b=>parseLabelResponse(b,'label_reader',1)));
  const values=vi.mocked(pool.query).mock.calls.find(c=>String(c[0]).includes('raw_output'))![1] as any[];
  expect(values[1]).toBe('invalid_response');
