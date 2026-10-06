@@ -1,10 +1,10 @@
 // Unit boundary: provider/audit integration is covered by recognitionAuditApi and recognitionFixes.
-vi.mock('../src/services/recognitionAudit',()=>({auditedFetch:(url:string,init:RequestInit)=>fetch(url,init),recordRecognitionEvidence:vi.fn()}));
+vi.mock('../src/services/recognitionAudit',()=>({auditedFetch:(url:string,init:RequestInit)=>fetch(url,init),recordRecognitionEvidence:vi.fn(),recognitionAuditStopped:()=>false}));
 import {describe,it,expect,vi} from 'vitest';
 import sharp from 'sharp';
 import {createWorker} from 'tesseract.js';
 vi.mock('tesseract.js',async importOriginal=>{const actual=await importOriginal<typeof import('tesseract.js')>();return {...actual,createWorker:vi.fn(actual.createWorker)};});
-import {agreedMarkings,enhanceLabelCrop,searchRegions,normalizeRegions,cropLabel,applyLabelEvidence,labelCandidates,readLabels, type LabelEvidence} from '../src/services/labelReading';
+import {agreedMarkings,enhanceLabelCrop,searchRegions,normalizeRegions,labelLegibility,modelLineBoxQuality,cropLabel,applyLabelEvidence,labelCandidates,readLabels, type LabelEvidence} from '../src/services/labelReading';
 import {modelLineViews,conflictingModelReadings} from '../src/services/labelReading';
 import {partialCatalogCandidates} from '../src/services/partialMarkings';
 it('retains valid vision text and reports missing crops as partial throughout the label pipeline',async()=>{
@@ -226,4 +226,20 @@ it('reports a locator timeout as partial even when tile reading and OCR return s
   expect(result.stage_outcomes?.label_locator).toMatchObject({status:'failed',reason:'label_timeout'});
   expect(result.stage_outcomes?.label_reader.status).toBe('succeeded');
  }finally{globalThis.fetch=originalFetch;}
+});
+
+it('separates schema success from legibility and classifies unrefined line boxes',()=>{
+ expect(labelLegibility('1C40X?','clear',true)).toBe('partial');expect(labelLegibility('4040XP','clear',false)).toBe('partial');expect(labelLegibility('','clear',true)).toBe('illegible');
+ expect(modelLineBoxQuality({...region,model_line_box:{x:.1,y:.2,w:.5,h:.08}})).toBe('full_width_band');
+ expect(modelLineBoxQuality({...region,model_line_box:{x:.1,y:.2,w:.3,h:.08}})).toBe('refined');
+ expect(modelLineBoxQuality({...region,model_line_box:{x:.1,y:.2,w:.5,h:.2}})).toBe('equals_region');
+ const r=applyLabelEvidence({manufacturer:null,model:null,visible_text:[]},evidence('', '1C40X?'));
+ expect(r.visible_text).toEqual([]);expect(r.unconfirmed_label_text).toEqual([{text:'1C40X?',crop_index:0,legibility:'partial',source:'single_ai_reader'}]);
+});
+it('rereads digit-heavy uncertain text and records legibility without promoting identity',async()=>{
+ const image=await sharp({create:{width:60,height:40,channels:3,background:'white'}}).png().toBuffer();
+ const worker={setParameters:vi.fn(),recognize:vi.fn().mockResolvedValue({data:{text:'',confidence:0}}),terminate:vi.fn().mockResolvedValue(undefined)};vi.mocked(createWorker).mockResolvedValueOnce(worker as any);
+ const envelope=(v:any)=>Response.json({content:[{type:'text',text:JSON.stringify(v)}]});
+ const fetch=vi.fn().mockResolvedValueOnce(envelope({regions:[]})).mockResolvedValueOnce(envelope({reads:Array.from({length:5},(_,i)=>({crop_index:i,text:i===0?'1C40X?':'',legibility:i===0?'partial':'illegible',...(i===0?{label_box:{x:.1,y:.1,w:.5,h:.5}}:{})}))})).mockResolvedValueOnce(envelope({reads:[{crop_index:0,text:'1C40X?',legibility:'partial'}]}));vi.stubGlobal('fetch',fetch);
+ try{const result=await readLabels([image],'image/png');expect(fetch).toHaveBeenCalledTimes(3);expect(result.stage_outcomes?.label_reread?.status).toBe('succeeded');expect(result.reads[0].legibility).toBe('partial');expect(result.candidates).toEqual([]);}finally{vi.unstubAllGlobals();}
 });

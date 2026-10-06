@@ -30,12 +30,15 @@ export function conservativeSuggestion(stage:Record<string,any>,comparison:any){
  const model=norm(String(stage.model||''));
  const markings=Array.isArray(stage.visible_text)?stage.visible_text:[];
  const partialOnly=stage.label_reading?.reads?.some((r:any)=>String(r.vision_text).includes('?'))&&!stage.label_reading?.candidates?.some((c:any)=>norm(String(c.model||''))===model);
- const marked=!partialOnly&&model&&markings.some((v:any)=>typeof v==='string'&&catalogTranscription(v,model));
+ const legibilityRecorded=stage.label_reading?.reads?.some((r:any)=>r.legibility!==undefined);
+ const clearModelRead=!legibilityRecorded||stage.label_reading.reads.some((r:any)=>r.legibility==='clear'&&r.agreed_markings?.some((v:string)=>catalogTranscription(v,model)));
+ const marked=clearModelRead&&!partialOnly&&model&&markings.some((v:any)=>typeof v==='string'&&catalogTranscription(v,model));
  if(model&&!marked){
   suggestion.model=null;
   suggestion.confidence={...suggestion.confidence,model:Math.min(Number(stage.confidence?.model)||0,.4)};
   if(comparison)comparison.unresolved=[...(comparison.unresolved||[]),'Exact model requires a complete readable marking and technician confirmation.'];
  }
+ for(const key of ['manufacturer','series','model'])if(!suggestion[key])suggestion.confidence={...suggestion.confidence,[key]:0};
  return suggestion;
 }
 // Display/scoring only. Never used for retrieval or model comparison.

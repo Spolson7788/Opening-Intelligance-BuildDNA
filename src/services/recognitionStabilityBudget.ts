@@ -88,3 +88,36 @@ export async function settleStabilityAttempt(attemptId:string,actual:number|null
   await c.query("UPDATE recognition_stability_reservations SET outcome='settled',charged_micro=$2 WHERE attempt_id=$1",[attemptId,actual]);
  });
 }
+
+// Only a complete, explicit account-limit rejection is eligible for review.
+// This classification never releases money automatically.
+export function accountLimitRejected(status:number,body:any):boolean {
+ return [400,403].includes(status)&&body?.type==='error'&&body?.error?.type==='permission_error'
+  &&typeof body.error.message==='string'&&/usage limit|spend(?:ing)? limit/i.test(body.error.message);
+}
+export async function reconcileRejectedAttempt(attemptId:string,actor:{userId:string;organizationId:string},evidence:string){
+ if(!stabilityTrialId())throw Error('stability_trial_required');
+ if(!evidence.trim()||evidence.length>1000)throw Error('stability_reconciliation_evidence_required');
+ return transaction(async c=>{
+  const user=(await c.query('SELECT role,is_active FROM users WHERE id=$1 AND organization_id=$2',[actor.userId,actor.organizationId])).rows[0];
+  if(!user?.is_active||user.role!=='admin')throw Error('stability_reconciliation_forbidden');
+  const ref=(await c.query('SELECT trial_id FROM recognition_stability_reservations WHERE attempt_id=$1',[attemptId])).rows[0];
+  if(!ref||ref.trial_id!==stabilityTrialId())throw Error('stability_reconciliation_forbidden');
+  const trial=(await c.query('SELECT * FROM recognition_stability_trials WHERE id=$1 FOR UPDATE',[ref.trial_id])).rows[0];
+  if(trial.organization_id!==actor.organizationId)throw Error('stability_reconciliation_forbidden');
+  const a=(await c.query('SELECT * FROM recognition_provider_attempts WHERE id=$1',[attemptId])).rows[0];
+  if(a?.cost_status==='reviewed_uncharged')return {outcome:'already_reconciled'};
+  const reservation=(await c.query('SELECT outcome FROM recognition_stability_reservations WHERE attempt_id=$1',[attemptId])).rows[0];
+  if(reservation?.outcome!=='unknown')throw Error('stability_reconciliation_ineligible');
+  const r=(await c.query('SELECT stage_one FROM recognition_runs WHERE id=$1',[a?.run_id])).rows[0];
+  let body:any;try{body=JSON.parse(a?.raw_output);}catch{}
+  const http=r?.stage_one?.[`provider_http_${attemptId}`]?.http_status;
+  if(a?.outcome!=='rejected_uncharged_pending_review'||!accountLimitRejected(http,body))throw Error('stability_reconciliation_ineligible');
+  const audit={attempt_id:attemptId,reviewer_id:actor.userId,evidence:evidence.trim(),reviewed_at:new Date().toISOString(),outcome:'reviewed_uncharged'};
+  await c.query("UPDATE recognition_stability_reservations SET outcome='settled',charged_micro=0 WHERE attempt_id=$1 AND outcome='unknown'",[attemptId]);
+  await c.query("UPDATE recognition_provider_attempts SET cost_usd=0,cost_status='reviewed_uncharged' WHERE id=$1",[attemptId]);
+  await c.query('UPDATE recognition_runs SET stage_one=stage_one || $2::jsonb WHERE id=$1',[a.run_id,JSON.stringify({[`reconciliation_${attemptId}`]:audit})]);
+  // A reviewed refund does not reopen a trial or permit automatic retries.
+  return {outcome:'reviewed_uncharged'};
+ });
+}

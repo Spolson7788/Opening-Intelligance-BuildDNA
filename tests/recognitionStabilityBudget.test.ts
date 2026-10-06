@@ -9,17 +9,17 @@ vi.mock('../src/db/pool',()=>({pool:{query:(sql:string,args:any[])=>fixture.db.q
  return {query:(sql:string,args:any[])=>fixture.db.query(sql,args),release};
 }}}));
 vi.mock('../src/services/recognitionImage',()=>({prepareProviderRequest:async(request:any)=>({body:JSON.stringify(request),manifest:[]})}));
-import {registerStabilityRun,reserveStabilityAttempt,settleStabilityAttempt,stabilityMaximum,stabilityActual,stabilityTrialId,stabilityRuntime,STABILITY_MODEL} from '../src/services/recognitionStabilityBudget';
+import {registerStabilityRun,reserveStabilityAttempt,settleStabilityAttempt,stabilityMaximum,stabilityActual,stabilityTrialId,stabilityRuntime,STABILITY_MODEL,reconcileRejectedAttempt,accountLimitRejected} from '../src/services/recognitionStabilityBudget';
 import {recognitionAudit,auditedFetch} from '../src/services/recognitionAudit';
 const org=randomUUID(),actor=randomUUID(),opening=randomUUID(),trial=randomUUID(),hash='4f46d88ad71d97bb9aff870efa56eccc82de8b17aafa8b381994e86c969b668f';
 const body=()=>({model:STABILITY_MODEL,max_tokens:1600,temperature:0,messages:[{role:'user',content:[{type:'text',text:'fixture'}]}]});
 beforeAll(async()=>{
  fixture.db=new PGlite();
- await fixture.db.exec(`CREATE TABLE organizations(id uuid PRIMARY KEY);CREATE TABLE users(id uuid PRIMARY KEY);CREATE TABLE openings(id uuid PRIMARY KEY);
+ await fixture.db.exec(`CREATE TABLE organizations(id uuid PRIMARY KEY);CREATE TABLE users(id uuid PRIMARY KEY,organization_id uuid,role text,is_active boolean);CREATE TABLE openings(id uuid PRIMARY KEY);
  CREATE TABLE recognition_runs(id uuid PRIMARY KEY,organization_id uuid,user_id uuid,opening_id uuid,photo_hashes jsonb,status text,stage_one jsonb DEFAULT '{}');
  CREATE TABLE recognition_provider_attempts(id uuid PRIMARY KEY,run_id uuid REFERENCES recognition_runs(id),stage text,provider text,model_id text,outcome text,started_at timestamptz DEFAULT now(),finished_at timestamptz,request_manifest jsonb,latency_ms integer,usage jsonb,cost_usd numeric,cost_status text,raw_output text,cost_basis jsonb);`);
  await fixture.db.exec(readFileSync(new URL('../migrations/20261005170938_recognition_stability_budget.sql',import.meta.url),'utf8'));
- await fixture.db.query('INSERT INTO organizations VALUES($1)',[org]);await fixture.db.query('INSERT INTO users VALUES($1)',[actor]);await fixture.db.query('INSERT INTO openings VALUES($1)',[opening]);
+ await fixture.db.query('INSERT INTO organizations VALUES($1)',[org]);await fixture.db.query('INSERT INTO users VALUES($1,$2,$3,true)',[actor,org,'admin']);await fixture.db.query('INSERT INTO openings VALUES($1)',[opening]);
 },20000);
 beforeEach(async()=>{
  await fixture.db.exec('TRUNCATE recognition_stability_reservations,recognition_stability_runs,recognition_stability_trials,recognition_provider_attempts,recognition_runs');
@@ -53,3 +53,29 @@ it('records budget before fetch and settles explicit provider usage',async()=>{c
 });
 it('does not send when remaining budget cannot cover the maximum request',async()=>{const id=await registered(),a=await attempt(id);await reserveStabilityAttempt(a,id,1900000);const fetch=vi.fn();vi.stubGlobal('fetch',fetch);await expect(recognitionAudit.run({runId:id,deadline:Date.now()+10000},()=>auditedFetch('https://api.anthropic.com/v1/messages',{body:JSON.stringify(body())},'fixture'))).rejects.toThrow('exhausted');expect(fetch).not.toHaveBeenCalled();});
 it('retains the ceiling and pauses after an interrupted send',async()=>{const id=await registered();const fetch=vi.fn(async()=>{throw new TypeError('response lost');});vi.stubGlobal('fetch',fetch);await expect(recognitionAudit.run({runId:id,deadline:Date.now()+10000},()=>auditedFetch('https://api.anthropic.com/v1/messages',{body:JSON.stringify(body())},'fixture'))).rejects.toThrow('response lost');expect(await used()).toBe(624000);await expect(registered()).rejects.toThrow('unavailable');});
+
+it('pauses on a complete account-limit error and blocks subsequent stages without refund',async()=>{
+ const id=await registered();const fetch=vi.fn().mockResolvedValue(Response.json({type:'error',error:{type:'permission_error',message:'Your API usage limits have been reached'}},{status:403}));vi.stubGlobal('fetch',fetch);
+ await recognitionAudit.run({runId:id,deadline:Date.now()+10000,trialControl:{}},async()=>{
+  const response=await auditedFetch('https://api.anthropic.com/v1/messages',{body:JSON.stringify(body())},'photo_analysis');expect(response.status).toBe(403);
+  await expect(auditedFetch('https://api.anthropic.com/v1/messages',{body:JSON.stringify(body())},'label_locator')).rejects.toThrow('account_limit');
+ });
+ expect(fetch).toHaveBeenCalledTimes(1);expect(await used()).toBe(624000);
+ const a=(await fixture.db.query('SELECT * FROM recognition_provider_attempts')).rows[0];expect(a.outcome).toBe('rejected_uncharged_pending_review');
+ await expect(reconcileRejectedAttempt(a.id,{userId:randomUUID(),organizationId:org},'billing evidence')).rejects.toThrow('forbidden');
+ await reconcileRejectedAttempt(a.id,{userId:actor,organizationId:org},'Provider failed-request billing policy and complete account-limit error reviewed');
+ expect(await used()).toBe(0);expect((await fixture.db.query('SELECT state FROM recognition_stability_trials')).rows[0].state).toBe('paused');
+ expect((await fixture.db.query('SELECT stage_one FROM recognition_runs')).rows[0].stage_one['reconciliation_'+a.id]).toMatchObject({reviewer_id:actor,outcome:'reviewed_uncharged'});
+ expect(await reconcileRejectedAttempt(a.id,{userId:actor,organizationId:org},'same evidence')).toEqual({outcome:'already_reconciled'});
+});
+it('cannot reconcile a lost response or infer that generic errors are free',async()=>{
+ expect(accountLimitRejected(429,{type:'error',error:{type:'permission_error',message:'usage limit'}})).toBe(false);
+ expect(accountLimitRejected(403,{type:'error',error:{type:'permission_error',message:'access denied'}})).toBe(false);
+ const id=await registered(),a=await attempt(id);await reserveStabilityAttempt(a,id,624000);await settleStabilityAttempt(a,null);
+ await expect(reconcileRejectedAttempt(a,{userId:actor,organizationId:org},'unverified')).rejects.toThrow('ineligible');expect(await used()).toBe(624000);
+});
+it('settles each sequenced call so a $1.45 remaining allowance can cover ten realistic attempts',async()=>{
+ await fixture.db.query('UPDATE recognition_stability_trials SET cap_micro=1457513');
+ for(let n=0;n<10;n++){const id=await registered();for(let j=0;j<4;j++){const a=await attempt(id);await reserveStabilityAttempt(a,id,624000);await settleStabilityAttempt(a,15000);}}
+ expect(await used()).toBe(600000);
+});

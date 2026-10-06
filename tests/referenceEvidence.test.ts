@@ -165,7 +165,7 @@ describe(privateCorpus?'audited corpus retrieval with recorded provider fixtures
  it('keeps look-alikes unresolved and lowers confidence without photographed distinguishing evidence',()=>{
   for(const model of ['98','99','4040XP','4041 DA']){
    const comparison={unresolved:[]};const r=conservativeSuggestion({model,visible_text:[],evidence:[],confidence:{model:.9}},comparison);
-   expect(r.model).toBeNull();expect(r.confidence.model).toBe(.4);expect(comparison.unresolved).toHaveLength(1);
+   expect(r.model).toBeNull();expect(r.confidence.model).toBe(0);expect(comparison.unresolved).toHaveLength(1);
   }
  });
  it('requires a separate switch before making the additional comparison call',async()=>{

@@ -4,7 +4,7 @@ import {LABEL_RESPONSE_VERSION} from '../services/labelResponse';
 import sharp from 'sharp';
 import {normalizeRecognitionImage} from '../services/recognitionImage';
 import {recognitionAudit,recordRecognitionEvidence} from '../services/recognitionAudit';
-import {registerStabilityRun,stabilityTrialId} from '../services/recognitionStabilityBudget';
+import {registerStabilityRun,stabilityTrialId,reconcileRejectedAttempt} from '../services/recognitionStabilityBudget';
 import {withinRecognitionBudget,referenceComparisonBudget} from '../services/recognitionDeadline';
 import {approvedInstallationGeometry} from '../services/installationGeometry';
 import {Router} from 'express';
@@ -37,6 +37,12 @@ recognitionRouter.get('/availability',(_req,res)=>{
   res.setHeader('Cache-Control','no-store');
   return res.json(recognitionAvailability());
 });
+recognitionRouter.post('/stability/reconcile',requireRole('admin'),async(req:AuthedRequest,res)=>{
+ const body=z.object({attempt_id:z.string().uuid(),evidence:z.string().trim().min(1).max(1000)}).strict().safeParse(req.body);
+ if(!body.success)return res.status(400).json({error:'invalid_reconciliation_request'});
+ try{return res.json(await reconcileRejectedAttempt(body.data.attempt_id,req.auth!,body.data.evidence));}
+ catch{return res.status(409).json({error:'stability_reconciliation_not_permitted'});}
+});
 recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
   res.setHeader('Cache-Control','no-store');
   const parsed=schema.safeParse(req.body);
@@ -65,15 +71,20 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
      (organization_id,opening_id,user_id,photo_hashes,technician_attributes,component_type,stage_one,suggestion,retrieved_pages,citations,rejected_citations,conflicts,status,model_id,prompt_version)
      VALUES($1,$2,$3,$4,$5,NULL,$6,'{}','[]','[]','[]','[]','running',$7,$8) RETURNING id`,[
      req.auth!.organizationId,b.opening_id,req.auth!.userId,JSON.stringify(sourceHashes),JSON.stringify(b.technician_attributes),JSON.stringify({request_id:b.request_id,shadow_mode:true,recognition_versions:{...recognitionBuild,label_prompt:LABEL_PROMPT_VERSION,label_response:LABEL_RESPONSE_VERSION,reference_prompt:REFERENCE_PROMPT_VERSION},libraries:{sharp:sharp.versions,tesseract:require('tesseract.js/package.json').version}}),RECOGNITION_MODEL,REFERENCE_PROMPT_VERSION])).rows[0];
-    return await recognitionAudit.run({runId:initial.id,deadline:started+49000},async()=>{try{
+    return await recognitionAudit.run({runId:initial.id,deadline:started+49000,trialControl:{}},async()=>{try{
     if(stabilityTrialId()&&b.mode!=='identify')throw Error('stability_identify_mode_required');
     await registerStabilityRun(initial.id,b.request_id);
     phase='provider';
     const bounded=<T>(work:()=>Promise<T>,deadline:number,fallback:()=>T)=>withinRecognitionBudget(signal=>recognitionAudit.run({...recognitionAudit.getStore()!,signal},work),deadline,fallback);
-    const [response,labels]=await Promise.all([
-      bounded(()=>legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,technician_attributes:{},timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})}),started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})})),
-      b.mode==='identify'?bounded(()=>readLabels(images,b.media_type,started+24000),started+24000,()=>({version:LABEL_PROMPT_VERSION,status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null),
-    ]);
+    const classify=()=>bounded(()=>legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,technician_attributes:{},timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})}),started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}));
+    const label=()=>b.mode==='identify'?bounded(()=>readLabels(images,b.media_type,Math.min(started+46000,Date.now()+24000)),Math.min(started+46000,Date.now()+24000),()=>({version:LABEL_PROMPT_VERSION,status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null);
+    // Trial calls are sequenced so the conservative per-call ceiling settles
+    // before the next reservation. Ordinary shadow mode retains its concurrency.
+    let response:Awaited<ReturnType<typeof classify>>,labels:Awaited<ReturnType<typeof label>>;
+    if(stabilityTrialId()){
+     response=await classify();
+     labels=response.statusCode===200&&!recognitionAudit.getStore()?.trialControl?.stopped?await label():null;
+    }else [response,labels]=await Promise.all([classify(),label()]);
     await pool.query(`UPDATE recognition_runs SET stage_one=stage_one || $2::jsonb WHERE id=$1`,[initial.id,JSON.stringify({label_reading:labels})]);
     if(response.statusCode!==200){
       // Only allow known safe categories through; never forward provider bodies.
