@@ -38,7 +38,7 @@ retain unknown-cost treatment; never invent missing output or zero cost.
 
 This changes scheduling and first-pass crop selection, not proven recognition.
 The locator still needs source-pixel review. This candidate does not implement
-full-original upload, final identity promotion, UI/export conflict presentation or scoring.
+full-original upload, final identity promotion or automatic feedback-driven updates.
 
 Catalog update: reviewed official legacy PDQ rim designations are now available
 as candidate facts. Guarded exit-device trials attach catalog_identity_review,
@@ -78,3 +78,36 @@ No PDQ expected strings or development-photo indices enter the reader prompts.
 Acceptance remains final PDQ / 6200 / 6200R with per-photo evidence, a supported
 catalog candidate check, technician review and a scored result. No production
 deployment, provider payment or rerun is part of this draft change.
+
+
+# Review, export and scoring continuation
+
+Candidate UI now displays catalog review states, per-photo maker/model evidence,
+source page and classifier estimate separately. Existing shadow-mode purchasing
+and identity-confirmation restrictions remain in force. Trial export v3 adds
+explicit identity-review records and linked technician acknowledgments.
+
+`node scripts/reference/score-field-identities.mjs export.json` automatically
+uses acknowledged, established installed-hardware identities from the export.
+It produces final-output brand/model counts and a miss queue. Series remains
+unscored unless independently recorded in a supplied truth JSON. Acknowledgment
+alone is not a verified product specification; technician truth remains the
+benchmark's declared ground truth. Conflicting confirmations fail rather than
+selecting one silently. Exported confirmations are current snapshots, not an
+immutable historical truth table. Automated truth storage and miss-resolution
+remain further work.
+
+An optional independent truth JSON can supply series, development/held-out split,
+logo readability and human-reviewed brand basis. The scorer does not infer a
+silhouette cause merely from a missing logo. Accuracy figures require at least
+20 distinct held-out devices with one scored run each. No catalog updates or
+confirmed-example admission happen automatically.
+
+Read-only staging check on 2026-10-07: frozen PDQ export has one run and zero
+linked technician confirmations. Scorer returns pending acknowledgment, zero
+scored runs and no accuracy figure. Existing unknown reservation remains
+$0.624; completed estimates are $0.055041 and $0.019224. No paid run occurred.
+
+Validation: Field App production build passed; candidate/conflict UI rendering
+checks passed; six offline scorer tests passed. Prior recognition suite remains
+187 tests. This continuation did not alter provider scheduling or reader code.

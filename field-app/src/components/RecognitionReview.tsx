@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {fetchRecognitionAvailability,recognizeHardware} from '../lib/api';
 import {labelConfirmationMessage,visionReadMessage} from '../lib/labelReadStatus';
 import {ReferenceEvidence} from './ReferenceEvidence';
+import {CatalogIdentityEvidence,type CatalogReview} from './CatalogIdentityEvidence';
 
 const photographedComponentTypes:Record<string,string>={DOOR_CLOSER:'closer',EXIT_DEVICE:'exit_device',LOCKSET:'lockset',HINGE_BUTT:'hinge',HINGE_CONT:'hinge',FLUSH_BOLT:'other',ELECTRIC_STRIKE:'electric_strike',POWER_TRANSFER:'power_transfer'};
 
@@ -106,6 +107,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     {providerDiagnostic&&<p>Administrator diagnostic: {providerDiagnostic}</p>}
     {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — will attach when you save this hardware.</p>}
     {result&&<div>
+      {!!result.catalog_identity_review&&<CatalogIdentityEvidence review={result.catalog_identity_review as CatalogReview} files={files}/>}
       {onComponentType&&photographedComponentTypes[text('component_class')]&&<p>Photograph component type: <strong>{photographedComponentTypes[text('component_class')].replace(/_/g,' ')}</strong>. {typeApplied?'Component type filled automatically. You can change it below.':'Your selected component type was preserved. You can change it below.'}</p>}
       {response?.reported_identity&&<p>Technician-reported product: <strong>{response.reported_identity.manufacturer} {response.reported_identity.model}</strong> — awaiting verification.</p>}
       {labelReads.some(read=>read.ocr_model_conflicts?.length>0)&&<p role="alert">The readers disagree on model characters. The candidate is retained for your review; verify the label before accepting it. OCR alternatives: {[...new Set(labelReads.flatMap(read=>read.ocr_model_conflicts||[]))].join(', ')}.</p>}
