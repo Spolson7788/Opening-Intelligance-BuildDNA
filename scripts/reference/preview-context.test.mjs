@@ -5,6 +5,11 @@ import {assertReferenceStagingDatabase,requireReferenceStagingRuntime,REFERENCE_
 const ref=REFERENCE_STAGING_PROJECT_REF, other='b'.repeat(20);
 const legacy={NETLIFY:'true',SITE_ID:'80fbbee8-b9d3-4b16-b93f-d2d8396591ec',CONTEXT:'production',BRANCH:'release/connected-candidate'};
 const preview={...legacy,CONTEXT:'deploy-preview',HEAD:'feat/reference-evidence-os6',OI_REFERENCE_STAGING_PROJECT_REF:ref,DATABASE_URL:`postgres://role:fixture@db.${ref}.supabase.co/postgres`};
+test('recognition candidate preview preserves site, project and context restrictions',()=>{
+  const candidate={...preview,HEAD:'feat/targeted-label-improvement-20261007'};
+  for(const CONTEXT of ['deploy-preview','branch-deploy']) assert.doesNotThrow(()=>assertIsolatedReleaseContext({...candidate,CONTEXT}));
+  for(const patch of [{SITE_ID:'wrong'},{OI_REFERENCE_STAGING_PROJECT_REF:undefined},{DATABASE_URL:`postgres://role:fixture@db.${other}.supabase.co/postgres`},{CONTEXT:'production',BRANCH:candidate.HEAD},{HEAD:candidate.HEAD+'-other'}]) assert.throws(()=>assertIsolatedReleaseContext({...candidate,...patch}));
+});
 test('frozen release build remains allowed',()=>assert.doesNotThrow(()=>assertIsolatedReleaseContext(legacy)));
 test('designated preview accepts only matching staging project',()=>{assert.doesNotThrow(()=>assertIsolatedReleaseContext(preview));assert.throws(()=>assertIsolatedReleaseContext({...preview,DATABASE_URL:`postgres://role:fixture@db.${other}.supabase.co/postgres`}));});
 test('unknown site, branch and unconfigured preview are refused',()=>{for(const patch of [{SITE_ID:'wrong'},{HEAD:'unrelated'},{OI_REFERENCE_STAGING_PROJECT_REF:undefined}])assert.throws(()=>assertIsolatedReleaseContext({...preview,...patch}));});

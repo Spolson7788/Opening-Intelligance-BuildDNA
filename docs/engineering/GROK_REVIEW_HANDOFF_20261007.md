@@ -69,3 +69,13 @@ requires validation; 193 offline tests and six scorer tests are not field accura
 Latest supplied cost export has no Oct 7 rows. The hourly usage residual is
 14,612 input / 123 output, estimated $0.045681 if attributable to the reader.
 Do not treat that conditional estimate as a reconciled charge or zero cost.
+
+Deployment follow-up: PR12 now targets release/connected-candidate solely to
+qualify for a Netlify preview; it remains unmerged. A source-identical trigger
+commit a60fc368 produced deploy 6ac66f086966e40008b505a3, which failed. Local
+inspection reproduced a build admission blocker: only PR11's branch was allowed.
+The new build guard additionally permits the exact PR12 branch on the same site
+and matching staging project. Ten build/runtime guard checks pass, including
+wrong site/project/branch and production rejection. Verify the subsequent actual
+deploy; the earlier failed deploy is not a usable preview. Netlify visitor SSO
+configuration still returns an internal error and readback remains unprotected.

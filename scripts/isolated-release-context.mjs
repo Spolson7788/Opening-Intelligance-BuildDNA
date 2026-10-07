@@ -1,6 +1,7 @@
 import {assertReferenceStagingBuild} from './reference/preview-context.mjs';
 export function assertIsolatedReleaseContext(env) {
-  const referencePreview = env.NETLIFY === 'true' && env.SITE_ID === '80fbbee8-b9d3-4b16-b93f-d2d8396591ec' && ['deploy-preview','branch-deploy'].includes(env.CONTEXT) && (env.HEAD || env.BRANCH) === 'feat/reference-evidence-os6';
+  const previewBranches = ['feat/reference-evidence-os6', 'feat/targeted-label-improvement-20261007'];
+  const referencePreview = env.NETLIFY === 'true' && env.SITE_ID === '80fbbee8-b9d3-4b16-b93f-d2d8396591ec' && ['deploy-preview','branch-deploy'].includes(env.CONTEXT) && previewBranches.includes(env.HEAD || env.BRANCH);
   if (referencePreview) { assertReferenceStagingBuild(env); return; }
   if (env.NETLIFY !== 'true' || env.SITE_ID !== '80fbbee8-b9d3-4b16-b93f-d2d8396591ec' ||
       env.CONTEXT !== 'production' || env.BRANCH !== 'release/connected-candidate') {
