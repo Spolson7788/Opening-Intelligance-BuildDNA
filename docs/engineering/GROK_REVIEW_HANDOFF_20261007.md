@@ -79,3 +79,19 @@ and matching staging project. Ten build/runtime guard checks pass, including
 wrong site/project/branch and production rejection. Verify the subsequent actual
 deploy; the earlier failed deploy is not a usable preview. Netlify visitor SSO
 configuration still returns an internal error and readback remains unprotected.
+
+Subsequent verification: deploy 6ac66f7172dde40009ee9653 is ready at 596c3e69.
+Unauthenticated requests receive Netlify HTTP 401 edge-access login redirects;
+observed hosting protection conflicts with the connector's enriched settings.
+The browser screenshot confirms the original 9,547,080-byte selection passes
+12 MiB/file and 40 MiB/set. This is selection evidence, not saved-object proof.
+
+Stephan approved increasing the cumulative testing cap to $5 on Oct 7 at
+09:28:55 America/Phoenix. Pre-trial $0.588972 remains counted; trial cap becomes
+$4.411028. The unknown reader remains $0.624/unknown, with no refund or claimed
+reconciliation. The trial stays paused until exact original hashes are verified
+and the single comparison is admitted. A guarded-preview Save original photos
+without analysis button performs only the existing private reservation/upload/
+confirmation flow, reuses the same IDs for Analyze and makes no AI request.
+Review selection/opening reset and current upload checks. Production flow remains
+unchanged. This does not yet prove the original-file upload succeeds in staging.

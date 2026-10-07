@@ -51,12 +51,14 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
   const generation=useRef(0);
   const fileInput=useRef<HTMLInputElement>(null);
   const originalSources=useRef<{openingId:string;ids:string[]}|null>(null);
+  const [savedOriginalCount,setSavedOriginalCount]=useState(0);
   const [availability,setAvailability]=useState<{available:boolean;blocking_reasons:string[];reason:string|null;reference_comparison_enabled:boolean;original_photo_input_available?:boolean;maximum_original_bytes?:number;maximum_original_set_bytes?:number}|null>(null);
   const originalsEnabled=availability?.original_photo_input_available===true;
   const selectedBytes=files.reduce((n,f)=>n+f.size,0);
   const selectionError=files.length>5?'Select at most five photographs of the same component.':originalsEnabled?(files.length>0&&files.length<3?'Select at least three views: maker mark, identifying detail and full device.':files.some(f=>f.size>(availability?.maximum_original_bytes||0))||selectedBytes>(availability?.maximum_original_set_bytes||0)?'Original photographs exceed the bounded upload limits (12 MB each, 40 MB combined).':''):selectedBytes>2*1024*1024?'The combined photograph limit is 2 MB on this build.':'';
   const [typeApplied,setTypeApplied]=useState(false);
   useEffect(()=>()=>{generation.current++;},[openingId]);
+  useEffect(()=>{originalSources.current=null;setSavedOriginalCount(0);},[openingId]);
   useEffect(()=>{onBusyChange?.(busy);},[busy,onBusyChange]);
   const [availabilityError,setAvailabilityError]=useState('');
   useEffect(()=>{
@@ -65,6 +67,29 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     fetchRecognitionAvailability().then(value=>{if(active)setAvailability(value);}).catch(e=>{if(active)setAvailabilityError(recognitionFailureMessage(e instanceof Error?e.message:'Recognition availability could not be checked.'));});
     return ()=>{active=false;};
   },[openingId]);
+  async function ensureOriginalUploads(current:number){
+    if(!files.length)throw Error('Select at least three photographs.');
+    if(selectionError)throw Error(selectionError);
+    if(!['image/jpeg','image/png','image/webp'].includes(files[0].type)||files.some(f=>f.type!==files[0].type))throw Error('Use JPEG, PNG or WebP photographs of the same format.');
+    if(originalSources.current?.openingId!==openingId){
+      const ids=await uploadRecognitionOriginals(openingId,files,await getOrCreateDeviceId(),message=>{if(current===generation.current)setProgress(message);});
+      if(current!==generation.current)throw Error('Photo selection changed during upload.');
+      originalSources.current={openingId,ids};
+    }
+    setSavedOriginalCount(originalSources.current!.ids.length);
+    onFilesChange([]);
+    return originalSources.current!.ids;
+  }
+  async function saveOriginals(){
+    const current=++generation.current;
+    setError('');setProviderDiagnostic('');setProgress('Saving originals…');setBusy(true);
+    try{
+      if(!originalsEnabled)throw Error('Original photo upload is unavailable.');
+      await ensureOriginalUploads(current);
+      if(current===generation.current)setProgress('Original photos saved. No AI analysis was run.');
+    }catch(e){if(current===generation.current)setError(e instanceof Error?e.message:'Original photo upload failed.');}
+    finally{if(current===generation.current)setBusy(false);}
+  }
   async function analyze(){
     const current=++generation.current;
     setTypeApplied(false);setError('');setProviderDiagnostic('');setResult(null);setResponse(null);setProgress('');setBusy(true);
@@ -74,12 +99,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
       if(!['image/jpeg','image/png','image/webp'].includes(files[0].type)||files.some(f=>f.type!==files[0].type))throw Error('Use JPEG, PNG or WebP photographs of the same format.');
       let photoIds:string[]|undefined;
       if(originalsEnabled){
-       if(originalSources.current?.openingId!==openingId){
-        const ids=await uploadRecognitionOriginals(openingId,files,await getOrCreateDeviceId(),message=>{if(current===generation.current)setProgress(message);});
-        originalSources.current={openingId,ids};
-       }
-       photoIds=originalSources.current!.ids;
-       onFilesChange([]);
+       photoIds=await ensureOriginalUploads(current);
       }
       const images=originalsEnabled?[]:await Promise.all(files.map(f=>new Promise<string>((resolve,reject)=>{
         const reader=new FileReader();reader.onerror=()=>reject(Error('Could not read photograph.'));
@@ -108,13 +128,15 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     {availability?.available&&!availability.reference_comparison_enabled&&<p>Photograph recognition is available. Manufacturer reference comparison is switched off on this server.</p>}
     <label>Reported model or readable markings<input value={markings} maxLength={300} disabled={busy} onChange={e=>{setMarkings(e.target.value);setResult(null);setResponse(null);}} placeholder="e.g. CR441 or Cal-Royal CR441"/></label>
     <label>Observed features or measurements<input value={features} maxLength={300} onChange={e=>setFeatures(e.target.value)}/></label>
-    <input ref={fileInput} aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;originalSources.current=null;const selected=Array.from(e.target.files||[]);setFiles(selected);onFilesChange(originalsEnabled?[]:selected);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}/>
+    <input ref={fileInput} aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;originalSources.current=null;setSavedOriginalCount(0);setProgress('');const selected=Array.from(e.target.files||[]);setFiles(selected);onFilesChange(originalsEnabled?[]:selected);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}/>
     {files.length>0&&<div aria-label="Selected photograph files">
       <p>Total: <strong>{selectedBytes.toLocaleString()} bytes</strong> ({(selectedBytes/1024/1024).toFixed(2)} MB). {originalsEnabled?'Original upload limit: 12 MB each, 40 MB combined.':'Combined limit: 2 MB.'}</p>
       <ol>{files.map((file,i)=><li key={i}>{file.name} — {file.size.toLocaleString()} bytes</li>)}</ol>
-      <button type="button" disabled={busy} onClick={()=>{generation.current++;originalSources.current=null;if(fileInput.current)fileInput.current.value='';setFiles([]);onFilesChange([]);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}>Clear selected photographs</button>
+      <button type="button" disabled={busy} onClick={()=>{generation.current++;originalSources.current=null;setSavedOriginalCount(0);setProgress('');if(fileInput.current)fileInput.current.value='';setFiles([]);onFilesChange([]);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}>Clear selected photographs</button>
     </div>}
     {selectionError&&<p role="alert">{selectionError}</p>}
+    {originalsEnabled&&<button type="button" disabled={busy||!files.length||!!selectionError||savedOriginalCount===files.length} onClick={saveOriginals}>Save original photos without analysis</button>}
+    {originalsEnabled&&savedOriginalCount>0&&<p role="status">{savedOriginalCount} original photos saved privately to this opening. Analyze uses this same saved set.</p>}
     <button type="button" disabled={busy||!files.length||!!selectionError||!availability?.available} onClick={analyze}>{busy?progress||'Analyzing…':'Analyze photographs'}</button>
     {error&&<p role="alert">{error}</p>}
     {providerDiagnostic&&<p>Administrator diagnostic: {providerDiagnostic}</p>}
