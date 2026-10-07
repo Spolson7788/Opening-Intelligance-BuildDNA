@@ -3,13 +3,14 @@ import express from 'express';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import sharp from 'sharp';
-const f=vi.hoisted(()=>({query:vi.fn(),register:vi.fn(),claim:vi.fn(),originals:vi.fn(),read:vi.fn(),engine:vi.fn()}));
+const f=vi.hoisted(()=>({query:vi.fn(),register:vi.fn(),claim:vi.fn(),originals:vi.fn(),read:vi.fn(),engine:vi.fn(),grouped:vi.fn()}));
 vi.mock('../src/db/pool',()=>({pool:{query:f.query,connect:async()=>({query:f.query,release:()=>{}})}}));
 vi.mock('../src/generated/recognitionBuild.json',()=>({default:{build_sha:'a'.repeat(40)}}));
 vi.mock('../src/services/recognitionStabilityBudget',async load=>({...await load<any>(),registerStabilityRun:f.register}));
 vi.mock('../src/services/recognitionStages',async load=>({...await load<any>(),claimReaderStage:f.claim}));
 vi.mock('../src/services/recognitionOriginals',async load=>({...await load<any>(),prepareRecognitionOriginals:f.originals}));
 vi.mock('../src/services/labelReading',async load=>({...await load<any>(),readTargetedLabels:f.read}));
+vi.mock('../src/services/groupedRecognition',async load=>({...await load<any>(),readGroupedDevice:f.grouped}));
 vi.mock('../src/services/legacyVision',()=>({legacyVisionHandler:f.engine}));
 import {recognitionRouter} from '../src/routes/recognition';
 const app=express();app.use(express.json());app.use('/recognition',recognitionRouter);
@@ -23,13 +24,15 @@ beforeEach(async()=>{
  const image=await sharp({create:{width:100,height:100,channels:3,background:'white'}}).png().toBuffer();
  f.originals.mockResolvedValue({images:[image,image,image],sources:[],hashes:['hash','hash2','hash3']});
  f.claim.mockResolvedValue({id,regions,token:'token',mode:'read',hashes:['hash','hash2','hash3']});
+ f.grouped.mockResolvedValue({labels:{version:'oi-grouped-device-1',status:'completed',reads:regions.map((region,i)=>({region,vision_text:i?'Model 6200R':'PDQ',vision_status:'read',ocr_text:'',ocr_confidence:0,agreed_markings:[],status:'unconfirmed',provenance:{source:'grouped_view',verification_scope:'supplied_view',marking_complete:true,target_device:true,location_validated:true}})),limiting_factor:null},result:{component_class:'EXIT_DEVICE',manufacturer:null,series:null,model:null,confidence:{manufacturer:null,series:null,model:null}}});
  f.read.mockImplementation(async(_images,_type,_deadline,_attributes,stage)=>stage.mode==='locate'?{version:'oi-targeted-label-reading-3',status:'completed',reads:[],planned_regions:regions,stage_outcomes:{label_locator:{status:'succeeded'}},limiting_factor:null}:{version:'oi-targeted-label-reading-3',status:'completed',reads:regions.map((region,i)=>({region,vision_text:i?'Model 6200R':'PDQ',vision_status:'read',ocr_text:'',ocr_confidence:0,agreed_markings:[],status:'unconfirmed',provenance:{source:'native_tile',target_device:true,location_validated:true}})),stage_outcomes:{label_locator:{status:'succeeded'},label_reader:{status:'succeeded'}},limiting_factor:null});
 });
-it('persists locator completion, resumes the same run, and fuses grouped identity without a classifier call',async()=>{
- const first=await post(body);expect(first.status).toBe(202);expect(first.body).toMatchObject({run_id:id,request_id:requestId,status:'stage_ready',next_stage:'read'});
- expect(f.register).toHaveBeenCalledTimes(1);expect(f.engine).not.toHaveBeenCalled();expect(f.query.mock.calls.some(([sql])=>sql.includes("status='failed'"))).toBe(false);
- const second=await post({...body,resume_run_id:id});expect(second.status).toBe(200);expect(second.body.suggestion).toMatchObject({manufacturer:'PDQ',series:'6200',model:'6200R',component_class:'EXIT_DEVICE'});
- expect(f.register).toHaveBeenCalledTimes(1);expect(f.query.mock.calls.filter(([sql])=>sql.includes('INSERT INTO recognition_runs'))).toHaveLength(1);expect(f.engine).not.toHaveBeenCalled();expect(f.read.mock.calls.map(c=>c[4].mode)).toEqual(['locate','read']);
+it('recognizes all grouped views in one request, records Opus and applies the catalog identity without a locator or classifier',async()=>{
+ const response=await post(body);expect(response.status).toBe(200);
+ expect(response.body.suggestion).toMatchObject({manufacturer:'PDQ',series:'6200',model:'6200R',component_class:'EXIT_DEVICE'});
+ expect(f.register).toHaveBeenCalledTimes(1);expect(f.grouped).toHaveBeenCalledTimes(1);expect(f.read).not.toHaveBeenCalled();expect(f.engine).not.toHaveBeenCalled();
+ const insert=f.query.mock.calls.find(([sql])=>sql.includes('INSERT INTO recognition_runs'));
+ expect(insert![1].slice(-2)).toEqual(['claude-opus-5-5','oi-grouped-device-1']);
 });
 it('a duplicate resume refusal cannot mark the other request’s active run failed',async()=>{
  f.claim.mockRejectedValue(Error('recognition_stage_not_resumable'));
@@ -42,10 +45,9 @@ it('changed original hashes stop a claimed reader stage before any reader call',
 
 it('checkpoints the first reads and claims a separate focused stage under the same run',async()=>{
  const prior={version:'oi-targeted-label-reading-3',status:'completed',reads:regions.map((region,i)=>({region,vision_text:i?'Model 6200R':'DORMA',vision_status:'read',ocr_text:'',ocr_confidence:0,agreed_markings:[],status:'unconfirmed',provenance:{source:'native_tile',target_device:true,location_validated:false,box:{x:.3,y:.3,w:.1,h:.1}}})),limiting_factor:null};
- await post(body);
  f.read.mockResolvedValueOnce(prior);
  const second=await post({...body,resume_run_id:id});expect(second.status).toBe(202);expect(second.body.next_stage).toBe('focus');
- expect(f.query.mock.calls.filter(([sql])=>sql.includes('INSERT INTO recognition_runs'))).toHaveLength(1);expect(f.register).toHaveBeenCalledTimes(1);
+ expect(f.query.mock.calls.filter(([sql])=>sql.includes('INSERT INTO recognition_runs'))).toHaveLength(0);expect(f.register).not.toHaveBeenCalled();
  f.claim.mockResolvedValueOnce({id,regions,token:'focused-token',mode:'focus',labels:prior,hashes:['hash','hash2','hash3']});
  const third=await post({...body,resume_run_id:id});expect(third.status).toBe(200);expect(f.read.mock.calls.at(-1)[4]).toMatchObject({mode:'focus',prior});expect(f.engine).not.toHaveBeenCalled();
 });
@@ -63,4 +65,11 @@ it('read-only recovery returns the saved specific timeout instead of a generic p
  f.query.mockImplementation(async(sql:string)=>({rows:sql.includes('is_active')?[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]:sql.includes('FROM recognition_runs')?[{id,status:'failed',stage_one:{failure:{code:'recognition_label_reader_timeout'}}}]:sql.startsWith('SELECT 1')?[{allowed:1}]:[]}));
  const response=await request(app).get('/recognition/request/'+requestId+'?opening_id='+opening).set('Authorization',`Bearer ${jwt.sign({userId:'user',organizationId:'org',sessionVersion:0},process.env.JWT_SECRET!)}`);
  expect(response.status).toBe(502);expect(response.body.error).toBe('recognition_label_reader_timeout');expect(f.read).not.toHaveBeenCalled();
+});
+
+it('saves grouped-reader failure and does not silently return an empty successful identity or retry',async()=>{
+ f.grouped.mockRejectedValueOnce(new DOMException('timeout','TimeoutError'));
+ const response=await post(body);expect(response.status).toBe(502);expect(response.body).toMatchObject({error:'recognition_label_reader_timeout',run_id:id});
+ expect(f.grouped).toHaveBeenCalledTimes(1);expect(f.read).not.toHaveBeenCalled();expect(f.engine).not.toHaveBeenCalled();
+ expect(f.query.mock.calls.some(([sql,params])=>String(params?.[1]).includes('grouped_reader_failure'))).toBe(true);
 });

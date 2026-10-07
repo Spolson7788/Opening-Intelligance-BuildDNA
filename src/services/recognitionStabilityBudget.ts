@@ -10,9 +10,9 @@ function stabilityEnv(key:string):string|undefined {
  return process.env.NODE_ENV==='test'?process.env[key]:undefined;
 }
 
-// This guard is deliberately limited to the existing direct Sonnet 4.5 request.
-// Its 200K context ceiling, rather than an estimated token count, bounds input.
-// Pricing checked 2026-10-05: standard direct API $3/M input and $15/M output.
+// Allow only the legacy Sonnet request and the bounded single-turn Opus
+// grouped-photo contract. Standard direct API rates checked 2026-10-07.
+// Opus input is bounded by the accepted content, not its larger context window.
 export const STABILITY_MODEL='claude-sonnet-4-5-20250929';
 export const STABILITY_INPUT_CEILING=200000;
 export function stabilityTrialId():string|null {
@@ -26,19 +26,35 @@ export function stabilityTrialId():string|null {
  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))throw Error('stability_trial_not_configured');
  return id;
 }
+export function stabilityPricing(model:string){
+ if(model===STABILITY_MODEL)return {input:3,output:15};
+ if(model==='claude-opus-5-5')return {input:4,output:20};
+ throw Error('stability_request_unsupported');
+}
 export function stabilityMaximum(request:any,url:string,headers:HeadersInit|undefined):number {
  const h=new Headers(headers);
  if(url!=='https://api.anthropic.com/v1/messages'||h.has('anthropic-beta'))throw Error('stability_request_unsupported');
- if(request.model!==STABILITY_MODEL || !Number.isSafeInteger(request.max_tokens) || request.max_tokens<1 || request.max_tokens>2500)throw Error('stability_request_unsupported');
- if(Object.keys(request).some(k=>!['model','max_tokens','temperature','messages'].includes(k)))throw Error('stability_request_unsupported');
- if(!Array.isArray(request.messages)||request.messages.some((m:any)=>m.role!=='user'||!Array.isArray(m.content)||m.content.some((b:any)=>!['text','image'].includes(b.type)||b.cache_control)))throw Error('stability_request_unsupported');
- return STABILITY_INPUT_CEILING*3+request.max_tokens*15; // integer micro-dollars
+ const opus=request.model==='claude-opus-5-5';const rates=stabilityPricing(request.model);
+ if(!Number.isSafeInteger(request.max_tokens)||request.max_tokens<1||request.max_tokens>(opus?4096:2500))throw Error('stability_request_unsupported');
+ if(Object.keys(request).some(k=>!(opus?['model','max_tokens','output_config','messages']:['model','max_tokens','temperature','messages']).includes(k)))throw Error('stability_request_unsupported');
+ if(!Array.isArray(request.messages)||request.messages.some((m:any)=>Object.keys(m).some(k=>!['role','content'].includes(k))||m.role!=='user'||!Array.isArray(m.content)||m.content.some((b:any)=>!['text','image'].includes(b.type)||b.cache_control)))throw Error('stability_request_unsupported');
+ if(opus){
+  if(request.messages.length!==1||JSON.stringify(request.output_config)!==JSON.stringify({effort:'medium'}))throw Error('stability_request_unsupported');
+  const blocks=request.messages[0].content,images=blocks.filter((b:any)=>b.type==='image'),texts=blocks.filter((b:any)=>b.type==='text');
+  // The grouped request is deliberately much smaller than the 1M context.
+  // <=5 bounded image views (4784 patches each), <=16KB literal prompt text,
+  // plus 4096 framing tokens fit comfortably within the retained 200K bound.
+  // The audit prepares every image to the documented Opus patch limit BEFORE
+  // this check. No tools, documents, cache, system prompt or history are allowed.
+  if(images.length<3||images.length>5||texts.some((b:any)=>typeof b.text!=='string'||Object.keys(b).some(k=>!['type','text'].includes(k)))||texts.reduce((n:number,b:any)=>n+Buffer.byteLength(b.text,'utf8'),0)>16000||images.some((b:any)=>Object.keys(b).some(k=>!['type','source'].includes(k))||b.source?.type!=='base64'||b.source?.media_type!=='image/jpeg'||Object.keys(b.source).some((k:string)=>!['type','media_type','data'].includes(k))))throw Error('stability_request_unsupported');
+ }
+ return STABILITY_INPUT_CEILING*rates.input+request.max_tokens*rates.output;
 }
-export function stabilityActual(usage:any,maxTokens:number):number|null {
+export function stabilityActual(usage:any,maxTokens:number,model=STABILITY_MODEL):number|null {
  const valid=(n:any)=>Number.isSafeInteger(n)&&n>=0;
  if(!usage||!valid(usage.input_tokens)||!valid(usage.output_tokens)||usage.input_tokens>STABILITY_INPUT_CEILING||usage.output_tokens>maxTokens)return null;
  if(usage.cache_creation_input_tokens||usage.cache_read_input_tokens||usage.server_tool_use)return null;
- return usage.input_tokens*3+usage.output_tokens*15;
+ const rates=stabilityPricing(model);return usage.input_tokens*rates.input+usage.output_tokens*rates.output;
 }
 // Multi-view baselines are bound to complete ordered sets, never individual
 // hashes chosen from a shared pool. No expected product identity enters scope.

@@ -1,3 +1,4 @@
+import {readGroupedDevice,GROUPED_MODEL,GROUPED_PROMPT_VERSION} from '../services/groupedRecognition';
 import {canFocusMarking} from '../services/focusedMarking';
 import {claimReaderStage,stagedInputKey,STAGED_LOCATOR_MS,STAGED_READER_MS} from '../services/recognitionStages';
 import {loadIdentityCatalog} from '../services/identityCatalog';
@@ -139,7 +140,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     const initial=resumed|| (await pool.query(`INSERT INTO recognition_runs
      (organization_id,opening_id,user_id,photo_hashes,technician_attributes,component_type,stage_one,suggestion,retrieved_pages,citations,rejected_citations,conflicts,status,model_id,prompt_version)
      VALUES($1,$2,$3,$4,$5,NULL,$6,'{}','[]','[]','[]','[]','running',$7,$8) RETURNING id`,[
-     req.auth!.organizationId,b.opening_id,req.auth!.userId,JSON.stringify(sourceHashes),JSON.stringify(b.technician_attributes),JSON.stringify({request_id:b.request_id,shadow_mode:true,...(b.staged?{staged_execution:{phase:'locating',input_key:stageInputKey,started_at:new Date().toISOString()}}:{}),source_inputs:sourceManifest,recognition_versions:{...recognitionBuild,label_prompt:LABEL_PROMPT_VERSION,label_response:LABEL_RESPONSE_VERSION,reference_prompt:REFERENCE_PROMPT_VERSION},libraries:{sharp:sharp.versions,tesseract:require('tesseract.js/package.json').version}}),RECOGNITION_MODEL,REFERENCE_PROMPT_VERSION])).rows[0];
+     req.auth!.organizationId,b.opening_id,req.auth!.userId,JSON.stringify(sourceHashes),JSON.stringify(b.technician_attributes),JSON.stringify({request_id:b.request_id,shadow_mode:true,...(b.staged?{staged_execution:{phase:'grouping',input_key:stageInputKey,started_at:new Date().toISOString()}}:{}),source_inputs:sourceManifest,recognition_versions:{...recognitionBuild,...(b.staged?{grouped_model:GROUPED_MODEL,grouped_prompt:GROUPED_PROMPT_VERSION,effort:'medium'}:{}),label_prompt:b.staged?GROUPED_PROMPT_VERSION:LABEL_PROMPT_VERSION,label_response:LABEL_RESPONSE_VERSION,reference_prompt:REFERENCE_PROMPT_VERSION},libraries:{sharp:sharp.versions,tesseract:require('tesseract.js/package.json').version}}),b.staged?GROUPED_MODEL:RECOGNITION_MODEL,b.staged?GROUPED_PROMPT_VERSION:REFERENCE_PROMPT_VERSION])).rows[0];
     return await recognitionAudit.run({runId:initial.id,deadline:started+(stabilityTrialId()?55000:49000),trialControl:{},identityOnly:Boolean(stabilityTrialId())},async()=>{try{
     if(stabilityTrialId()&&b.mode!=='identify')throw Error('stability_identify_mode_required');
     if(!resumed)await registerStabilityRun(initial.id,b.request_id);
@@ -150,10 +151,25 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
      return legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,images:outgoing,media_type:stabilityTrialId()?'image/jpeg':'image/png',technician_attributes:{component_type:b.technician_attributes.component_type,component_type_source:b.technician_attributes.component_type_source},label_evidence:labels?.reads.map(r=>({photo_index:r.region.photo_index,kind:r.region.kind,text:r.vision_text,provenance:r.provenance})),timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})});
     },stabilityTrialId()?Math.min(started+52000,Date.now()+18000):started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}));
     const label=()=>b.mode==='identify'?bounded(()=>readLabels(images,b.media_type,Math.min(started+46000,Date.now()+24000)),Math.min(started+46000,Date.now()+24000),()=>({version:LABEL_PROMPT_VERSION,status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null);
-    // The locator precedes at most two concurrent identity reads. Every call
-    // still reserves independently under the locked trial budget.
+    // New staged runs read all views jointly once. Historical staged resumes
+    // retain their original contract. Each paid call has a locked reservation.
     let response:Awaited<ReturnType<typeof classify>>,labels:Awaited<ReturnType<typeof label>>;
-    if(stabilityTrialId()){
+    if(stabilityTrialId()&&b.staged&&!resumed){
+     const grouped=await bounded(async()=>{try{return await readGroupedDevice(images,Math.min(started+51000,Date.now()+45000));}catch(error){
+      await recordRecognitionEvidence('grouped_reader_failure',{reason:(error as Error).message});
+      return {labels:{version:GROUPED_PROMPT_VERSION,status:'unavailable' as const,reads:[],limiting_factor:['TimeoutError','AbortError'].includes((error as Error).name)?'label_processing_timeout':'grouped_reader_failed'},result:{component_class:null,manufacturer:null,series:null,model:null,confidence:{manufacturer:null,series:null,model:null}}};
+     }},Math.min(started+52000,Date.now()+46000),()=>{
+      const control=recognitionAudit.getStore()?.trialControl;if(control)control.stopped=true;
+      return {labels:{version:GROUPED_PROMPT_VERSION,status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'},result:{component_class:null,manufacturer:null,series:null,model:null,confidence:{manufacturer:null,series:null,model:null}}};
+     });
+     labels=grouped.labels;response={statusCode:200,body:JSON.stringify(grouped.result)};
+     await recordRecognitionEvidence('label_strategy',{version:GROUPED_PROMPT_VERSION,model:GROUPED_MODEL,effort:'medium',order:'joint_photos_then_catalog',maximum_reader_calls:1,ocr_required:false});
+     if(labels.status==='unavailable'){
+      const code=labels.limiting_factor==='label_processing_timeout'?'recognition_label_reader_timeout':'recognition_label_reader_failed';
+      await recordRecognitionEvidence('label_reading',labels);await recordRecognitionEvidence('failure',{code,http_status:502});
+      return res.status(502).json({error:code,run_id:initial.id});
+     }
+    }else if(stabilityTrialId()){
      await recordRecognitionEvidence('label_strategy',{version:'targeted-label-3',order:'parallel_identity_reads_before_classifier',reader_budget_ms:32000,ocr_order:'optional_native_crop_four_rotations',maximum_reader_calls:2});
      const deadline=b.staged?Math.min(started+51000,Date.now()+(resumed?STAGED_READER_MS:STAGED_LOCATOR_MS)+1000):targetedLabelDeadline(started);
      const completedReads:NonNullable<Awaited<ReturnType<typeof label>>>['reads']=[];
@@ -320,7 +336,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       if(!current.rows.length){await client.query('ROLLBACK');return res.status(403).json({error:'forbidden'});}
       run=(await client.query(`UPDATE recognition_runs SET component_type=$2,raw_class_code=$3,stage_one=stage_one || $4::jsonb || CASE WHEN stage_one ? 'staged_execution' THEN jsonb_build_object('staged_execution',(stage_one->'staged_execution')||jsonb_build_object('phase','completed','completed_at',now())) ELSE '{}'::jsonb END,retrieved_pages=$5,stage_two=$6,citations=$7,rejected_citations=$8,conflicts=$9,status=$10,suggestion=$11 WHERE id=$1 RETURNING id`,[
        initial.id,componentType(result.component_class),result.component_class||null,JSON.stringify(result),JSON.stringify(pages.map(p=>({page_id:p.page_id,doc_sha256:p.doc_sha256,page_no:p.page_no,text_sha256:p.text_sha256}))),JSON.stringify(comparison),JSON.stringify(validated.accepted),JSON.stringify(validated.rejected),JSON.stringify(conflicts),status,JSON.stringify(suggestion)])).rows[0];
-      await client.query(`INSERT INTO audit_log (organization_id,user_id,action,method,path,request_body,status_code) VALUES ($1,$2,'Recorded recognition evidence','POST','/api/recognition',$3,200)`,[req.auth!.organizationId,req.auth!.userId,JSON.stringify({run_id:run.id,opening_id:b.opening_id,model:RECOGNITION_MODEL,prompt_version:REFERENCE_PROMPT_VERSION,rejected_citation_count:validated.rejected.length})]);
+      await client.query(`INSERT INTO audit_log (organization_id,user_id,action,method,path,request_body,status_code) VALUES ($1,$2,'Recorded recognition evidence','POST','/api/recognition',$3,200)`,[req.auth!.organizationId,req.auth!.userId,JSON.stringify({run_id:run.id,opening_id:b.opening_id,model:b.staged?GROUPED_MODEL:RECOGNITION_MODEL,prompt_version:b.staged?GROUPED_PROMPT_VERSION:REFERENCE_PROMPT_VERSION,rejected_citation_count:validated.rejected.length})]);
       await client.query('COMMIT');
     }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
     return res.json({build_sha:recognitionBuild.build_sha,shadow_mode:true,suggestion,label_candidates:labels?.candidates||[],label_candidate:labels?.candidates?.length===1?labels.candidates[0]:null,reported_identity:reportedReferenceHint(b.technician_attributes),run_id:run.id,status,reference_comparison_failure:result.reference_comparison_failure||null,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
@@ -341,7 +357,7 @@ recognitionRouter.get('/request/:id',async(req:AuthedRequest,res)=>{
   if(r?.status==='running'&&['readers_ready','focus_ready'].includes(r.stage_one?.staged_execution?.phase))return res.status(202).json({status:'stage_ready',next_stage:r.stage_one.staged_execution.phase==='focus_ready'?'focus':'read',request_id:req.params.id,run_id:r.id,build_sha:r.stage_one?.recognition_versions?.build_sha});
   if(r&&recognitionRunInterrupted(r))return res.status(502).json({status:'interrupted',error:'recognition_run_interrupted',run_id:r.id,saved_evidence_available:Boolean(r.stage_one?.targeted_label_reads?.length||r.stage_one?.label_reading?.reads?.length)});
   if(!r||r.status==='running')return res.status(202).json({status:'awaiting_saved_result'});
-  if(r.status==='failed')return res.status(502).json({error:['recognition_label_reader_timeout','recognition_label_locator_timeout','recognition_label_locator_failed'].includes(r.stage_one?.failure?.code)?r.stage_one.failure.code:'recognition_provider_failed',run_id:r.id});
+  if(r.status==='failed')return res.status(502).json({error:['recognition_label_reader_timeout','recognition_label_reader_failed','recognition_label_locator_timeout','recognition_label_locator_failed'].includes(r.stage_one?.failure?.code)?r.stage_one.failure.code:'recognition_provider_failed',run_id:r.id});
   if(!r.suggestion||typeof r.suggestion!=='object'||Array.isArray(r.suggestion)||!Object.keys(r.suggestion).length)
     return res.status(502).json({error:'recognition_result_missing'});
   const labels=r.stage_one?.label_reading?.candidates||[];

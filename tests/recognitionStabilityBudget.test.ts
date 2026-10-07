@@ -181,8 +181,19 @@ it('binds staged inputs to request, ordered original IDs and technician attribut
 });
 
 it('focus-stage claims are single-use and keep the first reader evidence intact',async()=>{
- const id=randomUUID(),build='d'.repeat(40),key='e'.repeat(64);const labels={reads:[{region:{photo_index:0,x:.1,y:.1,w:.1,h:.1,rotation:0,kind:'brand_mark'},provenance:{source:'native_tile',target_device:true,box:{x:.1,y:.1,w:.1,h:.1}}}]};
+ const id=randomUUID(),build='d'.repeat(40),key='e'.repeat(64);const labels={reads:[{vision_status:'read',vision_text:'visible maker',region:{photo_index:0,x:.1,y:.1,w:.1,h:.1,rotation:0,kind:'brand_mark'},provenance:{source:'native_tile',target_device:true,box:{x:.1,y:.1,w:.1,h:.1}}}]};
  await fixture.db.query("INSERT INTO recognition_runs(id,organization_id,user_id,opening_id,photo_hashes,status,stage_one) VALUES($1,$2,$3,$4,$5,'running',$6)",[id,org,actor,opening,JSON.stringify([hash]),JSON.stringify({recognition_versions:{build_sha:build},staged_execution:{phase:'focus_ready',input_key:key},label_reading:labels})]);
  const scope={organizationId:org,userId:actor,openingId:opening};const result=await claimReaderStage(id,scope,build,key);expect(result.mode).toBe('focus');expect(result.labels).toEqual(labels);
  await expect(claimReaderStage(id,scope,build,key)).rejects.toThrow('recognition_stage_not_resumable');const row=(await fixture.db.query('SELECT * FROM recognition_runs WHERE id=$1',[id])).rows[0];expect(row.stage_one.staged_execution.phase).toBe('focusing');expect(row.stage_one.label_reading).toEqual(labels);
+});
+
+it('prices a bounded Opus medium grouped request at $4/$20 and retains a worst-case reservation',()=>{
+ const images=Array.from({length:3},()=>({type:'image',source:{type:'base64',media_type:'image/jpeg',data:'fixture'}}));
+ const b={model:'claude-opus-5-5',max_tokens:4096,output_config:{effort:'medium'},messages:[{role:'user',content:[...images,{type:'text',text:'Read these views together.'}]}]};
+ expect(stabilityMaximum(b,'https://api.anthropic.com/v1/messages',{})).toBe(881920);
+ expect(stabilityActual({input_tokens:10000,output_tokens:2000},4096,b.model)).toBe(80000);
+ expect(()=>stabilityMaximum({...b,temperature:0},'https://api.anthropic.com/v1/messages',{})).toThrow();
+ expect(()=>stabilityMaximum({...b,output_config:{effort:'high'}},'https://api.anthropic.com/v1/messages',{})).toThrow();
+ expect(()=>stabilityMaximum({...b,messages:[...b.messages,...b.messages]},'https://api.anthropic.com/v1/messages',{})).toThrow();
+ expect(()=>stabilityMaximum({...b,messages:[{role:'user',content:[...images,{type:'text',text:'x'.repeat(16001)}]}]},'https://api.anthropic.com/v1/messages',{})).toThrow();
 });

@@ -3,7 +3,7 @@ import {prepareProviderRequest} from './recognitionImage';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {pool} from '../db/pool';
 import {randomUUID} from 'node:crypto';
-import {stabilityTrialId,stabilityMaximum,stabilityActual,reserveStabilityAttempt,settleStabilityAttempt,accountLimitRejected} from './recognitionStabilityBudget';
+import {stabilityTrialId,stabilityMaximum,stabilityActual,stabilityPricing,reserveStabilityAttempt,settleStabilityAttempt,accountLimitRejected} from './recognitionStabilityBudget';
 
 interface AuditContext {runId:string;deadline:number;signal?:AbortSignal;trialControl?:{stopped?:boolean};identityOnly?:boolean}
 export const recognitionAudit=new AsyncLocalStorage<AuditContext>();
@@ -45,9 +45,10 @@ export async function auditedFetch(url:string,init:RequestInit,stage:string,vali
   const validTokens=(n:unknown)=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0;
   const priced=usage&&validTokens(usage.input_tokens)&&validTokens(usage.output_tokens)&&Number.isFinite(input)&&Number.isFinite(output)&&input>0&&output>0&&!usage.cache_creation_input_tokens&&!usage.cache_read_input_tokens;
   const estimate=priced?(usage.input_tokens*input+usage.output_tokens*output)/1e6:null;
-  const trialCost=budgetReserved?stabilityActual(usage,request.max_tokens):null;
+  await recordRecognitionEvidence(`provider_response_${id}`,{attempt_id:id,stage,requested_model:request.model,returned_model:typeof body?.model==='string'?body.model:null,stop_reason:body?.stop_reason??null,effort:request.output_config?.effort??null});
+  const trialCost=budgetReserved?(body?.model&&body.model!==request.model?null:stabilityActual(usage,request.max_tokens,request.model)):null;
   const cost=budgetReserved?(trialCost===null?null:trialCost/1e6):(estimate!==null&&Number.isFinite(estimate)?estimate:null);
-  await pool.query(`UPDATE recognition_provider_attempts SET outcome=$2,latency_ms=$3,usage=$4,cost_usd=$5,cost_status=$6,raw_output=$7,cost_basis=$8,finished_at=now() WHERE id=$1`,[id,rejected&&budgetReserved?'rejected_uncharged_pending_review':response.ok?(validOutput?'response_received':'invalid_response'):'provider_error',Date.now()-started,JSON.stringify(usage),cost,cost!==null?'estimated':'unknown',raw,cost!==null?JSON.stringify({input_usd_per_million:budgetReserved?3:input,output_usd_per_million:budgetReserved?15:output,model:request.model,...(budgetReserved?{trial_id:stabilityTrialId(),reservation_basis:'200k_context_plus_max_output'}:{})}):null]);
+  await pool.query(`UPDATE recognition_provider_attempts SET outcome=$2,latency_ms=$3,usage=$4,cost_usd=$5,cost_status=$6,raw_output=$7,cost_basis=$8,finished_at=now() WHERE id=$1`,[id,rejected&&budgetReserved?'rejected_uncharged_pending_review':response.ok?(validOutput?'response_received':'invalid_response'):'provider_error',Date.now()-started,JSON.stringify(usage),cost,cost!==null?'estimated':'unknown',raw,cost!==null?JSON.stringify({input_usd_per_million:budgetReserved?stabilityPricing(request.model).input:input,output_usd_per_million:budgetReserved?stabilityPricing(request.model).output:output,model:request.model,...(budgetReserved?{trial_id:stabilityTrialId(),reservation_basis:request.model==='claude-opus-5-5'?'bounded_grouped_images_text_200k_plus_max_output':'200k_context_plus_max_output'}:{})}):null]);
   await recordRecognitionEvidence(`provider_http_${id}`,{attempt_id:id,stage,http_status:response.status,started_at:new Date(started).toISOString(),finished_at:new Date().toISOString(),latency_ms:Date.now()-started});
   if(budgetReserved)await settleStabilityAttempt(id,trialCost);
   return new Response(raw,{status:response.status,statusText:response.statusText,headers:response.headers});

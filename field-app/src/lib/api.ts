@@ -24,7 +24,7 @@ export async function recognizeHardware(openingId:string,images:string[],mediaTy
   };
   let resumeId:string|undefined;
   for(let stage=0;stage<3;stage++){
-    onRecovery?.(stage===2?'Verifying focused markings in four orientations…':stage===1?'Reading the saved logo and label locations…':'Locating logo and label markings…');
+    onRecovery?.(stage===2?'Verifying focused markings in four orientations…':stage===1?'Reading the saved logo and label locations…':photoIds?'Reading all photographs together with Opus…':'Analyzing photographs…');
     let result:any;
     try{result=await authedFetch('/recognition',{method:'POST',body:JSON.stringify({...body,...(resumeId?{resume_run_id:resumeId}:{})})},principal);}
     catch(error){
