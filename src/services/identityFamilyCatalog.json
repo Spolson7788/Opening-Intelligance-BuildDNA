@@ -1,0 +1,132 @@
+[
+  {
+    "manufacturer": "Accentra",
+    "series": "1500",
+    "component_class": "EXIT_DEVICE",
+    "display_name": "exit device",
+    "source_url": "https://storage.googleapis.com/aa-americas/dam/AADSS1013414",
+    "source_sha256": "5086633a8a65a163e5560dfb9e5ecf6b4c693cac301a621d64dd24022d9cb65a",
+    "page": 1,
+    "source_review": "PDF bytes hash-verified; literal cover series reviewed 2026-10-07",
+    "brand_relation_source": "https://www.assaabloy.com/us/en/about-us"
+  },
+  {
+    "manufacturer": "Yale",
+    "series": "1500",
+    "component_class": "EXIT_DEVICE",
+    "display_name": "exit device",
+    "source_url": "https://storage.googleapis.com/aa-americas/dam/AADSS1013414",
+    "source_sha256": "5086633a8a65a163e5560dfb9e5ecf6b4c693cac301a621d64dd24022d9cb65a",
+    "page": 1,
+    "source_review": "PDF bytes hash-verified; literal cover series reviewed 2026-10-07",
+    "brand_relation_source": "https://www.assaabloy.com/us/en/about-us"
+  },
+  {
+    "manufacturer": "Accentra",
+    "series": "1800",
+    "component_class": "EXIT_DEVICE",
+    "display_name": "exit device",
+    "source_url": "https://storage.googleapis.com/aa-americas/dam/AADSS1013413",
+    "source_sha256": "11d1feccc07b5c0f31eb55258843bfbc2c35835834de4a80f7879e2774037314",
+    "page": 1,
+    "source_review": "PDF bytes hash-verified; literal cover series reviewed 2026-10-07",
+    "brand_relation_source": "https://www.assaabloy.com/us/en/about-us"
+  },
+  {
+    "manufacturer": "Yale",
+    "series": "1800",
+    "component_class": "EXIT_DEVICE",
+    "display_name": "exit device",
+    "source_url": "https://storage.googleapis.com/aa-americas/dam/AADSS1013413",
+    "source_sha256": "11d1feccc07b5c0f31eb55258843bfbc2c35835834de4a80f7879e2774037314",
+    "page": 1,
+    "source_review": "PDF bytes hash-verified; literal cover series reviewed 2026-10-07",
+    "brand_relation_source": "https://www.assaabloy.com/us/en/about-us"
+  },
+  {
+    "manufacturer": "Accentra",
+    "series": "2100",
+    "component_class": "EXIT_DEVICE",
+    "display_name": "exit device",
+    "source_url": "https://storage.googleapis.com/aa-americas/dam/AADSS1010937",
+    "source_sha256": "f24f382714230d696b2b2a613b9013b9a51b4a20760b20b93bbb0ebb45a883e9",
+    "page": 1,
+    "source_review": "PDF bytes hash-verified; literal cover series reviewed 2026-10-07",
+    "brand_relation_source": "https://www.assaabloy.com/us/en/about-us"
+  },
+  {
+    "manufacturer": "Yale",
+    "series": "2100",
+    "component_class": "EXIT_DEVICE",
+    "display_name": "exit device",
+    "source_url": "https://storage.googleapis.com/aa-americas/dam/AADSS1010937",
+    "source_sha256": "f24f382714230d696b2b2a613b9013b9a51b4a20760b20b93bbb0ebb45a883e9",
+    "page": 1,
+    "source_review": "PDF bytes hash-verified; literal cover series reviewed 2026-10-07",
+    "brand_relation_source": "https://www.assaabloy.com/us/en/about-us"
+  },
+  {
+    "manufacturer": "Accentra",
+    "series": "6000",
+    "component_class": "EXIT_DEVICE",
+    "display_name": "exit device",
+    "source_url": "https://storage.googleapis.com/aa-americas/dam/AADSS1010908",
+    "source_sha256": "01381f5aa8e01b026adee5473d95b8c2af402fbf8be715a5d5484021d41193b1",
+    "page": 1,
+    "source_review": "PDF bytes hash-verified; literal cover series reviewed 2026-10-07",
+    "brand_relation_source": "https://www.assaabloy.com/us/en/about-us"
+  },
+  {
+    "manufacturer": "Yale",
+    "series": "6000",
+    "component_class": "EXIT_DEVICE",
+    "display_name": "exit device",
+    "source_url": "https://storage.googleapis.com/aa-americas/dam/AADSS1010908",
+    "source_sha256": "01381f5aa8e01b026adee5473d95b8c2af402fbf8be715a5d5484021d41193b1",
+    "page": 1,
+    "source_review": "PDF bytes hash-verified; literal cover series reviewed 2026-10-07",
+    "brand_relation_source": "https://www.assaabloy.com/us/en/about-us"
+  },
+  {
+    "manufacturer": "Accentra",
+    "series": "7000",
+    "component_class": "EXIT_DEVICE",
+    "display_name": "exit device",
+    "source_url": "https://storage.googleapis.com/aa-americas/dam/AADSS1013393",
+    "source_sha256": "eb32ef6d940c1a9da11d904e0d9faa7d5b7201f1c99cd7e67f1478243afe5a9c",
+    "page": 1,
+    "source_review": "PDF bytes hash-verified; literal cover series reviewed 2026-10-07",
+    "brand_relation_source": "https://www.assaabloy.com/us/en/about-us"
+  },
+  {
+    "manufacturer": "Yale",
+    "series": "7000",
+    "component_class": "EXIT_DEVICE",
+    "display_name": "exit device",
+    "source_url": "https://storage.googleapis.com/aa-americas/dam/AADSS1013393",
+    "source_sha256": "eb32ef6d940c1a9da11d904e0d9faa7d5b7201f1c99cd7e67f1478243afe5a9c",
+    "page": 1,
+    "source_review": "PDF bytes hash-verified; literal cover series reviewed 2026-10-07",
+    "brand_relation_source": "https://www.assaabloy.com/us/en/about-us"
+  },
+  {
+    "manufacturer": "Von Duprin",
+    "series": "33A",
+    "component_class": "EXIT_DEVICE",
+    "display_name": "exit device",
+    "source_url": "https://www.vonduprin.com/content/dam/allegion-us-2/web-files/von-duprin-/information-documents/Von_Duprin_33A.35A_Series_Catalog_106593.pdf",
+    "source_sha256": "b1a811e9897e034346501a1f363e0e1c50204bcda84e3367c5398ce745cf3147",
+    "page": 3,
+    "source_review": "Catalog series page text reviewed 2026-10-07; family evidence does not establish installed configuration"
+  },
+  {
+    "manufacturer": "Von Duprin",
+    "series": "35A",
+    "component_class": "EXIT_DEVICE",
+    "display_name": "exit device",
+    "source_url": "https://www.vonduprin.com/content/dam/allegion-us-2/web-files/von-duprin-/information-documents/Von_Duprin_33A.35A_Series_Catalog_106593.pdf",
+    "source_sha256": "b1a811e9897e034346501a1f363e0e1c50204bcda84e3367c5398ce745cf3147",
+    "page": 3,
+    "source_review": "Catalog series page text reviewed 2026-10-07; family evidence does not establish installed configuration"
+  }
+]

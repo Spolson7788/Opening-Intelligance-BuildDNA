@@ -41,6 +41,7 @@ export async function recognizeHardware(openingId:string,images:string[],mediaTy
 }
 
 export const fetchReferencePage=(hash:string,n:number)=>authedFetch(`/references/${encodeURIComponent(hash)}/pages/${n}`);
+export const fetchSavedRecognitionReview=(openingId:string)=>authedFetch(`/recognition/opening/${encodeURIComponent(openingId)}/review`);
 export const fetchRecognitionRuns=(openingId:string)=>authedFetch(`/recognition/opening/${encodeURIComponent(openingId)}`);
 export const fetchProductCatalog=()=>authedFetch('/hardware/catalog') as Promise<{products:{manufacturer:string;model_number:string;series:string|null}[]}>;
 export const fetchPurchasingRequests=(openingId:string)=>authedFetch(`/purchasing/requests/opening/${encodeURIComponent(openingId)}`);

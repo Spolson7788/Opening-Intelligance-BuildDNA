@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {fetchRecognitionAvailability,recognizeHardware,uploadRecognitionOriginals,checkSavedRecognitionOriginals,fetchPhotoAccessUrl} from '../lib/api';
+import {fetchSavedRecognitionReview,fetchRecognitionAvailability,recognizeHardware,uploadRecognitionOriginals,checkSavedRecognitionOriginals,fetchPhotoAccessUrl} from '../lib/api';
 import {labelConfirmationMessage,visionReadMessage} from '../lib/labelReadStatus';
 import {ReferenceEvidence} from './ReferenceEvidence';
 import {getOrCreateDeviceId} from '../lib/sync';
@@ -18,6 +18,7 @@ export function recognitionFailureMessage(code:string){
     stability_trial_not_configured:'The staging trial is not configured. No AI call was made.',
 
     recognition_stage_not_resumable:'This stage has already started or cannot be resumed safely. No additional analysis was started.',
+ recognition_saved_review_unavailable:'No completed grouped-photo analysis is saved for this account and opening.',
  recognition_stage_input_changed:'The saved run belongs to different inputs or an older build. No additional analysis was started.',
  recognition_stage_not_found:'The saved recognition stage is unavailable to this account.',
  recognition_label_reader_timeout:'The label readers timed out. Saved evidence and originals are retained. Do not retry this paid stage.',
@@ -127,6 +128,13 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     catch(e){if(current===generation.current)setError(e instanceof Error?e.message:'Original check failed.');}
     finally{if(current===generation.current)setBusy(false);}
   }
+  async function reviewSaved(){
+    const current=++generation.current;setBusy(true);setError('');setProgress('Reviewing saved evidence — no AI charge…');
+    setFiles([]);setSavedPreviews([]);setSavedOriginalCount(0);originalSources.current=null;onFilesChange([]);if(fileInput.current)fileInput.current.value='';
+    try{const saved=await fetchSavedRecognitionReview(openingId);if(current===generation.current){setResult(saved.suggestion);setResponse(saved);setTypeApplied(false);}}
+    catch(e){if(current===generation.current)setError(recognitionFailureMessage(e instanceof Error?e.message:'recognition_history_unavailable'));}
+    finally{if(current===generation.current)setBusy(false);}
+  }
   async function analyze(){
     const current=++generation.current;
     setTypeApplied(false);setError('');setProviderDiagnostic('');setResult(null);setResponse(null);setProgress('');setBusy(true);
@@ -170,7 +178,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     {availability?.available&&!availability.reference_comparison_enabled&&<p>Photograph recognition is available. Manufacturer reference comparison is switched off on this server.</p>}
     <label>Reported model or readable markings<input value={markings} maxLength={300} disabled={busy} onChange={e=>{setMarkings(e.target.value);setResult(null);setResponse(null);}} placeholder="e.g. CR441 or Cal-Royal CR441"/></label>
     <label>Observed features or measurements<input value={features} maxLength={300} onChange={e=>setFeatures(e.target.value)}/></label>
-    <input ref={fileInput} aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;originalSources.current=null;setSavedOriginalCount(0);setSavedPreviews([]);setProgress('');const selected=Array.from(e.target.files||[]);setFiles(selected);onFilesChange(originalsEnabled?[]:selected);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}/>
+    <input ref={fileInput} aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;originalSources.current=null;setSavedOriginalCount(0);setSavedPreviews([]);setProgress('');const selected=Array.from(e.target.files||[]).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0);setFiles(selected);onFilesChange(originalsEnabled?[]:selected);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}/>
     {files.length>0&&<div aria-label="Selected photograph files">
       <p>Total: <strong>{selectedBytes.toLocaleString()} bytes</strong> ({(selectedBytes/1024/1024).toFixed(2)} MB). {originalsEnabled?'Original upload limit: 12 MB each, 40 MB combined.':'Combined limit: 2 MB.'}</p>
       <ol>{files.map((file,i)=><li key={i}>{file.name} — {file.size.toLocaleString()} bytes</li>)}</ol>
@@ -189,12 +197,14 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
         <figcaption>Photo {i+1}</figcaption>
       </figure>)}
     </section>}
+    <button type="button" disabled={busy} onClick={reviewSaved}>Review saved analysis without AI</button>
     <button type="button" disabled={busy||(!files.length&&!(savedOriginalCount>0&&originalSources.current?.openingId===openingId))||!!selectionError||!availability?.available} onClick={analyze}>{busy?progress||'Analyzing…':'Analyze photographs'}</button>
     {error&&<p role="alert">{error}</p>}
     {providerDiagnostic&&<p>Administrator diagnostic: {providerDiagnostic}</p>}
     {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — {originalsEnabled?'originals are saved privately to this opening before analysis.':'will attach when you save this hardware.'}</p>}
     {result&&<div>
-      {!!result.catalog_identity_review&&<CatalogIdentityEvidence review={result.catalog_identity_review as CatalogReview} files={files} identified={result.identity_basis==='readable_maker_and_exact_catalog_model'}/>}
+      {response?.derived_saved_evidence&&<p>Saved evidence reviewed without a new AI call. Original build: {response.source_build_sha}; review build: {response.review_build_sha}. The original test result is unchanged.</p>}
+      {!!result.catalog_identity_review&&<CatalogIdentityEvidence review={result.catalog_identity_review as CatalogReview} files={response?.derived_saved_evidence?[]:files} identified={result.identity_basis==='readable_maker_and_exact_catalog_model'}/>}
       {onComponentType&&photographedComponentTypes[text('component_class')]&&<p>Photograph component type: <strong>{photographedComponentTypes[text('component_class')].replace(/_/g,' ')}</strong>. {typeApplied?'Component type filled automatically. You can change it below.':'Your selected component type was preserved. You can change it below.'}</p>}
       {response?.reported_identity&&<p>Technician-reported product: <strong>{response.reported_identity.manufacturer} {response.reported_identity.model}</strong> — awaiting verification.</p>}
       {labelReads.some(read=>read.ocr_model_conflicts?.length>0)&&<p role="alert">The readers disagree on model characters. The candidate is retained for your review; verify the label before accepting it. OCR alternatives: {[...new Set(labelReads.flatMap(read=>read.ocr_model_conflicts||[]))].join(', ')}.</p>}
@@ -212,7 +222,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
       <details><summary>Recognition evidence</summary><pre style={{whiteSpace:'pre-wrap'}}>{JSON.stringify(result,null,2)}</pre></details>
       {response&&<ReferenceEvidence run={response}/>}
       {response?.build_sha&&<p>Recognition build: <code>{response.build_sha}</code></p>}
-      <button type="button" disabled={(!text('model')&&!response?.label_candidate?.model)||['CONFLICT','TYPE_CONFLICT'].includes((result?.catalog_identity_review as any)?.status)} onClick={()=>onUse(text('model')?text('manufacturer'):response?.label_candidate?.manufacturer||'',text('model')||response?.label_candidate?.model||'',response?.run_id||'',photographedComponentTypes[text('component_class')]||null)}>{text('model')?'Use photograph suggestion for technician review':'Use complete label candidate for technician review'}</button>
+      <button type="button" disabled={response?.derived_saved_evidence||(!text('model')&&!response?.label_candidate?.model)||['CONFLICT','TYPE_CONFLICT'].includes((result?.catalog_identity_review as any)?.status)} onClick={()=>onUse(text('model')?text('manufacturer'):response?.label_candidate?.manufacturer||'',text('model')||response?.label_candidate?.model||'',response?.run_id||'',photographedComponentTypes[text('component_class')]||null)}>{text('model')?'Use photograph suggestion for technician review':'Use complete label candidate for technician review'}</button>
       {response?.shadow_mode&&<p>Staging analysis. A suggestion fills the review form only; acknowledge or correct the installed identity before saving.</p>}
       {response?.reported_identity&&<p>Enter or correct the installed manufacturer and model below, then acknowledge the identity. Your confirmation remains linked to this run.</p>}
       <p>Identity and review remain pending until you verify them. This does not approve a purchase.</p>

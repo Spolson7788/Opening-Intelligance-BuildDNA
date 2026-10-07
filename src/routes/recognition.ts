@@ -242,7 +242,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     if(stabilityTrialId()&&b.mode==='identify'&&labels){
       const catalog=await loadIdentityCatalog();
       const review=catalogIdentityReview(labels,result,b.technician_attributes,catalog.entries);
-      if(catalog.availability==='partial'&&!review.candidates.length&&review.status!=='CONFLICT')review.status='CATALOG_UNAVAILABLE';
+      if(catalog.availability==='partial'&&!review.candidates.length&&!review.partial_identity&&review.status!=='CONFLICT')review.status='CATALOG_UNAVAILABLE';
       await recordRecognitionEvidence('identity_catalog_availability',{status:catalog.availability,reason:catalog.reason||null});
       result.catalog_identity_review=review;
       await recordRecognitionEvidence('catalog_identity_review',review);
@@ -365,6 +365,23 @@ recognitionRouter.get('/request/:id',async(req:AuthedRequest,res)=>{
     return res.status(502).json({error:'recognition_result_missing'});
   const labels=r.stage_one?.label_reading?.candidates||[];
   return res.json({request_id:req.params.id,recovered:true,shadow_mode:r.stage_one?.shadow_mode===true,suggestion:r.suggestion,label_candidates:labels,label_candidate:labels.length===1?labels[0]:null,reported_identity:reportedReferenceHint(r.technician_attributes||{}),run_id:r.id,status:r.status,reference_comparison_failure:r.stage_one?.reference_comparison_failure||null,comparison:r.stage_two,citations:r.citations||[],conflicts:r.conflicts||[],requires_technician_review:true});
+ }catch{return res.status(503).json({error:'recognition_history_unavailable'});}
+});
+
+// Reinterpret saved literal evidence without AI, new runs, or rewriting the baseline.
+recognitionRouter.get('/opening/:id/review',async(req:AuthedRequest,res)=>{
+ res.setHeader('Cache-Control','no-store');
+ if(!z.string().uuid().safeParse(req.params.id).success)return res.status(400).json({error:'invalid_opening_id'});
+ try{
+  const allowed=await pool.query(`SELECT 1 FROM (${openingsForOrgSubquery(2)}) a WHERE a.id=$1`,[req.params.id,req.auth!.organizationId]);
+  if(!allowed.rows.length)return res.status(404).json({error:'opening_not_found'});
+  const row=(await pool.query(`SELECT id,stage_one,suggestion,technician_attributes FROM recognition_runs WHERE opening_id=$1 AND organization_id=$2 AND user_id=$3 AND status NOT IN ('running','failed') AND stage_one->'label_reading'->>'version'='oi-grouped-device-1' ORDER BY created_at DESC LIMIT 1`,[req.params.id,req.auth!.organizationId,req.auth!.userId])).rows[0];
+  if(!row)return res.status(404).json({error:'recognition_saved_review_unavailable'});
+  const catalog=await loadIdentityCatalog();
+  const base={...row.suggestion,manufacturer:null,series:null,model:null,identity_evidence:[],identity_basis:null,label_reading:row.stage_one.label_reading,grouped_identity_claim:row.stage_one.grouped_identity_claim};
+  const review=catalogIdentityReview(base.label_reading,base,row.technician_attributes||{},catalog.entries);
+  const suggestion={...applyCatalogIdentityProposal(base,review),catalog_identity_review:review};
+  return res.json({run_id:row.id,status:'saved_evidence_review',derived_saved_evidence:true,paid_calls:0,source_build_sha:row.stage_one.recognition_versions?.build_sha,review_build_sha:recognitionBuild.build_sha,shadow_mode:true,suggestion,label_candidates:[],label_candidate:null,citations:[],conflicts:[],requires_technician_review:true});
  }catch{return res.status(503).json({error:'recognition_history_unavailable'});}
 });
 

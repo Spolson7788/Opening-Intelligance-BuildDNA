@@ -81,3 +81,17 @@ it('reports a rejected frozen photo scope as a trial gate, not a storage failure
  const saved=f.query.mock.calls.find(([sql,args])=>String(args?.[1]).includes('provider_calls_started'));
  expect(JSON.parse(saved![1][1]).failure).toMatchObject({code:'stability_trial_scope_mismatch',provider_calls_started:false});
 });
+
+it('reviews actor-scoped saved evidence for free without rewriting the frozen run',async()=>{
+ const saved={id,stage_one:{recognition_versions:{build_sha:'b'.repeat(40)},label_reading:{version:'oi-grouped-device-1',status:'completed',reads:[['VON DUPRIN','brand_mark'],['35A SERIES','product_label']].map(([text,kind])=>({region:{photo_index:2,x:0,y:0,w:1,h:1,rotation:0,kind},vision_text:text,vision_status:'read',ocr_text:'',ocr_confidence:0,agreed_markings:[],status:'unconfirmed',provenance:{source:'grouped_view',verification_scope:'supplied_view',marking_complete:true,target_device:true,location_validated:true}})),limiting_factor:null},grouped_identity_claim:{disagreements:['Check photo grouping.']}},suggestion:{component_class:'EXIT_DEVICE',manufacturer:null,series:null,model:null},technician_attributes:{}};
+ f.query.mockImplementation(async(sql:string)=>({rows:sql.includes('is_active')?[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]:sql.includes('FROM recognition_runs')?[saved]:sql.startsWith('SELECT 1')?[{allowed:1}]:[]}));
+ const response=await request(app).get('/recognition/opening/'+opening+'/review').set('Authorization',`Bearer ${jwt.sign({userId:'user',organizationId:'org',sessionVersion:0},process.env.JWT_SECRET!)}`);
+ expect(response.status).toBe(200);expect(response.body).toMatchObject({run_id:id,derived_saved_evidence:true,paid_calls:0,source_build_sha:'b'.repeat(40),suggestion:{manufacturer:'Von Duprin',series:'35A',model:null}});
+ expect(f.query.mock.calls.find(([sql])=>sql.includes('FROM recognition_runs'))?.[1]).toEqual([opening,'org','user']);
+ expect(f.query.mock.calls.some(([sql])=>/UPDATE|INSERT|DELETE/.test(sql))).toBe(false);expect(f.grouped).not.toHaveBeenCalled();expect(f.register).not.toHaveBeenCalled();
+});
+it('refuses saved analysis from an inaccessible opening before reading runs',async()=>{
+ f.query.mockImplementation(async(sql:string)=>({rows:sql.includes('is_active')?[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]:[]}));
+ const response=await request(app).get('/recognition/opening/'+opening+'/review').set('Authorization',`Bearer ${jwt.sign({userId:'user',organizationId:'org',sessionVersion:0},process.env.JWT_SECRET!)}`);
+ expect(response.status).toBe(404);expect(f.query.mock.calls.some(([sql])=>sql.includes('FROM recognition_runs'))).toBe(false);expect(f.grouped).not.toHaveBeenCalled();
+});

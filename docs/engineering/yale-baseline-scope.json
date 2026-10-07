@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "source": "Previously supplied field photo bytes; no recompression",
+  "photos": [
+    {
+      "filename": "Yale 2.jpeg",
+      "sha256": "addf2c5a83e5837c6b8c3f63946c452ecd157ed74d4a1862fe396daaa8552622",
+      "bytes": 565520
+    },
+    {
+      "filename": "Yale 3.jpeg",
+      "sha256": "a2e9770cadad18ab206fc3453e574e545e55cc327a76a8148d29d384f63a1f82",
+      "bytes": 553926
+    },
+    {
+      "filename": "Yale 4.jpeg",
+      "sha256": "29256d6d28da7eaf29f8c00940d20ffe8edb01537a04681001997f40c2db34d8",
+      "bytes": 533310
+    },
+    {
+      "filename": "Yale 5.jpeg",
+      "sha256": "1783c5443759d5a0b71cb5a13451ad4a19e3a9349ce4818d19a015be25758ceb",
+      "bytes": 436272
+    },
+    {
+      "filename": "Yale.jpeg",
+      "sha256": "ac70980da0cf1d7dfe251d5819508e44dd782f9ad45f1322f458f21193e8c964",
+      "bytes": 445554
+    }
+  ],
+  "photo_count": 5,
+  "total_bytes": 2534582,
+  "ground_truth": {
+    "manufacturer": null,
+    "series": null,
+    "model": null,
+    "technician_acknowledged": false
+  },
+  "instruction": "Select all five supplied Yale images; UI sorts filenames deterministically. Do not supply an expected identity to the model."
+}

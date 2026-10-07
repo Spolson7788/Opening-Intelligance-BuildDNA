@@ -1,5 +1,7 @@
 import {pool} from '../db/pool';
-import entries from './pdqCatalog.json';
+import pdq from './pdqCatalog.json';
+import reviewed from './reviewedExitCatalog.json';
+const entries=[...pdq,...reviewed];
 import type {IdentityCatalogEntry} from './catalogIdentityReview';
 // One resolver uses reviewed static rows and approved/citable document rows.
 // Missing series, class or form remains unknown; never infer it from a prefix.
