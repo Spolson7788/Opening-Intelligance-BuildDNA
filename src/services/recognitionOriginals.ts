@@ -1,6 +1,9 @@
 import {pool} from '../db/pool';
 import {buildPrivatePhotoStorageKey,readPrivatePhotoBytes} from './storage';
 import {MAX_RECOGNITION_ORIGINAL_BYTES,MAX_RECOGNITION_SET_BYTES} from './recognitionOriginalLimits';
+import sharp from 'sharp';
+import {normalizeRecognitionImage} from './recognitionImage';
+import {createHash} from 'node:crypto';
 
 export function orderedRecognitionPhotos(ids:string[],rows:any[],scope:{openingId:string;organizationId:string;userId:string},mediaType:string){
  if(ids.length<1||ids.length>5||new Set(ids).size!==ids.length||rows.length!==ids.length)throw Error('recognition_source_not_available');
@@ -12,6 +15,28 @@ export function orderedRecognitionPhotos(ids:string[],rows:any[],scope:{openingI
  }
  if(total>MAX_RECOGNITION_SET_BYTES)throw Error('recognition_source_too_large');
  return ordered;
+}
+export function originalPreparationReason(error:unknown){
+ const e=error as {name?:string;message?:string};
+ if(['AbortError','TimeoutError'].includes(e?.name||''))return 'source_timeout';
+ if(['AccessDenied','Forbidden','NoSuchKey','NotFound'].includes(e?.name||''))return 'source_storage_unavailable';
+ const known=['recognition_source_not_available','recognition_source_too_large','recognition_source_timeout','recognition_source_size_mismatch','recognition_source_checksum_mismatch','recognition_source_pixel_limit','image_type_mismatch'];
+ if(known.includes(e?.message||''))return e.message!;
+ if(/exceeds pixel limit/i.test(e?.message||''))return 'recognition_source_pixel_limit';
+ return 'source_preparation_failed';
+}
+export async function prepareRecognitionOriginals(ids:string[],scope:{openingId:string;organizationId:string;userId:string},mediaType:string,onStage:(stage:'original_retrieval'|'original_metadata'|'image_normalization')=>void=()=>{}){
+ onStage('original_retrieval');
+ const sources=await loadRecognitionOriginals(ids,scope,mediaType);
+ onStage('original_metadata');
+ const metadata=await Promise.all(sources.images.map(x=>sharp(x,{limitInputPixels:16_000_000}).metadata()));
+ const formats:Record<string,string>={'image/jpeg':'jpeg','image/png':'png','image/webp':'webp'};
+ if(metadata.some(m=>m.format!==formats[mediaType]))throw Error('image_type_mismatch');
+ if(metadata.reduce((n,m)=>n+(m.width||0)*(m.height||0),0)>48_000_000)throw Error('recognition_source_pixel_limit');
+ const hashes=sources.images.map(x=>createHash('sha256').update(x).digest('hex'));
+ onStage('image_normalization');
+ const images:Buffer[]=[];for(const image of sources.images)images.push(await normalizeRecognitionImage(image));
+ return {images,sources:sources.sources,hashes,dimensions:metadata.map(m=>({width:m.width,height:m.height,orientation:m.orientation||1}))};
 }
 export async function loadRecognitionOriginals(ids:string[],scope:{openingId:string;organizationId:string;userId:string},mediaType:string){
  const rows=(await pool.query('SELECT id,opening_id,organization_id,uploaded_by_user_id,upload_state,storage_verified_at,authorized_retrieval_verified_at,content_type,byte_size,sha256_checksum,storage_object_key FROM photos WHERE id=ANY($1::uuid[]) AND opening_id=$2 AND organization_id=$3 AND uploaded_by_user_id=$4',[ids,scope.openingId,scope.organizationId,scope.userId])).rows;

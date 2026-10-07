@@ -3,7 +3,8 @@ import {createHash} from 'node:crypto';
 const mock=vi.hoisted(()=>({send:vi.fn(),query:vi.fn()}));
 vi.mock('../src/db/pool',()=>({pool:{query:mock.query}}));
 vi.mock('@aws-sdk/client-s3',()=>{class Command{constructor(public input:any){}}return {S3Client:class{send=mock.send;},GetObjectCommand:Command,PutObjectCommand:Command,DeleteObjectCommand:Command,HeadObjectCommand:Command,CopyObjectCommand:Command};});
-import {orderedRecognitionPhotos,loadRecognitionOriginals} from '../src/services/recognitionOriginals';
+import {orderedRecognitionPhotos,loadRecognitionOriginals,prepareRecognitionOriginals,originalPreparationReason} from '../src/services/recognitionOriginals';
+import sharp from 'sharp';
 import {readPrivatePhotoBytes,buildPrivatePhotoStorageKey,maximumMediaBytes} from '../src/services/storage';
 import {stabilityRuntime} from '../src/services/recognitionStabilityBudget';
 const scope={openingId:'opening',organizationId:'org',userId:'actor'};
@@ -43,4 +44,31 @@ it('keeps ordinary and production image limits at 2 MB; only guarded previews ad
  vi.stubEnv('OI_STABILITY_TRIAL_REQUIRED','true');vi.stubEnv('OI_STABILITY_TRIAL_ID','80a29645-c81a-4bad-9a2e-16afaa188d03');
  expect(stabilityRuntime.run('production',()=>maximumMediaBytes('image/jpeg'))).toBe(2*1024*1024);
  expect(stabilityRuntime.run('deploy-preview',()=>maximumMediaBytes('image/jpeg'))).toBe(12*1024*1024);
+});
+it('prepares native 12MP storage bytes upright without changing their recorded original hash',async()=>{
+ const bytes=await sharp({create:{width:4032,height:3024,channels:3,background:'#ddd'}}).jpeg().withMetadata({orientation:6}).toBuffer();
+ const hash=createHash('sha256').update(bytes).digest('hex');
+ mock.query.mockResolvedValue({rows:[{...photo('a',bytes.length),sha256_checksum:hash}]});
+ mock.send.mockResolvedValue({ContentLength:bytes.length,Body:(async function*(){yield bytes;})()});
+ const stages:string[]=[];
+ const result=await prepareRecognitionOriginals(['a'],scope,'image/jpeg',s=>stages.push(s));
+ expect(result.hashes).toEqual([hash]);expect(stages).toEqual(['original_retrieval','original_metadata','image_normalization']);
+ const metadata=await sharp(result.images[0]).metadata();expect([metadata.width,metadata.height]).toEqual([3024,4032]);
+},10000);
+it('isolates dimension failure from access failure without leaking exception details',async()=>{
+ const bytes=await sharp({create:{width:4100,height:4100,channels:3,background:'#ddd'}}).jpeg().toBuffer();
+ mock.query.mockResolvedValue({rows:[{...photo('a',bytes.length),sha256_checksum:createHash('sha256').update(bytes).digest('hex')}]});
+ mock.send.mockResolvedValue({ContentLength:bytes.length,Body:(async function*(){yield bytes;})()});
+ const stages:string[]=[];
+ try{await prepareRecognitionOriginals(['a'],scope,'image/jpeg',s=>stages.push(s));throw Error('Expected rejection');}
+ catch(e){expect(originalPreparationReason(e)).toBe('recognition_source_pixel_limit');}
+ expect(stages).toEqual(['original_retrieval','original_metadata']);
+ expect(originalPreparationReason(Error('credential-bearing database exception'))).toBe('source_preparation_failed');
+},10000);
+it('reports a storage timeout at retrieval before normalization',async()=>{
+ mock.query.mockResolvedValue({rows:[photo('a')]});mock.send.mockRejectedValue(Object.assign(Error('not exposed'),{name:'AbortError'}));
+ const stages:string[]=[];
+ try{await prepareRecognitionOriginals(['a'],scope,'image/jpeg',s=>stages.push(s));throw Error('Expected rejection');}
+ catch(e){expect(originalPreparationReason(e)).toBe('source_timeout');}
+ expect(stages).toEqual(['original_retrieval']);
 });

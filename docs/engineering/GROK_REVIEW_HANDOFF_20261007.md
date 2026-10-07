@@ -95,3 +95,21 @@ without analysis button performs only the existing private reservation/upload/
 confirmation flow, reuses the same IDs for Analyze and makes no AI request.
 Review selection/opening reset and current upload checks. Production flow remains
 unchanged. This does not yet prove the original-file upload succeeds in staging.
+
+Connected update: all three originals were subsequently verified in staging,
+9,547,080 bytes total. Exact ordered native hashes were admitted; held-out sets
+were removed from this comparison. Trial briefly opened for one remaining run.
+Analyze returned recognition_opening_access_unavailable with no new run or
+provider attempt. The error stage was misleading: retrieval, dimensions and
+normalization were also classified as opening access. Actual root cause remains
+unresolved. Trial is paused again while a free actor-scoped original check
+reproduces preparation without paid calls or run registration. It loads only the
+last approved ordered hash set for the exact trial actor/tenant/opening; current
+opening authorization and existing private-source checks still apply. Shared
+prepareRecognitionOriginals performs the same download/checksum/dimension/native
+normalization path for both diagnostic and Analyze. Failure audit records use
+stage plus whitelisted reason, never raw credential-bearing exceptions. The UI
+can check already saved originals after refresh without re-uploading or selecting
+files. 196 offline tests across 17 files, root TypeScript, Field App build and
+diff check pass. New tests cover native 12MP EXIF normalization, dimension refusal
+and storage-timeout stage attribution. No paid comparison result exists yet.

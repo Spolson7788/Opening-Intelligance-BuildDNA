@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {fetchRecognitionAvailability,recognizeHardware,uploadRecognitionOriginals} from '../lib/api';
+import {fetchRecognitionAvailability,recognizeHardware,uploadRecognitionOriginals,checkSavedRecognitionOriginals} from '../lib/api';
 import {labelConfirmationMessage,visionReadMessage} from '../lib/labelReadStatus';
 import {ReferenceEvidence} from './ReferenceEvidence';
 import {getOrCreateDeviceId} from '../lib/sync';
@@ -15,6 +15,7 @@ export function recognitionFailureMessage(code:string){
     recognition_disabled:'Photograph recognition is switched off on this server. The staging administrator must enable OI_RECOGNITION_ENABLED for this preview.',
     recognition_provider_not_configured:'The recognition provider key is missing from this server. The staging administrator must configure ANTHROPIC_API_KEY for this preview.',
     recognition_opening_access_unavailable:'Recognition could not check opening access. Please try again when the server connection is restored.',
+    recognition_original_preparation_failed:'The saved originals could not be prepared for analysis. Use Check saved originals without analysis to locate the failure.',
     recognition_recording_unavailable:'Recognition could not save its evidence. No suggestion was applied. The staging administrator must check recognition storage.',
     recognition_provider_authentication_failed:'The recognition provider rejected the server API key. The staging administrator must verify its Anthropic credential. Your app login is unaffected.',
     recognition_provider_permission_denied:'The recognition provider denied this server permission to use the API. The staging administrator must check provider access.',
@@ -52,6 +53,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
   const fileInput=useRef<HTMLInputElement>(null);
   const originalSources=useRef<{openingId:string;ids:string[]}|null>(null);
   const [savedOriginalCount,setSavedOriginalCount]=useState(0);
+  const [originalCheck,setOriginalCheck]=useState<any>(null);
   const [availability,setAvailability]=useState<{available:boolean;blocking_reasons:string[];reason:string|null;reference_comparison_enabled:boolean;original_photo_input_available?:boolean;maximum_original_bytes?:number;maximum_original_set_bytes?:number}|null>(null);
   const originalsEnabled=availability?.original_photo_input_available===true;
   const selectedBytes=files.reduce((n,f)=>n+f.size,0);
@@ -88,6 +90,12 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
       await ensureOriginalUploads(current);
       if(current===generation.current)setProgress('Original photos saved. No AI analysis was run.');
     }catch(e){if(current===generation.current)setError(e instanceof Error?e.message:'Original photo upload failed.');}
+    finally{if(current===generation.current)setBusy(false);}
+  }
+  async function checkOriginals(){
+    const current=++generation.current;setBusy(true);setError('');setOriginalCheck(null);setProgress('Checking saved originals — no AI call…');
+    try{const checked=await checkSavedRecognitionOriginals(openingId);if(current===generation.current)setOriginalCheck(checked);}
+    catch(e){if(current===generation.current)setError(e instanceof Error?e.message:'Original check failed.');}
     finally{if(current===generation.current)setBusy(false);}
   }
   async function analyze(){
@@ -135,6 +143,8 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
       <button type="button" disabled={busy} onClick={()=>{generation.current++;originalSources.current=null;setSavedOriginalCount(0);setProgress('');if(fileInput.current)fileInput.current.value='';setFiles([]);onFilesChange([]);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}>Clear selected photographs</button>
     </div>}
     {selectionError&&<p role="alert">{selectionError}</p>}
+    {originalsEnabled&&<button type="button" disabled={busy} onClick={checkOriginals}>Check saved originals without analysis</button>}
+    {originalCheck&&<p role={originalCheck.ok?'status':'alert'}>{originalCheck.ok?`${originalCheck.photo_count} originals downloaded, checksummed and prepared successfully.`:`Original check failed at ${originalCheck.stage}: ${originalCheck.reason}.`} No AI call was made.</p>}
     {originalsEnabled&&<button type="button" disabled={busy||!files.length||!!selectionError||savedOriginalCount===files.length} onClick={saveOriginals}>Save original photos without analysis</button>}
     {originalsEnabled&&savedOriginalCount>0&&<p role="status">{savedOriginalCount} original photos saved privately to this opening. Analyze uses this same saved set.</p>}
     <button type="button" disabled={busy||!files.length||!!selectionError||!availability?.available} onClick={analyze}>{busy?progress||'Analyzing…':'Analyze photographs'}</button>

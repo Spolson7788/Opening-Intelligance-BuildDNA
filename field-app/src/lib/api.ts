@@ -362,6 +362,7 @@ export const saveBranch = (id:string,body:unknown) => authedFetch(`/branches/${i
 export const assignBranch = (id:string,branch_id:string|null) => authedFetch(`/branches/assignments/${id}`,{method:"PUT",body:JSON.stringify({branch_id})});
 
 export const fetchRecognitionAvailability=()=>authedFetch('/recognition/availability');
+export const checkSavedRecognitionOriginals=(openingId:string)=>authedFetch('/recognition/originals/check',{method:'POST',body:JSON.stringify({opening_id:openingId})});
 
 export async function uploadRecognitionOriginals(openingId:string,files:File[],deviceId:string,onProgress?:(message:string)=>void){
  const principal=await loadAuth();if(!principal)throw new ApiError(401,'missing_token');

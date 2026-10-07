@@ -17,7 +17,7 @@ import {createHash} from 'node:crypto';
 import {readLabels,readTargetedLabels,applyLabelEvidence,LABEL_PROMPT_VERSION} from '../services/labelReading';
 import {catalogIdentityReview} from '../services/catalogIdentityReview';
 import {originalInputsEnabled,MAX_RECOGNITION_ORIGINAL_BYTES,MAX_RECOGNITION_SET_BYTES} from '../services/recognitionOriginalLimits';
-import {loadRecognitionOriginals} from '../services/recognitionOriginals';
+import {prepareRecognitionOriginals,originalPreparationReason} from '../services/recognitionOriginals';
 import {retrieveReferences,referenceFailureCode,resolvePartialMarkings,compareWithReferences,validateCitations,componentType,conservativeSuggestion,reportedReferenceHint,sanitizeReferenceComparison,REFERENCE_PROMPT_VERSION,RECOGNITION_MODEL} from '../services/referenceEvidence';
 
 const schema=z.object({
@@ -41,6 +41,35 @@ recognitionRouter.get('/availability',(_req,res)=>{
   res.setHeader('Cache-Control','no-store');
   return res.json(recognitionAvailability());
 });
+// Free, actor-scoped preparation check for the already approved original set.
+// Never invokes a provider, registers a run or changes trial accounting.
+recognitionRouter.post('/originals/check',async(req:AuthedRequest,res)=>{
+ res.setHeader('Cache-Control','no-store');
+ const body=z.object({opening_id:z.string().uuid()}).strict().safeParse(req.body);
+ if(!body.success)return res.status(400).json({error:'invalid_original_check'});
+ if(!originalInputsEnabled())return res.status(403).json({error:'recognition_originals_disabled'});
+ let stage='original_scope',authorized=false;
+ const started=Date.now();
+ try{
+  const trial=(await pool.query('SELECT approved_photo_sets FROM recognition_stability_trials WHERE id=$1 AND organization_id=$2 AND user_id=$3 AND opening_id=$4',[stabilityTrialId(),req.auth!.organizationId,req.auth!.userId,body.data.opening_id])).rows[0];
+  if(!trial?.approved_photo_sets?.length)return res.status(403).json({error:'original_check_scope_unavailable'});
+  const allowed=await pool.query(`SELECT 1 FROM (${openingsForOrgSubquery(2)}) a WHERE a.id=$1`,[body.data.opening_id,req.auth!.organizationId]);
+  if(!allowed.rows.length)return res.status(404).json({error:'opening_not_found'});
+  authorized=true;
+  const hashes:string[]=trial.approved_photo_sets.at(-1);
+  const rows=(await pool.query("SELECT DISTINCT ON (sha256_checksum) id,sha256_checksum,content_type FROM photos WHERE opening_id=$1 AND organization_id=$2 AND uploaded_by_user_id=$3 AND sha256_checksum=ANY($4::text[]) AND upload_state='verified' ORDER BY sha256_checksum,created_at DESC",[body.data.opening_id,req.auth!.organizationId,req.auth!.userId,hashes])).rows;
+  const ordered=hashes.map(hash=>rows.find(r=>r.sha256_checksum===hash));
+  if(ordered.some(r=>!r)||new Set(ordered.map(r=>r.content_type)).size!==1)throw Error('recognition_source_not_available');
+  const prepared=await prepareRecognitionOriginals(ordered.map(r=>r.id),{openingId:body.data.opening_id,organizationId:req.auth!.organizationId,userId:req.auth!.userId},ordered[0].content_type,value=>{stage=value;});
+  const result={ok:true,paid_calls:0,stage:'prepared',photo_count:prepared.images.length,sources:prepared.sources,dimensions:prepared.dimensions,elapsed_ms:Date.now()-started};
+  await pool.query("INSERT INTO audit_log(organization_id,user_id,action,method,path,request_body,status_code) VALUES($1,$2,'Checked original recognition inputs','POST','/api/recognition/originals/check',$3,200)",[req.auth!.organizationId,req.auth!.userId,JSON.stringify({opening_id:body.data.opening_id,...result})]);
+  return res.json(result);
+ }catch(error){
+  const result={ok:false,paid_calls:0,stage,reason:originalPreparationReason(error),elapsed_ms:Date.now()-started};
+  if(authorized)try{await pool.query("INSERT INTO audit_log(organization_id,user_id,action,method,path,request_body,status_code) VALUES($1,$2,'Checked original recognition inputs','POST','/api/recognition/originals/check',$3,422)",[req.auth!.organizationId,req.auth!.userId,JSON.stringify({opening_id:body.data.opening_id,...result})]);}catch{}
+  return res.json(result);
+ }
+});
 recognitionRouter.post('/stability/reconcile',requireRole('admin'),async(req:AuthedRequest,res)=>{
  const body=z.object({attempt_id:z.string().uuid(),evidence:z.string().trim().min(1).max(1000)}).strict().safeParse(req.body);
  if(!body.success)return res.status(400).json({error:'invalid_reconciliation_request'});
@@ -59,7 +88,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     b.media_type==='image/png'?x.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):
     x.subarray(0,4).toString()==='RIFF'&&x.subarray(8,12).toString()==='WEBP');
   if(!valid)return res.status(400).json({error:'image_type_mismatch'});
-  let phase:'opening_access'|'provider'|'recording'='opening_access';
+  let phase:'opening_access'|'original_retrieval'|'original_metadata'|'image_normalization'|'provider'|'recording'='opening_access';
   try{
     const allowed=await pool.query(`SELECT 1 FROM (${openingsForOrgSubquery(2)}) a WHERE a.id=$1`,[b.opening_id,req.auth!.organizationId]);
     if(!allowed.rows.length)return res.status(404).json({error:'opening_not_found'});
@@ -67,19 +96,17 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     const availability=recognitionAvailability();
     if(!availability.available)return res.status(503).json({error:availability.reason});
     const started=Date.now();
+    let sourceHashes:string[];
     if(b.photo_ids){
       if(!originalInputsEnabled())return res.status(403).json({error:'recognition_originals_disabled'});
-      const sources=await loadRecognitionOriginals(b.photo_ids,{openingId:b.opening_id,organizationId:req.auth!.organizationId,userId:req.auth!.userId},b.media_type);
-      images=sources.images;sourceManifest=sources.sources;
-      const metadata=await Promise.all(images.map(x=>sharp(x,{limitInputPixels:16_000_000}).metadata()));
-      const formats:Record<string,string>={'image/jpeg':'jpeg','image/png':'png','image/webp':'webp'};
-      if(metadata.some(m=>m.format!==formats[b.media_type]))return res.status(400).json({error:'image_type_mismatch'});
-      if(metadata.reduce((n,m)=>n+(m.width||0)*(m.height||0),0)>48_000_000)return res.status(413).json({error:'recognition_source_pixel_limit'});
+      const sources=await prepareRecognitionOriginals(b.photo_ids,{openingId:b.opening_id,organizationId:req.auth!.organizationId,userId:req.auth!.userId},b.media_type,value=>{phase=value;});
+      images=sources.images;sourceManifest=sources.sources;sourceHashes=sources.hashes;
+    }else{
+      sourceHashes=images.map(x=>createHash('sha256').update(x).digest('hex'));
+      phase='image_normalization';
+      const normalized:Buffer[]=[];for(const image of images)normalized.push(await normalizeRecognitionImage(image));
+      images=normalized;
     }
-    const sourceHashes=images.map(x=>createHash('sha256').update(x).digest('hex'));
-    // Native source pixels reach normalization/cropping without client resizing.
-    const normalized:Buffer[]=[];for(const image of images)normalized.push(await normalizeRecognitionImage(image));
-    images=normalized;
     b.images=images.map(x=>x.toString('base64'));b.media_type='image/png';
     phase='recording';
     const initial=(await pool.query(`INSERT INTO recognition_runs
@@ -223,7 +250,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
     return res.json({shadow_mode:true,suggestion,label_candidates:labels?.candidates||[],label_candidate:labels?.candidates?.length===1?labels.candidates[0]:null,reported_identity:reportedReferenceHint(b.technician_attributes),run_id:run.id,status,reference_comparison_failure:result.reference_comparison_failure||null,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
     }finally{await pool.query(`UPDATE recognition_runs SET status='failed' WHERE id=$1 AND status='running'`,[initial.id]);}});
-  }catch{return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':'recognition_provider_failed'});}
+  }catch{return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':['original_retrieval','original_metadata','image_normalization'].includes(phase)?'recognition_original_preparation_failed':'recognition_provider_failed'});}
 });
 
 // Recover a committed response after a gateway timeout, never start another AI call.
