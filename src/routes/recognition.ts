@@ -15,6 +15,7 @@ import {openingsForOrgSubquery} from '../db/tenantScope';
 import {legacyVisionHandler} from '../services/legacyVision';
 import {createHash} from 'node:crypto';
 import {readLabels,readTargetedLabels,applyLabelEvidence,LABEL_PROMPT_VERSION} from '../services/labelReading';
+import {catalogIdentityReview} from '../services/catalogIdentityReview';
 import {retrieveReferences,referenceFailureCode,resolvePartialMarkings,compareWithReferences,validateCitations,componentType,conservativeSuggestion,reportedReferenceHint,sanitizeReferenceComparison,REFERENCE_PROMPT_VERSION,RECOGNITION_MODEL} from '../services/referenceEvidence';
 
 const schema=z.object({
@@ -107,6 +108,11 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
           labels.candidates=exact.length?exact:matches;
         }
       }catch{/* Preserve photograph and raw label evidence if the catalog is unavailable. */}
+    }
+    if(stabilityTrialId()&&b.mode==='identify'&&result.component_class==='EXIT_DEVICE'&&labels){
+      const review=catalogIdentityReview(labels,result);
+      result.catalog_identity_review=review;
+      await recordRecognitionEvidence('catalog_identity_review',review);
     }
     result=applyLabelEvidence(result,labels||{version:'unavailable',status:'unavailable',reads:[],limiting_factor:'label_evidence_unavailable'});
     result=conservativeSuggestion(result,null);

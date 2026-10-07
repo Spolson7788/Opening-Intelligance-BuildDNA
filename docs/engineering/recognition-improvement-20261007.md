@@ -38,7 +38,15 @@ retain unknown-cost treatment; never invent missing output or zero cost.
 
 This changes scheduling and first-pass crop selection, not proven recognition.
 The locator still needs source-pixel review. This candidate does not implement
-full-original upload, PDQ catalog admission, identity/conflict states or scoring.
+full-original upload, final identity promotion, UI/export conflict presentation or scoring.
+
+Catalog update: reviewed official legacy PDQ rim designations are now available
+as candidate facts. Guarded exit-device trials attach catalog_identity_review,
+with exact model and maker-mark evidence grouped across photo indices. AI-only
+reads remain pending technician confirmation. Conflicting readable maker marks
+remain CONFLICT; classifier claims stay separate. The supplied current-product
+extract is preserved for review, but unsupported lifecycle/supersession claims
+and unverified price-book rows are not admitted. See docs/catalog/pdq/REVIEW.md.
 No PDQ expected strings or development-photo indices enter the reader prompts.
 
 # Next gates tied to the goal
