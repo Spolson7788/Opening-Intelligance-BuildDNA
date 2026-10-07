@@ -144,3 +144,15 @@ it('requires a distinct valid audited grant for each additional build comparison
  await fixture.db.query('INSERT INTO audit_log VALUES($1,$2,$3,$4,$5,now())',[randomUUID(),org,actor,'Authorized recognition rerun',JSON.stringify({trial_id:trial,build_sha:second,photo_hashes:sets[1],prior_run_id:firstRun})]);
  await registerStabilityRun(secondRun,randomUUID());expect(await used()).toBe(0);
 });
+it('stops the in-flight pipeline after an interrupted paid call without a second provider attempt',async()=>{
+ const id=await registered();const control:{stopped?:boolean}={};
+ const fetch=vi.fn(async()=>{throw new DOMException('provider timed out','TimeoutError');});vi.stubGlobal('fetch',fetch);
+ await recognitionAudit.run({runId:id,deadline:Date.now()+10000,trialControl:control},async()=>{
+  await expect(auditedFetch('https://api.anthropic.com/v1/messages',{body:JSON.stringify(body())},'label_locator')).rejects.toThrow('timed out');
+  expect(control.stopped).toBe(true);
+  await expect(auditedFetch('https://api.anthropic.com/v1/messages',{body:JSON.stringify(body())},'photo_analysis')).rejects.toThrow('label_account_limit');
+ });
+ expect(fetch).toHaveBeenCalledTimes(1);
+ expect(Number((await fixture.db.query('SELECT count(*) AS n FROM recognition_provider_attempts')).rows[0].n)).toBe(1);
+ expect(await used()).toBe(624000);
+});

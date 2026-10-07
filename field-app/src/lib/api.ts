@@ -10,7 +10,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 export async function recognizeHardware(openingId:string,images:string[],mediaType:string,attributes:Record<string,string>={},onRecovery?:()=>void,photoIds?:string[]) {
   const principal=await loadAuth();if(!principal)throw new ApiError(401,'missing_token');
   const requestId=crypto.randomUUID();
-  try{return requireRecognitionResult(await authedFetch('/recognition',{method:'POST',body:JSON.stringify({request_id:requestId,opening_id:openingId,...(photoIds?{photo_ids:photoIds}:{images}),media_type:mediaType,technician_attributes:attributes})},principal));}
+  try{return requireRecognitionResult(await authedFetch('/recognition',{method:'POST',body:JSON.stringify({request_id:requestId,opening_id:openingId,client_build_sha:import.meta.env.VITE_OI_BUILD_SHA,...(photoIds?{photo_ids:photoIds}:{images}),media_type:mediaType,technician_attributes:attributes})},principal));}
   catch(error){
     if(!(error instanceof ApiError)||error.status!==504||error.hostingAccessRequired)throw error;
     onRecovery?.();

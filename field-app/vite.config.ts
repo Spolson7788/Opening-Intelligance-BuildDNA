@@ -6,6 +6,7 @@ const base = process.env.OI_UI_BASE || '/'
 
 export default defineConfig({
   base,
+  define:{'import.meta.env.VITE_OI_BUILD_SHA':JSON.stringify(process.env.COMMIT_REF||'local_unstamped')},
   plugins: [
     react(),
     VitePWA({

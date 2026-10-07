@@ -52,7 +52,7 @@ export async function auditedFetch(url:string,init:RequestInit,stage:string,vali
   if(budgetReserved)await settleStabilityAttempt(id,trialCost);
   return new Response(raw,{status:response.status,statusText:response.statusText,headers:response.headers});
  }catch(error){
-  if(budgetReserved)await settleStabilityAttempt(id,null);
+  if(budgetReserved){await settleStabilityAttempt(id,null);if(context.trialControl)context.trialControl.stopped=true;await recordRecognitionEvidence('trial_stop',{reason:'provider_response_interrupted',attempt_id:id});}
   await pool.query(`UPDATE recognition_provider_attempts SET outcome=$2,latency_ms=$3,finished_at=now() WHERE id=$1`,[id,signal.aborted?'timeout':'error',Date.now()-started]);
   throw error;
  }

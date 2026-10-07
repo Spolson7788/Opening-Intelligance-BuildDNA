@@ -25,6 +25,7 @@ import {retrieveReferences,referenceFailureCode,resolvePartialMarkings,compareWi
 const schema=z.object({
   opening_id:z.string().uuid(),
   request_id:z.string().uuid().optional(),
+  client_build_sha:z.string().regex(/^[a-f0-9]{40}$/).optional(),
   images:z.array(z.string().min(4).max(2800000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/)).min(1).max(5).optional(),
   photo_ids:z.array(z.string().uuid()).min(3).max(5).optional(),
   media_type:z.enum(['image/jpeg','image/png','image/webp']),
@@ -36,7 +37,7 @@ recognitionRouter.use(requireAuth,requireRole('admin','technician','inspector','
 function recognitionAvailability(){
   const enabled=process.env.OI_RECOGNITION_ENABLED==='true'&&process.env.OI_RECOGNITION_SHADOW_ENABLED==='true';
   const providerConfigured=Boolean(process.env.ANTHROPIC_API_KEY?.trim());
-  return {...(originalInputsEnabled()?{original_photo_input_available:true,maximum_original_bytes:MAX_RECOGNITION_ORIGINAL_BYTES,maximum_original_set_bytes:MAX_RECOGNITION_SET_BYTES}:{}),available:enabled&&providerConfigured,blocking_reasons:[...(!enabled?['recognition_disabled']:[]),...(!providerConfigured?['recognition_provider_not_configured']:[])],reason:!enabled?'recognition_disabled':!providerConfigured?'recognition_provider_not_configured':null,reference_comparison_enabled:process.env.OI_REFERENCE_COMPARISON_ENABLED==='true'};
+  return {build_sha:recognitionBuild.build_sha,...(originalInputsEnabled()?{original_photo_input_available:true,maximum_original_bytes:MAX_RECOGNITION_ORIGINAL_BYTES,maximum_original_set_bytes:MAX_RECOGNITION_SET_BYTES}:{}),available:enabled&&providerConfigured,blocking_reasons:[...(!enabled?['recognition_disabled']:[]),...(!providerConfigured?['recognition_provider_not_configured']:[])],reason:!enabled?'recognition_disabled':!providerConfigured?'recognition_provider_not_configured':null,reference_comparison_enabled:process.env.OI_REFERENCE_COMPARISON_ENABLED==='true'};
 }
 // Report configuration presence only; credentials never leave the server.
 recognitionRouter.get('/availability',(_req,res)=>{
@@ -92,6 +93,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
   const parsed=schema.safeParse(req.body);
   if(!parsed.success)return res.status(400).json({error:'invalid_recognition_request'});
   const b=parsed.data;
+  if(stabilityTrialId()&&(b.client_build_sha!==recognitionBuild.build_sha||!['default','technician','AI'].includes(b.technician_attributes.component_type_source)))return res.status(409).json({error:'recognition_client_update_required'});
   let images:Buffer[]=(b.images||[]).map(s=>Buffer.from(s,'base64'));
   let sourceManifest:unknown[]=[];
   if(images.reduce((n,x)=>n+x.length,0)>2*1024*1024)return res.status(413).json({error:'recognition_images_too_large'});
@@ -145,6 +147,12 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
      labels=await bounded(()=>readTargetedLabels(images,b.media_type,deadline,b.technician_attributes),deadline,()=>({version:'oi-targeted-label-reading-3',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'}));
      // Preserve the combined label evidence before optional classification.
      await recordRecognitionEvidence('label_reading',labels);
+     if(labels.stage_outcomes?.label_locator.status==='failed'&&!labels.reads.length){
+      const timeout=/timeout|timed out/i.test(labels.stage_outcomes.label_locator.reason||'');
+      const error=timeout?'recognition_label_locator_timeout':'recognition_label_locator_failed';
+      await recordRecognitionEvidence('failure',{code:error,http_status:502,readers_started:false});
+      return res.status(502).json({error,run_id:initial.id});
+     }
      response=recognitionAudit.getStore()?.trialControl?.stopped?{statusCode:503,body:JSON.stringify({error:'recognition_provider_failed'})}:started+52000-Date.now()<12000?{statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}:await classify();
     }else [response,labels]=await Promise.all([classify(),label()]);
     await pool.query(`UPDATE recognition_runs SET stage_one=stage_one || $2::jsonb WHERE id=$1`,[initial.id,JSON.stringify({label_reading:labels})]);

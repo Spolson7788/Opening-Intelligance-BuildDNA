@@ -9,6 +9,9 @@ const photographedComponentTypes:Record<string,string>={DOOR_CLOSER:'closer',EXI
 
 export function recognitionFailureMessage(code:string){
   const messages:Record<string,string>={
+    recognition_client_update_required:'This page is an older app build. Reload the updated app before analysis. No AI call was made.',
+    recognition_label_locator_timeout:'The marking locator timed out before label or logo reading could start. The saved originals are retained. Do not retry this test yet.',
+    recognition_label_locator_failed:'The marking locator failed before label or logo reading could start. The saved originals are retained. Do not retry this test yet.',
     request_failed_504:'Analysis took too long and the server stopped the request. No identification result was returned. Your selected photograph remains available.',
     recognition_result_missing:'The server returned no usable analysis result. No identification was applied. Your selected photograph remains available.',
     recognition_saved_result_not_found:'The connection timed out and no saved result was found for this request. Your photograph remains selected. No analysis was retried automatically.',
@@ -57,7 +60,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
   const [savedOriginalMediaType,setSavedOriginalMediaType]=useState('');
   const [originalCheck,setOriginalCheck]=useState<any>(null);
   const [savedPreviews,setSavedPreviews]=useState<{photoId:string;url:string}[]>([]);
-  const [availability,setAvailability]=useState<{available:boolean;blocking_reasons:string[];reason:string|null;reference_comparison_enabled:boolean;original_photo_input_available?:boolean;maximum_original_bytes?:number;maximum_original_set_bytes?:number}|null>(null);
+  const [availability,setAvailability]=useState<{build_sha?:string;available:boolean;blocking_reasons:string[];reason:string|null;reference_comparison_enabled:boolean;original_photo_input_available?:boolean;maximum_original_bytes?:number;maximum_original_set_bytes?:number}|null>(null);
   const originalsEnabled=availability?.original_photo_input_available===true;
   const selectedBytes=files.reduce((n,f)=>n+f.size,0);
   const selectionError=files.length>5?'Select at most five photographs of the same component.':originalsEnabled?(files.length>0&&files.length<3?'Select at least three views: maker mark, identifying detail and full device.':files.some(f=>f.size>(availability?.maximum_original_bytes||0))||selectedBytes>(availability?.maximum_original_set_bytes||0)?'Original photographs exceed the bounded upload limits (12 MB each, 40 MB combined).':''):selectedBytes>2*1024*1024?'The combined photograph limit is 2 MB on this build.':'';
@@ -116,6 +119,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     const current=++generation.current;
     setTypeApplied(false);setError('');setProviderDiagnostic('');setResult(null);setResponse(null);setProgress('');setBusy(true);
     try{
+      if(availability?.build_sha&&availability.build_sha!==import.meta.env.VITE_OI_BUILD_SHA)throw Error('recognition_client_update_required');
       const restored=originalsEnabled&&originalSources.current?.openingId===openingId;
       if(!files.length&&!restored)throw Error('Select one to five photographs.');
       if(selectionError)throw Error(selectionError);
@@ -150,6 +154,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     {!availability&&!availabilityError&&<p role="status">Checking recognition availability…</p>}
     {availabilityError&&<p role="alert">{availabilityError}</p>}
     {availability&&!availability.available&&<div role="alert">{(availability.blocking_reasons||[availability.reason||'recognition_unavailable']).map(reason=><p key={reason}>{recognitionFailureMessage(reason)}</p>)}</div>}
+    <p>App build: <code>{import.meta.env.VITE_OI_BUILD_SHA}</code></p>
     {availability?.available&&!availability.reference_comparison_enabled&&<p>Photograph recognition is available. Manufacturer reference comparison is switched off on this server.</p>}
     <label>Reported model or readable markings<input value={markings} maxLength={300} disabled={busy} onChange={e=>{setMarkings(e.target.value);setResult(null);setResponse(null);}} placeholder="e.g. CR441 or Cal-Royal CR441"/></label>
     <label>Observed features or measurements<input value={features} maxLength={300} onChange={e=>setFeatures(e.target.value)}/></label>

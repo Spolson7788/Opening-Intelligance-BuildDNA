@@ -37,3 +37,12 @@ Misses are persisted and reviewable, but prompt/catalog updates and a blind held
 ## Next field criterion
 
 On the new stamped build, analyze the same saved camera originals as one device with a deliberate Exit Device selection. Expected identity: PDQ / 6200 / 6200R, located native logo/sticker evidence, explanation of any rejected classifier estimate/type conflict, no irrelevant closer-arm analysis. The technician separately acknowledges or corrects the result; export and score the confirmation. Keep the earlier failed runs frozen. A single development case does not establish general accuracy or field-rollout readiness.
+
+
+## Follow-up: locator interruption on the stamped field run
+
+The first field attempt on baf85238 failed before native readers started: the locator exceeded its 12-second provider window, returned no reply, and kept its unknown-cost reservation. The saved-originals check had succeeded. This is an execution failure, not a measured identity result. Keep that failed run frozen.
+
+The request omitted frontend type provenance even though the backend build was current. This suggests an older client; the cache cause is not established. The follow-up stamps the frontend, checks availability against that stamp, and rejects stale trial clients or missing provenance before originals preparation, run registration or a provider call. A locator failure with no reads now returns a stage-specific error. An interrupted reserved request stops subsequent stages and preserves the reservation. No paid retry is authorized by these safeguards; the trial remains paused.
+
+Offline validation covers stopping the in-flight pipeline after an interrupted paid call without issuing a second request. The locator's fixed short window is still an execution bottleneck. A durable staged/background workflow with persisted stage outputs and independent reader budgets is the next implementation target; raising one timeout alone would consume the downstream reader window. These admission/error fixes are not evidence of improved recognition.
