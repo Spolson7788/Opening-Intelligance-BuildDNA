@@ -35,7 +35,7 @@ it('maps the same marking from all four rotated views to one original box',()=>{
 
 it('revisits the locator maker region when a blank reader proposal lies elsewhere',async()=>{
  const image=await sharp({create:{width:1000,height:1200,channels:3,background:'white'}}).png().toBuffer();
- const read:any={region:{photo_index:0,kind:'brand_mark'},locator_region:{photo_index:0,kind:'brand_mark',x:.3,y:.4,w:.25,h:.18},provenance:{source:'native_tile',target_device:true,location_validated:false,box:{x:.75,y:.43,w:.06,h:.13}}};
+ const read:any={vision_status:'read',vision_text:'ABC',region:{photo_index:0,kind:'brand_mark'},locator_region:{photo_index:0,kind:'brand_mark',x:.3,y:.4,w:.25,h:.18},provenance:{source:'native_tile',target_device:true,location_validated:false,box:{x:.75,y:.43,w:.06,h:.13}}};
  const focus=await focusedMarkingViews(image,read);
  expect(focus.box.left).toBeLessThanOrEqual(300);expect(focus.box.left+focus.box.width).toBeGreaterThanOrEqual(550);
  expect(focus.box.left+focus.box.width).toBeLessThan(750);
@@ -60,4 +60,9 @@ it('checks marking structure at consistent scale without turning blank metal int
  const letters=await sharp(Buffer.from('<svg width="600" height="800"><rect width="600" height="800" fill="#999"/><text x="90" y="400" font-size="130" fill="#777">ABC</text></svg>')).png().toBuffer();
  const large=await sharp(letters).resize(1200,1600).png().toBuffer();
  expect(await markingStructurePresent(letters)).toBe(true);expect(await markingStructurePresent(large)).toBe(true);
+});
+
+it('does not verify an empty or explicitly unreadable initial transcription',()=>{
+ expect(canFocusMarking({...read(),vision_text:''})).toBe(false);
+ expect(canFocusMarking({...read(),vision_status:'unreadable'})).toBe(false);
 });

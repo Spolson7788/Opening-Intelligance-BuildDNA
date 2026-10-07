@@ -180,24 +180,32 @@ export async function readFocusedMarkings(images:Buffer[],prior:LabelEvidence,de
  const selected=prior.reads.map((read,index)=>({read,index})).filter(({read})=>canFocusMarking(read)).slice(0,2);
  const outcomes={...prior.stage_outcomes,label_reread:{status:'not_attempted',reason:'focused_native_verification'}};
  const reads=[...prior.reads];const content:any[]=[];const focuses=new Map<number,Awaited<ReturnType<typeof focusedMarkingViews>>>();
+ const prepared:typeof selected=[];const skipped:{crop_index:number;reason:string}[]=[];
  try{
   for(const {read,index} of selected){
+   const localContent:any[]=[];
+   try{
    const focus=await focusedMarkingViews(images[read.region.photo_index],read);focuses.set(index,focus);
-   content.push({type:'text',text:`Requested ${read.region.kind==='brand_mark'?'maker letters':'model-heading text'} for crop_index ${index}, source photograph ${read.region.photo_index}. Four orientations of the SAME native crop; not independent evidence.`});
+   localContent.push({type:'text',text:`Requested ${read.region.kind==='brand_mark'?'maker letters':'model-heading text'} for crop_index ${index}, source photograph ${read.region.photo_index}. Four orientations of the SAME native crop; not independent evidence.`});
    const encodedViews=[];
    for(const [viewIndex,view] of focus.views.entries()){
     const m=await sharp(view.image).metadata();
     const outgoing=await prepareProviderImage(view.image);
     if(outgoing.metadata.width!==m.width||outgoing.metadata.height!==m.height)throw Error('focused_native_image_budget');
     encodedViews.push({view_index:viewIndex,rotation:view.rotation,source_sha256:createHash('sha256').update(view.image).digest('hex'),provider_sha256:createHash('sha256').update(outgoing.data).digest('hex'),width:m.width,height:m.height});
-    content.push({type:'text',text:`Crop ${index}, view_index ${viewIndex}, clockwise rotation ${view.rotation}. Cite this supplied view by its integer index; do not draw a new letter box.`},{type:'image',source:{type:'base64',media_type:'image/jpeg',data:outgoing.data.toString('base64')}});
+    localContent.push({type:'text',text:`Crop ${index}, view_index ${viewIndex}, clockwise rotation ${view.rotation}. Cite this supplied view by its integer index; do not draw a new letter box.`},{type:'image',source:{type:'base64',media_type:'image/jpeg',data:outgoing.data.toString('base64')}});
    }
-   const context=await prepareProviderImage(images[read.region.photo_index]);content.push({type:'text',text:'Whole source photograph for target-device association only. Do not transcribe from it.'},{type:'image',source:{type:'base64',media_type:'image/jpeg',data:context.data.toString('base64')}});
+   const context=await prepareProviderImage(images[read.region.photo_index]);localContent.push({type:'text',text:'Whole source photograph for target-device association only. Do not transcribe from it.'},{type:'image',source:{type:'base64',media_type:'image/jpeg',data:context.data.toString('base64')}});
    await recordRecognitionEvidence(`focused_marking_views_${index}`,{photo_index:read.region.photo_index,box:focus.box,source_sha256:createHash('sha256').update(images[read.region.photo_index]).digest('hex'),views:encodedViews,previous_read_withheld:true,verification_contract:'oi-focused-marking-view-1',evidence_scope:'whole_supplied_native_view'});
+   content.push(...localContent);prepared.push({read,index});
+   }catch(error){
+    const reason=(error as Error).message;skipped.push({crop_index:index,reason});focuses.delete(index);
+    await recordRecognitionEvidence(`focused_marking_skipped_${index}`,{photo_index:read.region.photo_index,reason,other_crops_retained:true});
+   }
   }
-  if(!selected.length)return prior;
-  const value=await ask(content,'Transcribe visible letters from the focused native views only. Every view is identified by crop_index and view_index. All four rotations show the SAME pixels; they are not independent confirmation. For a maker mark transcribe ALL maker letters, excluding decorative emblems from text; never guess a known maker, identify from shape or complete missing letters. For a sticker read the model heading exactly. Return only JSON {reads:[{crop_index,view_index,text,legibility,source:"focused_view",all_characters_visible,target_device}],limiting_factor}. view_index must be the INTEGER 0,1,2 or 3 printed beside the supplied image. Do not provide text_box or coordinates: the server already knows the exact source view bounds. all_characters_visible MUST be a JSON boolean: true only when every character is visibly present inside that view, false for clipped or obscured letters. legibility must be clear, partial or illegible. Use clear only when all transcribed characters are readable; use ? for uncertain characters. target_device MUST be a JSON boolean true or false, never a device name, description, quoted boolean or null. Use true only when the marking is on the target hardware in the whole source photograph, false for another device. A crop of that same hardware remains the target regardless of rotation. Empty text is correct when unreadable. No prior guesses, catalog, expected names or expected models are supplied.'+labelReadContract(selected.map(s=>s.index)),deadline,30000,'label_reread',selected.map(s=>s.index));
-  for(const {read,index} of selected){
+  if(!prepared.length)return skipped.length?{...prior,status:'partial',limiting_factor:skipped[0].reason,stage_outcomes:{...outcomes,label_reread:{status:'not_attempted',reason:'no_usable_focused_views'}}}:prior;
+  const value=await ask(content,'Transcribe visible letters from the focused native views only. Every view is identified by crop_index and view_index. All four rotations show the SAME pixels; they are not independent confirmation. For a maker mark transcribe ALL maker letters, excluding decorative emblems from text; never guess a known maker, identify from shape or complete missing letters. For a sticker read the model heading exactly. Return only JSON {reads:[{crop_index,view_index,text,legibility,source:"focused_view",all_characters_visible,target_device}],limiting_factor}. view_index must be the INTEGER 0,1,2 or 3 printed beside the supplied image. Do not provide text_box or coordinates: the server already knows the exact source view bounds. all_characters_visible MUST be a JSON boolean: true only when every character is visibly present inside that view, false for clipped or obscured letters. legibility must be clear, partial or illegible. Use clear only when all transcribed characters are readable; use ? for uncertain characters. target_device MUST be a JSON boolean true or false, never a device name, description, quoted boolean or null. Use true only when the marking is on the target hardware in the whole source photograph, false for another device. A crop of that same hardware remains the target regardless of rotation. Empty text is correct when unreadable. No prior guesses, catalog, expected names or expected models are supplied.'+labelReadContract(prepared.map(s=>s.index)),deadline,30000,'label_reread',prepared.map(s=>s.index));
+  for(const {read,index} of prepared){
    const r=value.reads.find((v:any)=>v.crop_index===index);if(!r)continue;
    const focus=focuses.get(index)!;
    const provenance=resolveFocusedViewRead(r,focus);
@@ -213,8 +221,8 @@ export async function readFocusedMarkings(images:Buffer[],prior:LabelEvidence,de
    // rejected location does not become proof just because the reader repeated it.
    reads.push(focused);await recordRecognitionEvidence(`focused_marking_read_${index}`,focused);
   }
-  outcomes.label_reread={status:value.validation?.status==='partial'?'partial':'succeeded',reason:'same_engine_focused_pixels_not_independent_confirmation'};
-  return {...prior,reads,stage_outcomes:outcomes,candidates:labelCandidates(reads),limiting_factor:value.validation?.status==='partial'?'label_partial_reads':null,status:value.validation?.status==='partial'?'partial':'completed'};
+  outcomes.label_reread={status:skipped.length||value.validation?.status==='partial'?'partial':'succeeded',reason:'same_engine_focused_pixels_not_independent_confirmation'};
+  return {...prior,reads,stage_outcomes:outcomes,candidates:labelCandidates(reads),limiting_factor:skipped.length?skipped[0].reason:value.validation?.status==='partial'?'label_partial_reads':null,status:skipped.length||value.validation?.status==='partial'?'partial':'completed'};
  }catch(error){
   const reason=['TimeoutError','AbortError'].includes((error as Error).name)?'label_timeout':(error as Error).message;
   outcomes.label_reread={status:'failed',reason};await recordRecognitionEvidence('focused_marking_failure',{reason});

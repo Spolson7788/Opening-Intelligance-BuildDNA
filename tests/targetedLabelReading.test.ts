@@ -103,3 +103,23 @@ it('retains prior evidence if the focused verification request fails',async()=>{
  const prior:any={version:'oi-targeted-label-reading-3',status:'completed',limiting_factor:null,reads:[{region:{photo_index:0,x:.2,y:.2,w:.2,h:.2,rotation:0,kind:'brand_mark'},provenance:{source:'native_tile',target_device:true,location_validated:true,box:{x:.2,y:.2,w:.2,h:.2}},vision_text:'ABC',vision_status:'read',ocr_text:'',ocr_confidence:0,agreed_markings:[],status:'unconfirmed'}]};
  audit.fetch.mockRejectedValue(new DOMException('timeout','TimeoutError'));const result=await readFocusedMarkings([source],prior,Date.now()+32000);expect(result.reads).toEqual(prior.reads);expect(result.limiting_factor).toBe('label_timeout');expect(result.stage_outcomes?.label_reread.status).toBe('failed');
 });
+
+it.each([false,true])('isolates an oversized target and still verifies the other marking (oversized last=%s)',async oversizedLast=>{
+ const source=await sharp(Buffer.from('<svg width="1800" height="1800"><rect width="1800" height="1800" fill="white"/><text x="350" y="600" font-size="180" fill="black">ABC</text></svg>')).png().toBuffer();
+ const base={vision_status:'read',ocr_text:'',ocr_confidence:0,agreed_markings:[],status:'unconfirmed'};
+ const large={...base,vision_text:'1234R',region:{photo_index:0,kind:'product_label'},provenance:{source:'native_tile',target_device:true,location_validated:true,box:{x:0,y:0,w:1,h:1}}};
+ const maker={...base,vision_text:'wrong earlier guess',region:{photo_index:1,kind:'brand_mark'},provenance:{source:'native_tile',target_device:true,location_validated:false,box:{x:.2,y:.2,w:.2,h:.2}}};
+ const entries=oversizedLast?[maker,large]:[large,maker];const index=oversizedLast?0:1;
+ const prior:any={version:'oi-targeted-label-reading-3',status:'completed',limiting_factor:null,reads:entries};
+ audit.fetch.mockImplementation(async(_url,init,stage)=>{
+  expect(stage).toBe('label_reread');const content=JSON.parse(init.body).messages[0].content;
+  expect(content.filter((c:any)=>c.type==='image')).toHaveLength(5);
+  expect(content.at(-1).text).toContain('crop_index in ['+index+']');
+  return envelope({reads:[{crop_index:index,text:'ABC',legibility:'clear',source:'focused_view',view_index:0,all_characters_visible:true,target_device:true}]});
+ });
+ const result=await readFocusedMarkings([source,source],prior,Date.now()+32000);
+ expect(audit.fetch).toHaveBeenCalledOnce();expect(result.reads.slice(0,2)).toEqual(entries);
+ expect(result.reads[2]).toMatchObject({vision_text:'ABC',region:{photo_index:1}});
+ expect(result.status).toBe('partial');expect(result.limiting_factor).toBe('focused_region_too_large');
+ expect(audit.record.mock.calls.some(([key])=>key==='focused_marking_skipped_'+(oversizedLast?1:0))).toBe(true);
+});

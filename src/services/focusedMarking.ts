@@ -3,7 +3,7 @@ import {recognitionInputPixelLimit} from './recognitionOriginalLimits';
 import type {LabelRead,ReadProvenance} from './labelReading';
 export function canFocusMarking(read:LabelRead){
  const p=read.provenance,b=p?.box;
- return p?.source==='native_tile'&&p.target_device===true&&!!b&&[b.x,b.y,b.w,b.h].every(Number.isFinite)&&b.x>=0&&b.y>=0&&b.w>0&&b.h>0&&b.x+b.w<=1&&b.y+b.h<=1;
+ return read.vision_status==='read'&&typeof read.vision_text==='string'&&read.vision_text.trim().length>0&&p?.source==='native_tile'&&p.target_device===true&&!!b&&[b.x,b.y,b.w,b.h].every(Number.isFinite)&&b.x>=0&&b.y>=0&&b.w>0&&b.h>0&&b.x+b.w<=1&&b.y+b.h<=1;
 }
 export async function focusedMarkingViews(image:Buffer,read:LabelRead){
  if(!canFocusMarking(read))throw Error('focused_location_missing');
