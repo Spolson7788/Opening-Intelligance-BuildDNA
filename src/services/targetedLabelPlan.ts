@@ -1,4 +1,9 @@
 import type {LabelRegion} from './labelReading';
+// Give reading its own clock after originals are prepared, while reserving
+// classifier and persistence time inside the synchronous function budget.
+export function targetedLabelDeadline(started:number,now=Date.now()){
+ return Math.min(started+41_000,now+32_000);
+}
 
 // A sticker/model label and a separate maker mark take priority over fallback
 // search areas. No brand/model names or development-photo indices enter this plan.

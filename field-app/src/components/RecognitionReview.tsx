@@ -53,6 +53,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
   const fileInput=useRef<HTMLInputElement>(null);
   const originalSources=useRef<{openingId:string;ids:string[]}|null>(null);
   const [savedOriginalCount,setSavedOriginalCount]=useState(0);
+  const [savedOriginalMediaType,setSavedOriginalMediaType]=useState('');
   const [originalCheck,setOriginalCheck]=useState<any>(null);
   const [availability,setAvailability]=useState<{available:boolean;blocking_reasons:string[];reason:string|null;reference_comparison_enabled:boolean;original_photo_input_available?:boolean;maximum_original_bytes?:number;maximum_original_set_bytes?:number}|null>(null);
   const originalsEnabled=availability?.original_photo_input_available===true;
@@ -70,6 +71,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     return ()=>{active=false;};
   },[openingId]);
   async function ensureOriginalUploads(current:number){
+    if(originalSources.current?.openingId===openingId)return originalSources.current.ids;
     if(!files.length)throw Error('Select at least three photographs.');
     if(selectionError)throw Error(selectionError);
     if(!['image/jpeg','image/png','image/webp'].includes(files[0].type)||files.some(f=>f.type!==files[0].type))throw Error('Use JPEG, PNG or WebP photographs of the same format.');
@@ -79,6 +81,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
       originalSources.current={openingId,ids};
     }
     setSavedOriginalCount(originalSources.current!.ids.length);
+    setSavedOriginalMediaType(files[0].type);
     onFilesChange([]);
     return originalSources.current!.ids;
   }
@@ -93,8 +96,15 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     finally{if(current===generation.current)setBusy(false);}
   }
   async function checkOriginals(){
-    const current=++generation.current;setBusy(true);setError('');setOriginalCheck(null);setProgress('Checking saved originals — no AI call…');
-    try{const checked=await checkSavedRecognitionOriginals(openingId);if(current===generation.current)setOriginalCheck(checked);}
+    const current=++generation.current;originalSources.current=null;setSavedOriginalCount(0);setSavedOriginalMediaType('');setBusy(true);setError('');setOriginalCheck(null);setProgress('Checking saved originals — no AI call…');
+    try{const checked=await checkSavedRecognitionOriginals(openingId);if(current===generation.current){
+      setOriginalCheck(checked);
+      if(checked.ok&&Array.isArray(checked.sources)&&checked.sources.length>=3&&checked.sources.length<=5&&['image/jpeg','image/png','image/webp'].includes(checked.media_type)){
+        originalSources.current={openingId,ids:checked.sources.map((s:any)=>s.photo_id)};
+        setSavedOriginalCount(checked.sources.length);setSavedOriginalMediaType(checked.media_type);
+        setFiles([]);if(fileInput.current)fileInput.current.value='';onFilesChange([]);
+      }
+    }}
     catch(e){if(current===generation.current)setError(e instanceof Error?e.message:'Original check failed.');}
     finally{if(current===generation.current)setBusy(false);}
   }
@@ -102,9 +112,11 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     const current=++generation.current;
     setTypeApplied(false);setError('');setProviderDiagnostic('');setResult(null);setResponse(null);setProgress('');setBusy(true);
     try{
-      if(!files.length)throw Error('Select one to five photographs.');
+      const restored=originalsEnabled&&originalSources.current?.openingId===openingId;
+      if(!files.length&&!restored)throw Error('Select one to five photographs.');
       if(selectionError)throw Error(selectionError);
-      if(!['image/jpeg','image/png','image/webp'].includes(files[0].type)||files.some(f=>f.type!==files[0].type))throw Error('Use JPEG, PNG or WebP photographs of the same format.');
+      const mediaType=files[0]?.type||savedOriginalMediaType;
+      if(!['image/jpeg','image/png','image/webp'].includes(mediaType)||files.some(f=>f.type!==mediaType))throw Error('Use JPEG, PNG or WebP photographs of the same format.');
       let photoIds:string[]|undefined;
       if(originalsEnabled){
        photoIds=await ensureOriginalUploads(current);
@@ -113,7 +125,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
         const reader=new FileReader();reader.onerror=()=>reject(Error('Could not read photograph.'));
         reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.readAsDataURL(f);
       })));
-      const response=await recognizeHardware(openingId,images,files[0].type,{...attributes,visible_markings:markings,observed_features:features},()=>{if(current===generation.current)setProgress('Retrieving saved analysis…');},photoIds);
+      const response=await recognizeHardware(openingId,images,mediaType,{...attributes,visible_markings:markings,observed_features:features},()=>{if(current===generation.current)setProgress('Retrieving saved analysis…');},photoIds);
       if(current===generation.current){
         setResult(response.suggestion);setResponse(response);
         const componentType=photographedComponentTypes[String(response.suggestion.component_class||'')];
@@ -147,7 +159,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     {originalCheck&&<p role={originalCheck.ok?'status':'alert'}>{originalCheck.ok?`${originalCheck.photo_count} originals downloaded, checksummed and prepared successfully.`:`Original check failed at ${originalCheck.stage}: ${originalCheck.reason}.`} No AI call was made.</p>}
     {originalsEnabled&&<button type="button" disabled={busy||!files.length||!!selectionError||savedOriginalCount===files.length} onClick={saveOriginals}>Save original photos without analysis</button>}
     {originalsEnabled&&savedOriginalCount>0&&<p role="status">{savedOriginalCount} original photos saved privately to this opening. Analyze uses this same saved set.</p>}
-    <button type="button" disabled={busy||!files.length||!!selectionError||!availability?.available} onClick={analyze}>{busy?progress||'Analyzing…':'Analyze photographs'}</button>
+    <button type="button" disabled={busy||(!files.length&&!(savedOriginalCount>0&&originalSources.current?.openingId===openingId))||!!selectionError||!availability?.available} onClick={analyze}>{busy?progress||'Analyzing…':'Analyze photographs'}</button>
     {error&&<p role="alert">{error}</p>}
     {providerDiagnostic&&<p>Administrator diagnostic: {providerDiagnostic}</p>}
     {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — {originalsEnabled?'originals are saved privately to this opening before analysis.':'will attach when you save this hardware.'}</p>}

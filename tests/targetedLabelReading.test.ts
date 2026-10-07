@@ -4,7 +4,14 @@ const audit=vi.hoisted(()=>({fetch:vi.fn(),record:vi.fn(async()=>{})}));
 vi.mock('../src/services/recognitionAudit',()=>({auditedFetch:audit.fetch,recordRecognitionEvidence:audit.record,recognitionAuditStopped:()=>false}));
 vi.mock('tesseract.js',()=>({PSM:{SINGLE_LINE:'7',SPARSE_TEXT:'11'},createWorker:vi.fn(async()=>({setParameters:async()=>{},recognize:async()=>({data:{text:'1234R',confidence:90}}),terminate:async()=>{}}))}));
 import {normalizeRegions,readTargetedLabels} from '../src/services/labelReading';
-import {targetedLabelPlan,targetedReaderCanStart} from '../src/services/targetedLabelPlan';
+import {targetedLabelPlan,targetedReaderCanStart,targetedLabelDeadline} from '../src/services/targetedLabelPlan';
+it('original preparation leaves reader headroom and classifier time within the run deadline',()=>{
+ const deadline=targetedLabelDeadline(0,12_211);
+ expect(deadline).toBe(41_000);
+ expect(targetedReaderCanStart(deadline,12_211+8_000)).toBe(true);
+ expect(52_000-deadline).toBeGreaterThanOrEqual(11_000);
+ expect(targetedLabelDeadline(0,1_000)).toBe(33_000);
+});
 const envelope=(value:unknown)=>Response.json({content:[{type:'text',text:JSON.stringify(value)}]});
 beforeEach(()=>{audit.fetch.mockReset();audit.record.mockClear();});
 it('separates cast maker marks from model-line boxes and prioritizes physical labels from other views',()=>{

@@ -18,6 +18,7 @@ import {readLabels,readTargetedLabels,applyLabelEvidence,LABEL_PROMPT_VERSION} f
 import {catalogIdentityReview} from '../services/catalogIdentityReview';
 import {originalInputsEnabled,MAX_RECOGNITION_ORIGINAL_BYTES,MAX_RECOGNITION_SET_BYTES} from '../services/recognitionOriginalLimits';
 import {prepareRecognitionOriginals,originalPreparationReason} from '../services/recognitionOriginals';
+import {targetedLabelDeadline} from '../services/targetedLabelPlan';
 import {retrieveReferences,referenceFailureCode,resolvePartialMarkings,compareWithReferences,validateCitations,componentType,conservativeSuggestion,reportedReferenceHint,sanitizeReferenceComparison,REFERENCE_PROMPT_VERSION,RECOGNITION_MODEL} from '../services/referenceEvidence';
 
 const schema=z.object({
@@ -61,7 +62,7 @@ recognitionRouter.post('/originals/check',async(req:AuthedRequest,res)=>{
   const ordered=hashes.map(hash=>rows.find(r=>r.sha256_checksum===hash));
   if(ordered.some(r=>!r)||new Set(ordered.map(r=>r.content_type)).size!==1)throw Error('recognition_source_not_available');
   const prepared=await prepareRecognitionOriginals(ordered.map(r=>r.id),{openingId:body.data.opening_id,organizationId:req.auth!.organizationId,userId:req.auth!.userId},ordered[0].content_type,value=>{stage=value;});
-  const result={ok:true,paid_calls:0,stage:'prepared',photo_count:prepared.images.length,sources:prepared.sources,dimensions:prepared.dimensions,elapsed_ms:Date.now()-started};
+  const result={ok:true,paid_calls:0,stage:'prepared',photo_count:prepared.images.length,media_type:ordered[0].content_type,sources:prepared.sources,dimensions:prepared.dimensions,elapsed_ms:Date.now()-started};
   await pool.query("INSERT INTO audit_log(organization_id,user_id,action,method,path,request_body,status_code) VALUES($1,$2,'Checked original recognition inputs','POST','/api/recognition/originals/check',$3,200)",[req.auth!.organizationId,req.auth!.userId,JSON.stringify({opening_id:body.data.opening_id,...result})]);
   return res.json(result);
  }catch(error){
@@ -113,19 +114,20 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
      (organization_id,opening_id,user_id,photo_hashes,technician_attributes,component_type,stage_one,suggestion,retrieved_pages,citations,rejected_citations,conflicts,status,model_id,prompt_version)
      VALUES($1,$2,$3,$4,$5,NULL,$6,'{}','[]','[]','[]','[]','running',$7,$8) RETURNING id`,[
      req.auth!.organizationId,b.opening_id,req.auth!.userId,JSON.stringify(sourceHashes),JSON.stringify(b.technician_attributes),JSON.stringify({request_id:b.request_id,shadow_mode:true,source_inputs:sourceManifest,recognition_versions:{...recognitionBuild,label_prompt:LABEL_PROMPT_VERSION,label_response:LABEL_RESPONSE_VERSION,reference_prompt:REFERENCE_PROMPT_VERSION},libraries:{sharp:sharp.versions,tesseract:require('tesseract.js/package.json').version}}),RECOGNITION_MODEL,REFERENCE_PROMPT_VERSION])).rows[0];
-    return await recognitionAudit.run({runId:initial.id,deadline:started+49000,trialControl:{}},async()=>{try{
+    return await recognitionAudit.run({runId:initial.id,deadline:started+(stabilityTrialId()?55000:49000),trialControl:{}},async()=>{try{
     if(stabilityTrialId()&&b.mode!=='identify')throw Error('stability_identify_mode_required');
     await registerStabilityRun(initial.id,b.request_id);
     phase='provider';
     const bounded=<T>(work:()=>Promise<T>,deadline:number,fallback:()=>T)=>withinRecognitionBudget(signal=>recognitionAudit.run({...recognitionAudit.getStore()!,signal},work),deadline,fallback);
-    const classify=()=>bounded(()=>legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,technician_attributes:{},timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})}),stabilityTrialId()?Math.min(started+46000,Date.now()+18000):started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}));
+    const classify=()=>bounded(()=>legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,technician_attributes:{},timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})}),stabilityTrialId()?Math.min(started+52000,Date.now()+18000):started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}));
     const label=()=>b.mode==='identify'?bounded(()=>readLabels(images,b.media_type,Math.min(started+46000,Date.now()+24000)),Math.min(started+46000,Date.now()+24000),()=>({version:LABEL_PROMPT_VERSION,status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null);
     // Trial calls are sequenced so the conservative per-call ceiling settles
     // before the next reservation. Ordinary shadow mode retains its concurrency.
     let response:Awaited<ReturnType<typeof classify>>,labels:Awaited<ReturnType<typeof label>>;
     if(stabilityTrialId()){
      await recordRecognitionEvidence('label_strategy',{version:'targeted-label-1',order:'label_before_classifier',reader_budget_ms:32000,ocr_order:'after_reader'});
-     labels=await bounded(()=>readTargetedLabels(images,b.media_type,started+32000),started+32000,()=>({version:'oi-targeted-label-reading-1',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'}));
+     const deadline=targetedLabelDeadline(started);
+     labels=await bounded(()=>readTargetedLabels(images,b.media_type,deadline),deadline,()=>({version:'oi-targeted-label-reading-1',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'}));
      response=recognitionAudit.getStore()?.trialControl?.stopped?{statusCode:503,body:JSON.stringify({error:'recognition_provider_failed'})}:await classify();
     }else [response,labels]=await Promise.all([classify(),label()]);
     await pool.query(`UPDATE recognition_runs SET stage_one=stage_one || $2::jsonb WHERE id=$1`,[initial.id,JSON.stringify({label_reading:labels})]);
