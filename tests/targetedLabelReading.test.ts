@@ -7,13 +7,34 @@ import {normalizeRegions,readTargetedLabels} from '../src/services/labelReading'
 import {targetedLabelPlan,targetedReaderCanStart,targetedLabelDeadline} from '../src/services/targetedLabelPlan';
 it('original preparation leaves reader headroom and classifier time within the run deadline',()=>{
  const deadline=targetedLabelDeadline(0,12_211);
- expect(deadline).toBe(41_000);
+ expect(deadline).toBe(43_000);
  expect(targetedReaderCanStart(deadline,12_211+8_000)).toBe(true);
- expect(52_000-deadline).toBeGreaterThanOrEqual(11_000);
+ expect(52_000-deadline).toBeGreaterThanOrEqual(9_000);
  expect(targetedLabelDeadline(0,1_000)).toBe(33_000);
 });
 const envelope=(value:unknown)=>Response.json({content:[{type:'text',text:JSON.stringify(value)}]});
 beforeEach(()=>{audit.fetch.mockReset();audit.record.mockClear();});
+it('starts the logo while the sticker is still pending and checkpoints their evidence independently',async()=>{
+ const source=await sharp({create:{width:100,height:100,channels:3,background:'white'}}).png().toBuffer();
+ let finishSticker!:(value:Response)=>void;
+ const sticker=new Promise<Response>(resolve=>{finishSticker=resolve;});
+ let logoStarted!:(value:void)=>void;
+ const logo=new Promise<void>(resolve=>{logoStarted=resolve;});
+ audit.fetch.mockImplementation(async(_url,init,stage)=>{
+  if(stage==='label_locator')return envelope({regions:[{photo_index:0,x:0,y:0,w:.4,h:.4,rotation:0,kind:'product_label'},{photo_index:1,x:0,y:0,w:.4,h:.4,rotation:0,kind:'brand_mark'}]});
+  const content=JSON.parse(init.body).messages[0].content;
+  expect(content.filter((c:any)=>c.type==='image')).toHaveLength(2);
+  if(content[0].text.includes('crop 0'))return sticker;
+  logoStarted();return envelope({reads:[{crop_index:1,text:'Visible maker',legibility:'clear'}]});
+ });
+ const result=readTargetedLabels([source,source],'image/png',Date.now()+32000);
+ await logo;
+ finishSticker(envelope({reads:[{crop_index:0,text:'1234R',legibility:'clear'}]}));
+ const value=await result;
+ expect(value.reads.map(r=>r.vision_text)).toEqual(['1234R','Visible maker']);
+ expect(audit.record.mock.calls.map(c=>c[0])).toEqual(expect.arrayContaining(['targeted_label_read_0','targeted_label_read_1']));
+ expect(value.reads.every(r=>r.ocr_status==='not_attempted'&&r.agreed_markings.length===0)).toBe(true);
+});
 it('separates cast maker marks from model-line boxes and prioritizes physical labels from other views',()=>{
  const regions=normalizeRegions([{photo_index:0,x:.1,y:.1,w:.5,h:.5,rotation:90,kind:'brand_mark',model_line_box:{x:.2,y:.2,w:.2,h:.1}},{photo_index:1,x:.2,y:.2,w:.4,h:.4,rotation:0,kind:'product_label',model_line_box:{x:.25,y:.25,w:.2,h:.1}}],2);
  expect(regions[0].model_line_box).toBeUndefined();expect(regions[1].model_line_box).toBeDefined();
@@ -23,12 +44,11 @@ it('separates cast maker marks from model-line boxes and prioritizes physical la
 });
 it('sends one native crop per reader call and retains a completed transcription if a later crop times out',async()=>{
  const source=await sharp({create:{width:400,height:300,channels:3,background:'white'}}).png().toBuffer();
- let count=0;
  audit.fetch.mockImplementation(async(_url,init,stage)=>{
   const request=JSON.parse(init.body);const content=request.messages[0].content;
   if(stage==='label_locator')return envelope({regions:[{photo_index:0,x:.1,y:.1,w:.4,h:.4,rotation:0,kind:'brand_mark'},{photo_index:1,x:.1,y:.1,w:.5,h:.5,rotation:0,kind:'product_label'}]});
-  expect(stage).toBe('label_reader');expect(content.filter((b:any)=>b.type==='image')).toHaveLength(1);
-  if(count++===0)return envelope({reads:[{crop_index:0,text:'1234R',legibility:'clear'}]});
+  expect(stage).toBe('label_reader');expect(content.filter((b:any)=>b.type==='image')).toHaveLength(2);
+  if(content[0].text.includes('crop 0'))return envelope({reads:[{crop_index:0,text:'1234R',legibility:'clear'}]});
   throw new DOMException('late reader','TimeoutError');
  });
  const result=await readTargetedLabels([source,source],'image/png',Date.now()+32000);

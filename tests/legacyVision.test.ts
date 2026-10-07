@@ -1,10 +1,11 @@
+const trialContext=vi.hoisted(()=>({identityOnly:false}));
 // Unit boundary: provider/audit integration is covered by recognitionAuditApi and recognitionFixes.
-vi.mock('../src/services/recognitionAudit',()=>({auditedFetch:(url:string,init:RequestInit)=>fetch(url,init),recordRecognitionEvidence:vi.fn()}));
+vi.mock('../src/services/recognitionAudit',()=>({auditedFetch:(url:string,init:RequestInit)=>fetch(url,init),recordRecognitionEvidence:vi.fn(),recognitionAudit:{getStore:()=>trialContext}}));
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {legacyVisionHandler} from '../src/services/legacyVision';
 const fetchMock=vi.fn();
 const event={httpMethod:'POST',body:JSON.stringify({images:['/9j/AA=='],media_type:'image/jpeg',mode:'identify'})};
-beforeEach(()=>{vi.stubEnv('ANTHROPIC_API_KEY','test-not-real');vi.stubGlobal('fetch',fetchMock);fetchMock.mockReset();});
+beforeEach(()=>{vi.stubEnv('ANTHROPIC_API_KEY','test-not-real');vi.stubGlobal('fetch',fetchMock);fetchMock.mockReset();trialContext.identityOnly=false;});
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
 function provider(result:unknown){fetchMock.mockResolvedValue(new Response(JSON.stringify({content:[{type:'text',text:JSON.stringify(result)}]}),{status:200}));}
 describe('real recognition engine response handling',()=>{
@@ -79,4 +80,18 @@ it('does not convert percentage confidence or object-valued fields into convinci
  provider({component_class:'door closer',manufacturer:{name:'LCN'},visible_text:[{},'4040XP'],attributes:{arm_type:{value:'standard'}},confidence:{manufacturer:85}});
  const r=await legacyVisionHandler(event);expect(r.statusCode).toBe(200);const value=JSON.parse(r.body);
  expect(value.component_class).toBe('DOOR_CLOSER');expect(value.manufacturer).toBeNull();expect(value.confidence.manufacturer).toBeNull();expect(value.visible_text).toEqual(['4040XP']);expect(value.attributes).toEqual({});
+});
+
+
+it('bounded identity trial sends the grouped photographs without optional geometry or extra detail views',async()=>{
+ const sharp=(await import('sharp')).default;
+ const source=await sharp({create:{width:165,height:220,channels:3,background:'grey'}}).png().toBuffer();
+ trialContext.identityOnly=true;
+ provider({component_class:'EXIT_DEVICE',manufacturer:null,model:null});
+ const r=await legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({images:[source.toString('base64'),source.toString('base64')],media_type:'image/png',mode:'identify'})});
+ expect(r.statusCode).toBe(200);
+ const content=JSON.parse(fetchMock.mock.calls[0][1].body).messages[0].content;
+ expect(content.filter((v:any)=>v.type==='image')).toHaveLength(2);
+ expect(content.some((v:any)=>v.type==='text'&&v.text.includes('Detail view of photograph'))).toBe(false);
+ expect(content.some((v:any)=>v.type==='text'&&v.text.includes('SAME piece of hardware'))).toBe(true);
 });

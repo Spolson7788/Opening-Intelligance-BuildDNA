@@ -33,6 +33,7 @@ export function recognitionFailureMessage(code:string){
     recognition_provider_timeout:'The recognition provider did not finish within the analysis time limit. Please try again.',
     recognition_provider_connection_failed:'The server could not connect to the recognition provider. The staging administrator must check provider connectivity.',
     recognition_engine_failed:'The server could not process the recognition response. The staging administrator must check the recognition engine.',
+    recognition_run_interrupted:'Analysis was interrupted before a final result was saved. Any saved photo readings are retained for review. Do not retry this test yet.',
     recognition_provider_failed:'The recognition provider could not complete the request. No suggestion was applied.',
     recognition_unavailable:'Photograph recognition is unavailable on this server. No suggestion was applied.',
   };

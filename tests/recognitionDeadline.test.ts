@@ -1,5 +1,12 @@
 import {it,expect,vi} from 'vitest';
-import {withinRecognitionBudget} from '../src/services/recognitionDeadline';
+import {withinRecognitionBudget,recognitionRunInterrupted} from '../src/services/recognitionDeadline';
+it('reports stale running work as interrupted while preserving active and completed runs',()=>{
+ const run={status:'running',created_at:new Date(1000)};
+ expect(recognitionRunInterrupted(run,91_000)).toBe(false);
+ expect(recognitionRunInterrupted(run,91_001)).toBe(true);
+ expect(recognitionRunInterrupted({...run,status:'no_reference_evidence'},91_001)).toBe(false);
+ expect(recognitionRunInterrupted({...run,created_at:'invalid'},91_001)).toBe(false);
+});
 it('returns usable completed work immediately',async()=>{expect(await withinRecognitionBudget(Promise.resolve('photo'),Date.now()+1000,()=> 'fallback')).toBe('photo');});
 it('returns a partial fallback when optional work never completes',async()=>{
  vi.useFakeTimers();

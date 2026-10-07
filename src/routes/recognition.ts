@@ -2,10 +2,10 @@ import {classifierObject} from '../services/providerReply';
 import recognitionBuild from '../generated/recognitionBuild.json';
 import {LABEL_RESPONSE_VERSION} from '../services/labelResponse';
 import sharp from 'sharp';
-import {normalizeRecognitionImage} from '../services/recognitionImage';
+import {normalizeRecognitionImage,prepareProviderImage} from '../services/recognitionImage';
 import {recognitionAudit,recordRecognitionEvidence} from '../services/recognitionAudit';
 import {registerStabilityRun,stabilityTrialId,reconcileRejectedAttempt} from '../services/recognitionStabilityBudget';
-import {withinRecognitionBudget,referenceComparisonBudget} from '../services/recognitionDeadline';
+import {withinRecognitionBudget,referenceComparisonBudget,recognitionRunInterrupted} from '../services/recognitionDeadline';
 import {approvedInstallationGeometry} from '../services/installationGeometry';
 import {Router} from 'express';
 import {z} from 'zod';
@@ -15,7 +15,7 @@ import {openingsForOrgSubquery} from '../db/tenantScope';
 import {legacyVisionHandler} from '../services/legacyVision';
 import {createHash} from 'node:crypto';
 import {readLabels,readTargetedLabels,applyLabelEvidence,LABEL_PROMPT_VERSION} from '../services/labelReading';
-import {catalogIdentityReview} from '../services/catalogIdentityReview';
+import {catalogIdentityReview,applyCatalogIdentityProposal} from '../services/catalogIdentityReview';
 import {originalInputsEnabled,MAX_RECOGNITION_ORIGINAL_BYTES,MAX_RECOGNITION_SET_BYTES} from '../services/recognitionOriginalLimits';
 import {prepareRecognitionOriginals,originalPreparationReason} from '../services/recognitionOriginals';
 import {targetedLabelDeadline} from '../services/targetedLabelPlan';
@@ -108,29 +108,42 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       const normalized:Buffer[]=[];for(const image of images)normalized.push(await normalizeRecognitionImage(image));
       images=normalized;
     }
-    b.images=images.map(x=>x.toString('base64'));b.media_type='image/png';
+    // Native buffers remain the label sources. Classifier base64 is prepared
+    // only at its boundary, avoiding a huge lossless-PNG JSON copy up front.
+    b.media_type='image/png';
     phase='recording';
     const initial=(await pool.query(`INSERT INTO recognition_runs
      (organization_id,opening_id,user_id,photo_hashes,technician_attributes,component_type,stage_one,suggestion,retrieved_pages,citations,rejected_citations,conflicts,status,model_id,prompt_version)
      VALUES($1,$2,$3,$4,$5,NULL,$6,'{}','[]','[]','[]','[]','running',$7,$8) RETURNING id`,[
      req.auth!.organizationId,b.opening_id,req.auth!.userId,JSON.stringify(sourceHashes),JSON.stringify(b.technician_attributes),JSON.stringify({request_id:b.request_id,shadow_mode:true,source_inputs:sourceManifest,recognition_versions:{...recognitionBuild,label_prompt:LABEL_PROMPT_VERSION,label_response:LABEL_RESPONSE_VERSION,reference_prompt:REFERENCE_PROMPT_VERSION},libraries:{sharp:sharp.versions,tesseract:require('tesseract.js/package.json').version}}),RECOGNITION_MODEL,REFERENCE_PROMPT_VERSION])).rows[0];
-    return await recognitionAudit.run({runId:initial.id,deadline:started+(stabilityTrialId()?55000:49000),trialControl:{}},async()=>{try{
+    return await recognitionAudit.run({runId:initial.id,deadline:started+(stabilityTrialId()?55000:49000),trialControl:{},identityOnly:Boolean(stabilityTrialId())},async()=>{try{
     if(stabilityTrialId()&&b.mode!=='identify')throw Error('stability_identify_mode_required');
     await registerStabilityRun(initial.id,b.request_id);
     phase='provider';
     const bounded=<T>(work:()=>Promise<T>,deadline:number,fallback:()=>T)=>withinRecognitionBudget(signal=>recognitionAudit.run({...recognitionAudit.getStore()!,signal},work),deadline,fallback);
-    const classify=()=>bounded(()=>legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,technician_attributes:{},timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})}),stabilityTrialId()?Math.min(started+52000,Date.now()+18000):started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}));
+    const classify=()=>bounded(async()=>{
+     const outgoing:string[]=[];for(const image of images)outgoing.push(stabilityTrialId()?(await prepareProviderImage(image)).data.toString('base64'):image.toString('base64'));
+     return legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,images:outgoing,media_type:stabilityTrialId()?'image/jpeg':'image/png',technician_attributes:{},timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})});
+    },stabilityTrialId()?Math.min(started+52000,Date.now()+18000):started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}));
     const label=()=>b.mode==='identify'?bounded(()=>readLabels(images,b.media_type,Math.min(started+46000,Date.now()+24000)),Math.min(started+46000,Date.now()+24000),()=>({version:LABEL_PROMPT_VERSION,status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null);
-    // Trial calls are sequenced so the conservative per-call ceiling settles
-    // before the next reservation. Ordinary shadow mode retains its concurrency.
+    // The locator precedes at most two concurrent identity reads. Every call
+    // still reserves independently under the locked trial budget.
     let response:Awaited<ReturnType<typeof classify>>,labels:Awaited<ReturnType<typeof label>>;
     if(stabilityTrialId()){
-     await recordRecognitionEvidence('label_strategy',{version:'targeted-label-1',order:'label_before_classifier',reader_budget_ms:32000,ocr_order:'after_reader'});
+     await recordRecognitionEvidence('label_strategy',{version:'targeted-label-2',order:'parallel_identity_reads_before_classifier',reader_budget_ms:32000,ocr_order:'not_attempted',maximum_reader_calls:2});
      const deadline=targetedLabelDeadline(started);
-     labels=await bounded(()=>readTargetedLabels(images,b.media_type,deadline),deadline,()=>({version:'oi-targeted-label-reading-1',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'}));
-     response=recognitionAudit.getStore()?.trialControl?.stopped?{statusCode:503,body:JSON.stringify({error:'recognition_provider_failed'})}:await classify();
+     labels=await bounded(()=>readTargetedLabels(images,b.media_type,deadline),deadline,()=>({version:'oi-targeted-label-reading-2',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'}));
+     // Preserve the combined label evidence before optional classification.
+     await recordRecognitionEvidence('label_reading',labels);
+     response=recognitionAudit.getStore()?.trialControl?.stopped?{statusCode:503,body:JSON.stringify({error:'recognition_provider_failed'})}:started+52000-Date.now()<12000?{statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}:await classify();
     }else [response,labels]=await Promise.all([classify(),label()]);
     await pool.query(`UPDATE recognition_runs SET stage_one=stage_one || $2::jsonb WHERE id=$1`,[initial.id,JSON.stringify({label_reading:labels})]);
+    let labelOnly=false;
+    if(stabilityTrialId()&&response.statusCode!==200&&labels?.reads.length){
+     await recordRecognitionEvidence('classifier_outcome',{status:'unavailable',reason:'classification_did_not_complete',identity_evidence_preserved:true});
+     labelOnly=true;
+     response={statusCode:200,body:JSON.stringify({component_class:null,manufacturer:null,series:null,model:null,visible_text:[],attributes:{},evidence:[],confidence:{manufacturer:null,series:null,model:null}})};
+    }
     if(response.statusCode!==200){
       // Only allow known safe categories through; never forward provider bodies.
       const safeErrors=new Set(['recognition_provider_authentication_failed','recognition_provider_permission_denied','recognition_provider_model_unavailable','recognition_provider_rate_limited','recognition_provider_image_rejected','recognition_provider_billing_blocked','recognition_provider_usage_limit_reached','recognition_provider_request_rejected','recognition_provider_image_format_rejected','recognition_provider_image_dimensions_rejected','recognition_provider_context_limit','recognition_provider_temporarily_unavailable','recognition_provider_invalid_response','recognition_provider_timeout','recognition_provider_connection_failed','recognition_engine_failed']);
@@ -152,7 +165,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
         }
       }catch{/* Preserve photograph and raw label evidence if the catalog is unavailable. */}
     }
-    if(stabilityTrialId()&&b.mode==='identify'&&result.component_class==='EXIT_DEVICE'&&labels){
+    if(stabilityTrialId()&&b.mode==='identify'&&labels){
       const review=catalogIdentityReview(labels,result);
       result.catalog_identity_review=review;
       await recordRecognitionEvidence('catalog_identity_review',review);
@@ -161,7 +174,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     result=conservativeSuggestion(result,null);
     if(b.request_id)result.request_id=b.request_id;
     let pages:Awaited<ReturnType<typeof retrieveReferences>>=[];
-    let conflicts:unknown[]=[];let comparison:any=null;let status='no_reference_evidence';let comparisonStarted=false;let comparisonAt=0;let comparisonBudget=0;
+    let conflicts:unknown[]=[];let comparison:any=null;let status=labelOnly?'label_evidence_only':'no_reference_evidence';let comparisonStarted=false;let comparisonAt=0;let comparisonBudget=0;
     try{
       if(b.mode==='identify'){
         if(result.component_class==='DOOR_CLOSER'){
@@ -196,7 +209,8 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
           if(!comparisonBudget)throw Error('reference_comparison_budget_exhausted');
           comparisonStarted=true;
           comparisonAt=Date.now();
-          comparison=await compareWithReferences({images:b.images!,media_type:b.media_type,stage_one:result,attributes:{},pages,conflicts,timeout_ms:comparisonBudget});
+          const referenceImages:string[]=[];for(const image of images)referenceImages.push((await prepareProviderImage(image)).data.toString('base64'));
+          comparison=await compareWithReferences({images:referenceImages,media_type:'image/jpeg',stage_one:result,attributes:{},pages,conflicts,timeout_ms:comparisonBudget});
           comparison.processing={...comparison.processing,elapsed_ms:Date.now()-comparisonAt,budget_ms:comparisonBudget};
           status='reference_evidence';
         }else status='reference_comparison_disabled';
@@ -235,7 +249,8 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     if(comparison)comparison.citations=validated.accepted;
     if(status==='reference_evidence'&&!validated.accepted.length)status='no_valid_reference_citations';
     result.processing={version:'oi-recognition-budget-2',analysis_elapsed_ms:Date.now()-started};
-    const suggestion=conservativeSuggestion(result,comparison);
+    let suggestion=conservativeSuggestion(result,comparison);
+    if(stabilityTrialId()&&result.catalog_identity_review)suggestion=applyCatalogIdentityProposal(suggestion,result.catalog_identity_review);
     phase='recording';
     const client=await pool.connect();let run;
     try{
@@ -264,6 +279,8 @@ recognitionRouter.get('/request/:id',async(req:AuthedRequest,res)=>{
   const allowed=await pool.query(`SELECT 1 FROM (${openingsForOrgSubquery(2)}) a WHERE a.id=$1`,[opening.data,req.auth!.organizationId]);
   if(!allowed.rows.length)return res.status(404).json({error:'opening_not_found'});
   const r=(await pool.query(`SELECT * FROM recognition_runs WHERE organization_id=$1 AND user_id=$2 AND opening_id=$3 AND stage_one->>'request_id'=$4 ORDER BY created_at DESC LIMIT 1`,[req.auth!.organizationId,req.auth!.userId,opening.data,req.params.id])).rows[0];
+  // Report host interruption without rewriting the frozen run or starting work.
+  if(r&&recognitionRunInterrupted(r))return res.status(502).json({status:'interrupted',error:'recognition_run_interrupted',run_id:r.id,saved_evidence_available:Boolean(r.stage_one?.targeted_label_reads?.length||r.stage_one?.label_reading?.reads?.length)});
   if(!r||r.status==='running')return res.status(202).json({status:'awaiting_saved_result'});
   if(r.status==='failed')return res.status(502).json({error:'recognition_provider_failed'});
   if(!r.suggestion||typeof r.suggestion!=='object'||Array.isArray(r.suggestion)||!Object.keys(r.suggestion).length)

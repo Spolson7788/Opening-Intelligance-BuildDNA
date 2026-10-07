@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {catalogIdentityReview} from '../src/services/catalogIdentityReview';
+import {catalogIdentityReview,applyCatalogIdentityProposal} from '../src/services/catalogIdentityReview';
 import type {LabelEvidence,LabelRead} from '../src/services/labelReading';
 const read=(text:string,photo:number,kind:'brand_mark'|'product_label'):LabelRead=>({region:{photo_index:photo,x:0,y:0,w:1,h:1,rotation:0,kind},vision_text:text,vision_status:'read',ocr_text:'',ocr_confidence:0,agreed_markings:[],status:'unconfirmed'});
 const labels=(...reads:LabelRead[]):LabelEvidence=>({version:'test',status:'completed',reads,limiting_factor:null});
@@ -8,6 +8,17 @@ it('links separate photos of a cast maker mark and exact model without treating 
  expect(result.status).toBe('CANDIDATES');expect(result.candidates).toHaveLength(1);
  expect(result.candidates[0]).toMatchObject({manufacturer:'PDQ',series:'6200',model:'6200R',verification:'pending_technician',discontinued_confirmed:false});
  expect(result.candidates[0].evidence.map(e=>e.photo_index)).toEqual([1,0]);expect(result.classifier_claim.manufacturer).toBe('DORMA');
+});
+
+it('exposes the exact photo-supported pair as a proposal without inventing confidence or technician confirmation',()=>{
+ const review=catalogIdentityReview(labels(read('PDQ',0,'brand_mark'),read('Model 6200R',1,'product_label')),{manufacturer:'DORMA'});
+ const suggestion=applyCatalogIdentityProposal({component_class:'EXIT_DEVICE',manufacturer:null,series:null,model:null},review);
+ expect(suggestion).toMatchObject({manufacturer:'PDQ',series:'6200',model:'6200R',identity_status:'pending_technician',confidence:{manufacturer:null,series:null,model:null}});
+ expect(suggestion.identity_evidence.map((e:any)=>e.photo_index)).toEqual([1,0]);
+ expect(suggestion.catalog_identity_review.classifier_claim.manufacturer).toBe('DORMA');
+ const conflict=catalogIdentityReview(labels(read('DORMA',0,'brand_mark'),read('6200R',1,'product_label')));
+ expect(applyCatalogIdentityProposal({manufacturer:null},conflict)).toEqual({manufacturer:null});
+ expect(applyCatalogIdentityProposal({component_class:'DOOR_CLOSER',manufacturer:null},review)).toEqual({component_class:'DOOR_CLOSER',manufacturer:null});
 });
 it('does not infer maker from model, trim compatibility or a partial logo',()=>{
  for(const reads of [[read('6200R',1,'product_label')],[read('PD?',0,'brand_mark'),read('6200R',1,'product_label')],[read('PDQ',0,'brand_mark'),read('HG1 fits Hager 4500 / PDQ 6200',1,'product_label')]]){

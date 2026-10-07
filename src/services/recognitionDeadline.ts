@@ -12,3 +12,8 @@ export function referenceComparisonBudget(started:number,now=Date.now()){
  const remaining=started+52000-now-3000;
  return remaining>=6000?Math.min(26000,remaining):0;
 }
+
+export function recognitionRunInterrupted(run:{status:string;created_at:string|Date},now=Date.now()){
+ const created=new Date(run.created_at).getTime();
+ return run.status==='running'&&Number.isFinite(created)&&now-created>90_000;
+}

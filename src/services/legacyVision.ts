@@ -1,6 +1,6 @@
 // @ts-nocheck
 import {providerObject,classifierObject} from './providerReply';
-import {auditedFetch} from './recognitionAudit';
+import {auditedFetch,recognitionAudit} from './recognitionAudit';
 import {GEOMETRY_OBSERVATION_PROMPT} from './installationGeometry';
 import {recognitionDetailViews} from './recognitionViews';
 import {detectScaleMarkers,scaleMeasurements} from './scaleMarker';
@@ -432,8 +432,10 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
     const multi = imgs.length > 1
       ? "You are given " + imgs.length + " photographs of the SAME piece of hardware from a short sweep. Examine ALL of them together before answering. A stamp, label or distinguishing feature may be legible in only one frame; transcribe it from whichever frame shows it. Do not treat the frames as separate products. "
       : "";
-    const scaleMarkers=!labelBlind&&!markingMode&&!hardwareMode?await detectScaleMarkers(imgs.map(d=>Buffer.from(d,'base64'))):[];
-    const detailViews=!labelBlind&&!markingMode&&!hardwareMode?await recognitionDetailViews(imgs.map(d=>Buffer.from(d,'base64'))):[];
+    // Set only by the authenticated trial route, never by client input.
+    const identityOnly=recognitionAudit?.getStore()?.identityOnly===true;
+    const scaleMarkers=!identityOnly&&!labelBlind&&!markingMode&&!hardwareMode?await detectScaleMarkers(imgs.map(d=>Buffer.from(d,'base64'))):[];
+    const detailViews=!identityOnly&&!labelBlind&&!markingMode&&!hardwareMode?await recognitionDetailViews(imgs.map(d=>Buffer.from(d,'base64'))):[];
     const resp = await auditedFetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       signal: AbortSignal.timeout(Math.max(1000,Math.min(25000,Number(body.timeout_ms)||25000))),

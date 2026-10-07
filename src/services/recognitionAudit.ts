@@ -5,7 +5,7 @@ import {pool} from '../db/pool';
 import {randomUUID} from 'node:crypto';
 import {stabilityTrialId,stabilityMaximum,stabilityActual,reserveStabilityAttempt,settleStabilityAttempt,accountLimitRejected} from './recognitionStabilityBudget';
 
-interface AuditContext {runId:string;deadline:number;signal?:AbortSignal;trialControl?:{stopped?:boolean}}
+interface AuditContext {runId:string;deadline:number;signal?:AbortSignal;trialControl?:{stopped?:boolean};identityOnly?:boolean}
 export const recognitionAudit=new AsyncLocalStorage<AuditContext>();
 export const recognitionAuditStopped=()=>recognitionAudit.getStore()?.trialControl?.stopped===true;
 // Persist before sending. If accounting is unavailable, do not make a paid call.
