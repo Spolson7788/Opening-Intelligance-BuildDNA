@@ -47,6 +47,9 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
   const [markings,setMarkings]=useState('');
   const [features,setFeatures]=useState('');
   const generation=useRef(0);
+  const fileInput=useRef<HTMLInputElement>(null);
+  const selectedBytes=files.reduce((n,f)=>n+f.size,0);
+  const selectionError=files.length>5?'Select at most five photographs of the same component.':selectedBytes>2*1024*1024?`Selected photographs total ${selectedBytes.toLocaleString()} bytes. The combined limit is 2,097,152 bytes. Replace the selection with a smaller complete photo set.`:'';
   const [typeApplied,setTypeApplied]=useState(false);
   useEffect(()=>()=>{generation.current++;},[openingId]);
   useEffect(()=>{onBusyChange?.(busy);},[busy,onBusyChange]);
@@ -62,7 +65,8 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     const current=++generation.current;
     setTypeApplied(false);setError('');setProviderDiagnostic('');setResult(null);setResponse(null);setProgress('');setBusy(true);
     try{
-      if(!files.length||files.length>5||files.reduce((n,f)=>n+f.size,0)>2*1024*1024)throw Error('Select one to five photographs, totaling at most 2 MB.');
+      if(!files.length)throw Error('Select one to five photographs.');
+      if(selectionError)throw Error(selectionError);
       if(!['image/jpeg','image/png','image/webp'].includes(files[0].type)||files.some(f=>f.type!==files[0].type))throw Error('Use JPEG, PNG or WebP photographs of the same format.');
       const images=await Promise.all(files.map(f=>new Promise<string>((resolve,reject)=>{
         const reader=new FileReader();reader.onerror=()=>reject(Error('Could not read photograph.'));
@@ -90,8 +94,14 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     {availability?.available&&!availability.reference_comparison_enabled&&<p>Photograph recognition is available. Manufacturer reference comparison is switched off on this server.</p>}
     <label>Reported model or readable markings<input value={markings} maxLength={300} disabled={busy} onChange={e=>{setMarkings(e.target.value);setResult(null);setResponse(null);}} placeholder="e.g. CR441 or Cal-Royal CR441"/></label>
     <label>Observed features or measurements<input value={features} maxLength={300} onChange={e=>setFeatures(e.target.value)}/></label>
-    <input aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;const selected=Array.from(e.target.files||[]);setFiles(selected);onFilesChange(selected);setResult(null);setError('');}}/>
-    <button type="button" disabled={busy||!files.length||!availability?.available} onClick={analyze}>{busy?progress||'Analyzing…':'Analyze photographs'}</button>
+    <input ref={fileInput} aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;const selected=Array.from(e.target.files||[]);setFiles(selected);onFilesChange(selected);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}/>
+    {files.length>0&&<div aria-label="Selected photograph files">
+      <p>Total: <strong>{selectedBytes.toLocaleString()} bytes</strong> ({(selectedBytes/1024/1024).toFixed(2)} MB). Combined limit: 2 MB.</p>
+      <ol>{files.map((file,i)=><li key={i}>{file.name} — {file.size.toLocaleString()} bytes</li>)}</ol>
+      <button type="button" disabled={busy} onClick={()=>{generation.current++;if(fileInput.current)fileInput.current.value='';setFiles([]);onFilesChange([]);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}>Clear selected photographs</button>
+    </div>}
+    {selectionError&&<p role="alert">{selectionError}</p>}
+    <button type="button" disabled={busy||!files.length||!!selectionError||!availability?.available} onClick={analyze}>{busy?progress||'Analyzing…':'Analyze photographs'}</button>
     {error&&<p role="alert">{error}</p>}
     {providerDiagnostic&&<p>Administrator diagnostic: {providerDiagnostic}</p>}
     {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — will attach when you save this hardware.</p>}
