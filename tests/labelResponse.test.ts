@@ -30,3 +30,14 @@ it('continues rejecting malformed envelopes, refusals, truncations and non-list 
  expect(()=>parseLabelResponse({stop_reason:'max_tokens'},'label_reader',1)).toThrow('label_truncated');
  expect(()=>parseLabelResponse({content:[{type:'text',text:'broken'}]},'label_reader',1)).toThrow('label_invalid_json');
 });
+
+it('preserves an exact model read in a single JSON fence after explanatory prose',()=>{
+ const value={reads:[{crop_index:0,text:'PANIC HARDWARE\nModel 6200R',source:'native_tile',tile_index:10,text_box:{x:.25,y:.15,w:.35,h:.35},rotation:0,target_device:true}],limiting_factor:'none'};
+ const parsed=parseLabelResponse({content:[{type:'text',text:'The sticker is visible on the target hardware.\n```json\n'+JSON.stringify(value)+'\n```'}]},'label_reader',[0]);
+ expect(parsed.reads).toEqual(value.reads);expect(parsed.response_format).toBe('single_json_fence_with_prose');
+});
+it('rejects ambiguous, malformed or incomplete fenced replies instead of choosing or repairing text',()=>{
+ const fence='```json\n'+JSON.stringify({reads:[{crop_index:0,text:'6200R'}]})+'\n```';
+ for(const text of [fence+'\n'+fence,'Another object {}\n'+fence,'Explanation\n```json\n{"reads": [}\n```','Explanation\n```json\n[]\n```'])expect(()=>parseLabelResponse({content:[{type:'text',text}]},'label_reader',[0])).toThrow('label_invalid_json');
+ for(const stop_reason of ['refusal','max_tokens'])expect(()=>parseLabelResponse({stop_reason,content:[{type:'text',text:'Explanation\n'+fence}]},'label_reader',[0])).toThrow();
+});

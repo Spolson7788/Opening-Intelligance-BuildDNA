@@ -61,3 +61,18 @@ Offline checks: 216 recognition/route checks across 19 files and 38 budget/histo
 Remaining limits: coarse locator can still choose the wrong source; AI logo reading can still fail; native tile cap and provider image limits remain. The fresh reader window is bounded and may still prove insufficient under field latency. Unknown costs remain counted; no cost reservation is refunded merely to authorize another test. No production deployment or live success is claimed.
 
 Next controlled test: reload the protected preview, check the visible App build against the deployed commit, restore the saved originals if needed, select Exit Device deliberately, leave brand/model hints blank, and Analyze once. Expect progress to move from locating markings to reading the saved locations. Preserve the resulting run and score final PDQ/6200/6200R only against acknowledged technician truth.
+
+
+## Measured field outcome on 451b4026: identity target failed
+
+The controlled saved-original run completed the locator and both native readers. Locator latency was 7.839 seconds; the maker reader completed in 7.539 seconds and the sticker reader in 10.852 seconds. All three raw responses and usage records are persisted. Total estimated provider cost for this attempt was $0.146517, with no unknown charge added by this attempt. Prior unknown reservations remain fully counted. The granted run was consumed; no further test was granted.
+
+The maker reader transcribed DORMA, incorrectly, and returned a native-tile text box whose recropped pixels failed the detail check. Its location was therefore unvalidated and the reading excluded from catalog identity. The UI nevertheless prominently repeated this raw transcription. Final brand, series and model were all null. This is a recognition miss, not successful recognition because the safety filter excluded the wrong name.
+
+The sticker reader's raw reply actually included Model 6200R in native tile 10. It placed explanatory prose before a complete fenced JSON object. The strict envelope parser rejected the whole reply before reading validation, losing the correct model transcription. This is a processing defect separate from the incorrect maker read.
+
+Follow-up: label-response-3 accepts one complete fenced JSON object with surrounding prose while retaining exact transcription and coordinate bytes. Multiple fences/objects, malformed JSON, refusal and truncation remain rejected. The original run remains frozen. Free replay of its saved raw replies preserves PANIC HARDWARE / Model 6200R and also preserves the wrong DORMA transcription; no new provider call was made. Native-pixel location revalidation was not performed by this parser-only replay. It does not establish final PDQ identity.
+
+The UI now calls the raw text an unverified AI transcription and explicitly says it is not an established manufacturer/model, while retaining excluded readings and reader details. This wording is not a recognition improvement. Offline validation: 218 recognition checks pass; TypeScript and Field App build pass.
+
+Next recognition work must validate and refine the actual maker-mark location, provide focused correctly oriented native mark pixels, and independently review cast-logo failures without inferring the maker from a model-only catalog match. This field result does not justify another paid run of unchanged reader inputs.

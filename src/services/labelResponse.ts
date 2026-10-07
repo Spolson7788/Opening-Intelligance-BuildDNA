@@ -1,6 +1,6 @@
 // Validate provider envelopes separately from transport success. Never repair text.
 import {providerObject} from './providerReply';
-export const LABEL_RESPONSE_VERSION='oi-label-response-2';
+export const LABEL_RESPONSE_VERSION='oi-label-response-3';
 export interface LabelValidationIssue {reason:string;entry_index?:number;crop_index?:number}
 export function labelReadContract(indices:number[]){
  return ` Return exactly ${indices.length} reads, one for each crop_index in [${indices.join(',')}], with no duplicate or extra indices. Use a string text for every entry, including an empty string when unreadable or no label is visible. Never omit an unreadable crop or use null text.`;
@@ -8,7 +8,17 @@ export function labelReadContract(indices:number[]){
 export function parseLabelResponse(body:any,stage:string,expected:number|number[]){
  if(body?.stop_reason==='refusal')throw Error('label_refused');
  if(body?.stop_reason==='max_tokens')throw Error('label_truncated');
- let value:any;try{value=providerObject(body);}catch{throw Error('label_invalid_json');}
+ let value:any;try{value=providerObject(body);}catch{
+  // Accept exactly one complete JSON fence surrounded by explanatory prose.
+  // Parse only its bytes; never repair JSON, text, crop indices or coordinates.
+  if(body?.error)throw Error('label_invalid_json');
+  const text=(Array.isArray(body?.content)?body.content:[]).filter((c:any)=>c?.type==='text'&&typeof c.text==='string').map((c:any)=>c.text).join('');
+  const fences=[...text.matchAll(/```(?:json)?[ \t]*\r?\n([\s\S]*?)```/gi)];
+  if(fences.length!==1||text.replace(fences[0][0],'').includes('```')||/[{}]/.test(text.replace(fences[0][0],'')))throw Error('label_invalid_json');
+  try{value=JSON.parse(fences[0][1]);}catch{throw Error('label_invalid_json');}
+  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('label_invalid_json');
+  value.response_format='single_json_fence_with_prose';
+ }
  if(stage==='label_locator'){
   if(!Array.isArray(value.regions)||value.regions.length>6)throw Error('label_invalid_regions');
   for(const r of value.regions){
