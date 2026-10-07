@@ -4,8 +4,11 @@ Goal: OI identifies brand, series and model from grouped real field photos,
 explains the evidence, and improves through scored technician confirmations.
 Passing unit checks is not a measured recognition improvement.
 
-Review draft PR12, feat/targeted-label-improvement-20261007, latest head shown
-in GitHub. PR11 / build 5338d7a and run
+Review candidate commit 1d0ad4a3e186fe3b45b392e713b99b312b08a6d9.
+Its code/evidence are saved in GitHub, but updating the draft PR12 branch
+returned GitHub internal errors. PR12 currently remains at ca6209d8843a1ff1b4fc98b82453745ed26a7ee0;
+that earlier head does not include the UI/scorer continuation. Do not substitute
+the PR branch head for the candidate commit in this review. PR11 / build 5338d7a and run
 92052f1f-794b-42e8-b33d-462394c29126 remain frozen. Do not rerun, deploy,
 merge, change budget accounting or contact others as part of this review.
 
@@ -53,3 +56,4 @@ provider accounting, immutable truth/miss storage and held-out measurement
 remain open. Acceptance remains PDQ / 6200 / 6200R with supporting evidence,
 technician acknowledgment and a recorded score; unchanged held-out Von Duprin
 and Yale sets must not become development hints.
+
