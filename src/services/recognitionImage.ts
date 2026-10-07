@@ -1,8 +1,9 @@
+import {recognitionInputPixelLimit} from './recognitionOriginalLimits';
 import sharp from 'sharp';
 import {createHash} from 'node:crypto';
 // Coordinates downstream refer to this upright, opaque image, never EXIF storage axes.
 export async function normalizeRecognitionImage(image:Buffer){
- return sharp(image,{limitInputPixels:16_000_000}).rotate().removeAlpha().png().toBuffer();
+ return sharp(image,{limitInputPixels:recognitionInputPixelLimit()}).rotate().removeAlpha().png().toBuffer();
 }
 
 export const PROVIDER_IMAGE_VERSION='oi-provider-image-1';
@@ -11,9 +12,9 @@ export const MAX_PROVIDER_IMAGE_BYTES=1_000_000;
 export const MAX_PROVIDER_REQUEST_BYTES=24_000_000;
 // Local crops retain their pixels. Only the outgoing view is resampled/encoded.
 export async function prepareProviderImage(image:Buffer,maxBytes=MAX_PROVIDER_IMAGE_BYTES){
- const source=await sharp(image,{limitInputPixels:16_000_000}).metadata();
+ const source=await sharp(image,{limitInputPixels:recognitionInputPixelLimit()}).metadata();
  for(const [longEdge,quality] of [[PROVIDER_LONG_EDGE,85],[PROVIDER_LONG_EDGE,70],[1200,65],[900,60],[700,50]]){
-  const {data,info}=await sharp(image,{limitInputPixels:16_000_000}).rotate().flatten({background:'white'}).resize({width:longEdge,height:longEdge,fit:'inside',withoutEnlargement:true}).jpeg({quality,chromaSubsampling:'4:4:4'}).toBuffer({resolveWithObject:true});
+  const {data,info}=await sharp(image,{limitInputPixels:recognitionInputPixelLimit()}).rotate().flatten({background:'white'}).resize({width:longEdge,height:longEdge,fit:'inside',withoutEnlargement:true}).jpeg({quality,chromaSubsampling:'4:4:4'}).toBuffer({resolveWithObject:true});
   if(data.length<=maxBytes)return {data,metadata:{version:PROVIDER_IMAGE_VERSION,operation:'exif_orient_resize_jpeg',source_width:source.width,source_height:source.height,source_orientation:source.orientation||1,width:info.width,height:info.height,quality,long_edge_limit:longEdge,bytes:data.length,media_type:'image/jpeg'}};
  }
  throw Error('recognition_image_budget_exceeded');

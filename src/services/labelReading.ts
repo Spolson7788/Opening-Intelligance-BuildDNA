@@ -1,3 +1,4 @@
+import {recognitionInputPixelLimit} from './recognitionOriginalLimits';
 import {parseLabelResponse,labelReadContract} from './labelResponse';
 import {catalogTranscription} from './catalogMarking';
 import {createHash} from 'node:crypto';
@@ -59,7 +60,7 @@ export function labelCropBox(m:{width:number;height:number},region:LabelRegion){
  return {left,top,width,height};
 }
 export async function cropLabel(image:Buffer,region:LabelRegion):Promise<Buffer>{
- const input=sharp(image,{limitInputPixels:16_000_000});const m=await input.metadata();if(!m.width||!m.height)throw Error('invalid_image');
+ const input=sharp(image,{limitInputPixels:recognitionInputPixelLimit()});const m=await input.metadata();if(!m.width||!m.height)throw Error('invalid_image');
  const {left,top,width,height}=labelCropBox({width:m.width,height:m.height},region);
  // Retain original pixels. Enlargement improves OCR sampling but creates no detail.
  const extracted=await input.extract({left,top,width,height}).png().toBuffer();
@@ -78,7 +79,7 @@ export async function focusedLabelViews(crop:Buffer,box:unknown,rotation:unknown
 }
 // Pixel processing only: no model-generated reconstruction or text repair.
 export async function enhanceLabelCrop(crop:Buffer):Promise<Buffer>{
- return sharp(crop,{limitInputPixels:16_000_000}).normalize({lower:0,upper:100}).sharpen({sigma:.6}).png().toBuffer();
+ return sharp(crop,{limitInputPixels:recognitionInputPixelLimit()}).normalize({lower:0,upper:100}).sharpen({sigma:.6}).png().toBuffer();
 }
 export async function readLabelCropsOcr(crops:Buffer[],deadline:number,modes:('model_line'|'label')[]=[]){
  let worker:Awaited<ReturnType<typeof createWorker>>|undefined;
@@ -122,7 +123,7 @@ export async function hasModelLineDetail(crop:Buffer){
 }
 export async function modelLineViews(image:Buffer,region:LabelRegion,rejectBackground=false){
  if(!region.model_line_box)return [];
- const m=await sharp(image,{limitInputPixels:16_000_000}).metadata();if(!m.width||!m.height)return [];
+ const m=await sharp(image,{limitInputPixels:recognitionInputPixelLimit()}).metadata();if(!m.width||!m.height)return [];
  const box=region.model_line_box;
  const left=Math.max(0,Math.floor(box.x*m.width)),top=Math.max(0,Math.floor(box.y*m.height));
  const width=Math.min(m.width-left,Math.ceil(box.w*m.width)),height=Math.min(m.height-top,Math.ceil(box.h*m.height));
@@ -130,7 +131,7 @@ export async function modelLineViews(image:Buffer,region:LabelRegion,rejectBackg
  // Tight line crop avoids pulling diagram text back into the model heading.
  // Sharp schedules rotation before extract within a single pipeline. Materialize
  // the source-coordinate crop first so rotated labels retain the correct pixels.
- const extracted=await sharp(image,{limitInputPixels:16_000_000}).extract({left,top,width,height}).png().toBuffer();
+ const extracted=await sharp(image,{limitInputPixels:recognitionInputPixelLimit()}).extract({left,top,width,height}).png().toBuffer();
  if(rejectBackground&&!await hasModelLineDetail(extracted))return [];
  const swap=region.rotation===90||region.rotation===270;
  const nativeWidth=swap?height:width,nativeHeight=swap?width:height;
@@ -151,9 +152,9 @@ export function searchRegions():LabelRegion[]{
 // Prepare a larger full-frame view before the locator sees small photographs.
 // The source stays intact; full-frame scaling preserves normalized coordinates.
 export async function enlargeForLabelLocation(image:Buffer):Promise<Buffer|null>{
- const m=await sharp(image,{limitInputPixels:16_000_000}).metadata();
+ const m=await sharp(image,{limitInputPixels:recognitionInputPixelLimit()}).metadata();
  if(!m.width||!m.height||Math.max(m.width,m.height)>=1600)return null;
- return sharp(image,{limitInputPixels:16_000_000}).resize({width:Math.min(1600,m.width*3),height:Math.min(1600,m.height*3),fit:'inside'}).png().toBuffer();
+ return sharp(image,{limitInputPixels:recognitionInputPixelLimit()}).resize({width:Math.min(1600,m.width*3),height:Math.min(1600,m.height*3),fit:'inside'}).png().toBuffer();
 }
 // Prefer the locator's model-line pixels when available. Broad search tiles
 // retain fallback coverage without doubling every tile into another noisy view.
@@ -190,7 +191,7 @@ export async function readTargetedLabels(images:Buffer[],mediaType:string,deadli
    const crop=await cropLabel(images[region.photo_index],region);
    // Native crop pixels go to the reader before enhancement, model-line
    // variants, fallback tiles or OCR initialization consume its time budget.
-   const m=await sharp(images[region.photo_index],{limitInputPixels:16_000_000}).metadata();
+   const m=await sharp(images[region.photo_index],{limitInputPixels:recognitionInputPixelLimit()}).metadata();
    audit.push({crop_index:index,region,crop_box:labelCropBox({width:m.width!,height:m.height!},region),crop_box_units:'pixels_upright_source',source_sha256:createHash('sha256').update(images[region.photo_index]).digest('hex'),view_sha256:createHash('sha256').update(crop).digest('hex'),strategy:'targeted-label-1'});
    await recordRecognitionEvidence('targeted_label_views',audit);
    let text='',vision_status:LabelRead['vision_status']='not_attempted',legibility:LabelLegibility='illegible';
@@ -252,7 +253,7 @@ export async function readLabels(images:Buffer[],mediaType:string,deadline=Date.
   for(const region of regions.slice(0,11)){if(Date.now()>=deadline-1000)break;try{usable.push({region,crop:await cropLabel(images[region.photo_index],region)});}catch{}}
   if(!usable.length)return empty('unavailable','label_crop_unavailable');
   const enhanced=await Promise.all(usable.map(x=>enhanceLabelCrop(x.crop).catch(()=>null)));
-  const dimensions=await Promise.all(images.map(async data=>{const m=await sharp(data,{limitInputPixels:16_000_000}).metadata();return {width:m.width||0,height:m.height||0};}));
+  const dimensions=await Promise.all(images.map(async data=>{const m=await sharp(data,{limitInputPixels:recognitionInputPixelLimit()}).metadata();return {width:m.width||0,height:m.height||0};}));
   const ocrTasks:{index:number;crop:Buffer;scope:'model_line'|'label';transform:string}[]=[];
   const lineViews=await Promise.all(usable.map(x=>modelLineViews(images[x.region.photo_index],x.region,true).catch(()=>[])));
   for(let i=0;i<usable.length;i++)for(const [j,crop] of lineViews[i].entries())ocrTasks.push({index:i,crop,scope:'model_line',transform:`crop_then_rotate_${usable[i].region.rotation}_resize_pad_${['original','contrast_sharpen','threshold_140','threshold_140_rotate_180'][j]}`});

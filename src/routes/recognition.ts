@@ -65,7 +65,7 @@ recognitionRouter.post('/originals/check',async(req:AuthedRequest,res)=>{
   await pool.query("INSERT INTO audit_log(organization_id,user_id,action,method,path,request_body,status_code) VALUES($1,$2,'Checked original recognition inputs','POST','/api/recognition/originals/check',$3,200)",[req.auth!.organizationId,req.auth!.userId,JSON.stringify({opening_id:body.data.opening_id,...result})]);
   return res.json(result);
  }catch(error){
-  const result={ok:false,paid_calls:0,stage,reason:originalPreparationReason(error),elapsed_ms:Date.now()-started};
+  const result={ok:false,paid_calls:0,stage,reason:originalPreparationReason(error),elapsed_ms:Date.now()-started,...(error instanceof Error&&error.message==='recognition_source_pixel_limit'?{dimensions:(error as any).dimensions}: {})};
   if(authorized)try{await pool.query("INSERT INTO audit_log(organization_id,user_id,action,method,path,request_body,status_code) VALUES($1,$2,'Checked original recognition inputs','POST','/api/recognition/originals/check',$3,422)",[req.auth!.organizationId,req.auth!.userId,JSON.stringify({opening_id:body.data.opening_id,...result})]);}catch{}
   return res.json(result);
  }

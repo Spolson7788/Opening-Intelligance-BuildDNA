@@ -1,3 +1,4 @@
+import {recognitionInputPixelLimit} from './recognitionOriginalLimits';
 import sharp from 'sharp';
 import jsQR from 'jsqr';
 export const SCALE_PAYLOAD='OI_SCALE_V1_40MM';
@@ -7,7 +8,7 @@ export async function detectScaleMarkers(images:Buffer[]):Promise<ScaleMarker[]>
  const markers:ScaleMarker[]=[];
  for(let photo_index=0;photo_index<Math.min(3,images.length);photo_index++){
   try{
-   const {data,info}=await sharp(images[photo_index],{limitInputPixels:16_000_000}).resize({width:1200,height:1200,fit:'inside',withoutEnlargement:true}).toColourspace('srgb').ensureAlpha().raw().toBuffer({resolveWithObject:true});
+   const {data,info}=await sharp(images[photo_index],{limitInputPixels:recognitionInputPixelLimit()}).resize({width:1200,height:1200,fit:'inside',withoutEnlargement:true}).toColourspace('srgb').ensureAlpha().raw().toBuffer({resolveWithObject:true});
    const pixels=new Uint8ClampedArray(data);
    let qr:ReturnType<typeof jsQR>=null;
    for(let attempt=0;attempt<3;attempt++){

@@ -1,6 +1,6 @@
 import {pool} from '../db/pool';
 import {buildPrivatePhotoStorageKey,readPrivatePhotoBytes} from './storage';
-import {MAX_RECOGNITION_ORIGINAL_BYTES,MAX_RECOGNITION_SET_BYTES} from './recognitionOriginalLimits';
+import {MAX_RECOGNITION_ORIGINAL_BYTES,MAX_RECOGNITION_SET_BYTES,MAX_RECOGNITION_SET_PIXELS,recognitionInputPixelLimit} from './recognitionOriginalLimits';
 import sharp from 'sharp';
 import {normalizeRecognitionImage} from './recognitionImage';
 import {createHash} from 'node:crypto';
@@ -29,14 +29,18 @@ export async function prepareRecognitionOriginals(ids:string[],scope:{openingId:
  onStage('original_retrieval');
  const sources=await loadRecognitionOriginals(ids,scope,mediaType);
  onStage('original_metadata');
- const metadata=await Promise.all(sources.images.map(x=>sharp(x,{limitInputPixels:16_000_000}).metadata()));
+ // Read headers without decoding, then enforce explicit bounds before pixels
+ // are decoded. This also lets diagnostics report the actual camera resolution.
+ const metadata=await Promise.all(sources.images.map(x=>sharp(x,{limitInputPixels:false}).metadata()));
+ const dimensions=metadata.map(m=>({width:m.width,height:m.height,orientation:m.orientation||1}));
  const formats:Record<string,string>={'image/jpeg':'jpeg','image/png':'png','image/webp':'webp'};
  if(metadata.some(m=>m.format!==formats[mediaType]))throw Error('image_type_mismatch');
- if(metadata.reduce((n,m)=>n+(m.width||0)*(m.height||0),0)>48_000_000)throw Error('recognition_source_pixel_limit');
+ const pixels=metadata.map(m=>(m.width||0)*(m.height||0));
+ if(pixels.some(n=>!Number.isSafeInteger(n)||n<1||n>recognitionInputPixelLimit())||pixels.reduce((n,p)=>n+p,0)>MAX_RECOGNITION_SET_PIXELS)throw Object.assign(Error('recognition_source_pixel_limit'),{dimensions});
  const hashes=sources.images.map(x=>createHash('sha256').update(x).digest('hex'));
  onStage('image_normalization');
  const images:Buffer[]=[];for(const image of sources.images)images.push(await normalizeRecognitionImage(image));
- return {images,sources:sources.sources,hashes,dimensions:metadata.map(m=>({width:m.width,height:m.height,orientation:m.orientation||1}))};
+ return {images,sources:sources.sources,hashes,dimensions};
 }
 export async function loadRecognitionOriginals(ids:string[],scope:{openingId:string;organizationId:string;userId:string},mediaType:string){
  const rows=(await pool.query('SELECT id,opening_id,organization_id,uploaded_by_user_id,upload_state,storage_verified_at,authorized_retrieval_verified_at,content_type,byte_size,sha256_checksum,storage_object_key FROM photos WHERE id=ANY($1::uuid[]) AND opening_id=$2 AND organization_id=$3 AND uploaded_by_user_id=$4',[ids,scope.openingId,scope.organizationId,scope.userId])).rows;
