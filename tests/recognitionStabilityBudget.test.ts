@@ -172,7 +172,7 @@ it('does not resume an expired active stage or changed ownership, build, inputs 
  expect(()=>validateStageResume(run,{...scope,userId:randomUUID()},'build','key')).toThrow('recognition_stage_not_found');
  expect(()=>validateStageResume(run,scope,'different','key')).toThrow('recognition_stage_input_changed');expect(()=>validateStageResume(run,scope,'build','different')).toThrow('recognition_stage_input_changed');
  for(const phase of ['locating','reading','focusing'])expect(()=>validateStageResume({...run,stage_one:{...run.stage_one,staged_execution:{phase,input_key:'key',started_at:'2000-01-01'}}},scope,'build','key')).toThrow('recognition_stage_not_resumable');
- expect(()=>validateStageResume({...run,status:'failed'},scope,'build','key')).toThrow('recognition_stage_not_resumable');expect(()=>validateStageResume({...run,stage_one:{...run.stage_one,label_reading:{planned_regions:[]}}},scope,'build','key')).toThrow('recognition_stage_evidence_missing');
+ expect(()=>validateStageResume({...run,stage_one:{...run.stage_one,trial_stop:{reason:'provider_response_interrupted'}}},scope,'build','key')).toThrow('recognition_stage_not_resumable');expect(()=>validateStageResume({...run,status:'failed'},scope,'build','key')).toThrow('recognition_stage_not_resumable');expect(()=>validateStageResume({...run,stage_one:{...run.stage_one,label_reading:{planned_regions:[]}}},scope,'build','key')).toThrow('recognition_stage_evidence_missing');
 });
 it('binds staged inputs to request, ordered original IDs and technician attributes',()=>{
  const b={opening_id:opening,photo_ids:['one','two','three'],media_type:'image/jpeg',request_id:'request',technician_attributes:{component_type:'exit_device',component_type_source:'technician'}};

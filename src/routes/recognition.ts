@@ -175,7 +175,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       stagePending=true;
       return res.status(202).json({status:'stage_ready',next_stage:'read',request_id:b.request_id,run_id:initial.id,build_sha:recognitionBuild.build_sha});
      }
-     if(b.staged&&resumed?.mode==='read'&&labels.reads.some(canFocusMarking)){
+     if(b.staged&&resumed?.mode==='read'&&!recognitionAudit.getStore()?.trialControl?.stopped&&labels.reads.some(canFocusMarking)){
       await recordRecognitionEvidence('initial_identity_reads',labels);
       await pool.query(`UPDATE recognition_runs SET stage_one=jsonb_set(stage_one,'{staged_execution}',stage_one->'staged_execution'||$2::jsonb) WHERE id=$1`,[initial.id,JSON.stringify({phase:'focus_ready',readers_completed_at:new Date().toISOString()})]);
       stagePending=true;

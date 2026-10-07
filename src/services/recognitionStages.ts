@@ -9,6 +9,7 @@ export function stagedInputKey(body:{opening_id:string;photo_ids?:string[];media
 export function validateStageResume(run:any,scope:{organizationId:string;userId:string;openingId:string},build:string|null,inputKey:string){
  if(!run||run.organization_id!==scope.organizationId||run.user_id!==scope.userId||run.opening_id!==scope.openingId)throw Error('recognition_stage_not_found');
  if(run.stage_one?.recognition_versions?.build_sha!==build||run.stage_one?.staged_execution?.input_key!==inputKey)throw Error('recognition_stage_input_changed');
+ if(run.stage_one?.trial_stop)throw Error('recognition_stage_not_resumable');
  if(run.status!=='running'||!['readers_ready','focus_ready'].includes(run.stage_one.staged_execution.phase))throw Error('recognition_stage_not_resumable');
  const regions=run.stage_one?.staged_execution?.phase==='focus_ready'?run.stage_one?.label_reading?.reads?.filter(canFocusMarking).map((r:any)=>r.region):run.stage_one?.label_reading?.planned_regions;
  if(!Array.isArray(regions)||!regions.length)throw Error('recognition_stage_evidence_missing');
