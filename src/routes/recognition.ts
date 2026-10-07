@@ -14,7 +14,7 @@ import {requireAuth,requireRole,AuthedRequest} from '../middleware/auth';
 import {openingsForOrgSubquery} from '../db/tenantScope';
 import {legacyVisionHandler} from '../services/legacyVision';
 import {createHash} from 'node:crypto';
-import {readLabels,applyLabelEvidence,LABEL_PROMPT_VERSION} from '../services/labelReading';
+import {readLabels,readTargetedLabels,applyLabelEvidence,LABEL_PROMPT_VERSION} from '../services/labelReading';
 import {retrieveReferences,referenceFailureCode,resolvePartialMarkings,compareWithReferences,validateCitations,componentType,conservativeSuggestion,reportedReferenceHint,sanitizeReferenceComparison,REFERENCE_PROMPT_VERSION,RECOGNITION_MODEL} from '../services/referenceEvidence';
 
 const schema=z.object({
@@ -76,14 +76,15 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     await registerStabilityRun(initial.id,b.request_id);
     phase='provider';
     const bounded=<T>(work:()=>Promise<T>,deadline:number,fallback:()=>T)=>withinRecognitionBudget(signal=>recognitionAudit.run({...recognitionAudit.getStore()!,signal},work),deadline,fallback);
-    const classify=()=>bounded(()=>legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,technician_attributes:{},timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})}),started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}));
+    const classify=()=>bounded(()=>legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,technician_attributes:{},timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})}),stabilityTrialId()?Math.min(started+46000,Date.now()+18000):started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}));
     const label=()=>b.mode==='identify'?bounded(()=>readLabels(images,b.media_type,Math.min(started+46000,Date.now()+24000)),Math.min(started+46000,Date.now()+24000),()=>({version:LABEL_PROMPT_VERSION,status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null);
     // Trial calls are sequenced so the conservative per-call ceiling settles
     // before the next reservation. Ordinary shadow mode retains its concurrency.
     let response:Awaited<ReturnType<typeof classify>>,labels:Awaited<ReturnType<typeof label>>;
     if(stabilityTrialId()){
-     response=await classify();
-     labels=response.statusCode===200&&!recognitionAudit.getStore()?.trialControl?.stopped?await label():null;
+     await recordRecognitionEvidence('label_strategy',{version:'targeted-label-1',order:'label_before_classifier',reader_budget_ms:32000,ocr_order:'after_reader'});
+     labels=await bounded(()=>readTargetedLabels(images,b.media_type,started+32000),started+32000,()=>({version:'oi-targeted-label-reading-1',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'}));
+     response=recognitionAudit.getStore()?.trialControl?.stopped?{statusCode:503,body:JSON.stringify({error:'recognition_provider_failed'})}:await classify();
     }else [response,labels]=await Promise.all([classify(),label()]);
     await pool.query(`UPDATE recognition_runs SET stage_one=stage_one || $2::jsonb WHERE id=$1`,[initial.id,JSON.stringify({label_reading:labels})]);
     if(response.statusCode!==200){
