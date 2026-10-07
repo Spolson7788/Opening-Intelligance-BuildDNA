@@ -57,6 +57,10 @@ export function EditHardwarePage() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [identitySource,setIdentitySource]=useState('unknown');
+  const [identityAcknowledged,setIdentityAcknowledged]=useState(false);
+  const [identityEdited,setIdentityEdited]=useState(false);
+  function editIdentity(){setIdentityEdited(true);setIdentitySource('technician_identified');setIdentityAcknowledged(false);setIdentityStatus('unresolved');}
 
   useEffect(() => {
     // Fast path: the hardware object was passed via router state when the
@@ -88,6 +92,7 @@ export function EditHardwarePage() {
     setReplacementRequired(hw.replacement_required === true);
     setManufacturer(hw.manufacturer || "");
     setModelNumber(hw.model_number || "");
+    setIdentitySource(hw.identity_source||'unknown');setIdentityAcknowledged(Boolean(hw.identity_acknowledged_at));setIdentityEdited(false);
     setSerialNumber(hw.serial_number || "");
     setUnitCost(hw.unit_cost !== null && hw.unit_cost !== undefined ? String(hw.unit_cost) : "");
     setSupplierName(hw.supplier_name || "");
@@ -108,8 +113,9 @@ export function EditHardwarePage() {
         identity_status: identityStatus,
         review_state: reviewState,
         replacement_required: replacementRequired,
-        manufacturer: manufacturer || undefined,
-        model_number: modelNumber || undefined,
+        manufacturer: identityEdited ? manufacturer : manufacturer || undefined,
+        model_number: identityEdited ? modelNumber : modelNumber || undefined,
+        ...(identityEdited?{identity_source:identityAcknowledged?'technician_identified':'unknown',identity_acknowledged:identityAcknowledged}:{}),
         serial_number: serialNumber || undefined,
         unit_cost: unitCost ? Number(unitCost) : undefined,
         supplier_name: supplierName || undefined,
@@ -173,7 +179,7 @@ export function EditHardwarePage() {
             <form onSubmit={onSubmit}>
               <div className="field">
                 <label htmlFor="component-type">Component type</label>
-                <select id="component-type" value={componentType} onChange={(e) => setComponentType(e.target.value)}>
+                <select id="component-type" value={componentType} onChange={(e) => {setComponentType(e.target.value);editIdentity();}}>
                   {COMPONENT_TYPES.map((t) => (
                     <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
@@ -188,7 +194,7 @@ export function EditHardwarePage() {
               <div className="field">
                 <label htmlFor="identity-status">Product identity</label>
                 <select id="identity-status" value={identityStatus} onChange={(e) => setIdentityStatus(e.target.value)}>
-                  <option value="unresolved">Unresolved</option><option value="established">Established</option>
+                  <option value="unresolved">Unresolved</option><option value="established" disabled={!identityAcknowledged}>Established</option>
                 </select>
               </div>
               <div className="field">
@@ -200,16 +206,18 @@ export function EditHardwarePage() {
               <label><input type="checkbox" checked={replacementRequired} onChange={(e) => setReplacementRequired(e.target.checked)} /> Replacement required</label>
               <div className="field">
                 <label htmlFor="manufacturer">Manufacturer</label>
-                <input id="manufacturer" value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} placeholder="e.g. Cal-Royal" />
+                <input id="manufacturer" value={manufacturer} onChange={(e) => {setManufacturer(e.target.value);editIdentity();}} placeholder="e.g. Cal-Royal" />
               </div>
               <div className="field">
                 <label htmlFor="model-number">Model / part number</label>
-                <input id="model-number" value={modelNumber} onChange={(e) => setModelNumber(e.target.value)} />
+                <input id="model-number" value={modelNumber} onChange={(e) => {setModelNumber(e.target.value);editIdentity();}} />
               </div>
               <div className="field">
                 <label htmlFor="serial-number">Serial number</label>
                 <input id="serial-number" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} placeholder="e.g. SC-88213-A" />
               </div>
+              <p>Identity source: {identitySource==='technician_identified'?'Technician identified':identitySource==='photo_suggestion'?'Photo suggestion':'Not recorded'}</p>
+              <label style={{display:'flex',gap:8,marginBottom:16}}><input type="checkbox" checked={identityAcknowledged} disabled={!manufacturer.trim()||!modelNumber.trim()} onChange={e=>{setIdentityEdited(true);setIdentityAcknowledged(e.target.checked);setIdentitySource('technician_identified');setIdentityStatus(e.target.checked?'established':'unresolved');}}/>I identified this product and am responsible for the manufacturer and model entered.</label>
 
               <div className="section-label" style={{ marginTop: 4 }}>Replacement info (optional)</div>
               <div className="field">

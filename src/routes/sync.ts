@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { Router } from "express";
+import {identityInputError,identityValues} from '../services/hardwareIdentity';
 import { z } from "zod";
 import { pool } from "../db/pool";
 import { openingsForOrgSubquery } from "../db/tenantScope";
@@ -37,6 +38,10 @@ const syncComponentCreate = z.object({
   protocol_version: z.number().int().positive(),
   payload: z.object({
     component_type: componentType,
+    component_type_provenance: z.object({source:z.enum(['default','technician','AI']),run_id:z.string().uuid().optional()}).optional(),
+    recognition_run_id: z.string().uuid().optional(),
+    identity_source: z.enum(['unknown','technician_identified','photo_suggestion']).optional(),
+    identity_acknowledged: z.boolean().optional(),
     manufacturer: z.string().optional(),
     model_number: z.string().optional(),
     install_date: z.string().optional(),
@@ -124,13 +129,30 @@ syncRouter.post("/components", async (req: AuthedRequest, res) => {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: targetError });
     }
+    const identityError=identityInputError(b.payload);
+    if(identityError){await client.query('ROLLBACK');return res.status(400).json({error:identityError});}
+    let identityRun:any;
+    if(b.payload.recognition_run_id){
+      const run=await client.query('SELECT * FROM recognition_runs WHERE id=$1 AND opening_id=$2 AND user_id=$3 AND organization_id=$4 AND (component_id IS NULL OR component_id=$5)',[b.payload.recognition_run_id,b.opening_id,userId,orgId,b.entity_id]);
+      if(!run.rows.length){await client.query('ROLLBACK');return res.status(400).json({error:'invalid_recognition_run'});}
+      identityRun=run.rows[0];
+    }
+    const typeProvenance=b.payload.component_type_provenance;
+    if(typeProvenance?.source==='AI'){
+      const run=await client.query("SELECT component_type,status FROM recognition_runs WHERE id=$1 AND opening_id=$2 AND user_id=$3 AND organization_id=$4",[typeProvenance.run_id,b.opening_id,userId,orgId]);
+      if(!run.rows.length||run.rows[0].component_type!==b.payload.component_type||['running','failed'].includes(run.rows[0].status)){
+        await client.query('ROLLBACK');return res.status(400).json({error:'invalid_component_type_provenance'});
+      }
+    }
+    const provenance=identityValues(b.payload,userId,identityRun);
 
     const component = await client.query(
       `INSERT INTO hardware_components
         (id, opening_id, component_type, manufacturer, model_number, finish, notes, tracker_id,
          mounting_scope, door_leaf_id, frame_id, position_label, client_operation_id,
-         condition, identity_status, review_state, replacement_required, revision, install_date, unit_cost, supplier_name, supplier_contact, serial_number, carrier, tracking_number, shipment_status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,1,$18,$19,$20,$21,$22,$23,$24,$25)
+         condition, identity_status, review_state, replacement_required, revision, install_date, unit_cost, supplier_name, supplier_contact, serial_number, carrier, tracking_number, shipment_status,
+         identity_source,identity_acknowledged_by,identity_acknowledged_at,identity_recognition_run_id,identity_value_producer)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,1,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
        RETURNING *`,
       [b.entity_id, b.opening_id, b.payload.component_type, b.payload.manufacturer ?? null,
         b.payload.model_number ?? null, b.payload.finish ?? null, b.payload.notes ?? null,
@@ -139,8 +161,22 @@ syncRouter.post("/components", async (req: AuthedRequest, res) => {
         b.payload.condition, b.payload.identity_status, b.payload.review_state,
         b.payload.replacement_required, b.payload.install_date ?? null, b.payload.unit_cost ?? null,
         b.payload.supplier_name ?? null, b.payload.supplier_contact ?? null, b.payload.serial_number ?? null,
-        b.payload.carrier ?? null, b.payload.tracking_number ?? null, b.payload.shipment_status ?? "not_shipped"],
+        b.payload.carrier ?? null, b.payload.tracking_number ?? null, b.payload.shipment_status ?? "not_shipped",
+        provenance.identity_source,provenance.identity_acknowledged_by,provenance.identity_acknowledged_at,provenance.identity_recognition_run_id,provenance.identity_value_producer],
     );
+    if (b.payload.recognition_run_id) {
+      const linked = await client.query(`UPDATE recognition_runs SET component_id=$1
+        WHERE id=$2 AND opening_id=$3 AND user_id=$4 AND organization_id=$5
+        AND (component_id IS NULL OR component_id=$1) RETURNING id`,
+        [b.entity_id,b.payload.recognition_run_id,b.opening_id,userId,orgId]);
+      if (!linked.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({error:'invalid_recognition_run'});
+      }
+    }
+    // Persist classification provenance separately from product identity, in the
+    // same transaction as the save. Old clients are explicitly unknown.
+    await client.query(`INSERT INTO audit_log (organization_id,user_id,action,method,path,request_body,status_code) VALUES ($1,$2,'component_type_provenance','POST','/api/sync/components',$3,201)`,[orgId,userId,JSON.stringify({component_id:b.entity_id,operation_id:b.operation_id,component_type:b.payload.component_type,source:typeProvenance?.source||'unknown',recognition_run_id:typeProvenance?.source==='AI'?typeProvenance.run_id:null})]);
     const changedFields = Object.keys(b.payload).sort();
     const receipt = await writeSyncReceiptAndAudit(client, {
       organizationId: orgId,

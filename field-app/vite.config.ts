@@ -16,6 +16,8 @@ export default defineConfig({
       // not through the service worker, since that data needs app-level merge/queue logic.
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // The hosting renewal must reach the network, never the offline shell.
+        navigateFallbackDenylist: [/^\/(?:api(?:\/|$)|health(?:[/?]|$)|preview-access(?:[/?]|$))/],
       },
       manifest: {
         name: 'Opening Intel — Field',

@@ -1,0 +1,4 @@
+[
+ {"manufacturer":"LCN","models":["4040XP","4041 DA"],"doc_sha256":"98b354cc33e6de35f53fbabac7362c0a20c1fe998651a2421070a40e710bd570","page_no":1,"drawing":"28102 Rev. 09/17-ya, section 7","mount":"pull side","horizontal_intervals_inches":[1,3,1],"row_spacing_inches":2.25,"arm_shoe_spacing_inches":1.9375},
+ {"manufacturer":"Cal-Royal","models":["CR441"],"doc_sha256":"684f13cb0a9781039a8ce92cca6283558fbec70e26397ce32950c7330d30b21a","page_no":2,"drawing":"DCG1014, MAR 2022, page 2/4","mount":"standard pull side","horizontal_intervals_inches":[1,3,1],"row_spacing_inches":2.25,"arm_shoe_spacing_inches":1.9375}
+]

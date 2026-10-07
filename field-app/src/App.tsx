@@ -16,6 +16,7 @@ import { OpeningStructurePage } from "./pages/OpeningStructurePage";
 import { SetupOpeningPage } from "./pages/SetupOpeningPage";
 import { QrLabelPage } from "./pages/QrLabelPage";
 import { SyncIssuesPage } from "./pages/SyncIssuesPage";
+import { PreviewAccessNotice } from "./components/PreviewAccessNotice";
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { auth, loading } = useAuth();
@@ -32,7 +33,7 @@ function AppRoutes() {
   }, []);
 
   return (
-    <Routes>
+    <><PreviewAccessNotice /><Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/account-recovery" element={<AccountRecoveryPage />} />
       <Route path="/branches" element={<RequireAuth><BranchesPage /></RequireAuth>} />
@@ -50,7 +51,7 @@ function AppRoutes() {
       <Route path="/opening/:id/structure" element={<RequireAuth><OpeningStructurePage /></RequireAuth>} />
       <Route path="/opening/:id/edit-hardware/:hardwareId" element={<RequireAuth><EditHardwarePage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/scan" replace />} />
-    </Routes>
+    </Routes></>
   );
 }
 

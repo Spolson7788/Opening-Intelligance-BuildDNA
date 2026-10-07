@@ -108,8 +108,8 @@ describe("paired-opening data contract — twelve acceptance checks", () => {
     const org = await signupTestOrg(); const { buildingId } = await createPortfolioHierarchy(org.token);
     const opening = await createTestOpening(org.token, buildingId, { opening_configuration: "pair" });
     const { leaves } = await structure(org.token, opening.id);
-    await hardware(org.token, opening.id, { mounting_scope: "door_leaf", door_leaf_id: leaves[0].id, condition: "good", identity_status: "established" });
-    await hardware(org.token, opening.id, { mounting_scope: "door_leaf", door_leaf_id: leaves[1].id, condition: "worn", identity_status: "established", replacement_required: true });
+    await hardware(org.token, opening.id, { mounting_scope: "door_leaf", door_leaf_id: leaves[0].id, condition: "good", identity_source: "technician_identified", identity_acknowledged: true, identity_status: "established" });
+    await hardware(org.token, opening.id, { mounting_scope: "door_leaf", door_leaf_id: leaves[1].id, condition: "worn", identity_source: "technician_identified", identity_acknowledged: true, identity_status: "established", replacement_required: true });
     await request(app).post(`/api/openings/${opening.id}/complete`).set(auth(org.token));
     const detail = await request(app).get(`/api/openings/${opening.id}`).set(auth(org.token));
     const purchasing = await request(app).get(`/api/openings/${opening.id}/purchasing-eligibility`).set(auth(org.token));
@@ -130,7 +130,7 @@ describe("paired-opening data contract — twelve acceptance checks", () => {
     const opening = await createTestOpening(org.token, buildingId, { opening_configuration: "single" });
     await structure(org.token, opening.id, false);
     const unresolved = await hardware(org.token, opening.id, { condition: "worn", identity_status: "unresolved", replacement_required: true });
-    const serviceable = await hardware(org.token, opening.id, { component_type: "hinge", condition: "good", identity_status: "established", replacement_required: false });
+    const serviceable = await hardware(org.token, opening.id, { component_type: "hinge", condition: "good", identity_source: "technician_identified", identity_acknowledged: true, identity_status: "established", replacement_required: false });
     await request(app).post(`/api/openings/${opening.id}/complete`).set(auth(org.token));
     const result = await request(app).get(`/api/openings/${opening.id}/purchasing-eligibility`).set(auth(org.token));
     const byId = Object.fromEntries(result.body.decisions.map((d: any) => [d.component_id, d]));

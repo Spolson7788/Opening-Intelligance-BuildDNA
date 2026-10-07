@@ -1,0 +1,63 @@
+name: Reference candidate acceptance
+on:
+  push:
+    branches: [feat/reference-evidence-os6]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-postgres-fixtures:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: opening_intel_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/opening_intel_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --include=dev
+      - name: Create restricted test roles
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -c 'CREATE ROLE oi_pr2_api; CREATE ROLE oi_reference_editor; CREATE ROLE oi_reference_approver;'
+      - name: Check private-input tooling syntax
+        run: python3 -m py_compile scripts/reference/build_manifest.py scripts/reference/validate_manifest.py scripts/reference/test_manifest.py
+      - name: Type check API and operator tools
+        run: |
+          npm run build
+          npx tsc --noEmit --target ES2022 --module commonjs --esModuleInterop --skipLibCheck scripts/reference/import.ts scripts/reference/approve.ts
+      - name: Check fail-closed staging preview guards
+        run: |
+          node --test scripts/reference/preview-context.test.mjs tests/databaseConnectionConfig.node.test.mjs
+          npx vitest run --config vitest.offline.config.ts tests/netlifyHosting.test.ts
+      - name: Check private preview access recovery
+        run: npx vitest run --config vitest.offline.config.ts tests/previewAccess.test.ts tests/authResponse.test.ts tests/openingLoadFailure.test.ts tests/openingCacheAccess.test.ts
+      - name: Recognition photo retention and offline dependencies
+        run: npx vitest run --config vitest.offline.config.ts tests/offlineDb.test.ts tests/offlineDependencies.test.ts tests/offlineFlushRecovery.test.ts
+      - name: Label reading and conservative identity regressions
+        run: |
+          npx vitest run --config vitest.release.config.ts
+          node --test scripts/reference/score-label-reading.test.mjs
+          node scripts/reference/label-ocr-runtime-smoke.mjs
+      - name: Full API regression suite with native PostgreSQL
+        run: npm test
+      - name: Native Node tooling regressions
+        run: node --test scripts/dashboard-health-bands.test.mjs scripts/function-evidence.test.cjs scripts/hosted-acceptance-config.test.cjs scripts/migration-preflight.test.cjs scripts/protected-staging-context.test.mjs scripts/release/legacy-plan.test.cjs scripts/reference/preview-context.test.mjs scripts/reference/score-label-reading.test.mjs tests/databaseConnectionConfig.node.test.mjs
+      - name: Build Field App
+        run: npm ci --include=dev --prefix field-app && npm run build --prefix field-app
+      - name: Generate Facility Dashboard
+        run: node scripts/build-facility-dashboard.mjs /tmp/reference-dashboard && node --check facility-dashboard/reference-evidence.mjs

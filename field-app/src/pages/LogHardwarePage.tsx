@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { fetchOpening } from "../lib/api";
@@ -7,6 +7,7 @@ import { updateCachedOpening } from "../lib/db";
 import { CARRIER_OPTIONS } from "../lib/tracking";
 import { SyncBadge } from "../components/SyncBadge";
 import { RecognitionReview } from "../components/RecognitionReview";
+import {KnownProductPicker} from '../components/KnownProductPicker';
 
 const COMPONENT_TYPES = [
   { value: "lockset", label: "Lockset" },
@@ -39,6 +40,13 @@ export function LogHardwarePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [componentType, setComponentType] = useState("lockset");
+  const typeProvenance=useRef<{source:'default'|'technician'|'AI';run_id?:string}>({source:'default'});
+  const currentType=useRef('lockset');
+  function applyPhotoType(type:string,runId:string){
+    if(typeProvenance.current.source==='technician')return false;
+    if(currentType.current!==type){setIdentityAcknowledged(false);setIdentityStatus('unresolved');setReviewState('pending');setRecognitionRunId('');setIdentitySource('unknown');}
+    currentType.current=type;typeProvenance.current={source:'AI',run_id:runId};setComponentType(type);return true;
+  }
   const [manufacturer, setManufacturer] = useState("");
   const [modelNumber, setModelNumber] = useState("");
   const [installDate, setInstallDate] = useState("");
@@ -60,6 +68,13 @@ export function LogHardwarePage() {
   const [identityStatus, setIdentityStatus] = useState("unresolved");
   const [reviewState, setReviewState] = useState("pending");
   const [replacementRequired, setReplacementRequired] = useState(false);
+  const [recognitionBusy,setRecognitionBusy]=useState(false);
+  const [recognitionRunId,setRecognitionRunId]=useState('');
+  const [recognitionPhotos,setRecognitionPhotos]=useState<File[]>([]);
+  const [identityMode,setIdentityMode]=useState<'known'|'photo'>('known');
+  const [identitySource,setIdentitySource]=useState<'unknown'|'technician_identified'|'photo_suggestion'>('technician_identified');
+  const [identityAcknowledged,setIdentityAcknowledged]=useState(false);
+  function editIdentity(){setIdentityAcknowledged(false);setIdentityStatus('unresolved');setIdentitySource('technician_identified');}
 
   useEffect(() => {
     if (id) fetchOpening(id).then((result) => setOpening(result.opening)).catch(() => undefined);
@@ -67,6 +82,9 @@ export function LogHardwarePage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if(recognitionBusy){setError('Wait for photograph analysis to finish before saving the hardware.');return;}
+    if(identityMode==='known'&&!identityAcknowledged){setError('Acknowledge your product identification before saving.');return;}
+    if(identityAcknowledged&&(!manufacturer.trim()||!modelNumber.trim())){setError('Enter the manufacturer and model before acknowledging the identity.');return;}
     setSubmitting(true);
     setError(null);
     try {
@@ -76,6 +94,10 @@ export function LogHardwarePage() {
         id: componentId,
         opening_id: id,
         component_type: componentType,
+        component_type_provenance: typeProvenance.current,
+        recognition_run_id: recognitionRunId || undefined,
+        identity_source:identityAcknowledged?identitySource:identityMode==='known'?'technician_identified':'unknown',
+        identity_acknowledged:identityAcknowledged,
         manufacturer: manufacturer || undefined,
         model_number: modelNumber || undefined,
         install_date: installDate || undefined,
@@ -98,18 +120,18 @@ export function LogHardwarePage() {
       };
       await queueOpeningMutation("hardware_component", id!, {
         ...payload,
-      }, operationId);
+      }, operationId, recognitionPhotos);
       await updateCachedOpening(id!, (cached) => ({
         ...cached,
         hardware_components: [
           ...(cached.hardware_components || []).filter((item: any) => item.id !== componentId),
           { ...payload, pending_sync: true },
         ],
-      }));
+      })).catch(()=>undefined); // The hardware/photo bundle is already durably queued.
       setSaved(true);
       setTimeout(() => navigate(`/opening/${id}`), 700);
-    } catch {
-      setError("Couldn't save — check your connection and try again.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Couldn't save — try again.");
     } finally {
       setSubmitting(false);
     }
@@ -131,14 +153,16 @@ export function LogHardwarePage() {
 
         {saved ? (
           <div className="card" style={{ textAlign: "center", color: "var(--success)" }}>
-            Saved. Returning to the opening…
+            Saved{recognitionPhotos.length ? ` with ${recognitionPhotos.length} photograph${recognitionPhotos.length===1?"":"s"}` : ""}. Returning to the opening…
           </div>
         ) : (
           <form onSubmit={onSubmit}>
-            {id && <RecognitionReview key={id} openingId={id} onUse={(brand,model)=>{setManufacturer(brand);setModelNumber(model);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
+            <div className="field"><label htmlFor="identity-path">How will you identify this product?</label><select id="identity-path" value={identityMode} disabled={recognitionBusy} onChange={e=>{const mode=e.target.value as 'known'|'photo';setIdentityMode(mode);setIdentitySource(mode==='known'?'technician_identified':'unknown');setIdentityAcknowledged(false);setIdentityStatus('unresolved');setRecognitionRunId('');}}><option value="known">I know this product</option><option value="photo">Identify from photographs</option></select></div>
+            {identityMode==='known'&&<><KnownProductPicker onSelect={(brand,model)=>{setManufacturer(brand);setModelNumber(model);editIdentity();}}/><div className="field"><label htmlFor="documentation-photo">Documentation photographs</label><input id="documentation-photo" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={e=>setRecognitionPhotos(Array.from(e.target.files||[]))}/><p>Photographs attach when you save. Image recognition is not required.</p>{recognitionPhotos.length>0&&<p>{recognitionPhotos.length} photograph{recognitionPhotos.length===1?'':'s'} selected.</p>}</div></>}
+            {identityMode==='photo'&&id && <RecognitionReview key={id} openingId={id} onComponentType={applyPhotoType} onBusyChange={setRecognitionBusy} onFilesChange={files=>{setRecognitionPhotos(files);setRecognitionRunId('');setIdentityAcknowledged(false);setIdentitySource('unknown');setIdentityStatus('unresolved');}} attributes={{component_type:componentType,mounting_scope:mountingScope,position:positionLabel}} onUse={(brand,model,run,recognizedType)=>{if(recognizedType)setComponentType(recognizedType);setManufacturer(brand);setModelNumber(model);setRecognitionRunId(run);setIdentitySource('photo_suggestion');setIdentityAcknowledged(false);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
             <div className="field">
               <label htmlFor="component-type">Component type</label>
-              <select id="component-type" value={componentType} onChange={(e) => setComponentType(e.target.value)}>
+              <select id="component-type" value={componentType} onChange={(e) => {currentType.current=e.target.value;typeProvenance.current={source:'technician'};setComponentType(e.target.value);editIdentity();}}>
                 {COMPONENT_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
@@ -169,12 +193,14 @@ export function LogHardwarePage() {
             <label style={{ display: "flex", gap: 8, marginBottom: 16 }}><input type="checkbox" checked={replacementRequired} onChange={(e) => setReplacementRequired(e.target.checked)} />Replacement required</label>
             <div className="field">
               <label htmlFor="manufacturer">Manufacturer</label>
-              <input id="manufacturer" value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} placeholder="e.g. Cal-Royal" />
+              <input id="manufacturer" value={manufacturer} onChange={(e) => {setManufacturer(e.target.value);editIdentity();}} placeholder="e.g. Cal-Royal" />
             </div>
             <div className="field">
               <label htmlFor="model-number">Model / part number</label>
-              <input id="model-number" value={modelNumber} onChange={(e) => setModelNumber(e.target.value)} />
+              <input id="model-number" value={modelNumber} onChange={(e) => {setModelNumber(e.target.value);editIdentity();}} />
             </div>
+            <label style={{display:'flex',gap:8,marginBottom:16}}><input type="checkbox" checked={identityAcknowledged} disabled={!manufacturer.trim()||!modelNumber.trim()||identitySource==='unknown'} onChange={e=>{setIdentityAcknowledged(e.target.checked);setIdentityStatus(e.target.checked?'established':'unresolved');}}/>{identitySource==='photo_suggestion'?'I confirm this suggested product is the installed product.':'I identified this product and am responsible for the manufacturer and model entered.'}</label>
+            <p>Known products can be included in a purchasing request after the opening review is complete. The purchasing department verifies the request before ordering.</p>
             <div className="field">
               <label htmlFor="serial-number">Serial number (from the physical part, if visible)</label>
               <input id="serial-number" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} placeholder="e.g. SC-88213-A" />
@@ -230,7 +256,7 @@ export function LogHardwarePage() {
             </div>
 
             {error && <p className="error-text">{error}</p>}
-            <button type="submit" className="btn btn-primary" disabled={submitting}>
+            <button type="submit" className="btn btn-primary" disabled={submitting||recognitionBusy}>
               {submitting ? "Saving…" : "Save"}
             </button>
           </form>

@@ -160,6 +160,7 @@ export async function closeFieldAppDb() {
 export async function saveEntityAndOperation(
   entity: OfflineEntityEnvelope,
   operation: SyncOperation,
+  attachments: {media: OfflineMediaRecord; operation: SyncOperation}[] = [],
 ) {
   if (entity.id !== operation.entityId || entity.openingId !== operation.openingId) {
     throw new Error("entity_operation_identity_mismatch");
@@ -167,13 +168,40 @@ export async function saveEntityAndOperation(
   if (entity.organizationId !== operation.organizationId) {
     throw new Error("entity_operation_tenant_mismatch");
   }
+  for (const attachment of attachments) {
+    const media=attachment.media, photoOperation=attachment.operation;
+    if(entity.entityType!=="component" || media.targetType!=="hardware_component" || media.targetId!==entity.id ||
+       media.photoId!==photoOperation.entityId || media.openingId!==entity.openingId || photoOperation.openingId!==entity.openingId ||
+       media.organizationId!==entity.organizationId || photoOperation.organizationId!==entity.organizationId ||
+       media.capturedByUserId!==operation.actorUserId || photoOperation.actorUserId!==operation.actorUserId ||
+       photoOperation.payload.target_id!==entity.id || !photoOperation.dependencyOperationIds.includes(operation.operationId)) {
+      throw new Error("hardware_photo_identity_mismatch");
+    }
+  }
   const db = await getDb();
-  const tx = db.transaction(["entities", "operations"], "readwrite");
-  await Promise.all([
-    tx.objectStore("entities").put(entity),
-    tx.objectStore("operations").put(operation),
-    tx.done,
-  ]);
+  const tx = db.transaction(["entities", "operations", "media", "auth"], "readwrite");
+  if(attachments.length){
+    const auth=await tx.objectStore("auth").get("current");
+    if(!auth || auth.userId!==operation.actorUserId || auth.organizationId!==operation.organizationId){
+      tx.abort(); await tx.done.catch(()=>undefined); throw new Error("active_principal_changed");
+    }
+  }
+  // Attach a handler immediately so an automatic transaction abort cannot
+  // leave its completion promise unhandled while a request is being awaited.
+  void tx.done.catch(()=>undefined);
+  try {
+    await tx.objectStore("entities").put(entity);
+    await tx.objectStore("operations").put(operation);
+    for(const {media,operation:photoOperation} of attachments){
+      await tx.objectStore("media").put({...media,operationId:photoOperation.operationId});
+      await tx.objectStore("operations").put(photoOperation);
+    }
+    await tx.done;
+  } catch(error) {
+    try { tx.abort(); } catch { /* Transaction may already have aborted. */ }
+    await tx.done.catch(()=>undefined);
+    throw error;
+  }
 }
 
 export async function saveMediaAndOperation(media: OfflineMediaRecord, operation: SyncOperation) {

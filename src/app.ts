@@ -1,5 +1,6 @@
 import {accountRecoveryRouter} from "./routes/accountRecovery";
 import {recognitionRouter} from "./routes/recognition";
+import {referencesRouter} from "./routes/references";
 import {branchesRouter} from "./routes/branches";
 import {providerAssignmentsRouter} from "./routes/providerAssignments";
 import {purchasingRouter} from "./routes/purchasing";
@@ -81,6 +82,7 @@ export function createApp(options: { accountRecoveryEnabled?: boolean } = {}) {
 
   app.use("/api/auth", authRouter);
   app.use("/api/recognition", recognitionRouter);
+  app.use("/api/references", referencesRouter);
   if (options.accountRecoveryEnabled) app.use("/api/account-recovery", accountRecoveryRouter);
   app.use("/api/provider-assignments",providerAssignmentsRouter);
   app.use("/api/branches",branchesRouter);

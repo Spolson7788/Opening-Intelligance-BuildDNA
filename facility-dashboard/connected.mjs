@@ -63,8 +63,9 @@ export function readableLabel(value) {
 }
 export function componentLabel(component,records=[]) {
   const parent=component.hierarchy||records.find(r=>r.id===component.structure_id)?.kind||(component.structure_id?'unknown parent':'opening');
-  return [readableLabel(component.component_class)||'Component',readableLabel(parent),component.manufacturer,component.model].filter(Boolean).join(' — ');
+  return [readableLabel(component.component_class)||'Component',readableLabel(parent),component.manufacturer,component.model,identitySourceLabel(component)].filter(Boolean).join(' — ');
 }
+export function identitySourceLabel(component){return component.identity_source==='technician_identified'?'Technician identified':component.identity_source==='photo_suggestion'?'Photo suggestion':'';}
 export function photoScopeLabel(photo,records=[]) {
   if(photo.component_id){const component=records.find(r=>r.id===photo.component_id);return component?'Component: '+componentLabel(component,records):'Component unavailable';}
   if(photo.structure_id){const structure=records.find(r=>r.id===photo.structure_id);return structure?readableLabel(structure.kind||structure.hierarchy):'Structure unavailable';}
