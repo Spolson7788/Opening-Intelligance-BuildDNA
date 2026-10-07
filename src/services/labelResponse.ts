@@ -1,6 +1,6 @@
 // Validate provider envelopes separately from transport success. Never repair text.
 import {providerObject} from './providerReply';
-export const LABEL_RESPONSE_VERSION='oi-label-response-3';
+export const LABEL_RESPONSE_VERSION='oi-label-response-4';
 export interface LabelValidationIssue {reason:string;entry_index?:number;crop_index?:number}
 export function labelReadContract(indices:number[]){
  return ` Return exactly ${indices.length} reads, one for each crop_index in [${indices.join(',')}], with no duplicate or extra indices. Use a string text for every entry, including an empty string when unreadable or no label is visible. Never omit an unreadable crop or use null text.`;
@@ -43,6 +43,9 @@ export function parseLabelResponse(body:any,stage:string,expected:number|number[
    }
    seen.add(r.crop_index);
    if(typeof r.text!=='string'){invalid.add(r.crop_index);issues.push({entry_index,crop_index:r.crop_index,reason:'invalid_text'});continue;}
+   // Preserve the transcription for miss review, but flag malformed device
+   // association. A descriptive string must never be coerced into proof.
+   if(['native_tile','focused_crop'].includes(r.source)&&typeof r.target_device!=='boolean')issues.push({entry_index,crop_index:r.crop_index,reason:'invalid_target_device'});
    valid.set(r.crop_index,r);
   }
   const not_returned=indices.filter(i=>!seen.has(i));

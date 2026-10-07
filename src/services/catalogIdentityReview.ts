@@ -24,7 +24,7 @@ export function catalogIdentityReview(labels:LabelEvidence,classifier:Record<str
  const typeConflict=classes.length===1&&((classifier.component_class&&classifier.component_class!==classes[0])||(selectedClass&&selectedClass!==classes[0]))||Boolean(selectedClass&&classifier.component_class&&selectedClass!==classifier.component_class);
  const readableModel=usable.some(r=>r.region.kind!=='brand_mark'&&/\bMODEL\s*[:#-]?\s*[A-Z0-9]*\d[A-Z0-9-]*/i.test(r.vision_text));
  const status=catalog===null?'CATALOG_UNAVAILABLE':conflict?'CONFLICT':typeConflict?'TYPE_CONFLICT':candidates.length?'CANDIDATES':marks.length&&readableModel?'UNSUPPORTED_BY_CATALOG':'INSUFFICIENT_EVIDENCE';
- return {status,candidates,excluded_evidence:excluded.map(r=>({...evidence(r,'excluded'),reason:r.provenance?.target_device===false?'other_device':'unvalidated_location'})),
+ return {status,candidates,excluded_evidence:excluded.map(r=>({...evidence(r,'excluded'),reason:r.provenance?.association_status==='invalid'?'invalid_device_association':r.provenance?.target_device===false?'other_device':'unvalidated_location'})),
   maker_evidence:marks.map(r=>evidence(r,'brand_mark')),model_evidence:usable.filter(r=>r.region.kind!=='brand_mark').map(r=>evidence(r,'model')),
   type_evidence:{technician_class:selectedClass,classifier_class:classifier.component_class??null,catalog_classes:classes},
   classifier_claim:{manufacturer:classifier.manufacturer??null,model:classifier.model??null,source:'classifier_only'},

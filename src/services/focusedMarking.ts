@@ -31,5 +31,5 @@ export function resolveFocusedRead(value:any,focus:{box:{left:number;top:number;
  const b=value?.text_box;
  if(value?.source!=='focused_crop'||!b||![b.x,b.y,b.w,b.h].every(v=>typeof v==='number'&&Number.isFinite(v))||b.x<0||b.y<0||b.w<=0||b.h<=0||b.x+b.w>1||b.y+b.h>1||![0,90,180,270].includes(value.rotation))return {source:'context',target_device:false,location_validated:false};
  const original=value.rotation===90?{x:b.y,y:1-b.x-b.w,w:b.h,h:b.w}:value.rotation===180?{x:1-b.x-b.w,y:1-b.y-b.h,w:b.w,h:b.h}:value.rotation===270?{x:1-b.y-b.h,y:b.x,w:b.h,h:b.w}:b;
- return {source:'focused_crop',target_device:value.target_device===true,location_validated:true,box:{x:(focus.box.left+original.x*focus.box.width)/focus.width,y:(focus.box.top+original.y*focus.box.height)/focus.height,w:original.w*focus.box.width/focus.width,h:original.h*focus.box.height/focus.height},rotation:value.rotation};
+ return {source:'focused_crop',target_device:value.target_device===true,...(typeof value.target_device!=='boolean'?{association_status:'invalid' as const}:{}),location_validated:true,box:{x:(focus.box.left+original.x*focus.box.width)/focus.width,y:(focus.box.top+original.y*focus.box.height)/focus.height,w:original.w*focus.box.width/focus.width,h:original.h*focus.box.height/focus.height},rotation:value.rotation};
 }

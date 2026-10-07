@@ -41,3 +41,9 @@ it('rejects ambiguous, malformed or incomplete fenced replies instead of choosin
  for(const text of [fence+'\n'+fence,'Another object {}\n'+fence,'Explanation\n```json\n{"reads": [}\n```','Explanation\n```json\n[]\n```'])expect(()=>parseLabelResponse({content:[{type:'text',text}]},'label_reader',[0])).toThrow('label_invalid_json');
  for(const stop_reason of ['refusal','max_tokens'])expect(()=>parseLabelResponse({stop_reason,content:[{type:'text',text:'Explanation\n'+fence}]},'label_reader',[0])).toThrow();
 });
+
+it('retains text but flags a descriptive device name as invalid association, never boolean proof',()=>{
+ const parsed=parseLabelResponse({content:[{type:'text',text:JSON.stringify({reads:[{crop_index:0,text:'PDQ',source:'focused_crop',target_device:'panic hardware exit device'},{crop_index:1,text:'6200R',source:'focused_crop',target_device:true}]})}]},'label_reread',[0,1]);
+ expect(parsed.reads).toHaveLength(2);expect(parsed.reads[0].target_device).toBe('panic hardware exit device');
+ expect(parsed.validation).toMatchObject({status:'partial',issues:[{crop_index:0,reason:'invalid_target_device'}]});
+});

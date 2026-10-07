@@ -66,3 +66,9 @@ it('retains validated maker disagreement across broad and focused reads as a con
  expect(catalogIdentityReview(labels(a,b,m)).status).toBe('CONFLICT');
  a.provenance.location_validated=false;expect(catalogIdentityReview(labels(a,b,m)).status).toBe('CANDIDATES');expect(catalogIdentityReview(labels(a,b,m)).excluded_evidence[0].text).toBe('DORMA');
 });
+
+it('distinguishes invalid device association from an actual other-device finding',()=>{
+ const logo=read('PDQ',0,'brand_mark');logo.provenance={source:'focused_crop',target_device:false,association_status:'invalid',location_validated:true};
+ const result=catalogIdentityReview(labels(logo,read('6200R',1,'product_label')));
+ expect(result.candidates).toEqual([]);expect(result.excluded_evidence[0].reason).toBe('invalid_device_association');
+});

@@ -30,6 +30,6 @@ export function resolveNativeRead(value:any,tiles:NativeTile[],width:number,heig
  const tile=tiles.find(t=>t.index===value?.tile_index),b=value?.text_box;
  const valid=tile&&b&&['x','y','w','h'].every(k=>typeof b[k]==='number'&&Number.isFinite(b[k]))&&b.x>=0&&b.y>=0&&b.w>0&&b.h>0&&b.x+b.w<=1&&b.y+b.h<=1;
  if(!valid||value.source!=='native_tile')return {source:'context',target_device:false,location_validated:false};
- return {source:'native_tile',target_device:value.target_device===true,location_validated:true,
+ return {source:'native_tile',target_device:value.target_device===true,...(typeof value.target_device!=='boolean'?{association_status:'invalid' as const}:{}),location_validated:true,
   box:{x:(tile.box.left+b.x*tile.box.width)/width,y:(tile.box.top+b.y*tile.box.height)/height,w:b.w*tile.box.width/width,h:b.h*tile.box.height/height},rotation:[0,90,180,270].includes(value.rotation)?value.rotation:0};
 }
