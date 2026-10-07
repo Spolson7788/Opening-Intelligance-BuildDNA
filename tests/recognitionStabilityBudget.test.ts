@@ -2,6 +2,7 @@ import {beforeAll,beforeEach,afterAll,afterEach,it,expect,vi} from 'vitest';
 import {PGlite} from '@electric-sql/pglite';
 import {readFileSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
+import {createHash} from 'node:crypto';
 const fixture=vi.hoisted(()=>({db:null as any,queue:Promise.resolve()}));
 // PGlite owns one session: serialize test transactions, as its socket adapter does.
 vi.mock('../src/db/pool',()=>({pool:{query:(sql:string,args:any[])=>fixture.db.query(sql,args),connect:async()=>{
@@ -9,7 +10,7 @@ vi.mock('../src/db/pool',()=>({pool:{query:(sql:string,args:any[])=>fixture.db.q
  return {query:(sql:string,args:any[])=>fixture.db.query(sql,args),release};
 }}}));
 vi.mock('../src/services/recognitionImage',()=>({prepareProviderRequest:async(request:any)=>({body:JSON.stringify(request),manifest:[]})}));
-import {registerStabilityRun,reserveStabilityAttempt,settleStabilityAttempt,stabilityMaximum,stabilityActual,stabilityTrialId,stabilityRuntime,STABILITY_MODEL,reconcileRejectedAttempt,accountLimitRejected} from '../src/services/recognitionStabilityBudget';
+import {registerStabilityRun,reserveStabilityAttempt,settleStabilityAttempt,stabilityMaximum,stabilityActual,stabilityTrialId,stabilityRuntime,STABILITY_MODEL,reconcileRejectedAttempt,accountLimitRejected,approvedPhotoSetIndex} from '../src/services/recognitionStabilityBudget';
 import {recognitionAudit,auditedFetch} from '../src/services/recognitionAudit';
 const org=randomUUID(),actor=randomUUID(),opening=randomUUID(),trial=randomUUID(),hash='4f46d88ad71d97bb9aff870efa56eccc82de8b17aafa8b381994e86c969b668f';
 const body=()=>({model:STABILITY_MODEL,max_tokens:1600,temperature:0,messages:[{role:'user',content:[{type:'text',text:'fixture'}]}]});
@@ -19,6 +20,7 @@ beforeAll(async()=>{
  CREATE TABLE recognition_runs(id uuid PRIMARY KEY,organization_id uuid,user_id uuid,opening_id uuid,photo_hashes jsonb,status text,stage_one jsonb DEFAULT '{}');
  CREATE TABLE recognition_provider_attempts(id uuid PRIMARY KEY,run_id uuid REFERENCES recognition_runs(id),stage text,provider text,model_id text,outcome text,started_at timestamptz DEFAULT now(),finished_at timestamptz,request_manifest jsonb,latency_ms integer,usage jsonb,cost_usd numeric,cost_status text,raw_output text,cost_basis jsonb);`);
  await fixture.db.exec(readFileSync(new URL('../migrations/20261005170938_recognition_stability_budget.sql',import.meta.url),'utf8'));
+ await fixture.db.exec(readFileSync(new URL('../migrations/20261007132028_field_photo_trial_scope.sql',import.meta.url),'utf8'));
  await fixture.db.query('INSERT INTO organizations VALUES($1)',[org]);await fixture.db.query('INSERT INTO users VALUES($1,$2,$3,true)',[actor,org,'admin']);await fixture.db.query('INSERT INTO openings VALUES($1)',[opening]);
 },20000);
 beforeEach(async()=>{
@@ -78,4 +80,31 @@ it('settles each sequenced call so a $1.45 remaining allowance can cover ten rea
  await fixture.db.query('UPDATE recognition_stability_trials SET cap_micro=1457513');
  for(let n=0;n<10;n++){const id=await registered();for(let j=0;j<4;j++){const a=await attempt(id);await reserveStabilityAttempt(a,id,624000);await settleStabilityAttempt(a,15000);}}
  expect(await used()).toBe(600000);
+});
+const fieldSets=()=>[['a','b','c'],['d','e','f']].map(s=>s.map(h=>h.repeat(64)));
+const digest=(sets:unknown)=>createHash('sha256').update(JSON.stringify(sets)).digest('hex');
+it('accepts each complete frozen multi-view set once and retains the shared budget',async()=>{
+ const sets=fieldSets();await fixture.db.query('UPDATE recognition_stability_trials SET approved_photo_sets=$1,photo_sha256=$2,max_runs=2,cap_micro=1411028',[JSON.stringify(sets),digest(sets)]);
+ const first=await run({photo_hashes:sets[0]});await registerStabilityRun(first,randomUUID());
+ const evidence=(await fixture.db.query('SELECT stage_one FROM recognition_runs WHERE id=$1',[first])).rows[0].stage_one;
+ expect(evidence.field_baseline_scope).toMatchObject({set_index:0,photo_count:3,scope_sha256:digest(sets)});
+ await expect(registerStabilityRun(await run({photo_hashes:sets[0]}),randomUUID())).rejects.toThrow('already_run');
+ const second=await run({photo_hashes:sets[1]});await registerStabilityRun(second,randomUUID());
+ const a=await attempt(first);await reserveStabilityAttempt(a,first,624000);await settleStabilityAttempt(a,100000);
+ expect(await used()).toBe(100000);
+ const b=await attempt(second);await reserveStabilityAttempt(b,second,624000);await settleStabilityAttempt(b,100000);
+ expect(await used()).toBe(200000);
+});
+it('rejects mixed, omitted, reordered and extra photos even when individual hashes are approved',()=>{
+ const sets=fieldSets(),t={approved_photo_sets:sets,photo_sha256:digest(sets),max_runs:2};
+ expect(approvedPhotoSetIndex(t,sets[1])).toBe(1);
+ for(const bad of [[sets[0][0],sets[1][1],sets[0][2]],sets[0].slice(1),[...sets[0]].reverse(),[...sets[0],sets[1][0]]])
+  expect(()=>approvedPhotoSetIndex(t,bad)).toThrow('scope_mismatch');
+ expect(()=>approvedPhotoSetIndex({...t,photo_sha256:'0'.repeat(64)},sets[0])).toThrow();
+ expect(()=>approvedPhotoSetIndex({...t,max_runs:3},sets[0])).toThrow();
+});
+it('rejects malformed frozen scope while legacy single-photo trials remain supported',()=>{
+ for(const sets of [[],[[]],[[hash,hash,hash]],[[hash,'x','y']],Array(11).fill([hash]),'bad'])
+  expect(()=>approvedPhotoSetIndex({approved_photo_sets:sets,photo_sha256:digest(sets),max_runs:1},[hash])).toThrow();
+ expect(approvedPhotoSetIndex({approved_photo_sets:null,photo_sha256:hash},[hash])).toBe(0);
 });

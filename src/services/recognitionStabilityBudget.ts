@@ -1,5 +1,6 @@
 import {pool} from '../db/pool';
 import {AsyncLocalStorage} from 'node:async_hooks';
+import {createHash} from 'node:crypto';
 
 // Populated only by the Netlify handler from its trusted request context.
 export const stabilityRuntime=new AsyncLocalStorage<string|undefined>();
@@ -39,6 +40,24 @@ export function stabilityActual(usage:any,maxTokens:number):number|null {
  if(usage.cache_creation_input_tokens||usage.cache_read_input_tokens||usage.server_tool_use)return null;
  return usage.input_tokens*3+usage.output_tokens*15;
 }
+// Multi-view baselines are bound to complete ordered sets, never individual
+// hashes chosen from a shared pool. No expected product identity enters scope.
+export function approvedPhotoSetIndex(trial:any,hashes:unknown):number {
+ if(!Array.isArray(hashes))throw Error('stability_trial_scope_mismatch');
+ if(trial.approved_photo_sets==null){
+  if(hashes.length===1&&hashes[0]===trial.photo_sha256)return 0;
+  throw Error('stability_trial_scope_mismatch');
+ }
+ const sets=trial.approved_photo_sets;
+ const valid=Array.isArray(sets)&&sets.length>=1&&sets.length<=10&&
+  sets.every(s=>Array.isArray(s)&&s.length>=3&&s.length<=5&&new Set(s).size===s.length&&s.every(h=>typeof h==='string'&&/^[a-f0-9]{64}$/.test(h)))&&
+  new Set(sets.map(s=>JSON.stringify(s))).size===sets.length;
+ if(!valid||!Number.isSafeInteger(trial.max_runs)||trial.max_runs>sets.length||
+  createHash('sha256').update(JSON.stringify(sets)).digest('hex')!==trial.photo_sha256)throw Error('stability_trial_scope_mismatch');
+ const index=sets.findIndex(s=>JSON.stringify(s)===JSON.stringify(hashes));
+ if(index<0)throw Error('stability_trial_scope_mismatch');
+ return index;
+}
 async function transaction<T>(work:(client:any)=>Promise<T>):Promise<T>{
  const client=await pool.connect();
  try{await client.query('BEGIN');const value=await work(client);await client.query('COMMIT');return value;}
@@ -54,10 +73,18 @@ export async function registerStabilityRun(runId:string,requestId:string|undefin
   const abandoned=(await c.query(`SELECT 1 FROM recognition_stability_reservations b JOIN recognition_provider_attempts a ON a.id=b.attempt_id JOIN recognition_runs r ON r.id=a.run_id
    WHERE b.trial_id=$1 AND b.outcome='reserved' AND (r.status<>'running' OR a.started_at<now()-interval '60 seconds') LIMIT 1`,[trialId])).rows.length;
   if(abandoned){await c.query("UPDATE recognition_stability_trials SET state='paused' WHERE id=$1",[trialId]);return false;}
-  if(!run||run.organization_id!==trial.organization_id||run.user_id!==trial.user_id||run.opening_id!==trial.opening_id||!Array.isArray(run.photo_hashes)||run.photo_hashes.length!==1||run.photo_hashes[0]!==trial.photo_sha256)throw Error('stability_trial_scope_mismatch');
+  if(!run||run.organization_id!==trial.organization_id||run.user_id!==trial.user_id||run.opening_id!==trial.opening_id)throw Error('stability_trial_scope_mismatch');
+  const setIndex=approvedPhotoSetIndex(trial,run.photo_hashes);
+  if(trial.approved_photo_sets!=null){
+   const prior=await c.query(`SELECT 1 FROM recognition_stability_runs s JOIN recognition_runs r ON r.id=s.run_id
+    WHERE s.trial_id=$1 AND r.photo_hashes=$2::jsonb LIMIT 1`,[trialId,JSON.stringify(run.photo_hashes)]);
+   if(prior.rows.length)throw Error('stability_photo_set_already_run');
+  }
   const count=Number((await c.query('SELECT count(*) AS n FROM recognition_stability_runs WHERE trial_id=$1',[trialId])).rows[0].n);
   if(count>=trial.max_runs)throw Error('stability_run_limit');
   await c.query('INSERT INTO recognition_stability_runs(trial_id,run_id,request_id) VALUES($1,$2,$3)',[trialId,runId,requestId]);
+  if(trial.approved_photo_sets!=null)await c.query('UPDATE recognition_runs SET stage_one=stage_one || $2::jsonb WHERE id=$1',
+   [runId,JSON.stringify({field_baseline_scope:{trial_id:trialId,set_index:setIndex,scope_sha256:trial.photo_sha256,photo_count:run.photo_hashes.length}})]);
   return true;
  });if(!accepted)throw Error('stability_unknown_spend');
 }
