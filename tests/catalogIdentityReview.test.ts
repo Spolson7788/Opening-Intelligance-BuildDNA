@@ -113,3 +113,26 @@ it('retains the literal Yale brand through the documented commercial rebrand and
  expect(review.candidates).toHaveLength(1);expect(review.candidates[0]).toMatchObject({manufacturer:'Yale',series:'7000',model:'7100',device_type:'rim'});
  expect(catalogIdentityReview(grouped(read('DORMA',0,'brand_mark'),read('Model 7100',1,'product_label'))).status).toBe('CONFLICT');
 });
+it('retains a complete embedded Yale series marking with maker evidence on the same label',()=>{
+ const evidence=grouped(read('Yale®',1,'brand_mark'),read('c UL us LISTED Yale® FIRE EXIT HARDWARE ISSUE No. U-311 7000 SERIES',3,'product_label'));
+ const review=catalogIdentityReview(evidence,{grouped_identity_claim:{series:'7000 Series',disagreements:['Check rod configuration.']}});
+ expect(applyCatalogIdentityProposal({},review)).toMatchObject({manufacturer:'Yale',series:'7000',model:null,series_basis:'literal_series_marking'});
+ expect(review.partial_identity.evidence.some((e:any)=>e.kind==='series'&&e.photo_index===3)).toBe(true);
+ expect(review.reader_disagreements).toEqual(['Check rod configuration.']);
+});
+it('does not extract a family from compatibility labels or a neighboring uncertain token',()=>{
+ for(const value of ['Yale trim fits 7000 SERIES','Yale compatible with SERIES 7000','Yale 17000 SERIES','Yale 700? SERIES','Yale 7000? SERIES']){
+  const review=catalogIdentityReview(grouped(read('Yale',1,'brand_mark'),read(value,1,'product_label')));
+  expect(review.partial_identity?.series).toBeNull();
+ }
+ const missing=grouped(read('Yale',1,'brand_mark'),read('Yale 7000 SERIES',1,'product_label'));delete missing.reads[1].provenance;
+ expect(catalogIdentityReview(missing).partial_identity?.series).toBeNull();
+});
+it('does not convert an embedded series-only label or compatibility reference into an exact model',()=>{
+ const maker=read('VON DUPRIN',0,'brand_mark');
+ const series=catalogIdentityReview(grouped(maker,read('UL LISTED VON DUPRIN 35A SERIES',0,'product_label')));
+ expect(series.candidates).toEqual([]);expect(series.partial_identity).toMatchObject({series:'35A',model:null});
+ const model=catalogIdentityReview(grouped(maker,read('MODEL: 35A; 35A SERIES',0,'product_label')));
+ expect(model.candidates).toHaveLength(1);expect(model.candidates[0].model).toBe('35A');
+ expect(catalogIdentityReview(grouped(read('PDQ',0,'brand_mark'),read('HG1 trim compatible with PDQ 6200R',0,'product_label'))).candidates).toEqual([]);
+});

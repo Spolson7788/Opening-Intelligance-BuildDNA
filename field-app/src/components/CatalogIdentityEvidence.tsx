@@ -1,3 +1,4 @@
+import {displayPhotoReferences} from '../lib/labelReadStatus';
 type PhotoEvidence={photo_index:number;kind:string;text:string;region?:{x:number;y:number;w:number;h:number};provenance?:{source:string;rotation?:number;location_validated?:boolean}};
 type CatalogCandidate={manufacturer:string;series:string|null;model:string;source_url:string;page:number;display_name?:string;component_class?:string;evidence:PhotoEvidence[]};
 export interface CatalogReview {
@@ -19,13 +20,13 @@ export function CatalogIdentityEvidence({review,files=[],identified=false}:{revi
  const stateMessages:Record<string,string>={PARTIAL_IDENTITY:'The readable maker and series are retained. The exact model and installed configuration are unresolved.',TYPE_CONFLICT:'Component types disagree. The catalog identity proposal is retained; verify the target device before recording it.',UNSUPPORTED_BY_CATALOG:'The maker and model were read, but this catalog does not yet cover that pair.',CATALOG_UNAVAILABLE:'The catalog could not be checked. Photo readings are retained.'};
  return <section aria-label="Identity evidence across photographs">
   <h3>Identity evidence across photographs</h3>
-  <p role={conflict?'alert':'status'}>{stateMessages[review.status]|| (conflict?'Conflicting evidence: the readable maker markings disagree with each other or with the catalog model association. Verify the installed device before choosing an identity.':identified?'Identified from the maker mark and exact model marking in these photographs.':review.status==='CANDIDATES'?'Catalog-supported candidate — review the evidence.':'Not enough evidence to establish a catalog-supported brand and model pair.')}</p>
+  <p role={conflict?'alert':'status'}>{(review.status==='PARTIAL_IDENTITY'&&!review.partial_identity?.series?'The readable maker is retained. Series, exact model and installed configuration are unresolved.':stateMessages[review.status])|| (conflict?'Conflicting evidence: the readable maker markings disagree with each other or with the catalog model association. Verify the installed device before choosing an identity.':identified?'Identified from the maker mark and exact model marking in these photographs.':review.status==='CANDIDATES'?'Catalog-supported candidate — review the evidence.':'Not enough evidence to establish a catalog-supported brand and model pair.')}</p>
   {review.partial_identity&&!conflict&&<div>
    <p><strong>{review.partial_identity.manufacturer}{review.partial_identity.series?` ${review.partial_identity.series} series`:''}</strong> — exact model unresolved.</p>
    <ul>{review.partial_identity.evidence.map((e,i)=><li key={i}>{photo(e.photo_index)} — {e.kind==='series'?'series marking':'maker mark'}: “{e.text}”</li>)}</ul>
    {review.partial_identity.source_url&&<p><a href={review.partial_identity.source_url} target="_blank" rel="noopener noreferrer">Manufacturer family reference</a></p>}
   </div>}
-  {!!review.reader_disagreements?.length&&<div role="alert"><p>Photo-set concerns reported by the AI reader — verify these before recording the device:</p><ul>{review.reader_disagreements.map((message,i)=><li key={i}>{message.replace(/photo (\d+)/gi,(_,n)=>`Photo ${Number(n)+1}`)}</li>)}</ul></div>}
+  {!!review.reader_disagreements?.length&&<div role="alert"><p>Photo-set concerns reported by the AI reader — verify these before recording the device:</p><ul>{review.reader_disagreements.map((message,i)=><li key={i}>{displayPhotoReferences(message)}</li>)}</ul></div>}
   {review.candidates.map(candidate=><div key={`${candidate.manufacturer}-${candidate.model}`}>
    <p><strong>{identified?`${candidate.manufacturer} Model ${candidate.model} ${candidate.display_name||'hardware'}`:`${candidate.manufacturer} / ${candidate.series} / ${candidate.model}`}</strong></p>
    {identified&&<p>{candidate.series?`Series ${candidate.series}. `:'Series not established. '}Record review: awaiting technician acknowledgment.</p>}

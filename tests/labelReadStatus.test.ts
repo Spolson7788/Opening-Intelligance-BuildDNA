@@ -10,3 +10,9 @@ it('distinguishes an absent AI read, invalid entry and an explicit empty read',(
  expect(visionReadMessage({vision_status:'invalid'})).toBe('Discarded invalid crop entry');
  expect(visionReadMessage({vision_status:'unreadable',vision_text:''})).toBe('Unreadable');
 });
+
+import {displayPhotoReferences} from '../field-app/src/lib/labelReadStatus';
+it('converts singular and plural source photo references without changing product numbers',()=>{
+ expect(displayPhotoReferences('Photo 3 shows a rod; photos 0 and 2 do not. Series 7000; label 71??.')).toBe('Photo 4 shows a rod; photos 1 and 3 do not. Series 7000; label 71??.');
+ expect(displayPhotoReferences('Photos 0, 1 and 2; photo 0’s label.')).toBe('Photos 1, 2 and 3; photo 1’s label.');
+});

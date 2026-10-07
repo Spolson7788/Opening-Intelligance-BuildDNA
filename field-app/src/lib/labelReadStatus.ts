@@ -14,3 +14,8 @@ export function visionReadMessage(read:any){
  if(read.vision_status==='not_attempted')return 'No usable AI reply';
  return 'Unreadable';
 }
+
+// The saved reader uses zero-based photo indices; technicians see one-based.
+export function displayPhotoReferences(message:string){
+ return message.replace(/\b(photos?)\s+(\d+(?:(?:,\s*|\s+and\s+)\d+)*)/gi,(_,word,list)=>word+' '+list.replace(/\d+/g,(n:string)=>String(Number(n)+1)));
+}

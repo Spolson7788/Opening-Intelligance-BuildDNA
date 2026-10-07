@@ -1,0 +1,26 @@
+{
+  "run_id": "2e992a39-4b62-4f9c-a603-828f4416c30e",
+  "source_build": "4011830e0bfc1af878f472e0ef69f4639e3899da",
+  "scope_digest": "01de5cc5483a9b3317d68eec2462589a3408b84420f19c35d684f2b45d065574",
+  "photo_hashes": [
+    "33d2c42e0a31920b817ae0b8e147063f7e3cceda5369313c2763a75d573196a7",
+    "9869e98e30d7826ec18e7cc686744a863cd16011f9f1d35bdb01bae8716d8e54",
+    "bb02b5fd7beff951ee7cd2fc977c2b57d900969743cd004492246aaf86ed39fe",
+    "0b29d2d55ef60a8d11067cd111623fce3f1cd478599003ce6ee8a993d30c90e7"
+  ],
+  "original_bytes": 12255939,
+  "original_count": 4,
+  "baseline": {
+    "manufacturer": "Yale",
+    "series": null,
+    "model": null
+  },
+  "saved_evidence_review": {
+    "manufacturer": "Yale",
+    "series": "7000",
+    "model": null,
+    "paid_calls": 0
+  },
+  "technician_truth": "Not yet acknowledged; exact model remains unresolved",
+  "note": "Native four-photo field baseline supersedes the earlier five chat-copy scope. Preserve the original run unchanged. Saved evidence review is a processing replay, not a fresh vision test."
+}

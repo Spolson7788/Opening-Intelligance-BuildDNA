@@ -172,3 +172,12 @@ Parent: 18e940ac48e9284c2791d31e40142471208b48a2. See ../catalog/field-exit-cata
 Saved Von Duprin run d71806fe-3cc2-431e-b648-d51e1afd2f4e still has its original null identity. The updated processor returns Von Duprin / 35A / null from Photo 3's complete markings. This is a free replay, not a fresh model trial. The reader cautioned that two label photos may belong to separate leaves; show that concern to the technician rather than assuming a single-device group.
 
 Next is the five-photo Yale field baseline, frozen in yale-baseline-scope.json, with technician identity unknown until acknowledged. The run ceiling is widened to match ten bounded sets plus eight audited replay grants, but only one additional Yale run is enabled; spend cap unchanged. No production merge or deployment.
+
+
+## Yale saved-label series correction (2026-10-07)
+
+Frozen native four-photo run 2e992a39-4b62-4f9c-a603-828f4416c30e, build 4011830e, returned Yale with series/model null. Its clear Photo 4 transcription includes Yale and 7000 SERIES within a complete UL label. The resolver required a whole-string series match and dropped that literal series. The corrected resolver accepts an explicitly marked series inside a complete, provenance-validated label associated with its maker. Saved-evidence replay now returns Yale / 7000 / exact model unresolved, with zero provider calls. The original run remains unchanged. No technician truth or new field accuracy score has been fabricated.
+
+Guards exclude compatibility/trim text, uncertain digits, missing grouped provenance and series tokens presented as exact models. Reader concerns about visible rods remain concerns, not established proof that photos show different devices. UI photo references use one-based numbers, missing series wording is accurate, intentional OCR omission says Not attempted, and catalog review is distinguished from additional reference-page comparison.
+
+Verification: 264 recognition checks across 21 files, root TypeScript, and Field App TypeScript/production build passed. This is a saved-response processing correction, not a fresh paid vision run. Refresh protected staging once and select Review saved analysis without AI; do not spend another paid call to test this parser correction.

@@ -2,24 +2,27 @@ import pdq from './pdqCatalog.json';
 import reviewed from './reviewedExitCatalog.json';
 const entries=[...pdq,...reviewed];
 import families from './identityFamilyCatalog.json';
-import {catalogTranscription} from './catalogMarking';
+import {catalogTranscription,literalSeriesMarking} from './catalogMarking';
 import type {LabelEvidence,LabelRead} from './labelReading';
 
 export type IdentityCatalogEntry={manufacturer:string;series:string|null;model:string;component_class:string|null;device_type?:string;display_name:string;[key:string]:any};
 const typeClasses:Record<string,string>={exit_device:'EXIT_DEVICE',panic_bar:'EXIT_DEVICE',closer:'DOOR_CLOSER',lockset:'LOCKSET',hinge:'HINGE_BUTT',electric_strike:'ELECTRIC_STRIKE',power_transfer:'POWER_TRANSFER'};
 // A catalog constrains photo evidence; missing coverage is never proof of incompatibility.
 export function catalogIdentityReview(labels:LabelEvidence,classifier:Record<string,any>={},technician:Record<string,string>={},catalog:IdentityCatalogEntry[]|null=entries) {
- const excluded=labels.reads.filter(r=>(labels.version==='oi-targeted-label-reading-3'&&!r.provenance)||r.provenance&&(r.provenance.source==='context'||r.provenance.target_device!==true||!r.provenance.location_validated||r.provenance.source==='grouped_view'&&(r.provenance.verification_scope!=='supplied_view'||r.provenance.marking_complete!==true)||r.provenance.source==='focused_view'&&(r.provenance.verification_scope!=='supplied_view'||r.provenance.marking_complete!==true||!Number.isInteger(r.provenance.view_index)||r.provenance.view_index!<0||r.provenance.view_index!>3)));
+ const excluded=labels.reads.filter(r=>(['oi-targeted-label-reading-3','oi-grouped-device-1'].includes(labels.version)&&!r.provenance)||r.provenance&&(r.provenance.source==='context'||r.provenance.target_device!==true||!r.provenance.location_validated||r.provenance.source==='grouped_view'&&(r.provenance.verification_scope!=='supplied_view'||r.provenance.marking_complete!==true)||r.provenance.source==='focused_view'&&(r.provenance.verification_scope!=='supplied_view'||r.provenance.marking_complete!==true||!Number.isInteger(r.provenance.view_index)||r.provenance.view_index!<0||r.provenance.view_index!>3)));
  const usable=labels.reads.filter(r=>!excluded.includes(r)&&r.vision_status==='read'&&!r.ocr_model_conflicts?.length);
  const marks=usable.filter(r=>r.region.kind==='brand_mark'&&!r.vision_text.includes('?'));
  const evidence=(r:LabelRead,kind:string)=>({photo_index:r.region.photo_index,kind,text:r.vision_text,region:r.region,provenance:r.provenance??{source:'legacy_unverified'}});
+ const readsExactModel=(r:LabelRead,entry:IdentityCatalogEntry)=>r.region.kind!=='brand_mark'&&catalogTranscription(r.vision_text,entry.model)&&
+  !/\b(fits?|compatible|replacement|replaces?|equivalent|cross[ -]?reference|similar|accessory|trim)\b/i.test(r.vision_text)&&
+  (!literalSeriesMarking(r.vision_text,entry.model)||catalogTranscription(r.vision_text.replace(/\bMODEL\s*[:#-]?\s*/gi,'MODEL '),'MODEL '+entry.model));
  const candidates=(catalog||[]).flatMap(entry=>{
-  const models=usable.filter(r=>r.region.kind!=='brand_mark'&&catalogTranscription(r.vision_text,entry.model)&&!/^\s*(?:SERIES\s+\S+|\S+\s+SERIES)\s*$/i.test(r.vision_text));
+  const models=usable.filter(r=>readsExactModel(r,entry));
   const logos=marks.filter(r=>catalogTranscription(r.vision_text,entry.manufacturer));
   if(!models.length||!logos.length)return [];
   return [{...entry,series_basis:entry.series?'catalog_row':null,verification:'pending_technician' as const,evidence:[...models.map(r=>evidence(r,'model')),...logos.map(r=>evidence(r,'brand_mark'))]}];
  });
- const supportedModels=(catalog||[]).filter(e=>usable.some(r=>r.region.kind!=='brand_mark'&&catalogTranscription(r.vision_text,e.model)&&!/^\s*(?:SERIES\s+\S+|\S+\s+SERIES)\s*$/i.test(r.vision_text)));
+ const supportedModels=(catalog||[]).filter(e=>usable.some(r=>readsExactModel(r,e)));
  const otherMarks=marks.filter(r=>candidates.length&&!candidates.some(e=>catalogTranscription(r.vision_text,e.manufacturer)));
  let conflict=(candidates.length>0&&otherMarks.length>0)||(supportedModels.length>0&&marks.length>0&&!candidates.length);
  // Family recognition is separate from exact-model matching. Require literal
@@ -30,11 +33,9 @@ export function catalogIdentityReview(labels:LabelEvidence,classifier:Record<str
   const names=[...new Set([...families,...catalog].map(e=>e.manufacturer))];
   const makers=names.filter(name=>marks.some(r=>catalogTranscription(r.vision_text,name)));
   if(makers.length===1){
-   const manufacturer=makers[0],logos=marks.filter(r=>catalogTranscription(r.vision_text,manufacturer));
+   const manufacturer=makers[0],logos=[...marks.filter(r=>catalogTranscription(r.vision_text,manufacturer)),...usable.filter(r=>r.region.kind==='product_label'&&catalogTranscription(r.vision_text,manufacturer)&&!/\b(fits?|compatible|replacement|replaces?|equivalent|cross[ -]?reference|similar|accessory|trim)\b/i.test(r.vision_text))];
    if(marks.some(r=>!catalogTranscription(r.vision_text,manufacturer)))conflict=true;
-   const found=rows.filter(row=>row.manufacturer===manufacturer).flatMap(row=>usable.filter(r=>r.region.kind==='product_label'&&logos.some(logo=>logo.region.photo_index===r.region.photo_index)&&(
-    new RegExp('^\\s*'+row.series!.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s+SERIES\\s*$','i').test(r.vision_text)||new RegExp('^\\s*SERIES\\s+'+row.series!.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*$','i').test(r.vision_text)
-   )).map(read=>({row,read})));
+   const found=rows.filter(row=>row.manufacturer===manufacturer).flatMap(row=>usable.filter(r=>r.region.kind==='product_label'&&logos.some(logo=>logo.region.photo_index===r.region.photo_index)&&literalSeriesMarking(r.vision_text,row.series!)).map(read=>({row,read})));
    const series=[...new Set(found.map(f=>f.row.series))];
    if(series.length>1)conflict=true;
    const family=series.length===1?found.find(f=>f.row.series===series[0]):null;
