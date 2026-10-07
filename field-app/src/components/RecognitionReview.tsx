@@ -1,7 +1,8 @@
 import {useEffect,useRef,useState} from 'react';
-import {fetchRecognitionAvailability,recognizeHardware} from '../lib/api';
+import {fetchRecognitionAvailability,recognizeHardware,uploadRecognitionOriginals} from '../lib/api';
 import {labelConfirmationMessage,visionReadMessage} from '../lib/labelReadStatus';
 import {ReferenceEvidence} from './ReferenceEvidence';
+import {getOrCreateDeviceId} from '../lib/sync';
 import {CatalogIdentityEvidence,type CatalogReview} from './CatalogIdentityEvidence';
 
 const photographedComponentTypes:Record<string,string>={DOOR_CLOSER:'closer',EXIT_DEVICE:'exit_device',LOCKSET:'lockset',HINGE_BUTT:'hinge',HINGE_CONT:'hinge',FLUSH_BOLT:'other',ELECTRIC_STRIKE:'electric_strike',POWER_TRANSFER:'power_transfer'};
@@ -49,12 +50,14 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
   const [features,setFeatures]=useState('');
   const generation=useRef(0);
   const fileInput=useRef<HTMLInputElement>(null);
+  const originalSources=useRef<{openingId:string;ids:string[]}|null>(null);
+  const [availability,setAvailability]=useState<{available:boolean;blocking_reasons:string[];reason:string|null;reference_comparison_enabled:boolean;original_photo_input_available?:boolean;maximum_original_bytes?:number;maximum_original_set_bytes?:number}|null>(null);
+  const originalsEnabled=availability?.original_photo_input_available===true;
   const selectedBytes=files.reduce((n,f)=>n+f.size,0);
-  const selectionError=files.length>5?'Select at most five photographs of the same component.':selectedBytes>2*1024*1024?`Selected photographs total ${selectedBytes.toLocaleString()} bytes. The combined limit is 2,097,152 bytes. Replace the selection with a smaller complete photo set.`:'';
+  const selectionError=files.length>5?'Select at most five photographs of the same component.':originalsEnabled?(files.length>0&&files.length<3?'Select at least three views: maker mark, identifying detail and full device.':files.some(f=>f.size>(availability?.maximum_original_bytes||0))||selectedBytes>(availability?.maximum_original_set_bytes||0)?'Original photographs exceed the bounded upload limits (12 MB each, 40 MB combined).':''):selectedBytes>2*1024*1024?'The combined photograph limit is 2 MB on this build.':'';
   const [typeApplied,setTypeApplied]=useState(false);
   useEffect(()=>()=>{generation.current++;},[openingId]);
   useEffect(()=>{onBusyChange?.(busy);},[busy,onBusyChange]);
-  const [availability,setAvailability]=useState<{available:boolean;blocking_reasons:string[];reason:string|null;reference_comparison_enabled:boolean}|null>(null);
   const [availabilityError,setAvailabilityError]=useState('');
   useEffect(()=>{
     let active=true;
@@ -69,11 +72,20 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
       if(!files.length)throw Error('Select one to five photographs.');
       if(selectionError)throw Error(selectionError);
       if(!['image/jpeg','image/png','image/webp'].includes(files[0].type)||files.some(f=>f.type!==files[0].type))throw Error('Use JPEG, PNG or WebP photographs of the same format.');
-      const images=await Promise.all(files.map(f=>new Promise<string>((resolve,reject)=>{
+      let photoIds:string[]|undefined;
+      if(originalsEnabled){
+       if(originalSources.current?.openingId!==openingId){
+        const ids=await uploadRecognitionOriginals(openingId,files,await getOrCreateDeviceId(),message=>{if(current===generation.current)setProgress(message);});
+        originalSources.current={openingId,ids};
+       }
+       photoIds=originalSources.current!.ids;
+       onFilesChange([]);
+      }
+      const images=originalsEnabled?[]:await Promise.all(files.map(f=>new Promise<string>((resolve,reject)=>{
         const reader=new FileReader();reader.onerror=()=>reject(Error('Could not read photograph.'));
         reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.readAsDataURL(f);
       })));
-      const response=await recognizeHardware(openingId,images,files[0].type,{...attributes,visible_markings:markings,observed_features:features},()=>{if(current===generation.current)setProgress('Retrieving saved analysis…');});
+      const response=await recognizeHardware(openingId,images,files[0].type,{...attributes,visible_markings:markings,observed_features:features},()=>{if(current===generation.current)setProgress('Retrieving saved analysis…');},photoIds);
       if(current===generation.current){
         setResult(response.suggestion);setResponse(response);
         const componentType=photographedComponentTypes[String(response.suggestion.component_class||'')];
@@ -88,24 +100,25 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
   const agreedTexts=[...new Set(labelReads.flatMap(read=>read.agreed_markings||[]))] as string[];
   return <section className="card" aria-label="Photograph recognition" onKeyDown={e=>{if(e.key==='Enter'&&e.target instanceof HTMLInputElement&&e.target.type!=='file')e.preventDefault();}}>
     <h2>Identify from photographs</h2>
-    <p>Photograph the same component from up to five views. Review the suggestion before using it. Selected photographs are attached automatically when you save the hardware.</p>
+    <p>Photograph one component from several views: maker mark, identifying detail and full device. Review the suggestion before using it.</p>
+    {originalsEnabled&&<p>Capture at least three views. If the maker mark cannot be read, leave the brand unresolved rather than guessing.</p>}
     {!availability&&!availabilityError&&<p role="status">Checking recognition availability…</p>}
     {availabilityError&&<p role="alert">{availabilityError}</p>}
     {availability&&!availability.available&&<div role="alert">{(availability.blocking_reasons||[availability.reason||'recognition_unavailable']).map(reason=><p key={reason}>{recognitionFailureMessage(reason)}</p>)}</div>}
     {availability?.available&&!availability.reference_comparison_enabled&&<p>Photograph recognition is available. Manufacturer reference comparison is switched off on this server.</p>}
     <label>Reported model or readable markings<input value={markings} maxLength={300} disabled={busy} onChange={e=>{setMarkings(e.target.value);setResult(null);setResponse(null);}} placeholder="e.g. CR441 or Cal-Royal CR441"/></label>
     <label>Observed features or measurements<input value={features} maxLength={300} onChange={e=>setFeatures(e.target.value)}/></label>
-    <input ref={fileInput} aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;const selected=Array.from(e.target.files||[]);setFiles(selected);onFilesChange(selected);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}/>
+    <input ref={fileInput} aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;originalSources.current=null;const selected=Array.from(e.target.files||[]);setFiles(selected);onFilesChange(originalsEnabled?[]:selected);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}/>
     {files.length>0&&<div aria-label="Selected photograph files">
-      <p>Total: <strong>{selectedBytes.toLocaleString()} bytes</strong> ({(selectedBytes/1024/1024).toFixed(2)} MB). Combined limit: 2 MB.</p>
+      <p>Total: <strong>{selectedBytes.toLocaleString()} bytes</strong> ({(selectedBytes/1024/1024).toFixed(2)} MB). {originalsEnabled?'Original upload limit: 12 MB each, 40 MB combined.':'Combined limit: 2 MB.'}</p>
       <ol>{files.map((file,i)=><li key={i}>{file.name} — {file.size.toLocaleString()} bytes</li>)}</ol>
-      <button type="button" disabled={busy} onClick={()=>{generation.current++;if(fileInput.current)fileInput.current.value='';setFiles([]);onFilesChange([]);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}>Clear selected photographs</button>
+      <button type="button" disabled={busy} onClick={()=>{generation.current++;originalSources.current=null;if(fileInput.current)fileInput.current.value='';setFiles([]);onFilesChange([]);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}>Clear selected photographs</button>
     </div>}
     {selectionError&&<p role="alert">{selectionError}</p>}
     <button type="button" disabled={busy||!files.length||!!selectionError||!availability?.available} onClick={analyze}>{busy?progress||'Analyzing…':'Analyze photographs'}</button>
     {error&&<p role="alert">{error}</p>}
     {providerDiagnostic&&<p>Administrator diagnostic: {providerDiagnostic}</p>}
-    {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — will attach when you save this hardware.</p>}
+    {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — {originalsEnabled?'originals are saved privately to this opening before analysis.':'will attach when you save this hardware.'}</p>}
     {result&&<div>
       {!!result.catalog_identity_review&&<CatalogIdentityEvidence review={result.catalog_identity_review as CatalogReview} files={files}/>}
       {onComponentType&&photographedComponentTypes[text('component_class')]&&<p>Photograph component type: <strong>{photographedComponentTypes[text('component_class')].replace(/_/g,' ')}</strong>. {typeApplied?'Component type filled automatically. You can change it below.':'Your selected component type was preserved. You can change it below.'}</p>}

@@ -16,22 +16,25 @@ import {legacyVisionHandler} from '../services/legacyVision';
 import {createHash} from 'node:crypto';
 import {readLabels,readTargetedLabels,applyLabelEvidence,LABEL_PROMPT_VERSION} from '../services/labelReading';
 import {catalogIdentityReview} from '../services/catalogIdentityReview';
+import {originalInputsEnabled,MAX_RECOGNITION_ORIGINAL_BYTES,MAX_RECOGNITION_SET_BYTES} from '../services/recognitionOriginalLimits';
+import {loadRecognitionOriginals} from '../services/recognitionOriginals';
 import {retrieveReferences,referenceFailureCode,resolvePartialMarkings,compareWithReferences,validateCitations,componentType,conservativeSuggestion,reportedReferenceHint,sanitizeReferenceComparison,REFERENCE_PROMPT_VERSION,RECOGNITION_MODEL} from '../services/referenceEvidence';
 
 const schema=z.object({
   opening_id:z.string().uuid(),
   request_id:z.string().uuid().optional(),
-  images:z.array(z.string().min(4).max(2800000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/)).min(1).max(5),
+  images:z.array(z.string().min(4).max(2800000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/)).min(1).max(5).optional(),
+  photo_ids:z.array(z.string().uuid()).min(3).max(5).optional(),
   media_type:z.enum(['image/jpeg','image/png','image/webp']),
   mode:z.enum(['identify','label_blind','marking_regions','hardware_regions']).default('identify'),
   technician_attributes:z.record(z.string().min(1).max(80),z.string().max(300)).refine(v=>Object.keys(v).length<=30).default({}),
-}).strict();
+}).strict().refine(b=>Boolean(b.images)!==Boolean(b.photo_ids));
 export const recognitionRouter=Router();
 recognitionRouter.use(requireAuth,requireRole('admin','technician','inspector','facilities_manager'));
 function recognitionAvailability(){
   const enabled=process.env.OI_RECOGNITION_ENABLED==='true'&&process.env.OI_RECOGNITION_SHADOW_ENABLED==='true';
   const providerConfigured=Boolean(process.env.ANTHROPIC_API_KEY?.trim());
-  return {available:enabled&&providerConfigured,blocking_reasons:[...(!enabled?['recognition_disabled']:[]),...(!providerConfigured?['recognition_provider_not_configured']:[])],reason:!enabled?'recognition_disabled':!providerConfigured?'recognition_provider_not_configured':null,reference_comparison_enabled:process.env.OI_REFERENCE_COMPARISON_ENABLED==='true'};
+  return {...(originalInputsEnabled()?{original_photo_input_available:true,maximum_original_bytes:MAX_RECOGNITION_ORIGINAL_BYTES,maximum_original_set_bytes:MAX_RECOGNITION_SET_BYTES}:{}),available:enabled&&providerConfigured,blocking_reasons:[...(!enabled?['recognition_disabled']:[]),...(!providerConfigured?['recognition_provider_not_configured']:[])],reason:!enabled?'recognition_disabled':!providerConfigured?'recognition_provider_not_configured':null,reference_comparison_enabled:process.env.OI_REFERENCE_COMPARISON_ENABLED==='true'};
 }
 // Report configuration presence only; credentials never leave the server.
 recognitionRouter.get('/availability',(_req,res)=>{
@@ -49,7 +52,8 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
   const parsed=schema.safeParse(req.body);
   if(!parsed.success)return res.status(400).json({error:'invalid_recognition_request'});
   const b=parsed.data;
-  let images=b.images.map(s=>Buffer.from(s,'base64'));
+  let images:Buffer[]=(b.images||[]).map(s=>Buffer.from(s,'base64'));
+  let sourceManifest:unknown[]=[];
   if(images.reduce((n,x)=>n+x.length,0)>2*1024*1024)return res.status(413).json({error:'recognition_images_too_large'});
   const valid=images.every(x=>b.media_type==='image/jpeg'?x[0]===255&&x[1]===216&&x[2]===255:
     b.media_type==='image/png'?x.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):
@@ -62,16 +66,26 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     // Explicit release switch prevents unintended paid calls during preview tests.
     const availability=recognitionAvailability();
     if(!availability.available)return res.status(503).json({error:availability.reason});
-    // Normalize EXIF exactly once, before any source-coordinate crop or reader.
-    images=await Promise.all(images.map(normalizeRecognitionImage));
-    const sourceHashes=b.images.map(x=>createHash('sha256').update(Buffer.from(x,'base64')).digest('hex'));
-    b.images=images.map(x=>x.toString('base64'));b.media_type='image/png';
     const started=Date.now();
+    if(b.photo_ids){
+      if(!originalInputsEnabled())return res.status(403).json({error:'recognition_originals_disabled'});
+      const sources=await loadRecognitionOriginals(b.photo_ids,{openingId:b.opening_id,organizationId:req.auth!.organizationId,userId:req.auth!.userId},b.media_type);
+      images=sources.images;sourceManifest=sources.sources;
+      const metadata=await Promise.all(images.map(x=>sharp(x,{limitInputPixels:16_000_000}).metadata()));
+      const formats:Record<string,string>={'image/jpeg':'jpeg','image/png':'png','image/webp':'webp'};
+      if(metadata.some(m=>m.format!==formats[b.media_type]))return res.status(400).json({error:'image_type_mismatch'});
+      if(metadata.reduce((n,m)=>n+(m.width||0)*(m.height||0),0)>48_000_000)return res.status(413).json({error:'recognition_source_pixel_limit'});
+    }
+    const sourceHashes=images.map(x=>createHash('sha256').update(x).digest('hex'));
+    // Native source pixels reach normalization/cropping without client resizing.
+    const normalized:Buffer[]=[];for(const image of images)normalized.push(await normalizeRecognitionImage(image));
+    images=normalized;
+    b.images=images.map(x=>x.toString('base64'));b.media_type='image/png';
     phase='recording';
     const initial=(await pool.query(`INSERT INTO recognition_runs
      (organization_id,opening_id,user_id,photo_hashes,technician_attributes,component_type,stage_one,suggestion,retrieved_pages,citations,rejected_citations,conflicts,status,model_id,prompt_version)
      VALUES($1,$2,$3,$4,$5,NULL,$6,'{}','[]','[]','[]','[]','running',$7,$8) RETURNING id`,[
-     req.auth!.organizationId,b.opening_id,req.auth!.userId,JSON.stringify(sourceHashes),JSON.stringify(b.technician_attributes),JSON.stringify({request_id:b.request_id,shadow_mode:true,recognition_versions:{...recognitionBuild,label_prompt:LABEL_PROMPT_VERSION,label_response:LABEL_RESPONSE_VERSION,reference_prompt:REFERENCE_PROMPT_VERSION},libraries:{sharp:sharp.versions,tesseract:require('tesseract.js/package.json').version}}),RECOGNITION_MODEL,REFERENCE_PROMPT_VERSION])).rows[0];
+     req.auth!.organizationId,b.opening_id,req.auth!.userId,JSON.stringify(sourceHashes),JSON.stringify(b.technician_attributes),JSON.stringify({request_id:b.request_id,shadow_mode:true,source_inputs:sourceManifest,recognition_versions:{...recognitionBuild,label_prompt:LABEL_PROMPT_VERSION,label_response:LABEL_RESPONSE_VERSION,reference_prompt:REFERENCE_PROMPT_VERSION},libraries:{sharp:sharp.versions,tesseract:require('tesseract.js/package.json').version}}),RECOGNITION_MODEL,REFERENCE_PROMPT_VERSION])).rows[0];
     return await recognitionAudit.run({runId:initial.id,deadline:started+49000,trialControl:{}},async()=>{try{
     if(stabilityTrialId()&&b.mode!=='identify')throw Error('stability_identify_mode_required');
     await registerStabilityRun(initial.id,b.request_id);
@@ -122,7 +136,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     try{
       if(b.mode==='identify'){
         if(result.component_class==='DOOR_CLOSER'){
-          try{result.installation_geometry=await approvedInstallationGeometry(result.installation_geometry_views,b.images.length);}catch{result.installation_geometry={status:'reference_geometry_unavailable',candidates:[],limitation:'Installation geometry could not be retrieved. Label reading continues.'};}
+          try{result.installation_geometry=await approvedInstallationGeometry(result.installation_geometry_views,images.length);}catch{result.installation_geometry={status:'reference_geometry_unavailable',candidates:[],limitation:'Installation geometry could not be retrieved. Label reading continues.'};}
         }
         const candidate=labels?.candidates?.length===1?labels.candidates[0]:null;
         const retrievalStage=!result.model&&!result.series&&candidate?{...result,manufacturer:candidate.manufacturer,series:candidate.series,model:candidate.model||candidate.catalog_model}:result;
@@ -153,7 +167,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
           if(!comparisonBudget)throw Error('reference_comparison_budget_exhausted');
           comparisonStarted=true;
           comparisonAt=Date.now();
-          comparison=await compareWithReferences({images:b.images,media_type:b.media_type,stage_one:result,attributes:{},pages,conflicts,timeout_ms:comparisonBudget});
+          comparison=await compareWithReferences({images:b.images!,media_type:b.media_type,stage_one:result,attributes:{},pages,conflicts,timeout_ms:comparisonBudget});
           comparison.processing={...comparison.processing,elapsed_ms:Date.now()-comparisonAt,budget_ms:comparisonBudget};
           status='reference_evidence';
         }else status='reference_comparison_disabled';

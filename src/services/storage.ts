@@ -8,6 +8,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createHash, randomUUID } from "node:crypto";
+import {originalInputsEnabled,MAX_RECOGNITION_ORIGINAL_BYTES} from './recognitionOriginalLimits';
 
 // Works with AWS S3 directly, or any S3-compatible endpoint (Supabase Storage,
 // Cloudflare R2, MinIO for local dev) by setting S3_ENDPOINT. Keeping this
@@ -55,7 +56,21 @@ export const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2MB connected-staging and fie
 export const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024; // 25MB — same client-side-only caveat as above
 
 export function maximumMediaBytes(contentType: string): number {
-  return contentType.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+  return contentType.startsWith("video/") ? MAX_VIDEO_BYTES : originalInputsEnabled()?MAX_RECOGNITION_ORIGINAL_BYTES:MAX_IMAGE_BYTES;
+}
+
+export async function readPrivatePhotoBytes(key:string,expectedBytes:number,expectedHash:string,signal:AbortSignal){
+ if(!Number.isSafeInteger(expectedBytes)||expectedBytes<=0||expectedBytes>MAX_RECOGNITION_ORIGINAL_BYTES)throw Error('recognition_source_too_large');
+ const result=await getClient().send(new GetObjectCommand({Bucket:process.env.S3_BUCKET,Key:key}),{abortSignal:signal});
+ if(!result.Body||result.ContentLength!==expectedBytes)throw Error('recognition_source_size_mismatch');
+ const chunks:Buffer[]=[];let count=0;const hash=createHash('sha256');
+ for await(const chunk of result.Body as AsyncIterable<Uint8Array>){
+  if(signal.aborted)throw Error('recognition_source_timeout');
+  count+=chunk.byteLength;if(count>expectedBytes||count>MAX_RECOGNITION_ORIGINAL_BYTES)throw Error('recognition_source_too_large');
+  const bytes=Buffer.from(chunk);chunks.push(bytes);hash.update(bytes);
+ }
+ if(count!==expectedBytes||hash.digest('hex')!==expectedHash)throw Error('recognition_source_checksum_mismatch');
+ return Buffer.concat(chunks,count);
 }
 
 export function extensionForContentType(contentType: string): string {

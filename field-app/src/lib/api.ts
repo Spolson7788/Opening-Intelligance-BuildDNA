@@ -1,4 +1,5 @@
 import {requireRecognitionResult} from './recognitionResponse';
+import {OFFLINE_SCHEMA_VERSION,SYNC_PROTOCOL_VERSION} from './offlineTypes';
 import { loadAuth, cacheOpening, getCachedOpening } from "./db";
 import {isUnverifiedSiteAccess, readResponseBody, requestPreviewAccess} from './previewAccess';
 
@@ -6,10 +7,10 @@ import {isUnverifiedSiteAccess, readResponseBody, requestPreviewAccess} from './
 // both in local dev (via Vite proxy) and once deployed.
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
-export async function recognizeHardware(openingId:string,images:string[],mediaType:string,attributes:Record<string,string>={},onRecovery?:()=>void) {
+export async function recognizeHardware(openingId:string,images:string[],mediaType:string,attributes:Record<string,string>={},onRecovery?:()=>void,photoIds?:string[]) {
   const principal=await loadAuth();if(!principal)throw new ApiError(401,'missing_token');
   const requestId=crypto.randomUUID();
-  try{return requireRecognitionResult(await authedFetch('/recognition',{method:'POST',body:JSON.stringify({request_id:requestId,opening_id:openingId,images,media_type:mediaType,technician_attributes:attributes})},principal));}
+  try{return requireRecognitionResult(await authedFetch('/recognition',{method:'POST',body:JSON.stringify({request_id:requestId,opening_id:openingId,...(photoIds?{photo_ids:photoIds}:{images}),media_type:mediaType,technician_attributes:attributes})},principal));}
   catch(error){
     if(!(error instanceof ApiError)||error.status!==504||error.hostingAccessRequired)throw error;
     onRecovery?.();
@@ -361,3 +362,19 @@ export const saveBranch = (id:string,body:unknown) => authedFetch(`/branches/${i
 export const assignBranch = (id:string,branch_id:string|null) => authedFetch(`/branches/assignments/${id}`,{method:"PUT",body:JSON.stringify({branch_id})});
 
 export const fetchRecognitionAvailability=()=>authedFetch('/recognition/availability');
+
+export async function uploadRecognitionOriginals(openingId:string,files:File[],deviceId:string,onProgress?:(message:string)=>void){
+ const principal=await loadAuth();if(!principal)throw new ApiError(401,'missing_token');
+ const ids:string[]=[];
+ for(const [index,file] of files.entries()){
+  onProgress?.(`Preserving original photograph ${index+1} of ${files.length}…`);
+  const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
+  const checksum=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
+  const photoId=crypto.randomUUID(),operationId=crypto.randomUUID();
+  const reservation=await reserveOfflinePhoto({photo_id:photoId,client_operation_id:operationId,opening_id:openingId,target_type:'opening',target_id:openingId,original_filename:file.name,content_type:file.type,byte_size:file.size,sha256_checksum:checksum,device_id:deviceId},principal);
+  if(reservation.upload_url)await uploadPrivatePhoto(reservation.upload_url,file,file.type,checksum,photoId);
+  await confirmOfflinePhoto({photo_id:photoId,client_operation_id:operationId,schema_version:OFFLINE_SCHEMA_VERSION,app_version:'recognition-original-input-1',protocol_version:SYNC_PROTOCOL_VERSION},principal);
+  ids.push(photoId);
+ }
+ return ids;
+}

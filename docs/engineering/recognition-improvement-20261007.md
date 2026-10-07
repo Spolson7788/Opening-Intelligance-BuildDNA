@@ -111,3 +111,40 @@ $0.624; completed estimates are $0.055041 and $0.019224. No paid run occurred.
 Validation: Field App production build passed; candidate/conflict UI rendering
 checks passed; six offline scorer tests passed. Prior recognition suite remains
 187 tests. This continuation did not alter provider scheduling or reader code.
+
+
+# Original-photo transport candidate
+
+Guarded deploy previews can reserve/verify originals through the existing private
+photo protocol (12 MiB per image). The recognition body contains ordered photo
+IDs, not base64 originals. Three to five same-format views are required, with
+40 MiB combined and 48 million decoded pixels per set. The staging private
+bucket already has a 25 MiB object ceiling; no bucket configuration was changed.
+
+API checks each source belongs to the current actor/organization/opening, is
+verified, and has the exact expected private storage key. It retrieves bounded
+bytes from server-configured storage, rechecks the actual checksum, records
+original hashes/photo IDs and then normalizes EXIF. Native originals enter
+local crop selection; outgoing provider views still use existing resize limits.
+Original retrieval/local preparation count against the reader's time budget.
+Do not claim this prevents all timeouts; connected timing needs measurement.
+
+Ordinary/production media limits remain 2 MiB. Large-image storage is admitted
+only by the existing trusted deploy-preview stability runtime. Selected originals
+are opening attachments, not yet attached to a newly saved hardware component;
+run source IDs preserve their grouped relationship. They are not sent a second
+time through the component's legacy 2 MiB photo queue. Browser refresh during
+upload is not yet a resumable original-recognition operation. Existing reservation
+and confirmation checks apply, but partial successful uploads may require review.
+
+Validation: 193 offline recognition/transport checks, six scorer checks, root
+TypeScript and Field App build passed. Native-byte retrieval is mocked; six
+new checks cover ordering, actor/tenant/opening isolation, forged storage keys,
+per-image/set limits, object mutation/checksum, and production size guard.
+No paid recognition rerun or camera-original connected test is established.
+
+Provider CSV review: Oct 7 hourly usage is 35,907 input / 815 output. Known two
+calls account for 21,295 / 692. Residual 14,612 / 123 is consistent with the
+interrupted reader, estimated $0.045681 at the existing rates. The Cost CSV
+contains Oct 3–6 only, not Oct 7. It does not reconcile the interrupted charge.
+Unknown $0.624 reservation remains; trial stays paused.
