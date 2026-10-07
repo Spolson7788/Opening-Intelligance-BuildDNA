@@ -131,7 +131,11 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
   async function reviewSaved(){
     const current=++generation.current;setBusy(true);setError('');setProgress('Reviewing saved evidence — no AI charge…');
     setFiles([]);setSavedPreviews([]);setSavedOriginalCount(0);originalSources.current=null;onFilesChange([]);if(fileInput.current)fileInput.current.value='';
-    try{const saved=await fetchSavedRecognitionReview(openingId);if(current===generation.current){setResult(saved.suggestion);setResponse(saved);setTypeApplied(false);}}
+    try{const saved=await fetchSavedRecognitionReview(openingId);if(current===generation.current){
+      setResult(saved.suggestion);setResponse(saved);
+      const componentType=photographedComponentTypes[String(saved.suggestion.component_class||'')];
+      setTypeApplied(componentType?onComponentType?.(componentType,saved.run_id)===true:false);
+    }}
     catch(e){if(current===generation.current)setError(recognitionFailureMessage(e instanceof Error?e.message:'recognition_history_unavailable'));}
     finally{if(current===generation.current)setBusy(false);}
   }
