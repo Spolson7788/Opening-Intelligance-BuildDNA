@@ -42,7 +42,7 @@ export function stabilityActual(usage:any,maxTokens:number):number|null {
 }
 // Multi-view baselines are bound to complete ordered sets, never individual
 // hashes chosen from a shared pool. No expected product identity enters scope.
-export function approvedPhotoSetIndex(trial:any,hashes:unknown):number {
+export function approvedPhotoSetIndex(trial:any,hashes:unknown,replayAllowance=0):number {
  if(!Array.isArray(hashes))throw Error('stability_trial_scope_mismatch');
  if(trial.approved_photo_sets==null){
   if(hashes.length===1&&hashes[0]===trial.photo_sha256)return 0;
@@ -52,7 +52,7 @@ export function approvedPhotoSetIndex(trial:any,hashes:unknown):number {
  const valid=Array.isArray(sets)&&sets.length>=1&&sets.length<=10&&
   sets.every(s=>Array.isArray(s)&&s.length>=3&&s.length<=5&&new Set(s).size===s.length&&s.every(h=>typeof h==='string'&&/^[a-f0-9]{64}$/.test(h)))&&
   new Set(sets.map(s=>JSON.stringify(s))).size===sets.length;
- if(!valid||!Number.isSafeInteger(trial.max_runs)||trial.max_runs>sets.length||
+ if(!valid||![0,1].includes(replayAllowance)||!Number.isSafeInteger(trial.max_runs)||trial.max_runs>sets.length+replayAllowance||
   createHash('sha256').update(JSON.stringify(sets)).digest('hex')!==trial.photo_sha256)throw Error('stability_trial_scope_mismatch');
  const index=sets.findIndex(s=>JSON.stringify(s)===JSON.stringify(hashes));
  if(index<0)throw Error('stability_trial_scope_mismatch');
@@ -74,17 +74,25 @@ export async function registerStabilityRun(runId:string,requestId:string|undefin
    WHERE b.trial_id=$1 AND b.outcome='reserved' AND (r.status<>'running' OR a.started_at<now()-interval '60 seconds') LIMIT 1`,[trialId])).rows.length;
   if(abandoned){await c.query("UPDATE recognition_stability_trials SET state='paused' WHERE id=$1",[trialId]);return false;}
   if(!run||run.organization_id!==trial.organization_id||run.user_id!==trial.user_id||run.opening_id!==trial.opening_id)throw Error('stability_trial_scope_mismatch');
-  const setIndex=approvedPhotoSetIndex(trial,run.photo_hashes);
+  const build=run.stage_one?.recognition_versions?.build_sha;
+  // A separate, actor-scoped authorization grants one comparison on one exact
+  // build. The photo scope, costs and previous records remain unchanged.
+  const replay=Array.isArray(trial.approved_photo_sets)&&trial.max_runs>trial.approved_photo_sets.length&&/^[a-f0-9]{40}$/.test(build||'')?
+   (await c.query(`SELECT id,request_body FROM audit_log WHERE organization_id=$1 AND user_id=$2 AND action='Authorized recognition rerun'
+    AND request_body->>'trial_id'=$3 AND request_body->>'build_sha'=$4 AND request_body->'photo_hashes'=$5::jsonb
+    ORDER BY created_at DESC LIMIT 1`,[run.organization_id,run.user_id,trialId,build,JSON.stringify(run.photo_hashes)])).rows[0]:null;
+  const setIndex=approvedPhotoSetIndex(trial,run.photo_hashes,replay?1:0);
   if(trial.approved_photo_sets!=null){
-   const prior=await c.query(`SELECT 1 FROM recognition_stability_runs s JOIN recognition_runs r ON r.id=s.run_id
-    WHERE s.trial_id=$1 AND r.photo_hashes=$2::jsonb LIMIT 1`,[trialId,JSON.stringify(run.photo_hashes)]);
-   if(prior.rows.length)throw Error('stability_photo_set_already_run');
+   const prior=await c.query(`SELECT r.id,r.stage_one FROM recognition_stability_runs s JOIN recognition_runs r ON r.id=s.run_id
+    WHERE s.trial_id=$1 AND r.photo_hashes=$2::jsonb`,[trialId,JSON.stringify(run.photo_hashes)]);
+   if(prior.rows.length&&(!replay||!prior.rows.some((r:any)=>r.id===replay.request_body.prior_run_id)||
+     prior.rows.some((r:any)=>r.stage_one?.recognition_versions?.build_sha===build)))throw Error('stability_photo_set_already_run');
   }
   const count=Number((await c.query('SELECT count(*) AS n FROM recognition_stability_runs WHERE trial_id=$1',[trialId])).rows[0].n);
   if(count>=trial.max_runs)throw Error('stability_run_limit');
   await c.query('INSERT INTO recognition_stability_runs(trial_id,run_id,request_id) VALUES($1,$2,$3)',[trialId,runId,requestId]);
   if(trial.approved_photo_sets!=null)await c.query('UPDATE recognition_runs SET stage_one=stage_one || $2::jsonb WHERE id=$1',
-   [runId,JSON.stringify({field_baseline_scope:{trial_id:trialId,set_index:setIndex,scope_sha256:trial.photo_sha256,photo_count:run.photo_hashes.length}})]);
+   [runId,JSON.stringify({field_baseline_scope:{trial_id:trialId,set_index:setIndex,scope_sha256:trial.photo_sha256,photo_count:run.photo_hashes.length,...(replay?{replay_authorization_id:replay.id,prior_run_id:replay.request_body.prior_run_id}:{})}})]);
   return true;
  });if(!accepted)throw Error('stability_unknown_spend');
 }

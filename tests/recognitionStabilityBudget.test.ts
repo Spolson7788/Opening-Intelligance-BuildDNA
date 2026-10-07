@@ -17,6 +17,7 @@ const body=()=>({model:STABILITY_MODEL,max_tokens:1600,temperature:0,messages:[{
 beforeAll(async()=>{
  fixture.db=new PGlite();
  await fixture.db.exec(`CREATE TABLE organizations(id uuid PRIMARY KEY);CREATE TABLE users(id uuid PRIMARY KEY,organization_id uuid,role text,is_active boolean);CREATE TABLE openings(id uuid PRIMARY KEY);
+ CREATE TABLE audit_log(id uuid PRIMARY KEY,organization_id uuid,user_id uuid,action text,request_body jsonb,created_at timestamptz DEFAULT now());
  CREATE TABLE recognition_runs(id uuid PRIMARY KEY,organization_id uuid,user_id uuid,opening_id uuid,photo_hashes jsonb,status text,stage_one jsonb DEFAULT '{}');
  CREATE TABLE recognition_provider_attempts(id uuid PRIMARY KEY,run_id uuid REFERENCES recognition_runs(id),stage text,provider text,model_id text,outcome text,started_at timestamptz DEFAULT now(),finished_at timestamptz,request_manifest jsonb,latency_ms integer,usage jsonb,cost_usd numeric,cost_status text,raw_output text,cost_basis jsonb);`);
  await fixture.db.exec(readFileSync(new URL('../migrations/20261005170938_recognition_stability_budget.sql',import.meta.url),'utf8'));
@@ -24,7 +25,7 @@ beforeAll(async()=>{
  await fixture.db.query('INSERT INTO organizations VALUES($1)',[org]);await fixture.db.query('INSERT INTO users VALUES($1,$2,$3,true)',[actor,org,'admin']);await fixture.db.query('INSERT INTO openings VALUES($1)',[opening]);
 },20000);
 beforeEach(async()=>{
- await fixture.db.exec('TRUNCATE recognition_stability_reservations,recognition_stability_runs,recognition_stability_trials,recognition_provider_attempts,recognition_runs');
+ await fixture.db.exec('TRUNCATE audit_log,recognition_stability_reservations,recognition_stability_runs,recognition_stability_trials,recognition_provider_attempts,recognition_runs');
  await fixture.db.query('INSERT INTO recognition_stability_trials(id,organization_id,user_id,opening_id,photo_sha256) VALUES($1,$2,$3,$4,$5)',[trial,org,actor,opening,hash]);
  process.env.OI_STABILITY_TRIAL_REQUIRED='true';process.env.OI_STABILITY_TRIAL_ID=trial;process.env.OI_STABILITY_LOCAL_TEST='true';
 });
@@ -107,4 +108,25 @@ it('rejects malformed frozen scope while legacy single-photo trials remain suppo
  for(const sets of [[],[[]],[[hash,hash,hash]],[[hash,'x','y']],Array(11).fill([hash]),'bad'])
   expect(()=>approvedPhotoSetIndex({approved_photo_sets:sets,photo_sha256:digest(sets),max_runs:1},[hash])).toThrow();
  expect(approvedPhotoSetIndex({approved_photo_sets:null,photo_sha256:hash},[hash])).toBe(0);
+});
+
+
+it('allows one explicit build-bound replay, rejects another build and duplicate replay, and keeps the ledger',async()=>{
+ const sets=fieldSets(),build='a'.repeat(40);
+ await fixture.db.query('UPDATE recognition_stability_trials SET approved_photo_sets=$2,photo_sha256=$3,max_runs=2 WHERE id=$1',[trial,JSON.stringify(sets),digest(sets)]);
+ const prior=await run({photo_hashes:sets[1]});await registerStabilityRun(prior,randomUUID());
+ const a=await attempt(prior);await reserveStabilityAttempt(a,prior,624000);await settleStabilityAttempt(a,100000);
+ await fixture.db.query('UPDATE recognition_stability_trials SET max_runs=3 WHERE id=$1',[trial]);
+ const candidate=await run({photo_hashes:sets[1]});
+ await fixture.db.query('UPDATE recognition_runs SET stage_one=$2 WHERE id=$1',[candidate,JSON.stringify({recognition_versions:{build_sha:build}})]);
+ await expect(registerStabilityRun(candidate,randomUUID())).rejects.toThrow('scope_mismatch');
+ await fixture.db.query('INSERT INTO audit_log VALUES($1,$2,$3,$4,$5,now())',[randomUUID(),org,actor,'Authorized recognition rerun',JSON.stringify({trial_id:trial,build_sha:build,photo_hashes:sets[1],prior_run_id:prior})]);
+ const wrong=await run({photo_hashes:sets[1]});
+ await fixture.db.query('UPDATE recognition_runs SET stage_one=$2 WHERE id=$1',[wrong,JSON.stringify({recognition_versions:{build_sha:'b'.repeat(40)}})]);
+ await expect(registerStabilityRun(wrong,randomUUID())).rejects.toThrow('scope_mismatch');
+ await registerStabilityRun(candidate,randomUUID());
+ expect(await used()).toBe(100000);
+ const duplicate=await run({photo_hashes:sets[1]});
+ await fixture.db.query('UPDATE recognition_runs SET stage_one=$2 WHERE id=$1',[duplicate,JSON.stringify({recognition_versions:{build_sha:build}})]);
+ await expect(registerStabilityRun(duplicate,randomUUID())).rejects.toThrow('already_run');
 });

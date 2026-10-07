@@ -19,8 +19,14 @@ The preceding staging comparison retained the original photographs, completed a 
 
 TypeScript check, Field App build and 203 offline assertions across 17 test files pass. Added checks cover concurrent logo reading while a sticker is still pending, independent checkpoints, partial transcription retention, exact catalog proposals and conflicts, identity-only classifier requests, and stale-run recovery boundaries. Mocked reads establish software behavior, not field recognition accuracy.
 
-The actual photographs still require one measured rerun on the deployed correction. A run counts as progress only when saved output and evidence demonstrate improvement. No new paid call, technician confirmation, production merge or production deployment was performed for this correction. Prior unresolved billing remains fully counted. Trial run limits were not increased.
+The actual photographs still require one measured rerun on the deployed correction. A run counts as progress only when saved output and evidence demonstrate improvement. No new paid call, technician confirmation, production merge or production deployment was performed for this correction. Prior unresolved billing remains fully counted. The initial correction did not increase trial run limits. The subsequently authorized comparison adds one explicit build-bound rerun.
 
 ## Independent Grok review
 
 Review the implementation and offline results, especially partial evidence under interruption, concurrent budget reservations, source-photo association, proposal versus confirmed identity, and preservation of ordinary classification behavior. Do not initiate recognition, change trial limits, merge or deploy. Then compare the next authorized field result with the frozen baseline, separating correct photo reads, returned identity fields, component classification and technician acknowledgment. Do not count self-reported confidence as accuracy or this development device as a held-out trial.
+
+## Explicit comparison replay
+
+One additional comparison can be granted through a server-side audit authorization bound to the actor, organization, trial, ordered photo hashes, prior run and exact corrected build. Registration retains the locked run counter and cost ledger. The same build cannot use the grant twice; unapproved builds and photo sets fail closed. No retry occurs automatically. The original scope digest and prior run rows are preserved.
+
+Replay guard validation: 32 tests pass in the independent PGlite budget suite. TypeScript and Field App build pass. No paid call is made by granting the comparison.

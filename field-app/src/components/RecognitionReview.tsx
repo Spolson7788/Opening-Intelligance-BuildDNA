@@ -165,7 +165,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     {providerDiagnostic&&<p>Administrator diagnostic: {providerDiagnostic}</p>}
     {files.length>0&&<p role="status">{files.length} photograph{files.length===1?"":"s"} selected — {originalsEnabled?'originals are saved privately to this opening before analysis.':'will attach when you save this hardware.'}</p>}
     {result&&<div>
-      {!!result.catalog_identity_review&&<CatalogIdentityEvidence review={result.catalog_identity_review as CatalogReview} files={files}/>}
+      {!!result.catalog_identity_review&&<CatalogIdentityEvidence review={result.catalog_identity_review as CatalogReview} files={files} identified={result.identity_basis==='readable_maker_and_exact_catalog_model'}/>}
       {onComponentType&&photographedComponentTypes[text('component_class')]&&<p>Photograph component type: <strong>{photographedComponentTypes[text('component_class')].replace(/_/g,' ')}</strong>. {typeApplied?'Component type filled automatically. You can change it below.':'Your selected component type was preserved. You can change it below.'}</p>}
       {response?.reported_identity&&<p>Technician-reported product: <strong>{response.reported_identity.manufacturer} {response.reported_identity.model}</strong> — awaiting verification.</p>}
       {labelReads.some(read=>read.ocr_model_conflicts?.length>0)&&<p role="alert">The readers disagree on model characters. The candidate is retained for your review; verify the label before accepting it. OCR alternatives: {[...new Set(labelReads.flatMap(read=>read.ocr_model_conflicts||[]))].join(', ')}.</p>}
