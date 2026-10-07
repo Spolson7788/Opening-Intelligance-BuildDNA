@@ -1,20 +1,63 @@
+import {requireRecognitionResult} from './recognitionResponse';
+import {OFFLINE_SCHEMA_VERSION,SYNC_PROTOCOL_VERSION} from './offlineTypes';
 import { loadAuth, cacheOpening, getCachedOpening } from "./db";
+import {isUnverifiedSiteAccess, readResponseBody, requestPreviewAccess} from './previewAccess';
 
 // Point this at your deployed API. Left as a relative path + env var so it works
 // both in local dev (via Vite proxy) and once deployed.
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
-export async function recognizeHardware(openingId:string,images:string[],mediaType:string) {
-  return authedFetch('/recognition',{method:'POST',body:JSON.stringify({opening_id:openingId,images,media_type:mediaType})});
+export async function recognizeHardware(openingId:string,images:string[],mediaType:string,attributes:Record<string,string>={},onRecovery?:(message?:string)=>void,photoIds?:string[]) {
+  const principal=await loadAuth();if(!principal)throw new ApiError(401,'missing_token');
+  const requestId=crypto.randomUUID();
+  const body={request_id:requestId,opening_id:openingId,client_build_sha:import.meta.env.VITE_OI_BUILD_SHA,...(photoIds?{photo_ids:photoIds,staged:true}:{images}),media_type:mediaType,technician_attributes:attributes};
+  const recover=async()=>{
+    onRecovery?.('Retrieving saved analysis…');
+    const deadline=Date.now()+30000;
+    while(Date.now()<deadline){
+      const result=await authedFetch(`/recognition/request/${requestId}?opening_id=${encodeURIComponent(openingId)}`,{signal:AbortSignal.timeout(5000)},principal);
+      if(result?.run_id&&result.request_id===requestId)return result;
+      if(result?.status!=='awaiting_saved_result')throw new ApiError(502,'recognition_recovery_invalid_response');
+      await new Promise(resolve=>setTimeout(resolve,1500));
+    }
+    throw new ApiError(504,'recognition_saved_result_not_found');
+  };
+  let resumeId:string|undefined;
+  for(let stage=0;stage<3;stage++){
+    onRecovery?.(stage===2?'Verifying focused markings in four orientations…':stage===1?'Reading the saved logo and label locations…':photoIds?'Reading all photographs together with Opus…':'Analyzing photographs…');
+    let result:any;
+    try{result=await authedFetch('/recognition',{method:'POST',body:JSON.stringify({...body,...(resumeId?{resume_run_id:resumeId}:{})})},principal);}
+    catch(error){
+      // Recovery is read-only. A timed-out paid stage is never retried here.
+      if(error instanceof ApiError&&error.status===504&&!error.hostingAccessRequired||error instanceof TypeError)result=await recover();else throw error;
+    }
+    if(result?.status==='stage_ready'){
+      if(stage>=2||!photoIds||result.next_stage!==(stage===0?'read':'focus')||result.request_id!==requestId||result.build_sha!==import.meta.env.VITE_OI_BUILD_SHA||typeof result.run_id!=='string')throw new ApiError(502,'recognition_recovery_invalid_response');
+      resumeId=result.run_id;continue;
+    }
+    return requireRecognitionResult(result);
+  }
+  throw new ApiError(502,'recognition_recovery_invalid_response');
 }
+
+export const fetchReferencePage=(hash:string,n:number)=>authedFetch(`/references/${encodeURIComponent(hash)}/pages/${n}`);
+export const fetchSavedRecognitionReview=(openingId:string)=>authedFetch(`/recognition/opening/${encodeURIComponent(openingId)}/review`);
+export const fetchRecognitionRuns=(openingId:string)=>authedFetch(`/recognition/opening/${encodeURIComponent(openingId)}`);
+export const fetchProductCatalog=()=>authedFetch('/hardware/catalog') as Promise<{products:{manufacturer:string;model_number:string;series:string|null}[]}>;
+export const fetchPurchasingRequests=(openingId:string)=>authedFetch(`/purchasing/requests/opening/${encodeURIComponent(openingId)}`);
+export const preparePurchasingRequest=(body:{request_id:string;opening_id:string;recipient_email:string;acknowledged:true})=>authedFetch('/purchasing/requests',{method:'POST',body:JSON.stringify(body)});
+export const confirmPurchasingEmailSent=(id:string)=>authedFetch(`/purchasing/requests/${encodeURIComponent(id)}/email-sent`,{method:'POST',body:JSON.stringify({email_sent:true})});
 
 export class ApiError extends Error {
   status: number;
   reference?: string;
-  constructor(status: number, message: string, reference?: string) {
+  providerDiagnostic?: string;
+  hostingAccessRequired: boolean;
+  constructor(status: number, message: string, reference?: string, hostingAccessRequired = false) {
     super(message);
     this.status = status;
     this.reference = reference;
+    this.hostingAccessRequired = hostingAccessRequired;
   }
 }
 
@@ -44,10 +87,9 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
   };
   if (auth?.token) headers["Authorization"] = `Bearer ${auth.token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'same-origin', cache: 'no-store' });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error || `request_failed_${res.status}`, typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
+    throw await responseFailure(res);
   }
   const current=await loadAuth();
   if(!auth||!current||current.userId!==auth.userId||current.organizationId!==auth.organizationId)throw new PrincipalChangedError();
@@ -60,12 +102,34 @@ export async function login(email: string, password: string) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
+    credentials: 'same-origin',
+    cache: 'no-store',
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error || "login_failed", typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
+    throw await responseFailure(res);
   }
   return res.json() as Promise<{ token: string; expiresIn: string }>;
+}
+
+async function responseFailure(response: Response): Promise<ApiError> {
+  const body = await readResponseBody(response);
+  const hosting = isUnverifiedSiteAccess(response, body);
+  if (hosting) requestPreviewAccess();
+  const error=new ApiError(response.status,
+    hosting ? 'Staging website access needs renewal. Use Renew staging access above.' : body?.error || `request_failed_${response.status}`,
+    typeof body?.reference === 'string' && /^[0-9a-f-]{36}$/i.test(body.reference) ? body.reference : undefined,
+    hosting);
+  if(typeof body?.provider_diagnostic==='string')error.providerDiagnostic=body.provider_diagnostic.slice(0,400);
+  return error;
+}
+
+// Check the actual protected server, not the service worker's cached app shell.
+// No password is sent, and no failed POST is retried automatically.
+export async function checkPreviewAccess() {
+  const response = await fetch('/health', {credentials: 'same-origin', cache: 'no-store'});
+  if (!response.ok) throw await responseFailure(response);
+  const body = await readResponseBody(response);
+  if (body?.status !== 'ok') throw new ApiError(503, 'Website access check is unavailable.');
 }
 
 // Decode the JWT payload client-side just to read organizationId/role for local
@@ -313,3 +377,22 @@ export const searchFieldFacilities = (params:Record<string,string>={}) => authed
 export const listBranches = () => authedFetch("/branches");
 export const saveBranch = (id:string,body:unknown) => authedFetch(`/branches/${id}`,{method:"PUT",body:JSON.stringify(body)});
 export const assignBranch = (id:string,branch_id:string|null) => authedFetch(`/branches/assignments/${id}`,{method:"PUT",body:JSON.stringify({branch_id})});
+
+export const fetchRecognitionAvailability=()=>authedFetch('/recognition/availability');
+export const checkSavedRecognitionOriginals=(openingId:string)=>authedFetch('/recognition/originals/check',{method:'POST',body:JSON.stringify({opening_id:openingId})});
+
+export async function uploadRecognitionOriginals(openingId:string,files:File[],deviceId:string,onProgress?:(message:string)=>void){
+ const principal=await loadAuth();if(!principal)throw new ApiError(401,'missing_token');
+ const ids:string[]=[];
+ for(const [index,file] of files.entries()){
+  onProgress?.(`Preserving original photograph ${index+1} of ${files.length}…`);
+  const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
+  const checksum=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
+  const photoId=crypto.randomUUID(),operationId=crypto.randomUUID();
+  const reservation=await reserveOfflinePhoto({photo_id:photoId,client_operation_id:operationId,opening_id:openingId,target_type:'opening',target_id:openingId,original_filename:file.name,content_type:file.type,byte_size:file.size,sha256_checksum:checksum,device_id:deviceId},principal);
+  if(reservation.upload_url)await uploadPrivatePhoto(reservation.upload_url,file,file.type,checksum,photoId);
+  await confirmOfflinePhoto({photo_id:photoId,client_operation_id:operationId,schema_version:OFFLINE_SCHEMA_VERSION,app_version:'recognition-original-input-1',protocol_version:SYNC_PROTOCOL_VERSION},principal);
+  ids.push(photoId);
+ }
+ return ids;
+}

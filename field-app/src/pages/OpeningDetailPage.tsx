@@ -3,12 +3,14 @@ import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchPhotoAccessUrl } from "../lib/api";
 import { mediaAssociationLabel } from "../lib/mediaAssociationLabel";
 import { openingLoadFailure } from "../lib/openingLoadFailure";
+import {RecognitionHistory} from '../components/ReferenceEvidence';
 import { getAllOfflineMedia, getSyncOperationsForOpening, updateCachedOpening } from "../lib/db";
 import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
 import { SyncBadge } from "../components/SyncBadge";
 import { PhotoCapture } from "../components/PhotoCapture";
 import { openingCompletionRequirements } from "../lib/openingCompletion";
+import {PurchasingRequest} from '../components/PurchasingRequest';
 import { splitServiceHistory } from "../lib/serviceHistory";
 import type { ServiceEventRow } from "../lib/serviceHistory";
 
@@ -235,6 +237,7 @@ export function OpeningDetailPage() {
           </button>
         </div>
 
+        <RecognitionHistory openingId={opening.id}/>
         <div className="section-label" style={{ marginTop: 20 }}>Photos &amp; Videos</div>
         {((opening.photos && opening.photos.length > 0) || queuedPhotos.length > 0) && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 10 }}>
@@ -313,6 +316,7 @@ export function OpeningDetailPage() {
                     <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text-secondary)" }}>
                       {hw.manufacturer} {hw.model_number}
                     </p>
+                    <p style={{margin:'4px 0 0',fontSize:13}}>Identity source: {hw.identity_source==='technician_identified'?'Technician identified':hw.identity_source==='photo_suggestion'?'Photo suggestion':'Not recorded'}{hw.identity_acknowledged_at?' — acknowledged':''}</p>
                     {(hw.unit_cost || hw.supplier_name) && (
                       <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--accent)" }}>
                         {hw.unit_cost ? `$${Number(hw.unit_cost).toFixed(2)}` : ""}
@@ -361,6 +365,7 @@ export function OpeningDetailPage() {
           + Add Hardware
         </Link>
 
+        <PurchasingRequest key={opening.id} openingId={opening.id}/>
         {(history.openingLevel.length > 0 || history.unmatched.length > 0) && (
           <div data-opening-service-history>
             <div className="section-label" style={{ marginTop: 20 }}>Opening service history</div>

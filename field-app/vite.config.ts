@@ -6,6 +6,7 @@ const base = process.env.OI_UI_BASE || '/'
 
 export default defineConfig({
   base,
+  define:{'import.meta.env.VITE_OI_BUILD_SHA':JSON.stringify(process.env.COMMIT_REF||'local_unstamped')},
   plugins: [
     react(),
     VitePWA({
@@ -16,6 +17,8 @@ export default defineConfig({
       // not through the service worker, since that data needs app-level merge/queue logic.
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // The hosting renewal must reach the network, never the offline shell.
+        navigateFallbackDenylist: [/^\/(?:api(?:\/|$)|health(?:[/?]|$)|preview-access(?:[/?]|$))/],
       },
       manifest: {
         name: 'Opening Intel — Field',

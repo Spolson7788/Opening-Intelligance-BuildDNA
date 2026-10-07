@@ -56,6 +56,6 @@ export function buildFacilityDashboard(destination){
  let displayedAccount=null;setInterval(async()=>{const a=await readFieldSession();const key=a?[a.userId,a.organizationId,a.token].join(':'):null;if(displayedAccount!==null&&displayedAccount!==key){clearFacility();location.reload();}displayedAccount=key;},1500);
  _detailInit();boot().catch(e=>{clearFacility();document.getElementById('facSub').textContent=e.message;});`);
  mkdirSync(destination,{recursive:true});writeFileSync(resolve(destination,'index.html'),html);
- for(const name of ['api-client.mjs','connected.mjs','facility-search.mjs'])cpSync(resolve(root,name),resolve(destination,name));
+ for(const name of ['api-client.mjs','connected.mjs','facility-search.mjs','reference-evidence.mjs'])cpSync(resolve(root,name),resolve(destination,name));
 }
 if(process.argv[1]&&resolve(process.argv[1])===import.meta.filename)buildFacilityDashboard(resolve(process.argv[2]||'dist/facility-dashboard'));

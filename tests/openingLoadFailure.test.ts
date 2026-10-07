@@ -1,5 +1,9 @@
 import {it,expect} from 'vitest';
 import {openingLoadFailure} from '../field-app/src/lib/openingLoadFailure';
+it('offers hosting renewal instead of repeating app sign-in for a hosting refusal', () => {
+ expect(openingLoadFailure({status:401,hostingAccessRequired:true})).toMatchObject({title:'Staging website access required',signIn:false,retry:false});
+ expect(openingLoadFailure({status:403,hostingAccessRequired:true}).message).toContain('Renew staging access');
+});
 it('offers sign-in for a rejected session without calling the record missing',()=>{
  expect(openingLoadFailure({status:401})).toMatchObject({title:'Sign-in required',signIn:true,retry:false});
 });

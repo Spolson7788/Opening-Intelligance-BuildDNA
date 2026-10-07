@@ -5,6 +5,7 @@ const TEST_DATABASE_URL =
 
 export default defineConfig({
   test: {
+    include: ["tests/**/*.test.ts"],
     environment: "node",
     globalSetup: "./tests/globalSetup.ts",
     env: {
