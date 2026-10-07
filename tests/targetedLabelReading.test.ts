@@ -37,3 +37,9 @@ it('does not issue a paid reader call with only the baseline 6.7 second headroom
  expect(audit.fetch.mock.calls.map(c=>c[2])).toEqual(['label_locator']);
  expect(result.reads).toEqual([]);expect(result.limiting_factor).toBe('reader_budget_insufficient');
 });
+it('keeps a missing crop reply distinct from an explicitly unreadable crop',async()=>{
+ const source=await sharp({create:{width:80,height:60,channels:3,background:'white'}}).png().toBuffer();
+ audit.fetch.mockImplementation(async(_url,_init,stage)=>stage==='label_locator'?envelope({regions:[{photo_index:0,x:0,y:0,w:1,h:1,rotation:0,kind:'product_label'}]}):envelope({reads:[]}));
+ const result=await readTargetedLabels([source],'image/png',Date.now()+32000);
+ expect(result.status).toBe('partial');expect(result.reads[0].vision_status).toBe('not_returned');expect(result.limiting_factor).toBe('label_partial_reads');
+});

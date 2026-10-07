@@ -199,6 +199,7 @@ export async function readTargetedLabels(images:Buffer[],mediaType:string,deadli
     const value=await ask([{type:'text',text:`${region.kind==='brand_mark'?'Maker mark':'Product label'} crop ${index}, from photograph ${region.photo_index}.`},{type:'image',source:{type:'base64',media_type:'image/png',data:crop.toString('base64')}}],
      'Find and read product label characters actually visible ON THE HARDWARE in this one crop. Read rotated text. For a maker mark transcribe only the visible letters of the logo. Do not identify from shape, catalog knowledge or another view; do not complete missing characters. Use ? for uncertain characters. Return JSON {reads:[{crop_index,text,legibility}],limiting_factor}. Empty text is correct if unreadable.'+labelReadContract([index]),deadline,14000,'label_reader',[index]);
     const r=value.reads[0];text=typeof r?.text==='string'?r.text.slice(0,1200):'';
+    if(value.validation?.status==='partial')reason='label_partial_reads';
     vision_status=r?(text.trim()?'read':'unreadable'):value.validation?.invalid_crops?.includes(index)?'invalid':'not_returned';
     legibility=labelLegibility(text,r?.legibility);
    }catch(e){reason=['AbortError','TimeoutError'].includes((e as Error).name)?'label_timeout':(e as Error).message;}
