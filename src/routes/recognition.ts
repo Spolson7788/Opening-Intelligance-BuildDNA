@@ -37,6 +37,7 @@ const schema=z.object({
   mode:z.enum(['identify','label_blind','marking_regions','hardware_regions']).default('identify'),
   technician_attributes:z.record(z.string().min(1).max(80),z.string().max(300)).refine(v=>Object.keys(v).length<=30).default({}),
 }).strict().refine(b=>Boolean(b.images)!==Boolean(b.photo_ids));
+const trialErrors=new Set(['stability_trial_scope_mismatch','stability_photo_set_already_run','stability_run_limit','stability_budget_exhausted','stability_unknown_spend','stability_trial_unavailable','stability_trial_not_configured']);
 export const recognitionRouter=Router();
 recognitionRouter.use(requireAuth,requireRole('admin','technician','inspector','facilities_manager'));
 function recognitionAvailability(){
@@ -143,7 +144,9 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
      req.auth!.organizationId,b.opening_id,req.auth!.userId,JSON.stringify(sourceHashes),JSON.stringify(b.technician_attributes),JSON.stringify({request_id:b.request_id,shadow_mode:true,...(b.staged?{staged_execution:{phase:'grouping',input_key:stageInputKey,started_at:new Date().toISOString()}}:{}),source_inputs:sourceManifest,recognition_versions:{...recognitionBuild,...(b.staged?{grouped_model:GROUPED_MODEL,grouped_prompt:GROUPED_PROMPT_VERSION,effort:'medium'}:{}),label_prompt:b.staged?GROUPED_PROMPT_VERSION:LABEL_PROMPT_VERSION,label_response:LABEL_RESPONSE_VERSION,reference_prompt:REFERENCE_PROMPT_VERSION},libraries:{sharp:sharp.versions,tesseract:require('tesseract.js/package.json').version}}),b.staged?GROUPED_MODEL:RECOGNITION_MODEL,b.staged?GROUPED_PROMPT_VERSION:REFERENCE_PROMPT_VERSION])).rows[0];
     return await recognitionAudit.run({runId:initial.id,deadline:started+(stabilityTrialId()?55000:49000),trialControl:{},identityOnly:Boolean(stabilityTrialId())},async()=>{try{
     if(stabilityTrialId()&&b.mode!=='identify')throw Error('stability_identify_mode_required');
-    if(!resumed)await registerStabilityRun(initial.id,b.request_id);
+    if(!resumed){try{await registerStabilityRun(initial.id,b.request_id);}catch(error){
+     const code=(error as Error).message;if(trialErrors.has(code))await recordRecognitionEvidence('failure',{code,http_status:409,provider_calls_started:false});throw error;
+    }}
     phase='provider';
     const bounded=<T>(work:()=>Promise<T>,deadline:number,fallback:()=>T)=>withinRecognitionBudget(signal=>recognitionAudit.run({...recognitionAudit.getStore()!,signal},work),deadline,fallback);
     const classify=()=>bounded(async()=>{
@@ -341,7 +344,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
     return res.json({build_sha:recognitionBuild.build_sha,shadow_mode:true,suggestion,label_candidates:labels?.candidates||[],label_candidate:labels?.candidates?.length===1?labels.candidates[0]:null,reported_identity:reportedReferenceHint(b.technician_attributes),run_id:run.id,status,reference_comparison_failure:result.reference_comparison_failure||null,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
     }finally{if(!stagePending)await pool.query(`UPDATE recognition_runs SET status='failed' WHERE id=$1 AND status='running'`,[initial.id]);}});
-  }catch(error){if(b.resume_run_id&&claimedResume)await pool.query("UPDATE recognition_runs SET status='failed' WHERE id=$1 AND organization_id=$2 AND user_id=$3 AND status='running' AND stage_one->'staged_execution'->>'phase' IN ('reading','focusing')",[b.resume_run_id,req.auth!.organizationId,req.auth!.userId]);if((error as Error).message.startsWith('recognition_stage_'))return res.status(409).json({error:(error as Error).message});return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':['original_retrieval','original_metadata','image_normalization'].includes(phase)?'recognition_original_preparation_failed':'recognition_provider_failed'});}
+  }catch(error){if(trialErrors.has((error as Error).message))return res.status(409).json({error:(error as Error).message});if(b.resume_run_id&&claimedResume)await pool.query("UPDATE recognition_runs SET status='failed' WHERE id=$1 AND organization_id=$2 AND user_id=$3 AND status='running' AND stage_one->'staged_execution'->>'phase' IN ('reading','focusing')",[b.resume_run_id,req.auth!.organizationId,req.auth!.userId]);if((error as Error).message.startsWith('recognition_stage_'))return res.status(409).json({error:(error as Error).message});return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':['original_retrieval','original_metadata','image_normalization'].includes(phase)?'recognition_original_preparation_failed':'recognition_provider_failed'});}
 });
 
 // Recover a committed response after a gateway timeout, never start another AI call.
@@ -357,7 +360,7 @@ recognitionRouter.get('/request/:id',async(req:AuthedRequest,res)=>{
   if(r?.status==='running'&&['readers_ready','focus_ready'].includes(r.stage_one?.staged_execution?.phase))return res.status(202).json({status:'stage_ready',next_stage:r.stage_one.staged_execution.phase==='focus_ready'?'focus':'read',request_id:req.params.id,run_id:r.id,build_sha:r.stage_one?.recognition_versions?.build_sha});
   if(r&&recognitionRunInterrupted(r))return res.status(502).json({status:'interrupted',error:'recognition_run_interrupted',run_id:r.id,saved_evidence_available:Boolean(r.stage_one?.targeted_label_reads?.length||r.stage_one?.label_reading?.reads?.length)});
   if(!r||r.status==='running')return res.status(202).json({status:'awaiting_saved_result'});
-  if(r.status==='failed')return res.status(502).json({error:['recognition_label_reader_timeout','recognition_label_reader_failed','recognition_label_locator_timeout','recognition_label_locator_failed'].includes(r.stage_one?.failure?.code)?r.stage_one.failure.code:'recognition_provider_failed',run_id:r.id});
+  if(r.status==='failed')return res.status(502).json({error:trialErrors.has(r.stage_one?.failure?.code)||['recognition_label_reader_timeout','recognition_label_reader_failed','recognition_label_locator_timeout','recognition_label_locator_failed'].includes(r.stage_one?.failure?.code)?r.stage_one.failure.code:'recognition_provider_failed',run_id:r.id});
   if(!r.suggestion||typeof r.suggestion!=='object'||Array.isArray(r.suggestion)||!Object.keys(r.suggestion).length)
     return res.status(502).json({error:'recognition_result_missing'});
   const labels=r.stage_one?.label_reading?.candidates||[];

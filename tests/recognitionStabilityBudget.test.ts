@@ -124,7 +124,7 @@ it('allows one explicit build-bound replay, rejects another build and duplicate 
  await fixture.db.query('INSERT INTO audit_log VALUES($1,$2,$3,$4,$5,now())',[randomUUID(),org,actor,'Authorized recognition rerun',JSON.stringify({trial_id:trial,build_sha:build,photo_hashes:sets[1],prior_run_id:prior})]);
  const wrong=await run({photo_hashes:sets[1]});
  await fixture.db.query('UPDATE recognition_runs SET stage_one=$2 WHERE id=$1',[wrong,JSON.stringify({recognition_versions:{build_sha:'b'.repeat(40)}})]);
- await expect(registerStabilityRun(wrong,randomUUID())).rejects.toThrow('scope_mismatch');
+ await expect(registerStabilityRun(wrong,randomUUID())).rejects.toThrow('already_run');
  await registerStabilityRun(candidate,randomUUID());
  expect(await used()).toBe(100000);
  const duplicate=await run({photo_hashes:sets[1]});
@@ -196,4 +196,17 @@ it('prices a bounded Opus medium grouped request at $4/$20 and retains a worst-c
  expect(()=>stabilityMaximum({...b,output_config:{effort:'high'}},'https://api.anthropic.com/v1/messages',{})).toThrow();
  expect(()=>stabilityMaximum({...b,messages:[...b.messages,...b.messages]},'https://api.anthropic.com/v1/messages',{})).toThrow();
  expect(()=>stabilityMaximum({...b,messages:[{role:'user',content:[...images,{type:'text',text:'x'.repeat(16001)}]}]},'https://api.anthropic.com/v1/messages',{})).toThrow();
+});
+
+it('admits a newly frozen device set after prior build replays without granting another replay of the old device',async()=>{
+ const sets=fieldSets(),build='a'.repeat(40);
+ await fixture.db.query('UPDATE recognition_stability_trials SET approved_photo_sets=$2,photo_sha256=$3,max_runs=2 WHERE id=$1',[trial,JSON.stringify(sets),digest(sets)]);
+ const prior=await run({photo_hashes:sets[1]});await registerStabilityRun(prior,randomUUID());
+ await fixture.db.query('INSERT INTO audit_log VALUES($1,$2,$3,$4,$5,now())',[randomUUID(),org,actor,'Authorized recognition rerun',JSON.stringify({trial_id:trial,build_sha:build,photo_hashes:sets[1],prior_run_id:prior})]);
+ const expanded=[...sets,['1','2','3','4'].map(c=>c.repeat(64))];
+ await fixture.db.query('UPDATE recognition_stability_trials SET approved_photo_sets=$2,photo_sha256=$3,max_runs=4 WHERE id=$1',[trial,JSON.stringify(expanded),digest(expanded)]);
+ const next=await run({photo_hashes:expanded[2]});await registerStabilityRun(next,randomUUID());
+ await expect(registerStabilityRun(await run({photo_hashes:expanded[2]}),randomUUID())).rejects.toThrow('already_run');
+ await expect(registerStabilityRun(await run({photo_hashes:sets[1]}),randomUUID())).rejects.toThrow('already_run');
+ expect(await used()).toBe(0);
 });

@@ -73,3 +73,11 @@ it('saves grouped-reader failure and does not silently return an empty successfu
  expect(f.grouped).toHaveBeenCalledTimes(1);expect(f.read).not.toHaveBeenCalled();expect(f.engine).not.toHaveBeenCalled();
  expect(f.query.mock.calls.some(([sql,params])=>String(params?.[1]).includes('grouped_reader_failure'))).toBe(true);
 });
+
+it('reports a rejected frozen photo scope as a trial gate, not a storage failure, without an AI call',async()=>{
+ f.register.mockRejectedValueOnce(Error('stability_trial_scope_mismatch'));
+ const response=await post(body);expect(response.status).toBe(409);expect(response.body.error).toBe('stability_trial_scope_mismatch');
+ expect(f.grouped).not.toHaveBeenCalled();expect(f.engine).not.toHaveBeenCalled();
+ const saved=f.query.mock.calls.find(([sql,args])=>String(args?.[1]).includes('provider_calls_started'));
+ expect(JSON.parse(saved![1][1]).failure).toMatchObject({code:'stability_trial_scope_mismatch',provider_calls_started:false});
+});

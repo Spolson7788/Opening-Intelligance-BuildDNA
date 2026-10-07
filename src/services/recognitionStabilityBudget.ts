@@ -97,7 +97,7 @@ export async function registerStabilityRun(runId:string,requestId:string|undefin
    (await c.query(`SELECT id,request_body FROM audit_log WHERE organization_id=$1 AND user_id=$2 AND action='Authorized recognition rerun'
     AND request_body->>'trial_id'=$3 AND request_body->>'build_sha'=$4 AND request_body->'photo_hashes'=$5::jsonb
     ORDER BY created_at DESC LIMIT 1`,[run.organization_id,run.user_id,trialId,build,JSON.stringify(run.photo_hashes)])).rows[0]:null;
-  const grantCount=replay?Number((await c.query(`SELECT count(DISTINCT a.request_body->>'build_sha') AS n FROM audit_log a
+  const grantCount=Array.isArray(trial.approved_photo_sets)&&trial.max_runs>trial.approved_photo_sets.length?Number((await c.query(`SELECT count(DISTINCT a.request_body->>'build_sha') AS n FROM audit_log a
    JOIN recognition_runs p ON p.id::text=a.request_body->>'prior_run_id'
    JOIN recognition_stability_runs s ON s.run_id=p.id AND s.trial_id=$3
    WHERE a.organization_id=$1 AND a.user_id=$2 AND a.action='Authorized recognition rerun'

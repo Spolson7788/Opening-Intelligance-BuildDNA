@@ -9,6 +9,14 @@ const photographedComponentTypes:Record<string,string>={DOOR_CLOSER:'closer',EXI
 
 export function recognitionFailureMessage(code:string){
   const messages:Record<string,string>={
+    stability_trial_scope_mismatch:'These photos are saved, but this device set is not enabled for the current staging test. No AI call was made. The staging administrator must enable this saved set.',
+    stability_photo_set_already_run:'This photo set has already been tested. Its saved result is retained. No new AI call was made.',
+    stability_run_limit:'The enabled staging tests have been used. Your originals are saved. No AI call was made; the next device test must be enabled.',
+    stability_budget_exhausted:'The remaining test budget cannot cover this request. Your originals are saved. No AI call was made.',
+    stability_unknown_spend:'Testing is paused after an interrupted AI request. Existing charges remain reserved; no new AI call was made.',
+    stability_trial_unavailable:'This staging trial is paused or unavailable. Your originals are saved. No AI call was made.',
+    stability_trial_not_configured:'The staging trial is not configured. No AI call was made.',
+
     recognition_stage_not_resumable:'This stage has already started or cannot be resumed safely. No additional analysis was started.',
  recognition_stage_input_changed:'The saved run belongs to different inputs or an older build. No additional analysis was started.',
  recognition_stage_not_found:'The saved recognition stage is unavailable to this account.',
