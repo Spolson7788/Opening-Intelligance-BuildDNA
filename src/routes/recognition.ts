@@ -156,7 +156,13 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     if(stabilityTrialId()){
      await recordRecognitionEvidence('label_strategy',{version:'targeted-label-3',order:'parallel_identity_reads_before_classifier',reader_budget_ms:32000,ocr_order:'optional_native_crop_four_rotations',maximum_reader_calls:2});
      const deadline=b.staged?Math.min(started+51000,Date.now()+(resumed?STAGED_READER_MS:STAGED_LOCATOR_MS)+1000):targetedLabelDeadline(started);
-     labels=await bounded(()=>readTargetedLabels(images,b.media_type,deadline,b.technician_attributes,b.staged?{mode:resumed?.mode||'locate',regions:resumed?.regions,prior:resumed?.labels,locatorMs:STAGED_LOCATOR_MS,readerMs:STAGED_READER_MS}:undefined),deadline,()=>({version:'oi-targeted-label-reading-3',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'}));
+     const completedReads:NonNullable<Awaited<ReturnType<typeof label>>>['reads']=[];
+     labels=await bounded(()=>readTargetedLabels(images,b.media_type,deadline,b.technician_attributes,b.staged?{mode:resumed?.mode||'locate',regions:resumed?.regions,prior:resumed?.labels,locatorMs:STAGED_LOCATOR_MS,readerMs:STAGED_READER_MS,onRead:(index,read)=>{completedReads[index]=read;}}:undefined),deadline,()=>{
+      // Stop this run before another paid stage. Preserve completed entries
+      // even when its sibling did not finish; unvalidated guesses remain guesses.
+      const control=recognitionAudit.getStore()?.trialControl;if(control)control.stopped=true;
+      return {version:'oi-targeted-label-reading-3',status:completedReads.some(Boolean)?'partial' as const:'unavailable' as const,reads:completedReads.filter(Boolean),limiting_factor:'label_processing_timeout'};
+     });
      // Preserve the combined label evidence before optional classification.
      await recordRecognitionEvidence('label_reading',labels);
      if(labels.stage_outcomes?.label_locator.status==='failed'&&!labels.reads.length){
@@ -165,7 +171,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       await recordRecognitionEvidence('failure',{code:error,http_status:502,readers_started:false});
       return res.status(502).json({error,run_id:initial.id});
      }
-     if(b.staged&&/timeout/i.test(labels.limiting_factor||'')&&!labels.reads.some(r=>r.vision_status==='read'&&r.vision_text.trim())){
+     if(b.staged&&/timeout/i.test(labels.limiting_factor||'')){
       await recordRecognitionEvidence('failure',{code:resumed?'recognition_label_reader_timeout':'recognition_label_locator_timeout',http_status:502});
       return res.status(502).json({error:resumed?'recognition_label_reader_timeout':'recognition_label_locator_timeout',run_id:initial.id});
      }
@@ -335,7 +341,7 @@ recognitionRouter.get('/request/:id',async(req:AuthedRequest,res)=>{
   if(r?.status==='running'&&['readers_ready','focus_ready'].includes(r.stage_one?.staged_execution?.phase))return res.status(202).json({status:'stage_ready',next_stage:r.stage_one.staged_execution.phase==='focus_ready'?'focus':'read',request_id:req.params.id,run_id:r.id,build_sha:r.stage_one?.recognition_versions?.build_sha});
   if(r&&recognitionRunInterrupted(r))return res.status(502).json({status:'interrupted',error:'recognition_run_interrupted',run_id:r.id,saved_evidence_available:Boolean(r.stage_one?.targeted_label_reads?.length||r.stage_one?.label_reading?.reads?.length)});
   if(!r||r.status==='running')return res.status(202).json({status:'awaiting_saved_result'});
-  if(r.status==='failed')return res.status(502).json({error:'recognition_provider_failed'});
+  if(r.status==='failed')return res.status(502).json({error:['recognition_label_reader_timeout','recognition_label_locator_timeout','recognition_label_locator_failed'].includes(r.stage_one?.failure?.code)?r.stage_one.failure.code:'recognition_provider_failed',run_id:r.id});
   if(!r.suggestion||typeof r.suggestion!=='object'||Array.isArray(r.suggestion)||!Object.keys(r.suggestion).length)
     return res.status(502).json({error:'recognition_result_missing'});
   const labels=r.stage_one?.label_reading?.candidates||[];

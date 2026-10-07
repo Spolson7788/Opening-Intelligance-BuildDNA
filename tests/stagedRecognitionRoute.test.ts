@@ -49,3 +49,18 @@ it('checkpoints the first reads and claims a separate focused stage under the sa
  f.claim.mockResolvedValueOnce({id,regions,token:'focused-token',mode:'focus',labels:prior,hashes:['hash','hash2','hash3']});
  const third=await post({...body,resume_run_id:id});expect(third.status).toBe(200);expect(f.read.mock.calls.at(-1)[4]).toMatchObject({mode:'focus',prior});expect(f.engine).not.toHaveBeenCalled();
 });
+
+it('a timed-out stage with a completed partial read stays failed and never starts focused verification',async()=>{
+ const read={region:regions[0],vision_text:'DORMA',vision_status:'read',ocr_text:'',ocr_confidence:0,agreed_markings:[],status:'unconfirmed',provenance:{source:'native_tile',target_device:true,location_validated:false,box:{x:.3,y:.3,w:.1,h:.1}}};
+ f.read.mockResolvedValueOnce({version:'oi-targeted-label-reading-3',status:'partial',reads:[read],limiting_factor:'label_processing_timeout'});
+ const response=await post({...body,resume_run_id:id});
+ expect(response.status).toBe(502);expect(response.body.error).toBe('recognition_label_reader_timeout');expect(f.engine).not.toHaveBeenCalled();
+ const saved=f.query.mock.calls.find(([sql,params])=>sql.includes('stage_one=stage_one ||')&&String(params?.[1]).includes('label_reading'));
+ expect(JSON.parse(saved![1][1]).label_reading.reads).toEqual([read]);
+ expect(f.query.mock.calls.some(([sql,params])=>String(params?.[1]).includes('focus_ready'))).toBe(false);
+});
+it('read-only recovery returns the saved specific timeout instead of a generic provider failure',async()=>{
+ f.query.mockImplementation(async(sql:string)=>({rows:sql.includes('is_active')?[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]:sql.includes('FROM recognition_runs')?[{id,status:'failed',stage_one:{failure:{code:'recognition_label_reader_timeout'}}}]:sql.startsWith('SELECT 1')?[{allowed:1}]:[]}));
+ const response=await request(app).get('/recognition/request/'+requestId+'?opening_id='+opening).set('Authorization',`Bearer ${jwt.sign({userId:'user',organizationId:'org',sessionVersion:0},process.env.JWT_SECRET!)}`);
+ expect(response.status).toBe(502);expect(response.body.error).toBe('recognition_label_reader_timeout');expect(f.read).not.toHaveBeenCalled();
+});

@@ -32,3 +32,13 @@ it('maps the same marking from all four rotated views to one original box',()=>{
  const views=[{rotation:0,text_box:{x:.2,y:.3,w:.4,h:.1}},{rotation:90,text_box:{x:.6,y:.2,w:.1,h:.4}},{rotation:180,text_box:{x:.4,y:.6,w:.4,h:.1}},{rotation:270,text_box:{x:.3,y:.4,w:.1,h:.4}}];
  for(const view of views){const p=resolveFocusedRead({...view,source:'focused_crop',target_device:true},focus);expect(p.box!.x).toBeCloseTo(.18);expect(p.box!.y).toBeCloseTo(.29);expect(p.box!.w).toBeCloseTo(.16);expect(p.box!.h).toBeCloseTo(.03);}
 });
+
+it('revisits the locator maker region when a blank reader proposal lies elsewhere',async()=>{
+ const image=await sharp({create:{width:1000,height:1200,channels:3,background:'white'}}).png().toBuffer();
+ const read:any={region:{photo_index:0,kind:'brand_mark'},locator_region:{photo_index:0,kind:'brand_mark',x:.3,y:.4,w:.25,h:.18},provenance:{source:'native_tile',target_device:true,location_validated:false,box:{x:.75,y:.43,w:.06,h:.13}}};
+ const focus=await focusedMarkingViews(image,read);
+ expect(focus.box.left).toBeLessThanOrEqual(300);expect(focus.box.left+focus.box.width).toBeGreaterThanOrEqual(550);
+ expect(focus.box.left+focus.box.width).toBeLessThan(750);
+ read.provenance.location_validated=true;
+ const validated=await focusedMarkingViews(image,read);expect(validated.box.left).toBeGreaterThan(550);
+});

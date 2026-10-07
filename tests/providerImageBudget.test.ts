@@ -86,3 +86,12 @@ it('keeps native 12MP label and model-line pixels for OCR before independently e
   expect(wrong.equals(await sharp(line).raw().toBuffer())).toBe(false);
  }finally{vi.unstubAllGlobals();delete process.env.ANTHROPIC_API_KEY;}
 },30000);
+
+it('reuses only byte-verified bounded upright JPEGs without a second lossy encode',async()=>{
+ const source=await sharp({create:{width:1500,height:900,channels:3,background:'white'}}).jpeg({quality:85,chromaSubsampling:'4:4:4'}).toBuffer();
+ const prepared=await prepareProviderImage(source);
+ expect(prepared.data).toEqual(source);expect(prepared.metadata.operation).toBe('verified_jpeg_passthrough');
+ const oriented=await sharp(source).withMetadata({orientation:6}).jpeg().toBuffer();
+ const changed=await prepareProviderImage(oriented);
+ expect(changed.metadata.operation).toBe('exif_orient_resize_jpeg');expect(changed.metadata.height).toBe(1500);
+});

@@ -13,6 +13,11 @@ export const MAX_PROVIDER_REQUEST_BYTES=24_000_000;
 // Local crops retain their pixels. Only the outgoing view is resampled/encoded.
 export async function prepareProviderImage(image:Buffer,maxBytes=MAX_PROVIDER_IMAGE_BYTES){
  const source=await sharp(image,{limitInputPixels:recognitionInputPixelLimit()}).metadata();
+ // Reuse a verified bounded JPEG. This is checked from the bytes, never a
+ // caller-supplied flag, and retains both hashes in the request audit.
+ if(source.format==='jpeg'&&source.width&&source.height&&Math.max(source.width,source.height)<=PROVIDER_LONG_EDGE&&(!source.orientation||source.orientation===1)&&image.length<=maxBytes){
+  return {data:image,metadata:{version:PROVIDER_IMAGE_VERSION,operation:'verified_jpeg_passthrough',source_width:source.width,source_height:source.height,source_orientation:source.orientation||1,width:source.width,height:source.height,quality:null,long_edge_limit:PROVIDER_LONG_EDGE,bytes:image.length,media_type:'image/jpeg'}};
+ }
  for(const [longEdge,quality] of [[PROVIDER_LONG_EDGE,85],[PROVIDER_LONG_EDGE,70],[1200,65],[900,60],[700,50]]){
   const {data,info}=await sharp(image,{limitInputPixels:recognitionInputPixelLimit()}).rotate().flatten({background:'white'}).resize({width:longEdge,height:longEdge,fit:'inside',withoutEnlargement:true}).jpeg({quality,chromaSubsampling:'4:4:4'}).toBuffer({resolveWithObject:true});
   if(data.length<=maxBytes)return {data,metadata:{version:PROVIDER_IMAGE_VERSION,operation:'exif_orient_resize_jpeg',source_width:source.width,source_height:source.height,source_orientation:source.orientation||1,width:info.width,height:info.height,quality,long_edge_limit:longEdge,bytes:data.length,media_type:'image/jpeg'}};

@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import {recognitionInputPixelLimit} from './recognitionOriginalLimits';
 import type {ReadProvenance} from './labelReading';
+import {prepareProviderImage} from './recognitionImage';
 export interface NativeTile {index:number;box:{left:number;top:number;width:number;height:number};image:Buffer}
 // Cover every native pixel, independent of locator coordinates and expected text.
 // Materialize each tile before conversion so provider resizing cannot erase a
@@ -10,12 +11,18 @@ export async function nativeLabelTiles(image:Buffer):Promise<{width:number;heigh
  if(!m.width||!m.height)throw Error('invalid_image');
  const cols=Math.ceil(m.width/1400),rows=Math.ceil(m.height/1400);
  if(cols*rows>20)throw Error('native_tile_limit');
+ // Decode the upright source once. Re-decoding a full phone PNG for every
+ // tile consumed most of the field reader window before a request was sent.
+ const {data,info}=await sharp(image,{limitInputPixels:recognitionInputPixelLimit()}).removeAlpha().raw().toBuffer({resolveWithObject:true});
  const tiles:NativeTile[]=[];
  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
   const left=Math.max(0,x*1400-80),top=Math.max(0,y*1400-80);
   const box={left,top,width:Math.min(1560,m.width-left),height:Math.min(1560,m.height-top)};
-  const buffer=await sharp(image,{limitInputPixels:recognitionInputPixelLimit()}).extract(box).png().toBuffer();
-  tiles.push({index:tiles.length,box,image:buffer});
+  const buffer=await sharp(data,{raw:{width:info.width,height:info.height,channels:info.channels}}).extract(box).jpeg({quality:85,chromaSubsampling:'4:4:4'}).toBuffer();
+  const prepared=await prepareProviderImage(buffer);
+  // Native geometry must survive encoding; never silently shrink a tile.
+  if(prepared.metadata.width!==box.width||prepared.metadata.height!==box.height)throw Error('native_tile_image_budget');
+  tiles.push({index:tiles.length,box,image:prepared.data});
  }
  return {width:m.width,height:m.height,tiles};
 }

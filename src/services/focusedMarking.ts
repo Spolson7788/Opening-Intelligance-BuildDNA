@@ -8,10 +8,17 @@ export function canFocusMarking(read:LabelRead){
 export async function focusedMarkingViews(image:Buffer,read:LabelRead){
  if(!canFocusMarking(read))throw Error('focused_location_missing');
  const m=await sharp(image,{limitInputPixels:recognitionInputPixelLimit()}).metadata();if(!m.width||!m.height)throw Error('invalid_image');
- const b=read.provenance!.box!;
+ let b=read.provenance!.box!;
+ const locator=read.locator_region;
+ // A blank maker proposal outside the locator's mark cannot be the sole
+ // verification target. Revisit the original marking region, without using
+ // the guessed brand or any product-specific coordinates.
+ const coarse=read.region.kind==='brand_mark'&&read.provenance!.location_validated===false&&locator&&locator.kind==='brand_mark'&&locator.photo_index===read.region.photo_index&&[locator.x,locator.y,locator.w,locator.h].every(Number.isFinite)&&locator.x>=0&&locator.y>=0&&locator.w>0&&locator.h>0&&locator.x+locator.w<=1&&locator.y+locator.h<=1&&(b.x>=locator.x+locator.w||locator.x>=b.x+b.w||b.y>=locator.y+locator.h||locator.y>=b.y+b.h);
+ if(coarse)b=locator;
  // A location proposal may clip letters. Add equal native-pixel margin without
  // depending on a brand, model, photograph number, expected text or rotation.
- const padX=Math.max(16,Math.ceil(b.w*m.width*.6)),padY=Math.max(16,Math.ceil(b.h*m.height*.6));
+ const margin=coarse?.1:.6;
+ const padX=Math.max(16,Math.ceil(b.w*m.width*margin)),padY=Math.max(16,Math.ceil(b.h*m.height*margin));
  const left=Math.max(0,Math.floor(b.x*m.width)-padX),top=Math.max(0,Math.floor(b.y*m.height)-padY);
  const right=Math.min(m.width,Math.ceil((b.x+b.w)*m.width)+padX),bottom=Math.min(m.height,Math.ceil((b.y+b.h)*m.height)+padY);
  const box={left,top,width:right-left,height:bottom-top};
