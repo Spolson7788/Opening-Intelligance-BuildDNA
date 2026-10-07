@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {fetchRecognitionAvailability,recognizeHardware,uploadRecognitionOriginals,checkSavedRecognitionOriginals} from '../lib/api';
+import {fetchRecognitionAvailability,recognizeHardware,uploadRecognitionOriginals,checkSavedRecognitionOriginals,fetchPhotoAccessUrl} from '../lib/api';
 import {labelConfirmationMessage,visionReadMessage} from '../lib/labelReadStatus';
 import {ReferenceEvidence} from './ReferenceEvidence';
 import {getOrCreateDeviceId} from '../lib/sync';
@@ -56,13 +56,14 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
   const [savedOriginalCount,setSavedOriginalCount]=useState(0);
   const [savedOriginalMediaType,setSavedOriginalMediaType]=useState('');
   const [originalCheck,setOriginalCheck]=useState<any>(null);
+  const [savedPreviews,setSavedPreviews]=useState<{photoId:string;url:string}[]>([]);
   const [availability,setAvailability]=useState<{available:boolean;blocking_reasons:string[];reason:string|null;reference_comparison_enabled:boolean;original_photo_input_available?:boolean;maximum_original_bytes?:number;maximum_original_set_bytes?:number}|null>(null);
   const originalsEnabled=availability?.original_photo_input_available===true;
   const selectedBytes=files.reduce((n,f)=>n+f.size,0);
   const selectionError=files.length>5?'Select at most five photographs of the same component.':originalsEnabled?(files.length>0&&files.length<3?'Select at least three views: maker mark, identifying detail and full device.':files.some(f=>f.size>(availability?.maximum_original_bytes||0))||selectedBytes>(availability?.maximum_original_set_bytes||0)?'Original photographs exceed the bounded upload limits (12 MB each, 40 MB combined).':''):selectedBytes>2*1024*1024?'The combined photograph limit is 2 MB on this build.':'';
   const [typeApplied,setTypeApplied]=useState(false);
   useEffect(()=>()=>{generation.current++;},[openingId]);
-  useEffect(()=>{originalSources.current=null;setSavedOriginalCount(0);},[openingId]);
+  useEffect(()=>{originalSources.current=null;setSavedOriginalCount(0);setSavedPreviews([]);},[openingId]);
   useEffect(()=>{onBusyChange?.(busy);},[busy,onBusyChange]);
   const [availabilityError,setAvailabilityError]=useState('');
   useEffect(()=>{
@@ -97,13 +98,15 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     finally{if(current===generation.current)setBusy(false);}
   }
   async function checkOriginals(){
-    const current=++generation.current;originalSources.current=null;setSavedOriginalCount(0);setSavedOriginalMediaType('');setBusy(true);setError('');setOriginalCheck(null);setProgress('Checking saved originals — no AI call…');
+    const current=++generation.current;originalSources.current=null;setSavedOriginalCount(0);setSavedOriginalMediaType('');setSavedPreviews([]);setBusy(true);setError('');setOriginalCheck(null);setProgress('Checking saved originals — no AI call…');
     try{const checked=await checkSavedRecognitionOriginals(openingId);if(current===generation.current){
       setOriginalCheck(checked);
       if(checked.ok&&Array.isArray(checked.sources)&&checked.sources.length>=3&&checked.sources.length<=5&&['image/jpeg','image/png','image/webp'].includes(checked.media_type)){
         originalSources.current={openingId,ids:checked.sources.map((s:any)=>s.photo_id)};
         setSavedOriginalCount(checked.sources.length);setSavedOriginalMediaType(checked.media_type);
         setFiles([]);if(fileInput.current)fileInput.current.value='';onFilesChange([]);
+        const previews=await Promise.all(checked.sources.map(async(s:any)=>({photoId:s.photo_id,url:(await fetchPhotoAccessUrl(s.photo_id)).url})));
+        if(current===generation.current)setSavedPreviews(previews);
       }
     }}
     catch(e){if(current===generation.current)setError(e instanceof Error?e.message:'Original check failed.');}
@@ -149,17 +152,25 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
     {availability?.available&&!availability.reference_comparison_enabled&&<p>Photograph recognition is available. Manufacturer reference comparison is switched off on this server.</p>}
     <label>Reported model or readable markings<input value={markings} maxLength={300} disabled={busy} onChange={e=>{setMarkings(e.target.value);setResult(null);setResponse(null);}} placeholder="e.g. CR441 or Cal-Royal CR441"/></label>
     <label>Observed features or measurements<input value={features} maxLength={300} onChange={e=>setFeatures(e.target.value)}/></label>
-    <input ref={fileInput} aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;originalSources.current=null;setSavedOriginalCount(0);setProgress('');const selected=Array.from(e.target.files||[]);setFiles(selected);onFilesChange(originalsEnabled?[]:selected);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}/>
+    <input ref={fileInput} aria-label="Recognition photographs" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={e=>{generation.current++;originalSources.current=null;setSavedOriginalCount(0);setSavedPreviews([]);setProgress('');const selected=Array.from(e.target.files||[]);setFiles(selected);onFilesChange(originalsEnabled?[]:selected);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}/>
     {files.length>0&&<div aria-label="Selected photograph files">
       <p>Total: <strong>{selectedBytes.toLocaleString()} bytes</strong> ({(selectedBytes/1024/1024).toFixed(2)} MB). {originalsEnabled?'Original upload limit: 12 MB each, 40 MB combined.':'Combined limit: 2 MB.'}</p>
       <ol>{files.map((file,i)=><li key={i}>{file.name} — {file.size.toLocaleString()} bytes</li>)}</ol>
-      <button type="button" disabled={busy} onClick={()=>{generation.current++;originalSources.current=null;setSavedOriginalCount(0);setProgress('');if(fileInput.current)fileInput.current.value='';setFiles([]);onFilesChange([]);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}>Clear selected photographs</button>
+      <button type="button" disabled={busy} onClick={()=>{generation.current++;originalSources.current=null;setSavedOriginalCount(0);setSavedPreviews([]);setProgress('');if(fileInput.current)fileInput.current.value='';setFiles([]);onFilesChange([]);setResult(null);setResponse(null);setError('');setProviderDiagnostic('');}}>Clear selected photographs</button>
     </div>}
     {selectionError&&<p role="alert">{selectionError}</p>}
     {originalsEnabled&&<button type="button" disabled={busy} onClick={checkOriginals}>Check saved originals without analysis</button>}
     {originalCheck&&<p role={originalCheck.ok?'status':'alert'}>{originalCheck.ok?`${originalCheck.photo_count} originals downloaded, checksummed and prepared successfully.`:`Original check failed at ${originalCheck.stage}: ${originalCheck.reason}.`} No AI call was made.</p>}
     {originalsEnabled&&<button type="button" disabled={busy||!files.length||!!selectionError||savedOriginalCount===files.length} onClick={saveOriginals}>Save original photos without analysis</button>}
     {originalsEnabled&&savedOriginalCount>0&&<p role="status">{savedOriginalCount} original photos saved privately to this opening. Analyze uses this same saved set.</p>}
+    {!!savedPreviews.length&&<section aria-label="Exact saved recognition photographs">
+      <h3>Saved photographs used for recognition</h3>
+      <p>These are the original stored photographs in submission order. No AI call is made to display them.</p>
+      {savedPreviews.map((photo,i)=><figure key={photo.photoId}>
+        <img src={photo.url} alt={`Saved recognition photograph ${i+1}`} style={{maxWidth:'100%',maxHeight:480,objectFit:'contain'}} referrerPolicy="no-referrer"/>
+        <figcaption>Photo {i+1}</figcaption>
+      </figure>)}
+    </section>}
     <button type="button" disabled={busy||(!files.length&&!(savedOriginalCount>0&&originalSources.current?.openingId===openingId))||!!selectionError||!availability?.available} onClick={analyze}>{busy?progress||'Analyzing…':'Analyze photographs'}</button>
     {error&&<p role="alert">{error}</p>}
     {providerDiagnostic&&<p>Administrator diagnostic: {providerDiagnostic}</p>}
