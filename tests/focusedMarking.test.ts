@@ -15,14 +15,20 @@ it('clips margins to image boundaries and never silently downscales a broad regi
  const focus=await focusedMarkingViews(image,read({x:0,y:0,w:.05,h:.05}));expect(focus.box.left).toBe(0);expect(focus.box.top).toBe(0);
  await expect(focusedMarkingViews(image,read({x:0,y:0,w:1,h:1}))).rejects.toThrow('focused_region_too_large');
 });
-it('maps focused unrotated coordinates back to original pixels and rejects invalid provenance',()=>{
+it('maps focused rotated-view coordinates back to original pixels and rejects invalid provenance',()=>{
  const focus={box:{left:100,top:200,width:400,height:300},width:1000,height:1000};
  const r={source:'focused_crop',text_box:{x:.25,y:.2,w:.5,h:.4},rotation:270,target_device:true};
- expect(resolveFocusedRead(r,focus)).toMatchObject({source:'focused_crop',box:{x:.2,y:.26,w:.2,h:.12},rotation:270,location_validated:true});
+ expect(resolveFocusedRead(r,focus)).toMatchObject({source:'focused_crop',box:{x:.26,y:.275,w:.16,h:.15},rotation:270,location_validated:true});
  for(const changed of [{...r,source:'context'},{...r,rotation:45},{...r,text_box:{x:.9,y:0,w:.2,h:.2}}])expect(resolveFocusedRead(changed,focus).location_validated).toBe(false);
  expect(resolveFocusedRead({...r,target_device:false},focus).target_device).toBe(false);
 });
 it('never focuses background/context guesses or a marking attributed to another device',()=>{
  expect(canFocusMarking(read())).toBe(true);
  for(const p of [{source:'context',target_device:true},{source:'native_tile',target_device:false},{source:'native_tile',target_device:true,box:{x:0,y:0,w:2,h:1}}])expect(canFocusMarking({...read(),provenance:p as any})).toBe(false);
+});
+
+it('maps the same marking from all four rotated views to one original box',()=>{
+ const focus={box:{left:100,top:200,width:400,height:300},width:1000,height:1000};
+ const views=[{rotation:0,text_box:{x:.2,y:.3,w:.4,h:.1}},{rotation:90,text_box:{x:.6,y:.2,w:.1,h:.4}},{rotation:180,text_box:{x:.4,y:.6,w:.4,h:.1}},{rotation:270,text_box:{x:.3,y:.4,w:.1,h:.4}}];
+ for(const view of views){const p=resolveFocusedRead({...view,source:'focused_crop',target_device:true},focus);expect(p.box!.x).toBeCloseTo(.18);expect(p.box!.y).toBeCloseTo(.29);expect(p.box!.w).toBeCloseTo(.16);expect(p.box!.h).toBeCloseTo(.03);}
 });
