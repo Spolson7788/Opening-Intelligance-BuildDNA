@@ -59,3 +59,10 @@ it('uses catalog data for other brands and does not treat a default as technicia
  const result=catalogIdentityReview(labels(read('Example',0,'brand_mark'),read('Model 99EO',1,'product_label')),{component_class:'EXIT_DEVICE'},{component_type:'lockset',component_type_source:'default'},catalog);
  expect(result.status).toBe('CANDIDATES');expect(result.candidates[0].series).toBe('99');
 });
+
+it('retains validated maker disagreement across broad and focused reads as a conflict',()=>{
+ const a=read('DORMA',0,'brand_mark'),b=read('PDQ',0,'brand_mark'),m=read('6200R',1,'product_label');
+ a.provenance={source:'native_tile',target_device:true,location_validated:true};b.provenance={source:'focused_crop',target_device:true,location_validated:true};m.provenance={source:'native_tile',target_device:true,location_validated:true};
+ expect(catalogIdentityReview(labels(a,b,m)).status).toBe('CONFLICT');
+ a.provenance.location_validated=false;expect(catalogIdentityReview(labels(a,b,m)).status).toBe('CANDIDATES');expect(catalogIdentityReview(labels(a,b,m)).excluded_evidence[0].text).toBe('DORMA');
+});

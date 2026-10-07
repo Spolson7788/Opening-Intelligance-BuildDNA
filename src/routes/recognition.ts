@@ -1,3 +1,4 @@
+import {canFocusMarking} from '../services/focusedMarking';
 import {claimReaderStage,stagedInputKey,STAGED_LOCATOR_MS,STAGED_READER_MS} from '../services/recognitionStages';
 import {loadIdentityCatalog} from '../services/identityCatalog';
 import {classifierObject} from '../services/providerReply';
@@ -155,7 +156,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     if(stabilityTrialId()){
      await recordRecognitionEvidence('label_strategy',{version:'targeted-label-3',order:'parallel_identity_reads_before_classifier',reader_budget_ms:32000,ocr_order:'optional_native_crop_four_rotations',maximum_reader_calls:2});
      const deadline=b.staged?Math.min(started+51000,Date.now()+(resumed?STAGED_READER_MS:STAGED_LOCATOR_MS)+1000):targetedLabelDeadline(started);
-     labels=await bounded(()=>readTargetedLabels(images,b.media_type,deadline,b.technician_attributes,b.staged?{mode:resumed?'read':'locate',regions:resumed?.regions,locatorMs:STAGED_LOCATOR_MS,readerMs:STAGED_READER_MS}:undefined),deadline,()=>({version:'oi-targeted-label-reading-3',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'}));
+     labels=await bounded(()=>readTargetedLabels(images,b.media_type,deadline,b.technician_attributes,b.staged?{mode:resumed?.mode||'locate',regions:resumed?.regions,prior:resumed?.labels,locatorMs:STAGED_LOCATOR_MS,readerMs:STAGED_READER_MS}:undefined),deadline,()=>({version:'oi-targeted-label-reading-3',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'}));
      // Preserve the combined label evidence before optional classification.
      await recordRecognitionEvidence('label_reading',labels);
      if(labels.stage_outcomes?.label_locator.status==='failed'&&!labels.reads.length){
@@ -173,6 +174,12 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       await pool.query(`UPDATE recognition_runs SET stage_one=jsonb_set(stage_one,'{staged_execution}',stage_one->'staged_execution'||$2::jsonb) WHERE id=$1`,[initial.id,JSON.stringify({phase:'readers_ready',locator_completed_at:new Date().toISOString()})]);
       stagePending=true;
       return res.status(202).json({status:'stage_ready',next_stage:'read',request_id:b.request_id,run_id:initial.id,build_sha:recognitionBuild.build_sha});
+     }
+     if(b.staged&&resumed?.mode==='read'&&labels.reads.some(canFocusMarking)){
+      await recordRecognitionEvidence('initial_identity_reads',labels);
+      await pool.query(`UPDATE recognition_runs SET stage_one=jsonb_set(stage_one,'{staged_execution}',stage_one->'staged_execution'||$2::jsonb) WHERE id=$1`,[initial.id,JSON.stringify({phase:'focus_ready',readers_completed_at:new Date().toISOString()})]);
+      stagePending=true;
+      return res.status(202).json({status:'stage_ready',next_stage:'focus',request_id:b.request_id,run_id:initial.id,build_sha:recognitionBuild.build_sha});
      }
      if(b.staged){
       await recordRecognitionEvidence('classifier_outcome',{status:'not_attempted',reason:'identity_from_located_markings_and_catalog',selected_type:b.technician_attributes.component_type,selected_type_source:b.technician_attributes.component_type_source});
@@ -305,14 +312,14 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       if(!scope.rows.length){await client.query('ROLLBACK');return res.status(404).json({error:'opening_not_found'});}
       const current=await client.query('SELECT 1 FROM users WHERE id=$1 AND organization_id=$2 AND is_active AND role IN (\'admin\',\'technician\',\'inspector\',\'facilities_manager\')',[req.auth!.userId,req.auth!.organizationId]);
       if(!current.rows.length){await client.query('ROLLBACK');return res.status(403).json({error:'forbidden'});}
-      run=(await client.query(`UPDATE recognition_runs SET component_type=$2,raw_class_code=$3,stage_one=stage_one || $4::jsonb,retrieved_pages=$5,stage_two=$6,citations=$7,rejected_citations=$8,conflicts=$9,status=$10,suggestion=$11 WHERE id=$1 RETURNING id`,[
+      run=(await client.query(`UPDATE recognition_runs SET component_type=$2,raw_class_code=$3,stage_one=stage_one || $4::jsonb || CASE WHEN stage_one ? 'staged_execution' THEN jsonb_build_object('staged_execution',(stage_one->'staged_execution')||jsonb_build_object('phase','completed','completed_at',now())) ELSE '{}'::jsonb END,retrieved_pages=$5,stage_two=$6,citations=$7,rejected_citations=$8,conflicts=$9,status=$10,suggestion=$11 WHERE id=$1 RETURNING id`,[
        initial.id,componentType(result.component_class),result.component_class||null,JSON.stringify(result),JSON.stringify(pages.map(p=>({page_id:p.page_id,doc_sha256:p.doc_sha256,page_no:p.page_no,text_sha256:p.text_sha256}))),JSON.stringify(comparison),JSON.stringify(validated.accepted),JSON.stringify(validated.rejected),JSON.stringify(conflicts),status,JSON.stringify(suggestion)])).rows[0];
       await client.query(`INSERT INTO audit_log (organization_id,user_id,action,method,path,request_body,status_code) VALUES ($1,$2,'Recorded recognition evidence','POST','/api/recognition',$3,200)`,[req.auth!.organizationId,req.auth!.userId,JSON.stringify({run_id:run.id,opening_id:b.opening_id,model:RECOGNITION_MODEL,prompt_version:REFERENCE_PROMPT_VERSION,rejected_citation_count:validated.rejected.length})]);
       await client.query('COMMIT');
     }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
     return res.json({build_sha:recognitionBuild.build_sha,shadow_mode:true,suggestion,label_candidates:labels?.candidates||[],label_candidate:labels?.candidates?.length===1?labels.candidates[0]:null,reported_identity:reportedReferenceHint(b.technician_attributes),run_id:run.id,status,reference_comparison_failure:result.reference_comparison_failure||null,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
     }finally{if(!stagePending)await pool.query(`UPDATE recognition_runs SET status='failed' WHERE id=$1 AND status='running'`,[initial.id]);}});
-  }catch(error){if(b.resume_run_id&&claimedResume)await pool.query("UPDATE recognition_runs SET status='failed' WHERE id=$1 AND organization_id=$2 AND user_id=$3 AND status='running' AND stage_one->'staged_execution'->>'phase'='reading'",[b.resume_run_id,req.auth!.organizationId,req.auth!.userId]);if((error as Error).message.startsWith('recognition_stage_'))return res.status(409).json({error:(error as Error).message});return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':['original_retrieval','original_metadata','image_normalization'].includes(phase)?'recognition_original_preparation_failed':'recognition_provider_failed'});}
+  }catch(error){if(b.resume_run_id&&claimedResume)await pool.query("UPDATE recognition_runs SET status='failed' WHERE id=$1 AND organization_id=$2 AND user_id=$3 AND status='running' AND stage_one->'staged_execution'->>'phase' IN ('reading','focusing')",[b.resume_run_id,req.auth!.organizationId,req.auth!.userId]);if((error as Error).message.startsWith('recognition_stage_'))return res.status(409).json({error:(error as Error).message});return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':['original_retrieval','original_metadata','image_normalization'].includes(phase)?'recognition_original_preparation_failed':'recognition_provider_failed'});}
 });
 
 // Recover a committed response after a gateway timeout, never start another AI call.
@@ -325,7 +332,7 @@ recognitionRouter.get('/request/:id',async(req:AuthedRequest,res)=>{
   if(!allowed.rows.length)return res.status(404).json({error:'opening_not_found'});
   const r=(await pool.query(`SELECT * FROM recognition_runs WHERE organization_id=$1 AND user_id=$2 AND opening_id=$3 AND stage_one->>'request_id'=$4 ORDER BY created_at DESC LIMIT 1`,[req.auth!.organizationId,req.auth!.userId,opening.data,req.params.id])).rows[0];
   // Report host interruption without rewriting the frozen run or starting work.
-  if(r?.status==='running'&&r.stage_one?.staged_execution?.phase==='readers_ready')return res.status(202).json({status:'stage_ready',next_stage:'read',request_id:req.params.id,run_id:r.id,build_sha:r.stage_one?.recognition_versions?.build_sha});
+  if(r?.status==='running'&&['readers_ready','focus_ready'].includes(r.stage_one?.staged_execution?.phase))return res.status(202).json({status:'stage_ready',next_stage:r.stage_one.staged_execution.phase==='focus_ready'?'focus':'read',request_id:req.params.id,run_id:r.id,build_sha:r.stage_one?.recognition_versions?.build_sha});
   if(r&&recognitionRunInterrupted(r))return res.status(502).json({status:'interrupted',error:'recognition_run_interrupted',run_id:r.id,saved_evidence_available:Boolean(r.stage_one?.targeted_label_reads?.length||r.stage_one?.label_reading?.reads?.length)});
   if(!r||r.status==='running')return res.status(202).json({status:'awaiting_saved_result'});
   if(r.status==='failed')return res.status(502).json({error:'recognition_provider_failed'});

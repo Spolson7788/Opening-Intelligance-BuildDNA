@@ -3,7 +3,7 @@ import sharp from 'sharp';
 const audit=vi.hoisted(()=>({fetch:vi.fn(),record:vi.fn(async()=>{})}));
 vi.mock('../src/services/recognitionAudit',()=>({auditedFetch:audit.fetch,recordRecognitionEvidence:audit.record,recognitionAuditStopped:()=>false}));
 vi.mock('tesseract.js',()=>({PSM:{SINGLE_LINE:'7',SPARSE_TEXT:'11'},createWorker:vi.fn(async()=>({setParameters:async()=>{},recognize:async()=>({data:{text:'1234R',confidence:90}}),terminate:async()=>{}}))}));
-import {normalizeRegions,readTargetedLabels} from '../src/services/labelReading';
+import {normalizeRegions,readTargetedLabels,readFocusedMarkings} from '../src/services/labelReading';
 import {targetedLabelPlan,targetedReaderCanStart,targetedLabelDeadline} from '../src/services/targetedLabelPlan';
 it('original preparation leaves reader headroom and classifier time within the run deadline',()=>{
  const deadline=targetedLabelDeadline(0,12_211);
@@ -82,4 +82,22 @@ it('uses persisted regions in a fresh reader stage without calling the locator a
  audit.fetch.mockResolvedValue(envelope({reads:[{crop_index:0,text:'1234R',legibility:'clear'}]}));
  const result=await readTargetedLabels([source],'image/png',Date.now()+33000,{}, {mode:'read',regions:[{photo_index:0,x:.1,y:.1,w:.5,h:.5,rotation:0,kind:'product_label'}],readerMs:32000});
  expect(result.reads[0].vision_text).toBe('1234R');expect(audit.fetch).toHaveBeenCalledTimes(1);expect(audit.fetch.mock.calls[0][2]).toBe('label_reader');
+});
+
+it('blindly verifies focused native pixels in four orientations and keeps the prior rejected guess',async()=>{
+ const source=await sharp(Buffer.from('<svg width="400" height="400"><rect width="400" height="400" fill="white"/><text x="100" y="170" font-size="60" fill="black">ABC</text></svg>')).png().toBuffer();
+ const prior:any={version:'oi-targeted-label-reading-3',status:'completed',limiting_factor:null,reads:[{region:{photo_index:0,x:.25,y:.25,w:.4,h:.2,rotation:270,kind:'brand_mark'},provenance:{source:'native_tile',target_device:true,location_validated:false,box:{x:.25,y:.25,w:.4,h:.2}},vision_text:'EarlierWrongMaker',vision_status:'read',ocr_text:'',ocr_confidence:0,agreed_markings:[],status:'unconfirmed'}]};
+ audit.fetch.mockImplementation(async(_url,init,stage)=>{
+  expect(stage).toBe('label_reread');const content=JSON.parse(init.body).messages[0].content;
+  expect(content.filter((c:any)=>c.type==='image')).toHaveLength(5);
+  const text=content.filter((c:any)=>c.type==='text').map((c:any)=>c.text).join(' ');expect(text).not.toContain('EarlierWrongMaker');expect(text).not.toContain('6200R');expect(text).toContain('rotation 90');expect(text).toContain('rotation 270');
+  return envelope({reads:[{crop_index:0,text:'ABC',legibility:'clear',source:'focused_crop',text_box:{x:.30,y:.24,w:.45,h:.48},rotation:0,target_device:true}]});
+ });
+ const result=await readFocusedMarkings([source],prior,Date.now()+32000);
+ expect(result.reads).toHaveLength(2);expect(result.reads[0].vision_text).toBe('EarlierWrongMaker');expect(result.reads[0].provenance?.location_validated).toBe(false);expect(result.reads[1].vision_text).toBe('ABC');expect(result.reads[1].provenance?.source).toBe('focused_crop');expect(result.reads[1].provenance?.location_validated).toBe(true);expect(audit.fetch).toHaveBeenCalledTimes(1);
+});
+it('retains prior evidence if the focused verification request fails',async()=>{
+ const source=await sharp({create:{width:100,height:100,channels:3,background:'white'}}).png().toBuffer();
+ const prior:any={version:'oi-targeted-label-reading-3',status:'completed',limiting_factor:null,reads:[{region:{photo_index:0,x:.2,y:.2,w:.2,h:.2,rotation:0,kind:'brand_mark'},provenance:{source:'native_tile',target_device:true,location_validated:true,box:{x:.2,y:.2,w:.2,h:.2}},vision_text:'ABC',vision_status:'read',ocr_text:'',ocr_confidence:0,agreed_markings:[],status:'unconfirmed'}]};
+ audit.fetch.mockRejectedValue(new DOMException('timeout','TimeoutError'));const result=await readFocusedMarkings([source],prior,Date.now()+32000);expect(result.reads).toEqual(prior.reads);expect(result.limiting_factor).toBe('label_timeout');expect(result.stage_outcomes?.label_reread.status).toBe('failed');
 });

@@ -14,7 +14,7 @@ export function referenceComparisonBudget(started:number,now=Date.now()){
 }
 
 export function recognitionRunInterrupted(run:{status:string;created_at:string|Date;stage_one?:any},now=Date.now()){
- if(run.stage_one?.staged_execution?.phase==='readers_ready')return false;
+ if(['readers_ready','focus_ready'].includes(run.stage_one?.staged_execution?.phase))return false;
  const created=new Date(run.stage_one?.staged_execution?.started_at||run.created_at).getTime();
  return run.status==='running'&&Number.isFinite(created)&&now-created>90_000;
 }

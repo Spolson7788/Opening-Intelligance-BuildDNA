@@ -22,7 +22,7 @@ beforeEach(async()=>{
  f.query.mockImplementation(async(sql:string)=>({rows:sql.includes('is_active')?[{id:'user',organization_id:'org',role:'technician',is_active:true,session_version:0}]:sql.includes('INSERT INTO recognition_runs')||sql.includes('RETURNING id')?[{id}]:sql.startsWith('SELECT 1')?[{allowed:1}]:[]}));
  const image=await sharp({create:{width:100,height:100,channels:3,background:'white'}}).png().toBuffer();
  f.originals.mockResolvedValue({images:[image,image,image],sources:[],hashes:['hash','hash2','hash3']});
- f.claim.mockResolvedValue({id,regions,token:'token',hashes:['hash','hash2','hash3']});
+ f.claim.mockResolvedValue({id,regions,token:'token',mode:'read',hashes:['hash','hash2','hash3']});
  f.read.mockImplementation(async(_images,_type,_deadline,_attributes,stage)=>stage.mode==='locate'?{version:'oi-targeted-label-reading-3',status:'completed',reads:[],planned_regions:regions,stage_outcomes:{label_locator:{status:'succeeded'}},limiting_factor:null}:{version:'oi-targeted-label-reading-3',status:'completed',reads:regions.map((region,i)=>({region,vision_text:i?'Model 6200R':'PDQ',vision_status:'read',ocr_text:'',ocr_confidence:0,agreed_markings:[],status:'unconfirmed',provenance:{source:'native_tile',target_device:true,location_validated:true}})),stage_outcomes:{label_locator:{status:'succeeded'},label_reader:{status:'succeeded'}},limiting_factor:null});
 });
 it('persists locator completion, resumes the same run, and fuses grouped identity without a classifier call',async()=>{
@@ -38,4 +38,14 @@ it('a duplicate resume refusal cannot mark the other request’s active run fail
 it('changed original hashes stop a claimed reader stage before any reader call',async()=>{
  f.claim.mockResolvedValue({id,regions,token:'token',hashes:['different']});
  const response=await post({...body,resume_run_id:id});expect(response.status).toBe(409);expect(response.body.error).toBe('recognition_stage_input_changed');expect(f.read).not.toHaveBeenCalled();
+});
+
+it('checkpoints the first reads and claims a separate focused stage under the same run',async()=>{
+ const prior={version:'oi-targeted-label-reading-3',status:'completed',reads:regions.map((region,i)=>({region,vision_text:i?'Model 6200R':'DORMA',vision_status:'read',ocr_text:'',ocr_confidence:0,agreed_markings:[],status:'unconfirmed',provenance:{source:'native_tile',target_device:true,location_validated:false,box:{x:.3,y:.3,w:.1,h:.1}}})),limiting_factor:null};
+ await post(body);
+ f.read.mockResolvedValueOnce(prior);
+ const second=await post({...body,resume_run_id:id});expect(second.status).toBe(202);expect(second.body.next_stage).toBe('focus');
+ expect(f.query.mock.calls.filter(([sql])=>sql.includes('INSERT INTO recognition_runs'))).toHaveLength(1);expect(f.register).toHaveBeenCalledTimes(1);
+ f.claim.mockResolvedValueOnce({id,regions,token:'focused-token',mode:'focus',labels:prior,hashes:['hash','hash2','hash3']});
+ const third=await post({...body,resume_run_id:id});expect(third.status).toBe(200);expect(f.read.mock.calls.at(-1)[4]).toMatchObject({mode:'focus',prior});expect(f.engine).not.toHaveBeenCalled();
 });

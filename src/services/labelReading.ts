@@ -1,3 +1,4 @@
+import {canFocusMarking,focusedMarkingViews,resolveFocusedRead} from './focusedMarking';
 import {nativeLabelTiles,resolveNativeRead} from './nativeLabelSearch';
 import {recognitionInputPixelLimit} from './recognitionOriginalLimits';
 import {parseLabelResponse,labelReadContract} from './labelResponse';
@@ -26,7 +27,7 @@ export function modelLineBoxQuality(region:LabelRegion):'refined'|'full_width_ba
  if(Math.abs(b.w-region.w)<1e-6&&Math.abs(b.h-region.h)<1e-6)return 'equals_region';
  return b.w<.9*region.w&&b.h<=.5*region.h?'refined':'full_width_band';
 }
-export interface ReadProvenance {source:"crop"|"native_tile"|"context";target_device:boolean;location_validated:boolean;box?:{x:number;y:number;w:number;h:number};rotation?:number}
+export interface ReadProvenance {source:"crop"|"native_tile"|"focused_crop"|"context";target_device:boolean;location_validated:boolean;box?:{x:number;y:number;w:number;h:number};rotation?:number}
 export interface LabelRead {provenance?:ReadProvenance;legibility?:LabelLegibility;model_line_box_quality?:ReturnType<typeof modelLineBoxQuality>;region:LabelRegion;ocr_text:string;ocr_confidence:number;ocr_status?:'read'|'unreadable'|'timeout'|'unavailable'|'not_attempted';ocr_scope?:'model_line'|'label';ocr_model_conflicts?:string[];model_line_crop_status?:'used'|'rejected'|'not_located';vision_status?:'read'|'unreadable'|'not_returned'|'invalid'|'not_attempted';vision_validation_reasons?:string[];vision_text:string;vision_initial_text?:string;agreed_markings:string[];status:'agreement'|'unconfirmed'|'unreadable'}
 export interface LabelEvidence {planned_regions?:LabelRegion[];legibility?:LabelLegibility;stage_outcomes?:Record<string,{status:string;reason?:string;legibility?:LabelLegibility;limiting_factor?:string|null}>;ocr_views?:unknown[];layout_reference?:{id:string;source_sha256:string};locator_preprocessing?:{enlarged_views:number;original_preserved:true};enhancement?:{method:'contrast_sharpen';regions:number;original_preserved:true};source_dimensions?:{width:number;height:number}[];candidates?:{manufacturer:string;series:string;model:string|null;verification:'single_reader';manufacturer_basis?:'catalog_model_match'|'catalog_partial_model_match';transcribed_marking?:string;catalog_model?:string}[];version:string;status:'completed'|'partial'|'unavailable'|'no_regions';reads:LabelRead[];limiting_factor:string|null}
 const empty=(status:LabelEvidence['status'],reason:string|null=null):LabelEvidence=>({version:LABEL_PROMPT_VERSION,status,reads:[],limiting_factor:reason});
@@ -175,7 +176,47 @@ export function labelVisionContent(usable:{region:LabelRegion;crop:Buffer}[],enh
   ...(rotated[i]?[{type:'text',text:`Crop ${i}: alternate 180-degree orientation of the same marking region. The locator orientation may be wrong; compare the original and this view, without treating them as independent readers.`},{type:'image',source:{type:'base64',media_type:'image/png',data:rotated[i]!.toString('base64')}}]:[])
  ]);
 }
-export async function readTargetedLabels(images:Buffer[],mediaType:string,deadline=Date.now()+32000,technician:Record<string,string>={},stage?:{mode:'locate'|'read';regions?:LabelRegion[];locatorMs?:number;readerMs?:number}):Promise<LabelEvidence>{
+export async function readFocusedMarkings(images:Buffer[],prior:LabelEvidence,deadline:number):Promise<LabelEvidence>{
+ const selected=prior.reads.map((read,index)=>({read,index})).filter(({read})=>canFocusMarking(read)).slice(0,2);
+ const outcomes={...prior.stage_outcomes,label_reread:{status:'not_attempted',reason:'focused_native_verification'}};
+ const reads=[...prior.reads];const content:any[]=[];const focuses=new Map<number,Awaited<ReturnType<typeof focusedMarkingViews>>>();
+ try{
+  for(const {read,index} of selected){
+   const focus=await focusedMarkingViews(images[read.region.photo_index],read);focuses.set(index,focus);
+   content.push({type:'text',text:`Requested ${read.region.kind==='brand_mark'?'maker letters':'model-heading text'} for crop_index ${index}, source photograph ${read.region.photo_index}. Four orientations of the SAME native crop; not independent evidence.`});
+   for(const view of focus.views)content.push({type:'text',text:`Crop ${index}, clockwise rotation ${view.rotation}. Coordinates must refer to the unrotated 0-degree crop.`},{type:'image',source:{type:'base64',media_type:'image/png',data:view.image.toString('base64')}});
+   const context=await prepareProviderImage(images[read.region.photo_index]);content.push({type:'text',text:'Whole source photograph for target-device association only. Do not transcribe from it.'},{type:'image',source:{type:'base64',media_type:'image/jpeg',data:context.data.toString('base64')}});
+   await recordRecognitionEvidence(`focused_marking_views_${index}`,{photo_index:read.region.photo_index,box:focus.box,source_sha256:createHash('sha256').update(images[read.region.photo_index]).digest('hex'),views:focus.views.map(v=>({rotation:v.rotation,sha256:createHash('sha256').update(v.image).digest('hex')})),previous_read_withheld:true});
+  }
+  if(!selected.length)return prior;
+  const value=await ask(content,'Transcribe visible letters from the focused native crops only. All orientations show the same pixels. For a maker mark read letters, not the outline/emblem; do not guess a known maker or complete missing letters. For a sticker read the model heading, not an inferred product. The letters may be raised metal, sideways, inverted or reflective. Return only JSON {reads:[{crop_index,text,legibility,source:"focused_crop",text_box:{x,y,w,h},rotation,target_device}],limiting_factor}. text_box bounds ALL transcribed characters as fractions of the UNROTATED 0-degree focused crop. rotation is clockwise 0/90/180/270 to make the letters upright. legibility is clear/partial/illegible. target_device must reflect the whole-photo association. Use ? for uncertain letters and an empty string when unreadable. No earlier transcriptions, catalog or expected names are supplied.'+labelReadContract(selected.map(s=>s.index)),deadline,30000,'label_reread',selected.map(s=>s.index));
+  for(const {read,index} of selected){
+   const r=value.reads.find((v:any)=>v.crop_index===index);if(!r)continue;
+   const provenance=resolveFocusedRead(r,focuses.get(index)!);
+   const text=r.text.slice(0,1200);const region={...read.region,...provenance.box,rotation:provenance.rotation||0,model_line_box:undefined};
+   if(provenance.box){
+    const m=await sharp(images[region.photo_index],{limitInputPixels:recognitionInputPixelLimit()}).metadata();
+    const left=Math.floor(provenance.box.x*m.width!),top=Math.floor(provenance.box.y*m.height!);
+    const crop=await sharp(images[region.photo_index],{limitInputPixels:recognitionInputPixelLimit()}).extract({left,top,width:Math.max(1,Math.min(m.width!-left,Math.ceil(provenance.box.w*m.width!))),height:Math.max(1,Math.min(m.height!-top,Math.ceil(provenance.box.h*m.height!)))}).rotate(region.rotation).png().toBuffer();
+    provenance.location_validated=await hasModelLineDetail(crop);
+    await recordRecognitionEvidence(`focused_marking_validation_${index}`,{photo_index:region.photo_index,region,provenance,view_sha256:createHash('sha256').update(crop).digest('hex')});
+   }
+   const focused:LabelRead={region,provenance,vision_text:text,vision_status:text?'read':'unreadable',vision_initial_text:read.vision_text,legibility:labelLegibility(text,r.legibility),ocr_text:'',ocr_confidence:0,ocr_status:'not_attempted',agreed_markings:[],status:text?'unconfirmed':'unreadable'};
+   // Preserve both attempts. Valid conflicting maker reads remain peers; a
+   // rejected location does not become proof just because the reader repeated it.
+   reads.push(focused);await recordRecognitionEvidence(`focused_marking_read_${index}`,focused);
+  }
+  outcomes.label_reread={status:value.validation?.status==='partial'?'partial':'succeeded',reason:'same_engine_focused_pixels_not_independent_confirmation'};
+  return {...prior,reads,stage_outcomes:outcomes,candidates:labelCandidates(reads),limiting_factor:value.validation?.status==='partial'?'label_partial_reads':null,status:value.validation?.status==='partial'?'partial':'completed'};
+ }catch(error){
+  const reason=['TimeoutError','AbortError'].includes((error as Error).name)?'label_timeout':(error as Error).message;
+  outcomes.label_reread={status:'failed',reason};await recordRecognitionEvidence('focused_marking_failure',{reason});
+  return {...prior,stage_outcomes:outcomes,status:'partial',limiting_factor:reason};
+ }
+}
+
+export async function readTargetedLabels(images:Buffer[],mediaType:string,deadline=Date.now()+32000,technician:Record<string,string>={},stage?:{mode:'locate'|'read'|'focus';regions?:LabelRegion[];prior?:LabelEvidence;locatorMs?:number;readerMs?:number}):Promise<LabelEvidence>{
+ if(stage?.mode==='focus'&&stage.prior)return readFocusedMarkings(images,stage.prior,deadline);
  const outcomes:NonNullable<LabelEvidence['stage_outcomes']>={label_locator:{status:'not_attempted'},label_reader:{status:'not_attempted'},label_reread:{status:'not_attempted',reason:'targeted_first_pass'}};
  const reads:LabelRead[]=[];
  const audit:any[]=[];

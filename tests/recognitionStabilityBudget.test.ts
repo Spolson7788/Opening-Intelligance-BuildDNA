@@ -171,11 +171,18 @@ it('does not resume an expired active stage or changed ownership, build, inputs 
  const scope={organizationId:org,userId:actor,openingId:opening};
  expect(()=>validateStageResume(run,{...scope,userId:randomUUID()},'build','key')).toThrow('recognition_stage_not_found');
  expect(()=>validateStageResume(run,scope,'different','key')).toThrow('recognition_stage_input_changed');expect(()=>validateStageResume(run,scope,'build','different')).toThrow('recognition_stage_input_changed');
- for(const phase of ['locating','reading'])expect(()=>validateStageResume({...run,stage_one:{...run.stage_one,staged_execution:{phase,input_key:'key',started_at:'2000-01-01'}}},scope,'build','key')).toThrow('recognition_stage_not_resumable');
+ for(const phase of ['locating','reading','focusing'])expect(()=>validateStageResume({...run,stage_one:{...run.stage_one,staged_execution:{phase,input_key:'key',started_at:'2000-01-01'}}},scope,'build','key')).toThrow('recognition_stage_not_resumable');
  expect(()=>validateStageResume({...run,status:'failed'},scope,'build','key')).toThrow('recognition_stage_not_resumable');expect(()=>validateStageResume({...run,stage_one:{...run.stage_one,label_reading:{planned_regions:[]}}},scope,'build','key')).toThrow('recognition_stage_evidence_missing');
 });
 it('binds staged inputs to request, ordered original IDs and technician attributes',()=>{
  const b={opening_id:opening,photo_ids:['one','two','three'],media_type:'image/jpeg',request_id:'request',technician_attributes:{component_type:'exit_device',component_type_source:'technician'}};
  expect(stagedInputKey(b)).toBe(stagedInputKey({...b,technician_attributes:{component_type_source:'technician',component_type:'exit_device'}}));
  for(const changed of [{...b,request_id:'other'},{...b,photo_ids:['three','two','one']},{...b,media_type:'image/png'},{...b,technician_attributes:{...b.technician_attributes,component_type:'closer'}}])expect(stagedInputKey(changed)).not.toBe(stagedInputKey(b));
+});
+
+it('focus-stage claims are single-use and keep the first reader evidence intact',async()=>{
+ const id=randomUUID(),build='d'.repeat(40),key='e'.repeat(64);const labels={reads:[{region:{photo_index:0,x:.1,y:.1,w:.1,h:.1,rotation:0,kind:'brand_mark'},provenance:{source:'native_tile',target_device:true,box:{x:.1,y:.1,w:.1,h:.1}}}]};
+ await fixture.db.query("INSERT INTO recognition_runs(id,organization_id,user_id,opening_id,photo_hashes,status,stage_one) VALUES($1,$2,$3,$4,$5,'running',$6)",[id,org,actor,opening,JSON.stringify([hash]),JSON.stringify({recognition_versions:{build_sha:build},staged_execution:{phase:'focus_ready',input_key:key},label_reading:labels})]);
+ const scope={organizationId:org,userId:actor,openingId:opening};const result=await claimReaderStage(id,scope,build,key);expect(result.mode).toBe('focus');expect(result.labels).toEqual(labels);
+ await expect(claimReaderStage(id,scope,build,key)).rejects.toThrow('recognition_stage_not_resumable');const row=(await fixture.db.query('SELECT * FROM recognition_runs WHERE id=$1',[id])).rows[0];expect(row.stage_one.staged_execution.phase).toBe('focusing');expect(row.stage_one.label_reading).toEqual(labels);
 });

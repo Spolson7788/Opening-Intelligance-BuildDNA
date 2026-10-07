@@ -23,8 +23,8 @@ export async function recognizeHardware(openingId:string,images:string[],mediaTy
     throw new ApiError(504,'recognition_saved_result_not_found');
   };
   let resumeId:string|undefined;
-  for(let stage=0;stage<2;stage++){
-    onRecovery?.(stage?'Reading the saved logo and label locations…':'Locating logo and label markings…');
+  for(let stage=0;stage<3;stage++){
+    onRecovery?.(stage===2?'Verifying focused markings in four orientations…':stage===1?'Reading the saved logo and label locations…':'Locating logo and label markings…');
     let result:any;
     try{result=await authedFetch('/recognition',{method:'POST',body:JSON.stringify({...body,...(resumeId?{resume_run_id:resumeId}:{})})},principal);}
     catch(error){
@@ -32,7 +32,7 @@ export async function recognizeHardware(openingId:string,images:string[],mediaTy
       if(error instanceof ApiError&&error.status===504&&!error.hostingAccessRequired||error instanceof TypeError)result=await recover();else throw error;
     }
     if(result?.status==='stage_ready'){
-      if(stage!==0||!photoIds||result.next_stage!=='read'||result.request_id!==requestId||result.build_sha!==import.meta.env.VITE_OI_BUILD_SHA||typeof result.run_id!=='string')throw new ApiError(502,'recognition_recovery_invalid_response');
+      if(stage>=2||!photoIds||result.next_stage!==(stage===0?'read':'focus')||result.request_id!==requestId||result.build_sha!==import.meta.env.VITE_OI_BUILD_SHA||typeof result.run_id!=='string')throw new ApiError(502,'recognition_recovery_invalid_response');
       resumeId=result.run_id;continue;
     }
     return requireRecognitionResult(result);
