@@ -6,7 +6,7 @@ export type IdentityCatalogEntry={manufacturer:string;series:string|null;model:s
 const typeClasses:Record<string,string>={exit_device:'EXIT_DEVICE',panic_bar:'EXIT_DEVICE',closer:'DOOR_CLOSER',lockset:'LOCKSET',hinge:'HINGE_BUTT',electric_strike:'ELECTRIC_STRIKE',power_transfer:'POWER_TRANSFER'};
 // A catalog constrains photo evidence; missing coverage is never proof of incompatibility.
 export function catalogIdentityReview(labels:LabelEvidence,classifier:Record<string,any>={},technician:Record<string,string>={},catalog:IdentityCatalogEntry[]|null=entries) {
- const excluded=labels.reads.filter(r=>(labels.version==='oi-targeted-label-reading-3'&&!r.provenance)||r.provenance&&(r.provenance.source==='context'||r.provenance.target_device!==true||!r.provenance.location_validated));
+ const excluded=labels.reads.filter(r=>(labels.version==='oi-targeted-label-reading-3'&&!r.provenance)||r.provenance&&(r.provenance.source==='context'||r.provenance.target_device!==true||!r.provenance.location_validated||r.provenance.source==='focused_view'&&(r.provenance.verification_scope!=='supplied_view'||r.provenance.marking_complete!==true||!Number.isInteger(r.provenance.view_index)||r.provenance.view_index!<0||r.provenance.view_index!>3)));
  const usable=labels.reads.filter(r=>!excluded.includes(r)&&r.vision_status==='read'&&!r.ocr_model_conflicts?.length);
  const marks=usable.filter(r=>r.region.kind==='brand_mark'&&!r.vision_text.includes('?'));
  const evidence=(r:LabelRead,kind:string)=>({photo_index:r.region.photo_index,kind,text:r.vision_text,region:r.region,provenance:r.provenance??{source:'legacy_unverified'}});

@@ -47,3 +47,10 @@ it('retains text but flags a descriptive device name as invalid association, nev
  expect(parsed.reads).toHaveLength(2);expect(parsed.reads[0].target_device).toBe('panic hardware exit device');
  expect(parsed.validation).toMatchObject({status:'partial',issues:[{crop_index:0,reason:'invalid_target_device'}]});
 });
+
+it('flags malformed focused view identifiers and completeness without coercion or losing other crops',()=>{
+ const body={content:[{type:'text',text:JSON.stringify({reads:[{crop_index:0,text:'ABC',source:'focused_view',view_index:'1',all_characters_visible:'true',target_device:true},{crop_index:1,text:'1234R',source:'focused_view',view_index:2,all_characters_visible:true,target_device:true}]})}]};
+ const value=parseLabelResponse(body,'label_reread',[0,1]);expect(value.reads).toHaveLength(2);
+ expect(value.validation.issues.map((x:any)=>x.reason)).toEqual(['invalid_view_index','invalid_marking_completeness']);
+ expect(value.reads[0].view_index).toBe('1');expect(value.reads[1].text).toBe('1234R');
+});

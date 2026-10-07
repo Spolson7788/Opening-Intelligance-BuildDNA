@@ -92,11 +92,11 @@ it('blindly verifies focused native pixels in four orientations and keeps the pr
  audit.fetch.mockImplementation(async(_url,init,stage)=>{
   expect(stage).toBe('label_reread');const content=JSON.parse(init.body).messages[0].content;
   expect(content.filter((c:any)=>c.type==='image')).toHaveLength(5);
-  const text=content.filter((c:any)=>c.type==='text').map((c:any)=>c.text).join(' ');expect(text).not.toContain('EarlierWrongMaker');expect(text).not.toContain('6200R');expect(text).toContain('rotation 90');expect(text).toContain('rotation 270');
-  return envelope({reads:[{crop_index:0,text:'ABC',legibility:'clear',source:'focused_crop',text_box:{x:.30,y:.24,w:.45,h:.48},rotation:0,target_device:true}]});
+  const text=content.filter((c:any)=>c.type==='text').map((c:any)=>c.text).join(' ');expect(text).not.toContain('EarlierWrongMaker');expect(text).not.toContain('6200R');expect(text).toContain('rotation 90');expect(text).toContain('view_index 1');expect(text).toContain('rotation 270');
+  return envelope({reads:[{crop_index:0,text:'ABC',legibility:'clear',source:'focused_view',view_index:0,all_characters_visible:true,target_device:true}]});
  });
  const result=await readFocusedMarkings([source],prior,Date.now()+32000);
- expect(result.reads).toHaveLength(2);expect(result.reads[0].vision_text).toBe('EarlierWrongMaker');expect(result.reads[0].provenance?.location_validated).toBe(false);expect(result.reads[1].vision_text).toBe('ABC');expect(result.reads[1].provenance?.source).toBe('focused_crop');expect(result.reads[1].provenance?.location_validated).toBe(true);expect(audit.fetch).toHaveBeenCalledTimes(1);
+ expect(result.reads).toHaveLength(2);expect(result.reads[0].vision_text).toBe('EarlierWrongMaker');expect(result.reads[0].provenance?.location_validated).toBe(false);expect(result.reads[1].vision_text).toBe('ABC');expect(result.reads[1].provenance?.source).toBe('focused_view');expect(result.reads[1].provenance?.location_validated).toBe(true);expect(audit.fetch).toHaveBeenCalledTimes(1);
 });
 it('retains prior evidence if the focused verification request fails',async()=>{
  const source=await sharp({create:{width:100,height:100,channels:3,background:'white'}}).png().toBuffer();

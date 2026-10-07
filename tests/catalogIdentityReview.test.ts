@@ -72,3 +72,13 @@ it('distinguishes invalid device association from an actual other-device finding
  const result=catalogIdentityReview(labels(logo,read('6200R',1,'product_label')));
  expect(result.candidates).toEqual([]);expect(result.excluded_evidence[0].reason).toBe('invalid_device_association');
 });
+
+it('fuses a verified complete supplied maker view with a separately read model, and rejects incomplete views',()=>{
+ const maker=read('PDQ',0,'brand_mark');maker.provenance={source:'focused_view',target_device:true,location_validated:true,verification_scope:'supplied_view',marking_complete:true,view_index:1,box:{x:.2,y:.2,w:.4,h:.4},rotation:90};
+ const model=read('Model 6200R',1,'product_label');model.provenance={source:'native_tile',target_device:true,location_validated:true};
+ const review=catalogIdentityReview(labels(maker,model));
+ expect(applyCatalogIdentityProposal({},review)).toMatchObject({manufacturer:'PDQ',series:'6200',model:'6200R'});
+ expect(review.candidates[0].evidence.map((e:any)=>e.photo_index)).toEqual([1,0]);
+ for(const bad of [{marking_complete:false},{view_index:4},{verification_scope:undefined},{target_device:false},{location_validated:false}])expect(catalogIdentityReview(labels({...maker,provenance:{...maker.provenance,...bad}},model)).candidates).toEqual([]);
+ expect(catalogIdentityReview(labels({...maker,vision_text:'DORMA'},model)).status).toBe('CONFLICT');
+});

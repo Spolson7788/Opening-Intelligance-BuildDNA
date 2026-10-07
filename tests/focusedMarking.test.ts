@@ -1,6 +1,6 @@
 import {it,expect,vi} from 'vitest';
 import sharp from 'sharp';
-import {canFocusMarking,focusedMarkingViews,resolveFocusedRead} from '../src/services/focusedMarking';
+import {canFocusMarking,focusedMarkingViews,resolveFocusedRead,resolveFocusedViewRead,markingStructurePresent} from '../src/services/focusedMarking';
 import type {LabelRead} from '../src/services/labelReading';
 const read=(box={x:.45,y:.45,w:.06,h:.10}):LabelRead=>({region:{photo_index:0,...box,rotation:0,kind:'brand_mark'},provenance:{source:'native_tile',target_device:true,location_validated:false,box},vision_text:'old guess',vision_status:'read',ocr_text:'',ocr_confidence:0,agreed_markings:[],status:'unconfirmed'});
 it('adds bounded native margin and produces exact quarter-turn views without resizing',async()=>{
@@ -41,4 +41,23 @@ it('revisits the locator maker region when a blank reader proposal lies elsewher
  expect(focus.box.left+focus.box.width).toBeLessThan(750);
  read.provenance.location_validated=true;
  const validated=await focusedMarkingViews(image,read);expect(validated.box.left).toBeGreaterThan(550);
+});
+
+it('references exact supplied-view bounds regardless of an AI letter rectangle',async()=>{
+ const image=await sharp({create:{width:400,height:500,channels:3,background:'white'}}).png().toBuffer();
+ const focus=await focusedMarkingViews(image,read());
+ const value={source:'focused_view',view_index:1,text:'ABC',legibility:'clear',all_characters_visible:true,target_device:true,text_box:{x:.9,y:.9,w:.01,h:.01}};
+ const p=resolveFocusedViewRead(value,focus);
+ expect(p).toMatchObject({source:'focused_view',verification_scope:'supplied_view',view_index:1,rotation:90,location_validated:true});
+ expect(p.box).toEqual({x:focus.box.left/400,y:focus.box.top/500,w:focus.box.width/400,h:focus.box.height/500});
+ for(const changed of [{view_index:4},{view_index:'1'},{source:'focused_crop'},{all_characters_visible:false},{all_characters_visible:'true'},{legibility:'partial'},{text:'AB?'},{text:''}])expect(resolveFocusedViewRead({...value,...changed},focus).location_validated).toBe(false);
+ const invalid=resolveFocusedViewRead({...value,target_device:'exit device'},focus);expect(invalid.target_device).toBe(false);expect(invalid.association_status).toBe('invalid');
+ expect(resolveFocusedViewRead({...value,target_device:false},focus).target_device).toBe(false);
+});
+it('checks marking structure at consistent scale without turning blank metal into identity evidence',async()=>{
+ const flat=await sharp({create:{width:1200,height:1300,channels:3,background:'#888'}}).png().toBuffer();
+ expect(await markingStructurePresent(flat)).toBe(false);
+ const letters=await sharp(Buffer.from('<svg width="600" height="800"><rect width="600" height="800" fill="#999"/><text x="90" y="400" font-size="130" fill="#777">ABC</text></svg>')).png().toBuffer();
+ const large=await sharp(letters).resize(1200,1600).png().toBuffer();
+ expect(await markingStructurePresent(letters)).toBe(true);expect(await markingStructurePresent(large)).toBe(true);
 });

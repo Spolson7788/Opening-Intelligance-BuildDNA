@@ -1,4 +1,4 @@
-import {canFocusMarking,focusedMarkingViews,resolveFocusedRead} from './focusedMarking';
+import {canFocusMarking,focusedMarkingViews,resolveFocusedViewRead,markingStructurePresent} from './focusedMarking';
 import {nativeLabelTiles,resolveNativeRead} from './nativeLabelSearch';
 import {recognitionInputPixelLimit} from './recognitionOriginalLimits';
 import {parseLabelResponse,labelReadContract} from './labelResponse';
@@ -11,7 +11,7 @@ import {dirname,join} from 'node:path';
 import {targetedLabelPlan,targetedReaderCanStart} from './targetedLabelPlan';
 import {prepareProviderImage} from './recognitionImage';
 
-export const LABEL_PROMPT_VERSION='oi-label-reading-16';
+export const LABEL_PROMPT_VERSION='oi-label-reading-17';
 // Layout transcribed from the user-supplied clean label photograph. No expected
 // characters enter either reader: the reference guides location only.
 export const LABEL_LAYOUT_REFERENCE={id:'bold-heading-over-diagrams-v1',source_sha256:'7683137c6e82674d157816e2e4747e640ecc520da3983c95cf905204fb5e60c2',guide:'For a rectangular sticker with bold headings above dense adjustment diagrams, locate the model heading separately from the diagrams and brand heading. Check the photograph for this layout; do not assume it is present. Other layouts remain valid. Never supply expected characters from the reference.'};
@@ -27,7 +27,7 @@ export function modelLineBoxQuality(region:LabelRegion):'refined'|'full_width_ba
  if(Math.abs(b.w-region.w)<1e-6&&Math.abs(b.h-region.h)<1e-6)return 'equals_region';
  return b.w<.9*region.w&&b.h<=.5*region.h?'refined':'full_width_band';
 }
-export interface ReadProvenance {association_status?:'invalid';source:"crop"|"native_tile"|"focused_crop"|"context";target_device:boolean;location_validated:boolean;box?:{x:number;y:number;w:number;h:number};rotation?:number}
+export interface ReadProvenance {association_status?:'invalid';verification_scope?:'supplied_view';marking_complete?:boolean;view_index?:number;source:"crop"|"native_tile"|"focused_crop"|"focused_view"|"context";target_device:boolean;location_validated:boolean;box?:{x:number;y:number;w:number;h:number};rotation?:number}
 export interface LabelRead {locator_region?:LabelRegion;provenance?:ReadProvenance;legibility?:LabelLegibility;model_line_box_quality?:ReturnType<typeof modelLineBoxQuality>;region:LabelRegion;ocr_text:string;ocr_confidence:number;ocr_status?:'read'|'unreadable'|'timeout'|'unavailable'|'not_attempted';ocr_scope?:'model_line'|'label';ocr_model_conflicts?:string[];model_line_crop_status?:'used'|'rejected'|'not_located';vision_status?:'read'|'unreadable'|'not_returned'|'invalid'|'not_attempted';vision_validation_reasons?:string[];vision_text:string;vision_initial_text?:string;agreed_markings:string[];status:'agreement'|'unconfirmed'|'unreadable'}
 export interface LabelEvidence {planned_regions?:LabelRegion[];legibility?:LabelLegibility;stage_outcomes?:Record<string,{status:string;reason?:string;legibility?:LabelLegibility;limiting_factor?:string|null}>;ocr_views?:unknown[];layout_reference?:{id:string;source_sha256:string};locator_preprocessing?:{enlarged_views:number;original_preserved:true};enhancement?:{method:'contrast_sharpen';regions:number;original_preserved:true};source_dimensions?:{width:number;height:number}[];candidates?:{manufacturer:string;series:string;model:string|null;verification:'single_reader';manufacturer_basis?:'catalog_model_match'|'catalog_partial_model_match';transcribed_marking?:string;catalog_model?:string}[];version:string;status:'completed'|'partial'|'unavailable'|'no_regions';reads:LabelRead[];limiting_factor:string|null}
 const empty=(status:LabelEvidence['status'],reason:string|null=null):LabelEvidence=>({version:LABEL_PROMPT_VERSION,status,reads:[],limiting_factor:reason});
@@ -184,22 +184,29 @@ export async function readFocusedMarkings(images:Buffer[],prior:LabelEvidence,de
   for(const {read,index} of selected){
    const focus=await focusedMarkingViews(images[read.region.photo_index],read);focuses.set(index,focus);
    content.push({type:'text',text:`Requested ${read.region.kind==='brand_mark'?'maker letters':'model-heading text'} for crop_index ${index}, source photograph ${read.region.photo_index}. Four orientations of the SAME native crop; not independent evidence.`});
-   for(const view of focus.views)content.push({type:'text',text:`Crop ${index}, clockwise rotation ${view.rotation}. Return coordinates in the chosen rotated view, identified by its clockwise rotation.`},{type:'image',source:{type:'base64',media_type:'image/png',data:view.image.toString('base64')}});
+   const encodedViews=[];
+   for(const [viewIndex,view] of focus.views.entries()){
+    const m=await sharp(view.image).metadata();
+    const outgoing=await prepareProviderImage(view.image);
+    if(outgoing.metadata.width!==m.width||outgoing.metadata.height!==m.height)throw Error('focused_native_image_budget');
+    encodedViews.push({view_index:viewIndex,rotation:view.rotation,source_sha256:createHash('sha256').update(view.image).digest('hex'),provider_sha256:createHash('sha256').update(outgoing.data).digest('hex'),width:m.width,height:m.height});
+    content.push({type:'text',text:`Crop ${index}, view_index ${viewIndex}, clockwise rotation ${view.rotation}. Cite this supplied view by its integer index; do not draw a new letter box.`},{type:'image',source:{type:'base64',media_type:'image/jpeg',data:outgoing.data.toString('base64')}});
+   }
    const context=await prepareProviderImage(images[read.region.photo_index]);content.push({type:'text',text:'Whole source photograph for target-device association only. Do not transcribe from it.'},{type:'image',source:{type:'base64',media_type:'image/jpeg',data:context.data.toString('base64')}});
-   await recordRecognitionEvidence(`focused_marking_views_${index}`,{photo_index:read.region.photo_index,box:focus.box,source_sha256:createHash('sha256').update(images[read.region.photo_index]).digest('hex'),views:focus.views.map(v=>({rotation:v.rotation,sha256:createHash('sha256').update(v.image).digest('hex')})),previous_read_withheld:true});
+   await recordRecognitionEvidence(`focused_marking_views_${index}`,{photo_index:read.region.photo_index,box:focus.box,source_sha256:createHash('sha256').update(images[read.region.photo_index]).digest('hex'),views:encodedViews,previous_read_withheld:true,verification_contract:'oi-focused-marking-view-1',evidence_scope:'whole_supplied_native_view'});
   }
   if(!selected.length)return prior;
-  const value=await ask(content,'Transcribe visible letters from the focused native crops only. All orientations show the same pixels. For a maker mark read letters, not the outline/emblem; do not guess a known maker or complete missing letters. For a sticker read the model heading, not an inferred product. The letters may be raised metal, sideways, inverted or reflective. Return only JSON {reads:[{crop_index,text,legibility,source:"focused_crop",text_box:{x,y,w,h},rotation,target_device}],limiting_factor}. text_box bounds ALL transcribed characters as fractions of the CHOSEN ROTATED VIEW. rotation selects that view (clockwise 0/90/180/270); software maps its box back to the original. legibility is clear/partial/illegible. target_device MUST be a JSON boolean true or false, never a device name, description, string or null. Use true only when the marking is on the target hardware in the whole source photograph, false only for another device. A crop of the same hardware remains the target device regardless of rotation. Use ? for uncertain letters and an empty string when unreadable. No earlier transcriptions, catalog or expected names are supplied.'+labelReadContract(selected.map(s=>s.index)),deadline,30000,'label_reread',selected.map(s=>s.index));
+  const value=await ask(content,'Transcribe visible letters from the focused native views only. Every view is identified by crop_index and view_index. All four rotations show the SAME pixels; they are not independent confirmation. For a maker mark transcribe ALL maker letters, excluding decorative emblems from text; never guess a known maker, identify from shape or complete missing letters. For a sticker read the model heading exactly. Return only JSON {reads:[{crop_index,view_index,text,legibility,source:"focused_view",all_characters_visible,target_device}],limiting_factor}. view_index must be the INTEGER 0,1,2 or 3 printed beside the supplied image. Do not provide text_box or coordinates: the server already knows the exact source view bounds. all_characters_visible MUST be a JSON boolean: true only when every character is visibly present inside that view, false for clipped or obscured letters. legibility must be clear, partial or illegible. Use clear only when all transcribed characters are readable; use ? for uncertain characters. target_device MUST be a JSON boolean true or false, never a device name, description, quoted boolean or null. Use true only when the marking is on the target hardware in the whole source photograph, false for another device. A crop of that same hardware remains the target regardless of rotation. Empty text is correct when unreadable. No prior guesses, catalog, expected names or expected models are supplied.'+labelReadContract(selected.map(s=>s.index)),deadline,30000,'label_reread',selected.map(s=>s.index));
   for(const {read,index} of selected){
    const r=value.reads.find((v:any)=>v.crop_index===index);if(!r)continue;
-   const provenance=resolveFocusedRead(r,focuses.get(index)!);
+   const focus=focuses.get(index)!;
+   const provenance=resolveFocusedViewRead(r,focus);
    const text=r.text.slice(0,1200);const region={...read.region,...provenance.box,rotation:provenance.rotation||0,model_line_box:undefined};
    if(provenance.box){
-    const m=await sharp(images[region.photo_index],{limitInputPixels:recognitionInputPixelLimit()}).metadata();
-    const left=Math.floor(provenance.box.x*m.width!),top=Math.floor(provenance.box.y*m.height!);
-    const crop=await sharp(images[region.photo_index],{limitInputPixels:recognitionInputPixelLimit()}).extract({left,top,width:Math.max(1,Math.min(m.width!-left,Math.ceil(provenance.box.w*m.width!))),height:Math.max(1,Math.min(m.height!-top,Math.ceil(provenance.box.h*m.height!)))}).rotate(region.rotation).png().toBuffer();
-    provenance.location_validated=await hasModelLineDetail(crop);
-    await recordRecognitionEvidence(`focused_marking_validation_${index}`,{photo_index:region.photo_index,region,provenance,view_sha256:createHash('sha256').update(crop).digest('hex')});
+    const view=focus.views[provenance.view_index!];
+    const structure=await markingStructurePresent(view.image);
+    provenance.location_validated=provenance.location_validated&&structure;
+    await recordRecognitionEvidence(`focused_marking_validation_${index}`,{photo_index:region.photo_index,region,provenance,view_sha256:createHash('sha256').update(view.image).digest('hex'),structure_check:{version:'oi-marking-structure-1',passed:structure,semantic_confirmation:false},reported_letter_coordinates_used:false});
    }
    const focused:LabelRead={region,provenance,vision_text:text,vision_status:text?'read':'unreadable',vision_initial_text:read.vision_text,legibility:labelLegibility(text,r.legibility),ocr_text:'',ocr_confidence:0,ocr_status:'not_attempted',agreed_markings:[],status:text?'unconfirmed':'unreadable'};
    // Preserve both attempts. Valid conflicting maker reads remain peers; a
