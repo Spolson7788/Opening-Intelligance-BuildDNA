@@ -269,7 +269,7 @@ hardwareRouter.patch("/:id", async (req: AuthedRequest, res) => {
     if(updates.identity_status==='established'&&identity_acknowledged!==true&&!retainsAcknowledgement)
       return res.status(400).json({error:'identity_acknowledgment_required'});
     if(identity_acknowledged===true){
-      const merged={...currentIdentity,...updates,identity_acknowledged:true,recognition_run_id:recognition_run_id||(updates.identity_source==='technician_identified'?undefined:currentIdentity.identity_recognition_run_id)||undefined};
+      const merged={...currentIdentity,...updates,identity_acknowledged:true,recognition_run_id:recognition_run_id||currentIdentity.identity_recognition_run_id||undefined};
       const error=identityInputError(merged);if(error)return res.status(400).json({error});
       let identityRun:any;
       if(merged.recognition_run_id){const run=await client.query('SELECT * FROM recognition_runs WHERE id=$1 AND opening_id=$2 AND user_id=$3 AND organization_id=$4',[merged.recognition_run_id,openingId,req.auth!.userId,orgId]);if(!run.rows.length)return res.status(400).json({error:'invalid_recognition_run'});identityRun=run.rows[0];}

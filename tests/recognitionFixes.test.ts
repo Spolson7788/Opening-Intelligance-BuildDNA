@@ -72,8 +72,8 @@ it('matches spaced model markings without completing unknown suffixes',()=>{
  expect(labelCandidates([read('4041DA')],catalog)[0].model).toBe('4041 DA');
  expect(labelCandidates([read('4041 D?')],catalog)).toEqual([]);
 });
-it('does not promote shadow-run hypotheses into operational photo provenance',()=>{
- expect(identityValues({manufacturer:'Norton',model_number:'7500',identity_source:'photo_suggestion',identity_acknowledged:true},'actor',{stage_one:{shadow_mode:true},suggestion:{manufacturer:'Norton',model:'7500'}})).toMatchObject({identity_source:'technician_identified',identity_value_producer:'technician'});
+it('preserves AI provenance when a technician acknowledges a shadow suggestion',()=>{
+ expect(identityValues({manufacturer:'Norton',model_number:'7500',identity_source:'photo_suggestion',identity_acknowledged:true},'actor',{stage_one:{shadow_mode:true},suggestion:{manufacturer:'Norton',model:'7500'}})).toMatchObject({identity_source:'photo_suggestion',identity_value_producer:'AI'});
 });
 
 it.each([{input_tokens:10},{output_tokens:10},{input_tokens:null,output_tokens:10},{input_tokens:'10',output_tokens:2},{input_tokens:-1,output_tokens:2},{input_tokens:1,output_tokens:1.2}])('records unknown cost for incomplete or invalid usage %j',async usage=>{

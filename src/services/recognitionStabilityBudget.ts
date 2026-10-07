@@ -52,7 +52,7 @@ export function approvedPhotoSetIndex(trial:any,hashes:unknown,replayAllowance=0
  const valid=Array.isArray(sets)&&sets.length>=1&&sets.length<=10&&
   sets.every(s=>Array.isArray(s)&&s.length>=3&&s.length<=5&&new Set(s).size===s.length&&s.every(h=>typeof h==='string'&&/^[a-f0-9]{64}$/.test(h)))&&
   new Set(sets.map(s=>JSON.stringify(s))).size===sets.length;
- if(!valid||![0,1].includes(replayAllowance)||!Number.isSafeInteger(trial.max_runs)||trial.max_runs>sets.length+replayAllowance||
+ if(!valid||!Number.isSafeInteger(replayAllowance)||replayAllowance<0||replayAllowance>8||!Number.isSafeInteger(trial.max_runs)||trial.max_runs>sets.length+replayAllowance||
   createHash('sha256').update(JSON.stringify(sets)).digest('hex')!==trial.photo_sha256)throw Error('stability_trial_scope_mismatch');
  const index=sets.findIndex(s=>JSON.stringify(s)===JSON.stringify(hashes));
  if(index<0)throw Error('stability_trial_scope_mismatch');
@@ -81,7 +81,13 @@ export async function registerStabilityRun(runId:string,requestId:string|undefin
    (await c.query(`SELECT id,request_body FROM audit_log WHERE organization_id=$1 AND user_id=$2 AND action='Authorized recognition rerun'
     AND request_body->>'trial_id'=$3 AND request_body->>'build_sha'=$4 AND request_body->'photo_hashes'=$5::jsonb
     ORDER BY created_at DESC LIMIT 1`,[run.organization_id,run.user_id,trialId,build,JSON.stringify(run.photo_hashes)])).rows[0]:null;
-  const setIndex=approvedPhotoSetIndex(trial,run.photo_hashes,replay?1:0);
+  const grantCount=replay?Number((await c.query(`SELECT count(DISTINCT a.request_body->>'build_sha') AS n FROM audit_log a
+   JOIN recognition_runs p ON p.id::text=a.request_body->>'prior_run_id'
+   JOIN recognition_stability_runs s ON s.run_id=p.id AND s.trial_id=$3
+   WHERE a.organization_id=$1 AND a.user_id=$2 AND a.action='Authorized recognition rerun'
+    AND a.request_body->>'trial_id'=$3::text AND a.request_body->'photo_hashes'=p.photo_hashes
+    AND a.request_body->>'build_sha' ~ '^[a-f0-9]{40}$'`,[run.organization_id,run.user_id,trialId])).rows[0].n):0;
+  const setIndex=approvedPhotoSetIndex(trial,run.photo_hashes,grantCount);
   if(trial.approved_photo_sets!=null){
    const prior=await c.query(`SELECT r.id,r.stage_one FROM recognition_stability_runs s JOIN recognition_runs r ON r.id=s.run_id
     WHERE s.trial_id=$1 AND r.photo_hashes=$2::jsonb`,[trialId,JSON.stringify(run.photo_hashes)]);

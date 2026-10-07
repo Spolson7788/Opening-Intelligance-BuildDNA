@@ -130,3 +130,17 @@ it('allows one explicit build-bound replay, rejects another build and duplicate 
  await fixture.db.query('UPDATE recognition_runs SET stage_one=$2 WHERE id=$1',[duplicate,JSON.stringify({recognition_versions:{build_sha:build}})]);
  await expect(registerStabilityRun(duplicate,randomUUID())).rejects.toThrow('already_run');
 });
+it('requires a distinct valid audited grant for each additional build comparison',async()=>{
+ const sets=fieldSets();
+ await fixture.db.query('UPDATE recognition_stability_trials SET approved_photo_sets=$2,photo_sha256=$3,max_runs=2 WHERE id=$1',[trial,JSON.stringify(sets),digest(sets)]);
+ const prior=await run({photo_hashes:sets[1]});await registerStabilityRun(prior,randomUUID());
+ const first='a'.repeat(40),second='b'.repeat(40);
+ await fixture.db.query('INSERT INTO audit_log VALUES($1,$2,$3,$4,$5,now())',[randomUUID(),org,actor,'Authorized recognition rerun',JSON.stringify({trial_id:trial,build_sha:first,photo_hashes:sets[1],prior_run_id:prior})]);
+ await fixture.db.query('UPDATE recognition_stability_trials SET max_runs=3 WHERE id=$1',[trial]);
+ const firstRun=await run({photo_hashes:sets[1]});await fixture.db.query('UPDATE recognition_runs SET stage_one=$2 WHERE id=$1',[firstRun,JSON.stringify({recognition_versions:{build_sha:first}})]);await registerStabilityRun(firstRun,randomUUID());
+ await fixture.db.query('UPDATE recognition_stability_trials SET max_runs=4 WHERE id=$1',[trial]);
+ const secondRun=await run({photo_hashes:sets[1]});await fixture.db.query('UPDATE recognition_runs SET stage_one=$2 WHERE id=$1',[secondRun,JSON.stringify({recognition_versions:{build_sha:second}})]);
+ await expect(registerStabilityRun(secondRun,randomUUID())).rejects.toThrow('scope_mismatch');
+ await fixture.db.query('INSERT INTO audit_log VALUES($1,$2,$3,$4,$5,now())',[randomUUID(),org,actor,'Authorized recognition rerun',JSON.stringify({trial_id:trial,build_sha:second,photo_hashes:sets[1],prior_run_id:firstRun})]);
+ await registerStabilityRun(secondRun,randomUUID());expect(await used()).toBe(0);
+});

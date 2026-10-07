@@ -446,13 +446,13 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
         max_tokens: labelBlind ? 2500 : (markingMode ? 1800 : (hardwareMode ? 2000 : 2000)),
         messages: [{ role: "user", content: [
           ...imgs.map(function(d){ return { type: "image", source: { type: "base64", media_type: media_type || "image/jpeg", data: d } }; }),
-          ...(!labelBlind&&!markingMode&&!hardwareMode?[{type:'text',text:GEOMETRY_OBSERVATION_PROMPT}]:[]),
+          ...(!identityOnly&&!labelBlind&&!markingMode&&!hardwareMode?[{type:'text',text:GEOMETRY_OBSERVATION_PROMPT}]:[]),
           ...(scaleMarkers.length?[{type:'text',text:`Known-size marker detections: ${JSON.stringify(scaleMarkers)}. If you can clearly locate the endpoints of a straight closer body length, body height or mounting-hole spacing in the ORIGINAL photograph, append measurement_segments:[{feature:"closer_body_length|closer_body_height|mounting_hole_spacing",photo_index,points:[{x,y},{x,y}]}] to the identification JSON. Coordinates are fractions of that original photograph, not a detail crop. Only endpoints visibly lying in the marker's plane are eligible. Do not report a dimension yourself; the server computes marker-plane estimates. Omit obscured endpoints. Never use the printed marker's text as a product marking. Marker detections do not verify placement or print scale.`}]:[]),
           ...detailViews.flatMap(view=>[{type:'text',text:`Detail view of photograph ${view.photo_index}, source region ${JSON.stringify(view.region)}; same pixels, not additional independent evidence`},{type:'image',source:{type:'base64',media_type:'image/png',data:view.image.toString('base64')}}]),
           { type: "text", text: hardwareMode ? HARDWARE_PROMPT
                                 : markingMode ? MARKING_PROMPT
                                 : (labelBlind ? (multi + PHYSICAL_PROMPT)
-                                : (CLASSIFICATION_CONTEXT + multi + PROMPT)) }
+                                : ((identityOnly?'Classify the target installed hardware across these photographs. A horizontal push pad is not a closer arm. Identify only the target component; other hardware may appear in the background. ':CLASSIFICATION_CONTEXT) + multi + (identityOnly?`Technician type evidence: ${JSON.stringify(body.technician_attributes||{})}. Label transcriptions (unconfirmed, use their source provenance): ${JSON.stringify(body.label_evidence||[])}. Report disagreements; never invent markings. `:'') + PROMPT)) }
         ]}]
       })
     },'photo_analysis',b=>{const p=providerObject(b);if(!hardwareMode&&!markingMode&&!labelBlind)classifierObject(p);});

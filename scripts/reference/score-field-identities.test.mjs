@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {scoreFieldIdentities,truthsFromConfirmations} from './score-field-identities.mjs';
 const truth={run_id:'run-1',device_id:'device-1',manufacturer:'PDQ',series:'6200',model:'6200R',acknowledged:true,acknowledged_by:'tech',acknowledged_at:'2026-10-07T14:00:00Z',split:'development',logo_readable:true};
-const run={id:'run-1',status:'no_reference_evidence',suggestion:{manufacturer:null,series:null,model:null},stage_one:{photograph_identity:{manufacturer:'DORMA',model:'6200R'}}};
+const run={id:'run-1',status:'no_reference_evidence',suggestion:{manufacturer:null,series:null,model:null},stage_one:{recognition_versions:{build_sha:'a'.repeat(40)},photograph_identity:{manufacturer:'DORMA',model:'6200R'}}};
 test('scores the final result, preserves exact model suffixes, and queues misses',()=>{
  const r=scoreFieldIdentities({runs:[run]},[truth]);
  assert.deepEqual(r.field_counts.model,{correct:0,total:1});assert.equal(r.miss_queue.length,3);assert.equal(r.accuracy,null);
@@ -39,4 +39,17 @@ test('automatic truth uses acknowledged installed hardware, never classifier or 
  const confirmed=truthsFromConfirmations({...exported,technician_confirmations:[c]})[0];
  assert.equal(confirmed.manufacturer,'PDQ');assert.equal(confirmed.series,undefined);assert.equal(confirmed.split,'development');
  assert.throws(()=>truthsFromConfirmations({...exported,technician_confirmations:[c,{...c,manufacturer:'DORMA'}]}),/conflicting/);
+});
+
+test('separates wrong predictions from abstentions and rejects unstamped builds',()=>{
+ const wrong={...run,id:'run-2',suggestion:{manufacturer:'DORMA'}};
+ const result=scoreFieldIdentities({runs:[run,wrong]},[truth,{...truth,run_id:'run-2'}]);
+ assert.equal(result.field_outcomes.manufacturer.abstain,1);assert.equal(result.field_outcomes.manufacturer.wrong,1);
+ assert.equal(result.precision_and_coverage.manufacturer.coverage,.5);
+ assert.throws(()=>scoreFieldIdentities({runs:[{...run,stage_one:{}}]},[truth]),/unstamped/);
+});
+test('superseded confirmations retain history and use the latest truth',()=>{
+ const base={run_id:run.id,hardware_component_id:'component-1',manufacturer:'PDQ',series:'6200',series_basis:'catalog_row',model:'6200R',provenance:'ai_seen_corrected',acknowledged_by:'tech',acknowledged_at:truth.acknowledged_at};
+ const latest=truthsFromConfirmations({runs:[run],technician_confirmations:[{...base,id:'c1'},{...base,id:'c2',model:'6201R',supersedes_id:'c1'}]})[0];
+ assert.equal(latest.model,'6201R');assert.equal(latest.series,'6200');
 });

@@ -14,8 +14,8 @@ export function identityInputError(input:IdentityInput):string|null{
 export function identityValues(input:IdentityInput,userId:string,run?:any){
  const same=(a:unknown,b:unknown)=>typeof a==='string'&&typeof b==='string'&&!!a.trim()&&a.trim().toLowerCase()===b.trim().toLowerCase();
  const matches=(v:any)=>v&&same(input.manufacturer,v.manufacturer)&&same(input.model_number,v.model);
- const photo=run&&!run.stage_one?.shadow_mode&&matches(run.suggestion);
- const catalog=run&&!run.stage_one?.shadow_mode&&(run.stage_one?.label_reading?.candidates||[]).some((c:any)=>c.manufacturer_basis!=='catalog_partial_model_match'&&matches(c));
+ const photo=run&&matches(run.suggestion);
+ const catalog=run&&(run.stage_one?.label_reading?.candidates||[]).some((c:any)=>c.manufacturer_basis!=='catalog_partial_model_match'&&matches(c));
  const source=photo||catalog?'photo_suggestion':input.identity_acknowledged?'technician_identified':'unknown';
  return {identity_source:source,identity_value_producer:photo?'AI':catalog?'catalog':source==='technician_identified'?'technician':'unknown',identity_acknowledged_by:input.identity_acknowledged?userId:null,identity_acknowledged_at:input.identity_acknowledged?new Date().toISOString():null,identity_recognition_run_id:input.recognition_run_id||null};
 }

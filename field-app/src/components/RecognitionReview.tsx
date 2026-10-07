@@ -40,7 +40,7 @@ export function recognitionFailureMessage(code:string){
   return messages[code]||code;
 }
 
-export function RecognitionReview({openingId,attributes={},onUse,onComponentType,onFilesChange,onBusyChange}:{openingId:string;onComponentType?:(type:string,runId:string)=>boolean;attributes?:Record<string,string>;onBusyChange?:(busy:boolean)=>void;onFilesChange:(files:File[])=>void;onUse:(manufacturer:string,model:string,runId:string,componentType:string|null)=>void}) {
+export function RecognitionReview({openingId,attributes={},onUse,onComponentType,onRun,onFilesChange,onBusyChange}:{openingId:string;onRun?:(runId:string)=>void;onComponentType?:(type:string,runId:string)=>boolean;attributes?:Record<string,string>;onBusyChange?:(busy:boolean)=>void;onFilesChange:(files:File[])=>void;onUse:(manufacturer:string,model:string,runId:string,componentType:string|null)=>void}) {
   const [files,setFiles]=useState<File[]>([]);
   const [providerDiagnostic,setProviderDiagnostic]=useState('');
   const [progress,setProgress]=useState('');
@@ -134,6 +134,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
         setResult(response.suggestion);setResponse(response);
         const componentType=photographedComponentTypes[String(response.suggestion.component_class||'')];
         if(componentType)setTypeApplied(onComponentType?.(componentType,response.run_id)===true);
+        onRun?.(response.run_id);
       }
     }catch(e){if(current===generation.current){setError(recognitionFailureMessage(e instanceof Error&&e.message?e.message:'recognition_provider_failed'));setProviderDiagnostic(typeof (e as any)?.providerDiagnostic==='string'?(e as any).providerDiagnostic:'');}}
     finally{if(current===generation.current)setBusy(false);}
@@ -193,9 +194,10 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
       {text('component_class')==='DOOR_CLOSER'&&<section aria-label="Closer arm analysis"><h3>Arm analysis</h3><p>Arm type: {String((result.attributes as any)?.arm_type||'unconfirmed').replace(/_/g,' ')}. Mounting: {String((result.attributes as any)?.mounting||'unconfirmed').replace(/_/g,' ')}.</p><ul>{((result.evidence as any[])||[]).filter(e=>['arm_type','mounting'].includes(e.supports)).map((e,i)=><li key={i}>{String(e.observation)}</li>)}</ul><p>These observed features support comparison; they do not uniquely identify the manufacturer or model.</p></section>}
       <details><summary>Recognition evidence</summary><pre style={{whiteSpace:'pre-wrap'}}>{JSON.stringify(result,null,2)}</pre></details>
       {response&&<ReferenceEvidence run={response}/>}
-      <button type="button" disabled={response?.shadow_mode||(!text('model')&&!response?.label_candidate?.model)} onClick={()=>onUse(text('model')?text('manufacturer'):response?.label_candidate?.manufacturer||'',text('model')||response?.label_candidate?.model||'',response?.run_id||'',photographedComponentTypes[text('component_class')]||null)}>{text('model')?'Use photograph suggestion for technician review':'Use complete label candidate for technician review'}</button>
-      {response?.shadow_mode&&<p>Shadow analysis only. Save the installed product through the technician-known-product path.</p>}
-      {response?.reported_identity&&<p>To save your reported product, use the technician-known-product path and acknowledge the identity.</p>}
+      {response?.build_sha&&<p>Recognition build: <code>{response.build_sha}</code></p>}
+      <button type="button" disabled={(!text('model')&&!response?.label_candidate?.model)||['CONFLICT','TYPE_CONFLICT'].includes((result?.catalog_identity_review as any)?.status)} onClick={()=>onUse(text('model')?text('manufacturer'):response?.label_candidate?.manufacturer||'',text('model')||response?.label_candidate?.model||'',response?.run_id||'',photographedComponentTypes[text('component_class')]||null)}>{text('model')?'Use photograph suggestion for technician review':'Use complete label candidate for technician review'}</button>
+      {response?.shadow_mode&&<p>Staging analysis. A suggestion fills the review form only; acknowledge or correct the installed identity before saving.</p>}
+      {response?.reported_identity&&<p>Enter or correct the installed manufacturer and model below, then acknowledge the identity. Your confirmation remains linked to this run.</p>}
       <p>Identity and review remain pending until you verify them. This does not approve a purchase.</p>
     </div>}
   </section>;

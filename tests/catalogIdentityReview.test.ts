@@ -18,7 +18,9 @@ it('exposes the exact photo-supported pair as a proposal without inventing confi
  expect(suggestion.catalog_identity_review.classifier_claim.manufacturer).toBe('DORMA');
  const conflict=catalogIdentityReview(labels(read('DORMA',0,'brand_mark'),read('6200R',1,'product_label')));
  expect(applyCatalogIdentityProposal({manufacturer:null},conflict)).toEqual({manufacturer:null});
- expect(applyCatalogIdentityProposal({component_class:'DOOR_CLOSER',manufacturer:null},review)).toEqual({component_class:'DOOR_CLOSER',manufacturer:null});
+ const typeReview=catalogIdentityReview(labels(read('PDQ',0,'brand_mark'),read('6200R',1,'product_label')),{component_class:'DOOR_CLOSER'},{component_type:'exit_device',component_type_source:'technician'});
+ expect(typeReview.status).toBe('TYPE_CONFLICT');
+ expect(applyCatalogIdentityProposal({component_class:'DOOR_CLOSER'},typeReview)).toMatchObject({manufacturer:'PDQ',series:'6200',model:'6200R',component_class:'EXIT_DEVICE',identity_status:'type_conflict'});
 });
 it('does not infer maker from model, trim compatibility or a partial logo',()=>{
  for(const reads of [[read('6200R',1,'product_label')],[read('PD?',0,'brand_mark'),read('6200R',1,'product_label')],[read('PDQ',0,'brand_mark'),read('HG1 fits Hager 4500 / PDQ 6200',1,'product_label')]]){
@@ -35,4 +37,25 @@ it('matches exact suffixes, and rejects uncertain or conflicting model transcrip
  expect(catalogIdentityReview(labels(brand,read('6200R?',1,'product_label'))).candidates).toEqual([]);
  const bad=read('6200R',1,'product_label');bad.ocr_model_conflicts=['6300R'];
  expect(catalogIdentityReview(labels(brand,bad)).candidates).toEqual([]);
+});
+
+it('distinguishes readable unsupported pairs from a catalog outage',()=>{
+ const pair=labels(read('PDQ',0,'brand_mark'),read('Model 6300R',1,'product_label'));
+ expect(catalogIdentityReview(pair).status).toBe('UNSUPPORTED_BY_CATALOG');
+ expect(catalogIdentityReview(pair,{}, {},null).status).toBe('CATALOG_UNAVAILABLE');
+});
+it('does not reject an exact model because an unrelated label token is uncertain',()=>{
+ expect(catalogIdentityReview(labels(read('PDQ',0,'brand_mark'),read('MODEL6200R UL LIST?D',1,'product_label'))).candidates[0].model).toBe('6200R');
+});
+it('excludes context or other-device readings without manufacturing a conflict',()=>{
+ const foreign=read('DORMA',2,'brand_mark');foreign.provenance={source:'native_tile',target_device:false,location_validated:true};
+ const result=catalogIdentityReview(labels(read('PDQ',0,'brand_mark'),read('6200R',1,'product_label'),foreign));
+ expect(result.status).toBe('CANDIDATES');expect(result.excluded_evidence).toHaveLength(1);
+ foreign.provenance={source:'context',target_device:true,location_validated:false};
+ expect(catalogIdentityReview(labels(foreign,read('6200R',1,'product_label'))).status).toBe('INSUFFICIENT_EVIDENCE');
+});
+it('uses catalog data for other brands and does not treat a default as technician evidence',()=>{
+ const catalog=[{manufacturer:'Example',series:'99',model:'99EO',component_class:'EXIT_DEVICE',display_name:'rim exit device'}];
+ const result=catalogIdentityReview(labels(read('Example',0,'brand_mark'),read('Model 99EO',1,'product_label')),{component_class:'EXIT_DEVICE'},{component_type:'lockset',component_type_source:'default'},catalog);
+ expect(result.status).toBe('CANDIDATES');expect(result.candidates[0].series).toBe('99');
 });

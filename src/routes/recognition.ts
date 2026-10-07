@@ -1,3 +1,4 @@
+import {loadIdentityCatalog} from '../services/identityCatalog';
 import {classifierObject} from '../services/providerReply';
 import recognitionBuild from '../generated/recognitionBuild.json';
 import {LABEL_RESPONSE_VERSION} from '../services/labelResponse';
@@ -77,6 +78,15 @@ recognitionRouter.post('/stability/reconcile',requireRole('admin'),async(req:Aut
  try{return res.json(await reconcileRejectedAttempt(body.data.attempt_id,req.auth!,body.data.evidence));}
  catch{return res.status(409).json({error:'stability_reconciliation_not_permitted'});}
 });
+// Review queue is organization-scoped, and the submitter cannot review a miss.
+recognitionRouter.get('/misses',requireRole('admin'),async(req:AuthedRequest,res)=>{
+ try{const rows=await pool.query(`SELECT m.*,c.acknowledged_by,c.provenance FROM recognition_miss_queue m JOIN identity_confirmations c ON c.id=m.confirmation_id WHERE m.organization_id=$1 ORDER BY m.id LIMIT 200`,[req.auth!.organizationId]);return res.json({misses:rows.rows});}catch{return res.status(503).json({error:'miss_queue_unavailable'});}
+});
+recognitionRouter.patch('/misses/:id',requireRole('admin'),async(req:AuthedRequest,res)=>{
+ const parsed=z.object({status:z.enum(['reviewed','resolved']),proposed_fix:z.string().trim().min(1).max(2000)}).strict().safeParse(req.body);
+ if(!parsed.success||!z.string().uuid().safeParse(req.params.id).success)return res.status(400).json({error:'invalid_miss_review'});
+ try{const row=await pool.query(`UPDATE recognition_miss_queue m SET status=$1,proposed_fix=$2,reviewer_id=$3 FROM identity_confirmations c WHERE m.id=$4 AND m.organization_id=$5 AND c.id=m.confirmation_id AND c.acknowledged_by<>$3 RETURNING m.*`,[parsed.data.status,parsed.data.proposed_fix,req.auth!.userId,req.params.id,req.auth!.organizationId]);return row.rows.length?res.json(row.rows[0]):res.status(403).json({error:'independent_miss_reviewer_required'});}catch{return res.status(503).json({error:'miss_review_unavailable'});}
+});
 recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
   res.setHeader('Cache-Control','no-store');
   const parsed=schema.safeParse(req.body);
@@ -123,16 +133,16 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     const bounded=<T>(work:()=>Promise<T>,deadline:number,fallback:()=>T)=>withinRecognitionBudget(signal=>recognitionAudit.run({...recognitionAudit.getStore()!,signal},work),deadline,fallback);
     const classify=()=>bounded(async()=>{
      const outgoing:string[]=[];for(const image of images)outgoing.push(stabilityTrialId()?(await prepareProviderImage(image)).data.toString('base64'):image.toString('base64'));
-     return legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,images:outgoing,media_type:stabilityTrialId()?'image/jpeg':'image/png',technician_attributes:{},timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})});
+     return legacyVisionHandler({httpMethod:'POST',body:JSON.stringify({...b,images:outgoing,media_type:stabilityTrialId()?'image/jpeg':'image/png',technician_attributes:{component_type:b.technician_attributes.component_type,component_type_source:b.technician_attributes.component_type_source},label_evidence:labels?.reads.map(r=>({photo_index:r.region.photo_index,kind:r.region.kind,text:r.vision_text,provenance:r.provenance})),timeout_ms:18000,include_provider_diagnostic:req.auth!.role==='admin'})});
     },stabilityTrialId()?Math.min(started+52000,Date.now()+18000):started+20000,()=>({statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}));
     const label=()=>b.mode==='identify'?bounded(()=>readLabels(images,b.media_type,Math.min(started+46000,Date.now()+24000)),Math.min(started+46000,Date.now()+24000),()=>({version:LABEL_PROMPT_VERSION,status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'})):Promise.resolve(null);
     // The locator precedes at most two concurrent identity reads. Every call
     // still reserves independently under the locked trial budget.
     let response:Awaited<ReturnType<typeof classify>>,labels:Awaited<ReturnType<typeof label>>;
     if(stabilityTrialId()){
-     await recordRecognitionEvidence('label_strategy',{version:'targeted-label-2',order:'parallel_identity_reads_before_classifier',reader_budget_ms:32000,ocr_order:'not_attempted',maximum_reader_calls:2});
+     await recordRecognitionEvidence('label_strategy',{version:'targeted-label-3',order:'parallel_identity_reads_before_classifier',reader_budget_ms:32000,ocr_order:'optional_native_crop_four_rotations',maximum_reader_calls:2});
      const deadline=targetedLabelDeadline(started);
-     labels=await bounded(()=>readTargetedLabels(images,b.media_type,deadline),deadline,()=>({version:'oi-targeted-label-reading-2',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'}));
+     labels=await bounded(()=>readTargetedLabels(images,b.media_type,deadline,b.technician_attributes),deadline,()=>({version:'oi-targeted-label-reading-3',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'}));
      // Preserve the combined label evidence before optional classification.
      await recordRecognitionEvidence('label_reading',labels);
      response=recognitionAudit.getStore()?.trialControl?.stopped?{statusCode:503,body:JSON.stringify({error:'recognition_provider_failed'})}:started+52000-Date.now()<12000?{statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}:await classify();
@@ -166,7 +176,10 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       }catch{/* Preserve photograph and raw label evidence if the catalog is unavailable. */}
     }
     if(stabilityTrialId()&&b.mode==='identify'&&labels){
-      const review=catalogIdentityReview(labels,result);
+      const catalog=await loadIdentityCatalog();
+      const review=catalogIdentityReview(labels,result,b.technician_attributes,catalog.entries);
+      if(catalog.availability==='partial'&&!review.candidates.length&&review.status!=='CONFLICT')review.status='CATALOG_UNAVAILABLE';
+      await recordRecognitionEvidence('identity_catalog_availability',{status:catalog.availability,reason:catalog.reason||null});
       result.catalog_identity_review=review;
       await recordRecognitionEvidence('catalog_identity_review',review);
     }
@@ -177,7 +190,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     let conflicts:unknown[]=[];let comparison:any=null;let status=labelOnly?'label_evidence_only':'no_reference_evidence';let comparisonStarted=false;let comparisonAt=0;let comparisonBudget=0;
     try{
       if(b.mode==='identify'){
-        if(result.component_class==='DOOR_CLOSER'){
+        if(result.component_class==='DOOR_CLOSER'&&!(b.technician_attributes.component_type_source==='technician'&&b.technician_attributes.component_type!=='closer')){
           try{result.installation_geometry=await approvedInstallationGeometry(result.installation_geometry_views,images.length);}catch{result.installation_geometry={status:'reference_geometry_unavailable',candidates:[],limitation:'Installation geometry could not be retrieved. Label reading continues.'};}
         }
         const candidate=labels?.candidates?.length===1?labels.candidates[0]:null;
@@ -265,7 +278,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       await client.query(`INSERT INTO audit_log (organization_id,user_id,action,method,path,request_body,status_code) VALUES ($1,$2,'Recorded recognition evidence','POST','/api/recognition',$3,200)`,[req.auth!.organizationId,req.auth!.userId,JSON.stringify({run_id:run.id,opening_id:b.opening_id,model:RECOGNITION_MODEL,prompt_version:REFERENCE_PROMPT_VERSION,rejected_citation_count:validated.rejected.length})]);
       await client.query('COMMIT');
     }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
-    return res.json({shadow_mode:true,suggestion,label_candidates:labels?.candidates||[],label_candidate:labels?.candidates?.length===1?labels.candidates[0]:null,reported_identity:reportedReferenceHint(b.technician_attributes),run_id:run.id,status,reference_comparison_failure:result.reference_comparison_failure||null,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
+    return res.json({build_sha:recognitionBuild.build_sha,shadow_mode:true,suggestion,label_candidates:labels?.candidates||[],label_candidate:labels?.candidates?.length===1?labels.candidates[0]:null,reported_identity:reportedReferenceHint(b.technician_attributes),run_id:run.id,status,reference_comparison_failure:result.reference_comparison_failure||null,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
     }finally{await pool.query(`UPDATE recognition_runs SET status='failed' WHERE id=$1 AND status='running'`,[initial.id]);}});
   }catch{return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':['original_retrieval','original_metadata','image_normalization'].includes(phase)?'recognition_original_preparation_failed':'recognition_provider_failed'});}
 });

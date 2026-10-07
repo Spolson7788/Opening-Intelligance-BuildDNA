@@ -20,14 +20,8 @@ SELECT jsonb_build_object(
    'photo_identity',r.stage_one->'photograph_identity',
    'label_reading',r.stage_one->'label_reading'
   ) ORDER BY r.created_at,r.id) FROM runs r),'[]'::jsonb),
- 'technician_confirmations',COALESCE((SELECT jsonb_agg(jsonb_build_object(
-   'hardware_component_id',h.id,'run_id',h.identity_recognition_run_id,
-   'manufacturer',h.manufacturer,'model',h.model_number,
-   'identity_status',h.identity_status,'identity_source',h.identity_source,
-   'acknowledged_by',h.identity_acknowledged_by,'acknowledged_at',h.identity_acknowledged_at
-  ) ORDER BY h.id) FROM hardware_components h JOIN runs r ON r.id=h.identity_recognition_run_id
-   WHERE h.opening_id=r.opening_id AND h.identity_acknowledged_by IS NOT NULL
-    AND h.identity_acknowledged_at IS NOT NULL),'[]'::jsonb),
+ 'technician_confirmations',COALESCE((SELECT jsonb_agg(to_jsonb(c) ORDER BY c.acknowledged_at,c.id) FROM identity_confirmations c JOIN runs r ON r.id=c.run_id),'[]'::jsonb),
+ 'miss_queue',COALESCE((SELECT jsonb_agg(to_jsonb(m)) FROM recognition_miss_queue m JOIN runs r ON r.id=m.run_id),'[]'::jsonb),
  'provider_attempts',COALESCE((SELECT jsonb_agg(to_jsonb(a) ORDER BY a.started_at,a.id) FROM attempts a),'[]'::jsonb),
  'reservations',COALESCE((SELECT jsonb_agg(to_jsonb(b) ORDER BY b.attempt_id) FROM recognition_stability_reservations b JOIN trial t ON t.id=b.trial_id),'[]'::jsonb)
 );

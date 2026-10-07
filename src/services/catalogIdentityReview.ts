@@ -1,35 +1,42 @@
 import entries from './pdqCatalog.json';
 import {catalogTranscription} from './catalogMarking';
-import type {LabelEvidence} from './labelReading';
+import type {LabelEvidence,LabelRead} from './labelReading';
 
-// Catalog facts constrain a hypothesis; they never substitute for a photo read.
-export function catalogIdentityReview(labels:LabelEvidence,classifier:Record<string,any>={}) {
- const usable=labels.reads.filter(r=>r.vision_status==='read'&&!r.vision_text.includes('?')&&!r.ocr_model_conflicts?.length);
- const marks=usable.filter(r=>r.region.kind==='brand_mark');
- const candidates=entries.flatMap(entry=>{
+export type IdentityCatalogEntry={manufacturer:string;series:string|null;model:string;component_class:string|null;device_type?:string;display_name:string;[key:string]:any};
+const typeClasses:Record<string,string>={exit_device:'EXIT_DEVICE',panic_bar:'EXIT_DEVICE',closer:'DOOR_CLOSER',lockset:'LOCKSET',hinge:'HINGE_BUTT',electric_strike:'ELECTRIC_STRIKE',power_transfer:'POWER_TRANSFER'};
+// A catalog constrains photo evidence; missing coverage is never proof of incompatibility.
+export function catalogIdentityReview(labels:LabelEvidence,classifier:Record<string,any>={},technician:Record<string,string>={},catalog:IdentityCatalogEntry[]|null=entries) {
+ const excluded=labels.reads.filter(r=>(labels.version==='oi-targeted-label-reading-3'&&!r.provenance)||r.provenance&&(r.provenance.source==='context'||r.provenance.target_device!==true||!r.provenance.location_validated));
+ const usable=labels.reads.filter(r=>!excluded.includes(r)&&r.vision_status==='read'&&!r.ocr_model_conflicts?.length);
+ const marks=usable.filter(r=>r.region.kind==='brand_mark'&&!r.vision_text.includes('?'));
+ const evidence=(r:LabelRead,kind:string)=>({photo_index:r.region.photo_index,kind,text:r.vision_text,region:r.region,provenance:r.provenance??{source:'legacy_unverified'}});
+ const candidates=(catalog||[]).flatMap(entry=>{
   const models=usable.filter(r=>r.region.kind!=='brand_mark'&&catalogTranscription(r.vision_text,entry.model));
   const logos=marks.filter(r=>catalogTranscription(r.vision_text,entry.manufacturer));
   if(!models.length||!logos.length)return [];
-  return [{...entry,verification:'pending_technician' as const,evidence:[...models.map(r=>({photo_index:r.region.photo_index,kind:'model' as const,text:r.vision_text})),...logos.map(r=>({photo_index:r.region.photo_index,kind:'brand_mark' as const,text:r.vision_text}))]}];
+  return [{...entry,series_basis:entry.series?'catalog_row':null,verification:'pending_technician' as const,evidence:[...models.map(r=>evidence(r,'model')),...logos.map(r=>evidence(r,'brand_mark'))]}];
  });
- const otherMarks=marks.filter(r=>!catalogTranscription(r.vision_text,'PDQ'));
- const hasSupportedModel=usable.some(r=>r.region.kind!=='brand_mark'&&entries.some(e=>catalogTranscription(r.vision_text,e.model)));
- const conflict=(candidates.length>0&&otherMarks.length>0)||(hasSupportedModel&&marks.length>0&&!candidates.length);
- return {status:conflict?'CONFLICT':candidates.length?'CANDIDATES':'INSUFFICIENT_EVIDENCE',candidates,
-  maker_evidence:marks.map(r=>({photo_index:r.region.photo_index,text:r.vision_text})),
+ const supportedModels=(catalog||[]).filter(e=>usable.some(r=>r.region.kind!=='brand_mark'&&catalogTranscription(r.vision_text,e.model)));
+ const otherMarks=marks.filter(r=>candidates.length&&!candidates.some(e=>catalogTranscription(r.vision_text,e.manufacturer)));
+ const conflict=(candidates.length>0&&otherMarks.length>0)||(supportedModels.length>0&&marks.length>0&&!candidates.length);
+ const selectedClass=technician.component_type_source==='technician'?typeClasses[technician.component_type]??null:null;
+ const classes=[...new Set(candidates.map(c=>c.component_class).filter(Boolean))];
+ const typeConflict=classes.length===1&&((classifier.component_class&&classifier.component_class!==classes[0])||(selectedClass&&selectedClass!==classes[0]))||Boolean(selectedClass&&classifier.component_class&&selectedClass!==classifier.component_class);
+ const readableModel=usable.some(r=>r.region.kind!=='brand_mark'&&/\bMODEL\s*[:#-]?\s*[A-Z0-9]*\d[A-Z0-9-]*/i.test(r.vision_text));
+ const status=catalog===null?'CATALOG_UNAVAILABLE':conflict?'CONFLICT':typeConflict?'TYPE_CONFLICT':candidates.length?'CANDIDATES':marks.length&&readableModel?'UNSUPPORTED_BY_CATALOG':'INSUFFICIENT_EVIDENCE';
+ return {status,candidates,excluded_evidence:excluded.map(r=>({...evidence(r,'excluded'),reason:r.provenance?.target_device===false?'other_device':'unvalidated_location'})),
+  maker_evidence:marks.map(r=>evidence(r,'brand_mark')),model_evidence:usable.filter(r=>r.region.kind!=='brand_mark').map(r=>evidence(r,'model')),
+  type_evidence:{technician_class:selectedClass,classifier_class:classifier.component_class??null,catalog_classes:classes},
   classifier_claim:{manufacturer:classifier.manufacturer??null,model:classifier.model??null,source:'classifier_only'},
-  catalog_scope:'PDQ legacy rim designations; incomplete catalog',
-  limitation:'Candidate only. Technician acknowledgment is required; no identity is confirmed or learned by this review.'};
+  classifier_disagreement:candidates.length>0&&Boolean(classifier.manufacturer&&!candidates.some(c=>catalogTranscription(classifier.manufacturer,c.manufacturer))),
+  catalog_scope:'Reviewed identity rows; incomplete catalog',limitation:'Photo-supported proposal; technician acknowledgment and catalog-update review remain separate.'};
 }
-
-// This is a reviewable proposal, never a technician-confirmed identity. A
-// classifier guess cannot overrule a clear maker mark plus exact catalog model.
 export function applyCatalogIdentityProposal(suggestion:Record<string,any>,review:ReturnType<typeof catalogIdentityReview>){
- if(review.status!=='CANDIDATES'||review.candidates.length!==1||
-    (suggestion.component_class&&suggestion.component_class!=='EXIT_DEVICE'))return suggestion;
+ if(!['CANDIDATES','TYPE_CONFLICT'].includes(review.status)||review.candidates.length!==1)return suggestion;
  const candidate=review.candidates[0];
  return {...suggestion,manufacturer:candidate.manufacturer,series:candidate.series,model:candidate.model,
+  component_class:candidate.component_class||suggestion.component_class||null,classifier_component_class:suggestion.component_class??null,
   confidence:{...suggestion.confidence,manufacturer:null,series:null,model:null},
-  identity_status:'pending_technician',identity_basis:'readable_maker_and_exact_catalog_model',
+  identity_status:review.status==='TYPE_CONFLICT'?'type_conflict':'pending_technician',series_basis:candidate.series?'catalog_row':null,identity_basis:'readable_maker_and_exact_catalog_model',
   identity_evidence:candidate.evidence,catalog_identity_review:review};
 }

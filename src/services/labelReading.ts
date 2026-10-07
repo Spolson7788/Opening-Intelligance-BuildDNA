@@ -1,3 +1,4 @@
+import {nativeLabelTiles,resolveNativeRead} from './nativeLabelSearch';
 import {recognitionInputPixelLimit} from './recognitionOriginalLimits';
 import {parseLabelResponse,labelReadContract} from './labelResponse';
 import {catalogTranscription} from './catalogMarking';
@@ -25,7 +26,8 @@ export function modelLineBoxQuality(region:LabelRegion):'refined'|'full_width_ba
  if(Math.abs(b.w-region.w)<1e-6&&Math.abs(b.h-region.h)<1e-6)return 'equals_region';
  return b.w<.9*region.w&&b.h<=.5*region.h?'refined':'full_width_band';
 }
-export interface LabelRead {legibility?:LabelLegibility;model_line_box_quality?:ReturnType<typeof modelLineBoxQuality>;region:LabelRegion;ocr_text:string;ocr_confidence:number;ocr_status?:'read'|'unreadable'|'timeout'|'unavailable'|'not_attempted';ocr_scope?:'model_line'|'label';ocr_model_conflicts?:string[];model_line_crop_status?:'used'|'rejected'|'not_located';vision_status?:'read'|'unreadable'|'not_returned'|'invalid'|'not_attempted';vision_validation_reasons?:string[];vision_text:string;vision_initial_text?:string;agreed_markings:string[];status:'agreement'|'unconfirmed'|'unreadable'}
+export interface ReadProvenance {source:"crop"|"native_tile"|"context";target_device:boolean;location_validated:boolean;box?:{x:number;y:number;w:number;h:number};rotation?:number}
+export interface LabelRead {provenance?:ReadProvenance;legibility?:LabelLegibility;model_line_box_quality?:ReturnType<typeof modelLineBoxQuality>;region:LabelRegion;ocr_text:string;ocr_confidence:number;ocr_status?:'read'|'unreadable'|'timeout'|'unavailable'|'not_attempted';ocr_scope?:'model_line'|'label';ocr_model_conflicts?:string[];model_line_crop_status?:'used'|'rejected'|'not_located';vision_status?:'read'|'unreadable'|'not_returned'|'invalid'|'not_attempted';vision_validation_reasons?:string[];vision_text:string;vision_initial_text?:string;agreed_markings:string[];status:'agreement'|'unconfirmed'|'unreadable'}
 export interface LabelEvidence {legibility?:LabelLegibility;stage_outcomes?:Record<string,{status:string;reason?:string;legibility?:LabelLegibility;limiting_factor?:string|null}>;ocr_views?:unknown[];layout_reference?:{id:string;source_sha256:string};locator_preprocessing?:{enlarged_views:number;original_preserved:true};enhancement?:{method:'contrast_sharpen';regions:number;original_preserved:true};source_dimensions?:{width:number;height:number}[];candidates?:{manufacturer:string;series:string;model:string|null;verification:'single_reader';manufacturer_basis?:'catalog_model_match'|'catalog_partial_model_match';transcribed_marking?:string;catalog_model?:string}[];version:string;status:'completed'|'partial'|'unavailable'|'no_regions';reads:LabelRead[];limiting_factor:string|null}
 const empty=(status:LabelEvidence['status'],reason:string|null=null):LabelEvidence=>({version:LABEL_PROMPT_VERSION,status,reads:[],limiting_factor:reason});
 export function normalizeRegions(value:any,count:number):LabelRegion[]{
@@ -173,7 +175,7 @@ export function labelVisionContent(usable:{region:LabelRegion;crop:Buffer}[],enh
   ...(rotated[i]?[{type:'text',text:`Crop ${i}: alternate 180-degree orientation of the same marking region. The locator orientation may be wrong; compare the original and this view, without treating them as independent readers.`},{type:'image',source:{type:'base64',media_type:'image/png',data:rotated[i]!.toString('base64')}}]:[])
  ]);
 }
-export async function readTargetedLabels(images:Buffer[],mediaType:string,deadline=Date.now()+32000):Promise<LabelEvidence>{
+export async function readTargetedLabels(images:Buffer[],mediaType:string,deadline=Date.now()+32000,technician:Record<string,string>={}):Promise<LabelEvidence>{
  const outcomes:NonNullable<LabelEvidence['stage_outcomes']>={label_locator:{status:'not_attempted'},label_reader:{status:'not_attempted'},label_reread:{status:'not_attempted',reason:'targeted_first_pass'}};
  const reads:LabelRead[]=[];
  const audit:any[]=[];
@@ -185,7 +187,7 @@ export async function readTargetedLabels(images:Buffer[],mediaType:string,deadli
   const contexts=await Promise.all(images.map(image=>prepareProviderImage(image)));
   await recordRecognitionEvidence('targeted_context_sources',contexts.map((context,i)=>({photo_index:i,source_sha256:createHash('sha256').update(images[i]).digest('hex'),context_sha256:createHash('sha256').update(context.data).digest('hex'),...context.metadata})));
   const located=await ask(contexts.flatMap((context,i)=>[{type:'text',text:`Original photograph ${i}`},{type:'image',source:{type:'base64',media_type:'image/jpeg',data:context.data.toString('base64')}}]),
-   'Locate identification markings ON THE HARDWARE ITSELF. Return JSON {regions:[{photo_index,x,y,w,h,rotation,kind,model_line_box}],limiting_factor}. Coordinates are fractions of the original upright photograph. kind is product_label for a physical sticker/printed label and brand_mark for a cast, embossed or stamped maker logo. Bound the entire marking with visible context. A cast logo is NOT a model heading: omit model_line_box for brand_mark. A model_line_box may be supplied only for an actually visible heading within a product_label. Include the label and maker mark from DIFFERENT photographs of the same component when visible. Do not read text, identify a product or infer a missing label. Maximum six regions; rotation is 0,90,180,270.',deadline,12000,'label_locator',images.length);
+   `Target type selected by the technician: ${technician.component_type_source==='technician'?technician.component_type:'not provided'}. `+'Locate identification markings ON THE HARDWARE ITSELF. Return JSON {regions:[{photo_index,x,y,w,h,rotation,kind,model_line_box}],limiting_factor}. Coordinates are fractions of the original upright photograph. kind is product_label for a physical sticker/printed label and brand_mark for a cast, embossed or stamped maker logo. Bound the entire marking with visible context. A cast logo is NOT a model heading: omit model_line_box for brand_mark. A model_line_box may be supplied only for an actually visible heading within a product_label. Include the label and maker mark from DIFFERENT photographs of the same component when visible. Do not read text, identify a product or infer a missing label. Maximum six regions; rotation is 0,90,180,270.',deadline,12000,'label_locator',images.length);
   outcomes.label_locator={status:'succeeded'};
   const planned=targetedLabelPlan(normalizeRegions(located.regions,images.length));
   if(!planned.length)return {...empty('no_regions','no_identified_markings'),stage_outcomes:outcomes};
@@ -201,24 +203,42 @@ export async function readTargetedLabels(images:Buffer[],mediaType:string,deadli
    try{
     const crop=await cropLabel(images[region.photo_index],region);
     const m=await sharp(images[region.photo_index],{limitInputPixels:recognitionInputPixelLimit()}).metadata();
-    const view={crop_index:index,region,crop_box:labelCropBox({width:m.width!,height:m.height!},region),crop_box_units:'pixels_upright_source',source_sha256:createHash('sha256').update(images[region.photo_index]).digest('hex'),view_sha256:createHash('sha256').update(crop).digest('hex'),strategy:'targeted-label-2',reading_basis:'crop_and_same_photo_context'};
+    const view={crop_index:index,region,crop_box:labelCropBox({width:m.width!,height:m.height!},region),crop_box_units:'pixels_upright_source',source_sha256:createHash('sha256').update(images[region.photo_index]).digest('hex'),view_sha256:createHash('sha256').update(crop).digest('hex'),strategy:'targeted-label-3',reading_basis:'coarse_crop_context_then_native_tiles'};
     audit.push(view);
     await recordRecognitionEvidence(`targeted_label_view_${index}`,view);
     if(!targetedReaderCanStart(deadline)){reasons.push('reader_budget_insufficient');return;}
+    const native=await nativeLabelTiles(images[region.photo_index]);
+    await recordRecognitionEvidence(`targeted_native_tiles_${index}`,native.tiles.map(t=>({tile_index:t.index,box:t.box,sha256:createHash('sha256').update(t.image).digest('hex')})));
+    if(!targetedReaderCanStart(deadline)){reasons.push('reader_budget_insufficient');return;}
+    let provenance:ReadProvenance={source:'context',target_device:false,location_validated:false};
     let text='',vision_status:LabelRead['vision_status']='not_attempted',legibility:LabelLegibility='illegible';
     try{
      const value=await ask([
       {type:'text',text:`${region.kind==='brand_mark'?'Maker mark':'Product label'} crop ${index}, from photograph ${region.photo_index}.`},
       {type:'image',source:{type:'base64',media_type:'image/png',data:crop.toString('base64')}},
       {type:'text',text:`Source photograph ${region.photo_index} for the SAME crop. The locator may have misplaced the crop. This is context from the same pixels, not independent corroboration.`},
-      {type:'image',source:{type:'base64',media_type:'image/jpeg',data:contexts[region.photo_index].data.toString('base64')}}
-     ],'Find and read product label characters actually visible ON THE HARDWARE in the crop and its source photograph. Read rotated text. For a maker mark transcribe only the visible letters of the logo. If the crop misses the marking, use the visible marking in its source photograph; never report crop coordinates as validated. Do not identify from shape, catalog knowledge or another photograph; do not complete missing characters. Use ? for uncertain characters. Return JSON {reads:[{crop_index,text,legibility}],limiting_factor}. Empty text is correct if unreadable.'+labelReadContract([index]),deadline,14000,'label_reader',[index]);
-     const r=value.reads[0];text=typeof r?.text==='string'?r.text.slice(0,1200):'';
+      {type:'image',source:{type:'base64',media_type:'image/jpeg',data:contexts[region.photo_index].data.toString('base64')}},
+      ...native.tiles.flatMap(t=>[{type:'text',text:`Native search tile ${t.index}, from photograph ${region.photo_index}, source box ${JSON.stringify(t.box)}. Unrotated original pixels; overlap is not independent evidence.`},{type:'image',source:{type:'base64',media_type:'image/png',data:t.image.toString('base64')}}])
+     ],`Target type selected by the technician: ${technician.component_type_source==='technician'?technician.component_type:'not provided'}. `+'Refine the coarse location using the native search tiles. Read only the requested marking kind ON THE TARGET HARDWARE. Context is for device association only, never a transcription source. Other components can appear in the frame: exclude their markings. For a maker mark transcribe only visible logo letters. For a product label find the physical sticker and its model line. Inspect 0/90/180/270 orientations. Do not identify from shape or catalog knowledge; do not complete missing characters. Return JSON {reads:[{crop_index,text,legibility,source:"native_tile",tile_index,text_box:{x,y,w,h},rotation,target_device}],limiting_factor}. text_box is a tight marking box as fractions of the unrotated tile. target_device is true only if the marking lies on the target device. Use ? for uncertain characters. Empty text is correct if unreadable or not located.' +labelReadContract([index]),deadline,14000,'label_reader',[index]);
+     const r=value.reads[0];provenance=resolveNativeRead(r,native.tiles,native.width,native.height);text=typeof r?.text==='string'?r.text.slice(0,1200):'';
      if(value.validation?.status==='partial')reasons.push('label_partial_reads');
      vision_status=r?(text.trim()?'read':'unreadable'):value.validation?.invalid_crops?.includes(index)?'invalid':'not_returned';
      legibility=labelLegibility(text,r?.legibility);
     }catch(e){reasons.push(['AbortError','TimeoutError'].includes((e as Error).name)?'label_timeout':(e as Error).message);}
-    const read:LabelRead={region,ocr_text:'',ocr_confidence:0,ocr_status:'not_attempted',ocr_scope:'label',vision_text:text,vision_status,legibility,agreed_markings:[],status:text?'unconfirmed':'unreadable'};
+    const refined=provenance.box?{...region,...provenance.box,rotation:provenance.rotation||0,model_line_box:undefined}:region;
+    let refinedCrop:Buffer|undefined;
+    if(provenance.box){refinedCrop=await cropLabel(images[region.photo_index],refined);const detail=await hasModelLineDetail(refinedCrop);if(!detail)provenance.location_validated=false;await recordRecognitionEvidence(`targeted_refined_view_${index}`,{region:refined,source_sha256:view.source_sha256,view_sha256:createHash('sha256').update(refinedCrop).digest('hex'),pixel_detail_present:detail,provenance});}
+    let ocr={text:'',confidence:0,status:'not_attempted' as LabelRead['ocr_status']};
+    // Independent engine is optional corroboration, not a cast-logo gate.
+    // Four orientations share a bounded local deadline and preserve every reply.
+    if(refinedCrop&&provenance.location_validated&&region.kind!=='brand_mark'&&deadline-Date.now()>6500){
+     const rotations=[0,90,180,270];
+     const variants=await Promise.all(rotations.map(rotation=>sharp(refinedCrop!).rotate(rotation).png().toBuffer()));
+     const local=await readLabelCropsOcr(variants,Math.min(deadline-1000,Date.now()+5000));
+     await recordRecognitionEvidence(`targeted_native_ocr_${index}`,local.map((r,i)=>({...r,rotation:rotations[i]})));
+     const readable=local.filter(r=>r.status==='read');ocr=readable.length?{text:readable.map(r=>r.text).join('\n'),confidence:Math.max(...readable.map(r=>r.confidence)),status:'read'}:{text:'',confidence:0,status:local[0]?.status||'unavailable'};
+    }
+    const read:LabelRead={region:refined,provenance,ocr_text:ocr.text,ocr_confidence:ocr.confidence,ocr_status:ocr.status,ocr_scope:'label',vision_text:text,vision_status,legibility,agreed_markings:agreedMarkings(ocr.text,text),status:text?(agreedMarkings(ocr.text,text).length?'agreement':'unconfirmed'):'unreadable'};
     completed[index]=read;
     // Distinct keys avoid concurrent writers overwriting completed evidence.
     await recordRecognitionEvidence(`targeted_label_read_${index}`,read);
@@ -228,11 +248,11 @@ export async function readTargetedLabels(images:Buffer[],mediaType:string,deadli
   audit.sort((a,b)=>a.crop_index-b.crop_index);
   await recordRecognitionEvidence('targeted_label_reads',reads);
   await recordRecognitionEvidence('targeted_label_views',audit);
-  // OCR is optional corroboration, not a prerequisite for a cast logo. Do not
-  // initialize its worker in this bounded identity-first trial.
+  // OCR on a refined native sticker is bounded optional corroboration; cast
+  // logos are never suppressed merely because OCR cannot read raised metal.
   reason=reasons[0]||null;
   outcomes.label_reader={status:reason?'partial':reads.length?'succeeded':'not_attempted',...(reason?{reason}:{})};
-  return {version:'oi-targeted-label-reading-2',status:reason?'partial':'completed',reads,stage_outcomes:outcomes,ocr_views:audit,candidates:labelCandidates(reads),limiting_factor:reason};
+  return {version:'oi-targeted-label-reading-3',status:reason?'partial':'completed',reads,stage_outcomes:outcomes,ocr_views:audit,candidates:labelCandidates(reads),limiting_factor:reason};
  }catch(e){
   const stage=outcomes.label_locator.status==='succeeded'?'label_reader':'label_locator';
   outcomes[stage]={status:'failed',reason:(e as Error).message};

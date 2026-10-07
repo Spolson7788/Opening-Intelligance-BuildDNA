@@ -8,7 +8,7 @@ const rows=Array.isArray(value)?value:value.provider_attempts;
 if(!Array.isArray(rows))throw Error('Invalid provider attempt export');
 const results=rows.filter((r:any)=>r.stage==='label_reader'&&r.raw_output).map((r:any)=>{
  const expected=r.request_manifest.flatMap((m:any)=>m.content).flatMap((b:any)=>{
-  const match=typeof b.text==='string'&&b.text.match(/^(?:Detected label crop|Search area \(not a detected label\)) (\d+): original crop$/);return match?[Number(match[1])]:[];
+  const match=typeof b.text==='string'&&b.text.match(/^(?:Detected label crop|Search area \(not a detected label\)) (\d+): original crop$/);const targeted=typeof b.text==='string'&&b.text.match(/^(?:Maker mark|Product label) crop (\d+), from photograph \d+\./);return match?[Number(match[1])]:targeted?[Number(targeted[1])]:[];
  });
  if(!expected.length)throw Error('Missing crop manifest');
  try{const result=parseLabelResponse(JSON.parse(r.raw_output),'label_reader',expected);return {run_id:r.run_id,attempt_id:r.id,expected,result};}

@@ -23,7 +23,7 @@ it('starts the logo while the sticker is still pending and checkpoints their evi
  audit.fetch.mockImplementation(async(_url,init,stage)=>{
   if(stage==='label_locator')return envelope({regions:[{photo_index:0,x:0,y:0,w:.4,h:.4,rotation:0,kind:'product_label'},{photo_index:1,x:0,y:0,w:.4,h:.4,rotation:0,kind:'brand_mark'}]});
   const content=JSON.parse(init.body).messages[0].content;
-  expect(content.filter((c:any)=>c.type==='image')).toHaveLength(2);
+  expect(content.filter((c:any)=>c.type==='image')).toHaveLength(3);
   if(content[0].text.includes('crop 0'))return sticker;
   logoStarted();return envelope({reads:[{crop_index:1,text:'Visible maker',legibility:'clear'}]});
  });
@@ -47,7 +47,7 @@ it('sends one native crop per reader call and retains a completed transcription 
  audit.fetch.mockImplementation(async(_url,init,stage)=>{
   const request=JSON.parse(init.body);const content=request.messages[0].content;
   if(stage==='label_locator')return envelope({regions:[{photo_index:0,x:.1,y:.1,w:.4,h:.4,rotation:0,kind:'brand_mark'},{photo_index:1,x:.1,y:.1,w:.5,h:.5,rotation:0,kind:'product_label'}]});
-  expect(stage).toBe('label_reader');expect(content.filter((b:any)=>b.type==='image')).toHaveLength(2);
+  expect(stage).toBe('label_reader');expect(content.filter((b:any)=>b.type==='image')).toHaveLength(3);
   if(content[0].text.includes('crop 0'))return envelope({reads:[{crop_index:0,text:'1234R',legibility:'clear'}]});
   throw new DOMException('late reader','TimeoutError');
  });
