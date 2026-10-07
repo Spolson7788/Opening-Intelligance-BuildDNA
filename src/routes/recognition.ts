@@ -1,3 +1,4 @@
+import {claimReaderStage,stagedInputKey,STAGED_LOCATOR_MS,STAGED_READER_MS} from '../services/recognitionStages';
 import {loadIdentityCatalog} from '../services/identityCatalog';
 import {classifierObject} from '../services/providerReply';
 import recognitionBuild from '../generated/recognitionBuild.json';
@@ -25,6 +26,8 @@ import {retrieveReferences,referenceFailureCode,resolvePartialMarkings,compareWi
 const schema=z.object({
   opening_id:z.string().uuid(),
   request_id:z.string().uuid().optional(),
+  staged:z.boolean().optional(),
+  resume_run_id:z.string().uuid().optional(),
   client_build_sha:z.string().regex(/^[a-f0-9]{40}$/).optional(),
   images:z.array(z.string().min(4).max(2800000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/)).min(1).max(5).optional(),
   photo_ids:z.array(z.string().uuid()).min(3).max(5).optional(),
@@ -94,6 +97,11 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
   if(!parsed.success)return res.status(400).json({error:'invalid_recognition_request'});
   const b=parsed.data;
   if(stabilityTrialId()&&(b.client_build_sha!==recognitionBuild.build_sha||!['default','technician','AI'].includes(b.technician_attributes.component_type_source)))return res.status(409).json({error:'recognition_client_update_required'});
+  if(b.staged&&(!stabilityTrialId()||!b.photo_ids||b.mode!=='identify'||!b.request_id))return res.status(400).json({error:'recognition_stage_input_invalid'});
+  if(b.resume_run_id&&!b.staged)return res.status(400).json({error:'recognition_stage_input_invalid'});
+  const stageInputKey=stagedInputKey(b);
+  let stagePending=false;
+  let claimedResume=false;
   let images:Buffer[]=(b.images||[]).map(s=>Buffer.from(s,'base64'));
   let sourceManifest:unknown[]=[];
   if(images.reduce((n,x)=>n+x.length,0)>2*1024*1024)return res.status(413).json({error:'recognition_images_too_large'});
@@ -109,6 +117,8 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     const availability=recognitionAvailability();
     if(!availability.available)return res.status(503).json({error:availability.reason});
     const started=Date.now();
+    const resumed=b.resume_run_id?await claimReaderStage(b.resume_run_id,{openingId:b.opening_id,organizationId:req.auth!.organizationId,userId:req.auth!.userId},recognitionBuild.build_sha,stageInputKey):null;
+    claimedResume=Boolean(resumed);
     let sourceHashes:string[];
     if(b.photo_ids){
       if(!originalInputsEnabled())return res.status(403).json({error:'recognition_originals_disabled'});
@@ -122,15 +132,16 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     }
     // Native buffers remain the label sources. Classifier base64 is prepared
     // only at its boundary, avoiding a huge lossless-PNG JSON copy up front.
+    if(resumed&&JSON.stringify(resumed.hashes)!==JSON.stringify(sourceHashes))throw Error('recognition_stage_input_changed');
     b.media_type='image/png';
     phase='recording';
-    const initial=(await pool.query(`INSERT INTO recognition_runs
+    const initial=resumed|| (await pool.query(`INSERT INTO recognition_runs
      (organization_id,opening_id,user_id,photo_hashes,technician_attributes,component_type,stage_one,suggestion,retrieved_pages,citations,rejected_citations,conflicts,status,model_id,prompt_version)
      VALUES($1,$2,$3,$4,$5,NULL,$6,'{}','[]','[]','[]','[]','running',$7,$8) RETURNING id`,[
-     req.auth!.organizationId,b.opening_id,req.auth!.userId,JSON.stringify(sourceHashes),JSON.stringify(b.technician_attributes),JSON.stringify({request_id:b.request_id,shadow_mode:true,source_inputs:sourceManifest,recognition_versions:{...recognitionBuild,label_prompt:LABEL_PROMPT_VERSION,label_response:LABEL_RESPONSE_VERSION,reference_prompt:REFERENCE_PROMPT_VERSION},libraries:{sharp:sharp.versions,tesseract:require('tesseract.js/package.json').version}}),RECOGNITION_MODEL,REFERENCE_PROMPT_VERSION])).rows[0];
+     req.auth!.organizationId,b.opening_id,req.auth!.userId,JSON.stringify(sourceHashes),JSON.stringify(b.technician_attributes),JSON.stringify({request_id:b.request_id,shadow_mode:true,...(b.staged?{staged_execution:{phase:'locating',input_key:stageInputKey,started_at:new Date().toISOString()}}:{}),source_inputs:sourceManifest,recognition_versions:{...recognitionBuild,label_prompt:LABEL_PROMPT_VERSION,label_response:LABEL_RESPONSE_VERSION,reference_prompt:REFERENCE_PROMPT_VERSION},libraries:{sharp:sharp.versions,tesseract:require('tesseract.js/package.json').version}}),RECOGNITION_MODEL,REFERENCE_PROMPT_VERSION])).rows[0];
     return await recognitionAudit.run({runId:initial.id,deadline:started+(stabilityTrialId()?55000:49000),trialControl:{},identityOnly:Boolean(stabilityTrialId())},async()=>{try{
     if(stabilityTrialId()&&b.mode!=='identify')throw Error('stability_identify_mode_required');
-    await registerStabilityRun(initial.id,b.request_id);
+    if(!resumed)await registerStabilityRun(initial.id,b.request_id);
     phase='provider';
     const bounded=<T>(work:()=>Promise<T>,deadline:number,fallback:()=>T)=>withinRecognitionBudget(signal=>recognitionAudit.run({...recognitionAudit.getStore()!,signal},work),deadline,fallback);
     const classify=()=>bounded(async()=>{
@@ -143,8 +154,8 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     let response:Awaited<ReturnType<typeof classify>>,labels:Awaited<ReturnType<typeof label>>;
     if(stabilityTrialId()){
      await recordRecognitionEvidence('label_strategy',{version:'targeted-label-3',order:'parallel_identity_reads_before_classifier',reader_budget_ms:32000,ocr_order:'optional_native_crop_four_rotations',maximum_reader_calls:2});
-     const deadline=targetedLabelDeadline(started);
-     labels=await bounded(()=>readTargetedLabels(images,b.media_type,deadline,b.technician_attributes),deadline,()=>({version:'oi-targeted-label-reading-3',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'}));
+     const deadline=b.staged?Math.min(started+51000,Date.now()+(resumed?STAGED_READER_MS:STAGED_LOCATOR_MS)+1000):targetedLabelDeadline(started);
+     labels=await bounded(()=>readTargetedLabels(images,b.media_type,deadline,b.technician_attributes,b.staged?{mode:resumed?'read':'locate',regions:resumed?.regions,locatorMs:STAGED_LOCATOR_MS,readerMs:STAGED_READER_MS}:undefined),deadline,()=>({version:'oi-targeted-label-reading-3',status:'unavailable' as const,reads:[],limiting_factor:'label_processing_timeout'}));
      // Preserve the combined label evidence before optional classification.
      await recordRecognitionEvidence('label_reading',labels);
      if(labels.stage_outcomes?.label_locator.status==='failed'&&!labels.reads.length){
@@ -153,7 +164,20 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       await recordRecognitionEvidence('failure',{code:error,http_status:502,readers_started:false});
       return res.status(502).json({error,run_id:initial.id});
      }
-     response=recognitionAudit.getStore()?.trialControl?.stopped?{statusCode:503,body:JSON.stringify({error:'recognition_provider_failed'})}:started+52000-Date.now()<12000?{statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}:await classify();
+     if(b.staged&&/timeout/i.test(labels.limiting_factor||'')&&!labels.reads.some(r=>r.vision_status==='read'&&r.vision_text.trim())){
+      await recordRecognitionEvidence('failure',{code:resumed?'recognition_label_reader_timeout':'recognition_label_locator_timeout',http_status:502});
+      return res.status(502).json({error:resumed?'recognition_label_reader_timeout':'recognition_label_locator_timeout',run_id:initial.id});
+     }
+     if(b.staged&&!resumed&&labels.planned_regions?.length){
+      await recordRecognitionEvidence('saved_locator_plan',{regions:labels.planned_regions,source_hashes:sourceHashes});
+      await pool.query(`UPDATE recognition_runs SET stage_one=jsonb_set(stage_one,'{staged_execution}',stage_one->'staged_execution'||$2::jsonb) WHERE id=$1`,[initial.id,JSON.stringify({phase:'readers_ready',locator_completed_at:new Date().toISOString()})]);
+      stagePending=true;
+      return res.status(202).json({status:'stage_ready',next_stage:'read',request_id:b.request_id,run_id:initial.id,build_sha:recognitionBuild.build_sha});
+     }
+     if(b.staged){
+      await recordRecognitionEvidence('classifier_outcome',{status:'not_attempted',reason:'identity_from_located_markings_and_catalog',selected_type:b.technician_attributes.component_type,selected_type_source:b.technician_attributes.component_type_source});
+      response={statusCode:200,body:JSON.stringify({component_class:null,manufacturer:null,series:null,model:null,visible_text:[],attributes:{},evidence:[],confidence:{manufacturer:null,series:null,model:null}})};
+     }else response=recognitionAudit.getStore()?.trialControl?.stopped?{statusCode:503,body:JSON.stringify({error:'recognition_provider_failed'})}:started+52000-Date.now()<12000?{statusCode:502,body:JSON.stringify({error:'recognition_provider_timeout'})}:await classify();
     }else [response,labels]=await Promise.all([classify(),label()]);
     await pool.query(`UPDATE recognition_runs SET stage_one=stage_one || $2::jsonb WHERE id=$1`,[initial.id,JSON.stringify({label_reading:labels})]);
     let labelOnly=false;
@@ -197,7 +221,7 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
     let pages:Awaited<ReturnType<typeof retrieveReferences>>=[];
     let conflicts:unknown[]=[];let comparison:any=null;let status=labelOnly?'label_evidence_only':'no_reference_evidence';let comparisonStarted=false;let comparisonAt=0;let comparisonBudget=0;
     try{
-      if(b.mode==='identify'){
+      if(b.mode==='identify'&&!b.staged){
         if(result.component_class==='DOOR_CLOSER'&&!(b.technician_attributes.component_type_source==='technician'&&b.technician_attributes.component_type!=='closer')){
           try{result.installation_geometry=await approvedInstallationGeometry(result.installation_geometry_views,images.length);}catch{result.installation_geometry={status:'reference_geometry_unavailable',candidates:[],limitation:'Installation geometry could not be retrieved. Label reading continues.'};}
         }
@@ -287,8 +311,8 @@ recognitionRouter.post('/',async(req:AuthedRequest,res)=>{
       await client.query('COMMIT');
     }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
     return res.json({build_sha:recognitionBuild.build_sha,shadow_mode:true,suggestion,label_candidates:labels?.candidates||[],label_candidate:labels?.candidates?.length===1?labels.candidates[0]:null,reported_identity:reportedReferenceHint(b.technician_attributes),run_id:run.id,status,reference_comparison_failure:result.reference_comparison_failure||null,comparison,citations:validated.accepted,conflicts,requires_technician_review:true});
-    }finally{await pool.query(`UPDATE recognition_runs SET status='failed' WHERE id=$1 AND status='running'`,[initial.id]);}});
-  }catch{return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':['original_retrieval','original_metadata','image_normalization'].includes(phase)?'recognition_original_preparation_failed':'recognition_provider_failed'});}
+    }finally{if(!stagePending)await pool.query(`UPDATE recognition_runs SET status='failed' WHERE id=$1 AND status='running'`,[initial.id]);}});
+  }catch(error){if(b.resume_run_id&&claimedResume)await pool.query("UPDATE recognition_runs SET status='failed' WHERE id=$1 AND organization_id=$2 AND user_id=$3 AND status='running' AND stage_one->'staged_execution'->>'phase'='reading'",[b.resume_run_id,req.auth!.organizationId,req.auth!.userId]);if((error as Error).message.startsWith('recognition_stage_'))return res.status(409).json({error:(error as Error).message});return res.status(503).json({error:phase==='opening_access'?'recognition_opening_access_unavailable':phase==='recording'?'recognition_recording_unavailable':['original_retrieval','original_metadata','image_normalization'].includes(phase)?'recognition_original_preparation_failed':'recognition_provider_failed'});}
 });
 
 // Recover a committed response after a gateway timeout, never start another AI call.
@@ -301,6 +325,7 @@ recognitionRouter.get('/request/:id',async(req:AuthedRequest,res)=>{
   if(!allowed.rows.length)return res.status(404).json({error:'opening_not_found'});
   const r=(await pool.query(`SELECT * FROM recognition_runs WHERE organization_id=$1 AND user_id=$2 AND opening_id=$3 AND stage_one->>'request_id'=$4 ORDER BY created_at DESC LIMIT 1`,[req.auth!.organizationId,req.auth!.userId,opening.data,req.params.id])).rows[0];
   // Report host interruption without rewriting the frozen run or starting work.
+  if(r?.status==='running'&&r.stage_one?.staged_execution?.phase==='readers_ready')return res.status(202).json({status:'stage_ready',next_stage:'read',request_id:req.params.id,run_id:r.id,build_sha:r.stage_one?.recognition_versions?.build_sha});
   if(r&&recognitionRunInterrupted(r))return res.status(502).json({status:'interrupted',error:'recognition_run_interrupted',run_id:r.id,saved_evidence_available:Boolean(r.stage_one?.targeted_label_reads?.length||r.stage_one?.label_reading?.reads?.length)});
   if(!r||r.status==='running')return res.status(202).json({status:'awaiting_saved_result'});
   if(r.status==='failed')return res.status(502).json({error:'recognition_provider_failed'});

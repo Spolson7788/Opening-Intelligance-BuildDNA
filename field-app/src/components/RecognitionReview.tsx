@@ -9,7 +9,11 @@ const photographedComponentTypes:Record<string,string>={DOOR_CLOSER:'closer',EXI
 
 export function recognitionFailureMessage(code:string){
   const messages:Record<string,string>={
-    recognition_client_update_required:'This page is an older app build. Reload the updated app before analysis. No AI call was made.',
+    recognition_stage_not_resumable:'This stage has already started or cannot be resumed safely. No additional analysis was started.',
+ recognition_stage_input_changed:'The saved run belongs to different inputs or an older build. No additional analysis was started.',
+ recognition_stage_not_found:'The saved recognition stage is unavailable to this account.',
+ recognition_label_reader_timeout:'The label readers timed out. Saved evidence and originals are retained. Do not retry this paid stage.',
+ recognition_client_update_required:'This page is an older app build. Reload the updated app before analysis. No AI call was made.',
     recognition_label_locator_timeout:'The marking locator timed out before label or logo reading could start. The saved originals are retained. Do not retry this test yet.',
     recognition_label_locator_failed:'The marking locator failed before label or logo reading could start. The saved originals are retained. Do not retry this test yet.',
     request_failed_504:'Analysis took too long and the server stopped the request. No identification result was returned. Your selected photograph remains available.',
@@ -133,7 +137,7 @@ export function RecognitionReview({openingId,attributes={},onUse,onComponentType
         const reader=new FileReader();reader.onerror=()=>reject(Error('Could not read photograph.'));
         reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.readAsDataURL(f);
       })));
-      const response=await recognizeHardware(openingId,images,mediaType,{...attributes,visible_markings:markings,observed_features:features},()=>{if(current===generation.current)setProgress('Retrieving saved analysis…');},photoIds);
+      const response=await recognizeHardware(openingId,images,mediaType,{...attributes,visible_markings:markings,observed_features:features},message=>{if(current===generation.current)setProgress(message||'Retrieving saved analysis…');},photoIds);
       if(current===generation.current){
         setResult(response.suggestion);setResponse(response);
         const componentType=photographedComponentTypes[String(response.suggestion.component_class||'')];

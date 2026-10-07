@@ -1,3 +1,4 @@
+import {claimReaderStage,validateStageResume,stagedInputKey} from '../src/services/recognitionStages';
 import {beforeAll,beforeEach,afterAll,afterEach,it,expect,vi} from 'vitest';
 import {PGlite} from '@electric-sql/pglite';
 import {readFileSync} from 'node:fs';
@@ -155,4 +156,26 @@ it('stops the in-flight pipeline after an interrupted paid call without a second
  expect(fetch).toHaveBeenCalledTimes(1);
  expect(Number((await fixture.db.query('SELECT count(*) AS n FROM recognition_provider_attempts')).rows[0].n)).toBe(1);
  expect(await used()).toBe(624000);
+});
+
+it('allows exactly one reader-stage claim and preserves the active lease on duplicate requests',async()=>{
+ const id=randomUUID(),build='b'.repeat(40),key='c'.repeat(64);const regions=[{photo_index:0,x:.1,y:.1,w:.4,h:.2,rotation:0,kind:'product_label'}];
+ await fixture.db.query("INSERT INTO recognition_runs(id,organization_id,user_id,opening_id,photo_hashes,status,stage_one) VALUES($1,$2,$3,$4,$5,'running',$6)",[id,org,actor,opening,JSON.stringify([hash]),JSON.stringify({recognition_versions:{build_sha:build},staged_execution:{phase:'readers_ready',input_key:key},label_reading:{planned_regions:regions}})]);
+ const scope={organizationId:org,userId:actor,openingId:opening};
+ const claims=await Promise.allSettled([claimReaderStage(id,scope,build,key),claimReaderStage(id,scope,build,key)]);
+ expect(claims.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect(claims.filter(r=>r.status==='rejected')).toHaveLength(1);
+ const row=(await fixture.db.query('SELECT * FROM recognition_runs WHERE id=$1',[id])).rows[0];expect(row.status).toBe('running');expect(row.stage_one.staged_execution.phase).toBe('reading');expect(row.stage_one.staged_execution.lease_token).toMatch(/^[a-f0-9-]{36}$/);expect(row.stage_one.label_reading.planned_regions).toEqual(regions);
+});
+it('does not resume an expired active stage or changed ownership, build, inputs or missing evidence',()=>{
+ const run={organization_id:org,user_id:actor,opening_id:opening,status:'running',stage_one:{recognition_versions:{build_sha:'build'},staged_execution:{phase:'readers_ready',input_key:'key'},label_reading:{planned_regions:[{}]}}};
+ const scope={organizationId:org,userId:actor,openingId:opening};
+ expect(()=>validateStageResume(run,{...scope,userId:randomUUID()},'build','key')).toThrow('recognition_stage_not_found');
+ expect(()=>validateStageResume(run,scope,'different','key')).toThrow('recognition_stage_input_changed');expect(()=>validateStageResume(run,scope,'build','different')).toThrow('recognition_stage_input_changed');
+ for(const phase of ['locating','reading'])expect(()=>validateStageResume({...run,stage_one:{...run.stage_one,staged_execution:{phase,input_key:'key',started_at:'2000-01-01'}}},scope,'build','key')).toThrow('recognition_stage_not_resumable');
+ expect(()=>validateStageResume({...run,status:'failed'},scope,'build','key')).toThrow('recognition_stage_not_resumable');expect(()=>validateStageResume({...run,stage_one:{...run.stage_one,label_reading:{planned_regions:[]}}},scope,'build','key')).toThrow('recognition_stage_evidence_missing');
+});
+it('binds staged inputs to request, ordered original IDs and technician attributes',()=>{
+ const b={opening_id:opening,photo_ids:['one','two','three'],media_type:'image/jpeg',request_id:'request',technician_attributes:{component_type:'exit_device',component_type_source:'technician'}};
+ expect(stagedInputKey(b)).toBe(stagedInputKey({...b,technician_attributes:{component_type_source:'technician',component_type:'exit_device'}}));
+ for(const changed of [{...b,request_id:'other'},{...b,photo_ids:['three','two','one']},{...b,media_type:'image/png'},{...b,technician_attributes:{...b.technician_attributes,component_type:'closer'}}])expect(stagedInputKey(changed)).not.toBe(stagedInputKey(b));
 });

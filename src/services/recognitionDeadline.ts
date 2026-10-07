@@ -13,7 +13,8 @@ export function referenceComparisonBudget(started:number,now=Date.now()){
  return remaining>=6000?Math.min(26000,remaining):0;
 }
 
-export function recognitionRunInterrupted(run:{status:string;created_at:string|Date},now=Date.now()){
- const created=new Date(run.created_at).getTime();
+export function recognitionRunInterrupted(run:{status:string;created_at:string|Date;stage_one?:any},now=Date.now()){
+ if(run.stage_one?.staged_execution?.phase==='readers_ready')return false;
+ const created=new Date(run.stage_one?.staged_execution?.started_at||run.created_at).getTime();
  return run.status==='running'&&Number.isFinite(created)&&now-created>90_000;
 }

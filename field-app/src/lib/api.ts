@@ -7,23 +7,39 @@ import {isUnverifiedSiteAccess, readResponseBody, requestPreviewAccess} from './
 // both in local dev (via Vite proxy) and once deployed.
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
-export async function recognizeHardware(openingId:string,images:string[],mediaType:string,attributes:Record<string,string>={},onRecovery?:()=>void,photoIds?:string[]) {
+export async function recognizeHardware(openingId:string,images:string[],mediaType:string,attributes:Record<string,string>={},onRecovery?:(message?:string)=>void,photoIds?:string[]) {
   const principal=await loadAuth();if(!principal)throw new ApiError(401,'missing_token');
   const requestId=crypto.randomUUID();
-  try{return requireRecognitionResult(await authedFetch('/recognition',{method:'POST',body:JSON.stringify({request_id:requestId,opening_id:openingId,client_build_sha:import.meta.env.VITE_OI_BUILD_SHA,...(photoIds?{photo_ids:photoIds}:{images}),media_type:mediaType,technician_attributes:attributes})},principal));}
-  catch(error){
-    if(!(error instanceof ApiError)||error.status!==504||error.hostingAccessRequired)throw error;
-    onRecovery?.();
+  const body={request_id:requestId,opening_id:openingId,client_build_sha:import.meta.env.VITE_OI_BUILD_SHA,...(photoIds?{photo_ids:photoIds,staged:true}:{images}),media_type:mediaType,technician_attributes:attributes};
+  const recover=async()=>{
+    onRecovery?.('Retrieving saved analysis…');
     const deadline=Date.now()+30000;
     while(Date.now()<deadline){
       const result=await authedFetch(`/recognition/request/${requestId}?opening_id=${encodeURIComponent(openingId)}`,{signal:AbortSignal.timeout(5000)},principal);
-      if(result?.run_id&&result.request_id===requestId)return requireRecognitionResult(result);
+      if(result?.run_id&&result.request_id===requestId)return result;
       if(result?.status!=='awaiting_saved_result')throw new ApiError(502,'recognition_recovery_invalid_response');
       await new Promise(resolve=>setTimeout(resolve,1500));
     }
     throw new ApiError(504,'recognition_saved_result_not_found');
+  };
+  let resumeId:string|undefined;
+  for(let stage=0;stage<2;stage++){
+    onRecovery?.(stage?'Reading the saved logo and label locations…':'Locating logo and label markings…');
+    let result:any;
+    try{result=await authedFetch('/recognition',{method:'POST',body:JSON.stringify({...body,...(resumeId?{resume_run_id:resumeId}:{})})},principal);}
+    catch(error){
+      // Recovery is read-only. A timed-out paid stage is never retried here.
+      if(error instanceof ApiError&&error.status===504&&!error.hostingAccessRequired||error instanceof TypeError)result=await recover();else throw error;
+    }
+    if(result?.status==='stage_ready'){
+      if(stage!==0||!photoIds||result.next_stage!=='read'||result.request_id!==requestId||result.build_sha!==import.meta.env.VITE_OI_BUILD_SHA||typeof result.run_id!=='string')throw new ApiError(502,'recognition_recovery_invalid_response');
+      resumeId=result.run_id;continue;
+    }
+    return requireRecognitionResult(result);
   }
+  throw new ApiError(502,'recognition_recovery_invalid_response');
 }
+
 export const fetchReferencePage=(hash:string,n:number)=>authedFetch(`/references/${encodeURIComponent(hash)}/pages/${n}`);
 export const fetchRecognitionRuns=(openingId:string)=>authedFetch(`/recognition/opening/${encodeURIComponent(openingId)}`);
 export const fetchProductCatalog=()=>authedFetch('/hardware/catalog') as Promise<{products:{manufacturer:string;model_number:string;series:string|null}[]}>;

@@ -70,3 +70,16 @@ it('keeps a missing crop reply distinct from an explicitly unreadable crop',asyn
  const result=await readTargetedLabels([source],'image/png',Date.now()+32000);
  expect(result.status).toBe('partial');expect(result.reads[0].vision_status).toBe('not_returned');expect(result.limiting_factor).toBe('label_partial_reads');
 });
+
+it('saves a locator-only plan without spending any reader call',async()=>{
+ const source=await sharp({create:{width:100,height:100,channels:3,background:'white'}}).png().toBuffer();
+ audit.fetch.mockResolvedValue(envelope({regions:[{photo_index:0,x:.1,y:.1,w:.5,h:.5,kind:'product_label',rotation:0}]}));
+ const result=await readTargetedLabels([source],'image/png',Date.now()+31000,{}, {mode:'locate',locatorMs:30000});
+ expect(result.planned_regions).toHaveLength(1);expect(result.reads).toEqual([]);expect(audit.fetch).toHaveBeenCalledTimes(1);expect(audit.fetch.mock.calls[0][2]).toBe('label_locator');
+});
+it('uses persisted regions in a fresh reader stage without calling the locator again',async()=>{
+ const source=await sharp({create:{width:100,height:100,channels:3,background:'white'}}).png().toBuffer();
+ audit.fetch.mockResolvedValue(envelope({reads:[{crop_index:0,text:'1234R',legibility:'clear'}]}));
+ const result=await readTargetedLabels([source],'image/png',Date.now()+33000,{}, {mode:'read',regions:[{photo_index:0,x:.1,y:.1,w:.5,h:.5,rotation:0,kind:'product_label'}],readerMs:32000});
+ expect(result.reads[0].vision_text).toBe('1234R');expect(audit.fetch).toHaveBeenCalledTimes(1);expect(audit.fetch.mock.calls[0][2]).toBe('label_reader');
+});

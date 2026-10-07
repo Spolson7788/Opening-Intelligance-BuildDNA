@@ -30,3 +30,10 @@ it('reserves enough comparison time and skips late paid work while preserving re
  expect(referenceComparisonBudget(1000,44001)).toBe(0);
  expect(referenceComparisonBudget(1000,60000)).toBe(0);
 });
+
+it('uses the active stage clock and keeps an unstarted saved reader stage recoverable',()=>{
+ const run={status:'running',created_at:new Date(1000)};
+ expect(recognitionRunInterrupted({...run,stage_one:{staged_execution:{phase:'readers_ready'}}},500000)).toBe(false);
+ expect(recognitionRunInterrupted({...run,stage_one:{staged_execution:{phase:'reading',started_at:new Date(450000).toISOString()}}},500000)).toBe(false);
+ expect(recognitionRunInterrupted({...run,stage_one:{staged_execution:{phase:'reading',started_at:new Date(400000).toISOString()}}},500000)).toBe(true);
+});
