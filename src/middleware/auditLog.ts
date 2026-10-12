@@ -20,6 +20,7 @@ const AUDIT_ACTIONS: Array<{ method: string; pattern: RegExp; label: string }> =
   { method: "POST", pattern: /^\/api\/events\/inspection-events$/, label: "Logged inspection event" },
   { method: "POST", pattern: /^\/api\/photos$/, label: "Uploaded photo" },
   { method: "DELETE", pattern: /^\/api\/photos\/[^/]+$/, label: "Deleted photo" },
+  { method: "POST", pattern: /^\/api\/photos\/deletion-jobs\/process$/, label: "Processed private photo deletions" },
   { method: "POST", pattern: /^\/api\/documents$/, label: "Uploaded document" },
   { method: "DELETE", pattern: /^\/api\/documents\/[^/]+$/, label: "Deleted document" },
   { method: "POST", pattern: /^\/api\/work-orders$/, label: "Created work order" },

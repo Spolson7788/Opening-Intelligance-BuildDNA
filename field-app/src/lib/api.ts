@@ -12,8 +12,13 @@ export class ApiError extends Error {
   }
 }
 
-async function authedFetch(path: string, options: RequestInit = {}) {
+export interface ExpectedPrincipal { userId: string; organizationId: string }
+
+async function authedFetch(path: string, options: RequestInit = {}, expectedPrincipal?: ExpectedPrincipal) {
   const auth = await loadAuth();
+  if (expectedPrincipal && (!auth || auth.userId !== expectedPrincipal.userId || auth.organizationId !== expectedPrincipal.organizationId)) {
+    throw new ApiError(401, "active_principal_changed");
+  }
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string> | undefined),
@@ -90,17 +95,23 @@ export async function listOpenings(params: Record<string, string> = {}) {
   return authedFetch(`/openings${qs ? `?${qs}` : ""}`);
 }
 
-export async function presignPhotoUpload(openingId: string, contentType: string) {
+export async function presignPhotoUpload(openingId: string, contentType: string, clientOperationId: string) {
   return authedFetch("/photos/presign", {
     method: "POST",
-    body: JSON.stringify({ opening_id: openingId, content_type: contentType }),
+    body: JSON.stringify({ opening_id: openingId, content_type: contentType, client_operation_id: clientOperationId }),
   });
 }
 
 export async function confirmPhotoUpload(payload: {
   opening_id: string;
-  storage_url: string;
+  storage_object_key: string;
   content_type: string;
+  client_operation_id: string;
+  related_entity_type?: "opening" | "frame" | "door_leaf" | "hardware_component";
+  related_entity_id?: string;
+  frame_id?: string;
+  door_leaf_id?: string;
+  hardware_component_id?: string;
   latitude?: number;
   longitude?: number;
 }) {
@@ -122,6 +133,77 @@ export async function uploadToPresignedUrl(uploadUrl: string, blob: Blob, conten
   if (!res.ok) throw new Error(`upload_failed_${res.status}`);
 }
 
+export async function reserveOfflinePhoto(payload: {
+  photo_id: string;
+  client_operation_id: string;
+  opening_id: string;
+  target_type: "opening" | "frame" | "door_leaf" | "hardware_component" | "service_event" | "inspection_event";
+  target_id: string;
+  original_filename: string;
+  content_type: string;
+  byte_size: number;
+  sha256_checksum: string;
+  device_id: string;
+  latitude?: number;
+  longitude?: number;
+}, expectedPrincipal?: ExpectedPrincipal) {
+  return authedFetch("/photos/offline/reserve", { method: "POST", body: JSON.stringify(payload) }, expectedPrincipal);
+}
+
+export async function recoverOfflinePhotoReservation(payload: {
+  photo_id: string;
+  opening_id: string;
+  target_type: "opening" | "frame" | "door_leaf" | "hardware_component" | "service_event" | "inspection_event";
+  target_id: string;
+  original_filename: string;
+  content_type: string;
+  byte_size: number;
+  sha256_checksum: string;
+  device_id: string;
+  latitude?: number;
+  longitude?: number;
+}, expectedPrincipal?: ExpectedPrincipal) {
+  return authedFetch("/photos/offline/recover-reservation",
+    { method: "POST", body: JSON.stringify(payload) }, expectedPrincipal);
+}
+
+export async function uploadPrivatePhoto(
+  uploadUrl: string,
+  blob: Blob,
+  contentType: string,
+  checksum: string,
+  photoId: string,
+) {
+  const res = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": contentType,
+      "x-amz-meta-oi-sha256": checksum,
+      "x-amz-meta-oi-photo-id": photoId,
+    },
+    body: blob,
+  });
+  if (!res.ok) throw new Error(`upload_failed_${res.status}`);
+}
+
+export async function confirmOfflinePhoto(payload: {
+  photo_id: string;
+  client_operation_id: string;
+  schema_version: number;
+  app_version: string;
+  protocol_version: number;
+}, expectedPrincipal?: ExpectedPrincipal) {
+  return authedFetch("/photos/offline/confirm", { method: "POST", body: JSON.stringify(payload) }, expectedPrincipal);
+}
+
+export async function submitOfflineComponent(payload: Record<string, unknown>, expectedPrincipal?: ExpectedPrincipal) {
+  return authedFetch("/sync/components", { method: "POST", body: JSON.stringify(payload) }, expectedPrincipal);
+}
+
+export async function submitOfflineOperation(payload: Record<string, unknown>, expectedPrincipal?: ExpectedPrincipal) {
+  return authedFetch("/sync/operations", { method: "POST", body: JSON.stringify(payload) }, expectedPrincipal);
+}
+
 export async function fetchHardwareForOpening(openingId: string) {
   return authedFetch(`/hardware/by-opening/${openingId}`);
 }
@@ -136,6 +218,18 @@ export async function deleteHardwareComponent(id: string) {
 
 export async function addHardwareComponent(payload: any) {
   return authedFetch("/hardware", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function saveOpeningFrame(openingId: string, payload: any) {
+  return authedFetch(`/openings/${openingId}/frame`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export async function saveDoorLeaf(openingId: string, payload: any) {
+  return authedFetch(`/openings/${openingId}/door-leaves`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function completeOpening(openingId: string) {
+  return authedFetch(`/openings/${openingId}/complete`, { method: "POST" });
 }
 
 export async function submitServiceEvent(payload: any) {

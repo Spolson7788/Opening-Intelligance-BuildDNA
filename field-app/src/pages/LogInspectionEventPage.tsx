@@ -1,8 +1,7 @@
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { enqueueOutboxItem } from "../lib/db";
-import { flushOutbox } from "../lib/sync";
+import { flushOutbox, queueOpeningMutation } from "../lib/sync";
 import { recomputeHealthScore } from "../lib/api";
 import { SyncBadge } from "../components/SyncBadge";
 import { SignaturePad } from "../components/SignaturePad";
@@ -45,10 +44,7 @@ export function LogInspectionEventPage() {
 
     setSubmitting(true);
 
-    await enqueueOutboxItem({
-      id: crypto.randomUUID(),
-      kind: "inspection_event",
-      payload: {
+    await queueOpeningMutation("inspection_event", id!, {
         opening_id: id,
         event_date: eventDate,
         inspection_type: inspectionType,
@@ -56,7 +52,6 @@ export function LogInspectionEventPage() {
         notes: notes || undefined,
         signature_data: signatureDataUrl,
         signed_by_name: signedByName.trim(),
-      },
     });
 
     setSaved(true);
