@@ -1,0 +1,12 @@
+CREATE OR REPLACE FUNCTION public.oi_purchasing_review(p_assembly uuid) RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,public,pg_temp AS $$
+DECLARE a public.opening_assemblies; complete boolean; eligible jsonb; excluded jsonb; unresolved boolean;
+BEGIN
+ SELECT * INTO a FROM public.opening_assemblies WHERE id=p_assembly FOR UPDATE;
+ IF a.id IS NULL THEN RAISE EXCEPTION 'Opening unavailable'; END IF;
+ SELECT EXISTS(SELECT 1 FROM public.opening_completion WHERE assembly_id=a.id AND snapshot=public.oi_opening_snapshot(a.id)) INTO complete;
+ IF (SELECT count(*) FROM public.opening_structure WHERE assembly_id=a.id)<>(CASE WHEN a.configuration='paired' THEN 3 ELSE 2 END) OR EXISTS(SELECT 1 FROM public.opening_structure WHERE assembly_id=a.id AND condition='unverified') OR NOT EXISTS(SELECT 1 FROM public.opening_components WHERE assembly_id=a.id) OR EXISTS(SELECT 1 FROM public.opening_components WHERE assembly_id=a.id AND (NOT reviewed OR condition='unverified')) THEN complete:=false; END IF;
+ IF NOT complete THEN RETURN jsonb_build_object('status','refused','reason','Complete and save the entire opening first','eligible','[]'::jsonb); END IF;
+ SELECT EXISTS(SELECT 1 FROM public.opening_components WHERE assembly_id=a.id AND disposition='replace' AND (identity_source='unresolved' OR nullif(btrim(manufacturer),'') IS NULL OR nullif(btrim(model),'') IS NULL OR coalesce(document_url,'') !~ '^https://')) INTO unresolved;
+ SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'class',component_class,'manufacturer',manufacturer,'model',model,'identity_source',identity_source,'document_url',document_url)) FILTER(WHERE disposition='replace' AND condition<>'good'),'[]'::jsonb),coalesce(jsonb_agg(jsonb_build_object('id',id,'reason',CASE WHEN condition='good' OR disposition='serviceable' THEN 'Serviceable — excluded' ELSE 'Explicitly refused — excluded' END)) FILTER(WHERE disposition<>'replace' OR condition='good'),'[]'::jsonb) INTO eligible,excluded FROM public.opening_components WHERE assembly_id=a.id;
+ RETURN jsonb_build_object('status',CASE WHEN unresolved THEN 'refused' WHEN jsonb_array_length(eligible)=0 THEN 'no_request' ELSE 'review_only' END,'reason',CASE WHEN unresolved THEN 'Replacement identity or document unresolved' ELSE 'Review only — nothing sent' END,'eligible',CASE WHEN unresolved THEN '[]'::jsonb ELSE eligible END,'excluded',excluded);
+END $$;

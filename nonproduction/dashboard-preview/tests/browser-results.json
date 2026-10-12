@@ -1,0 +1,70 @@
+{
+  "results": [
+    {
+      "name": "New hierarchy and all repeated components displayed",
+      "status": "PASS",
+      "scope": "local browser; mocked server"
+    },
+    {
+      "name": "Unknown score remains unassessed",
+      "status": "PASS",
+      "scope": "local browser; mocked server"
+    },
+    {
+      "name": "Door material excluded from manufacturer chart",
+      "status": "PASS",
+      "scope": "local browser; mocked server"
+    },
+    {
+      "name": "Phone table fits viewport",
+      "status": "PASS",
+      "scope": "local browser; mocked server"
+    },
+    {
+      "name": "Reset targets isolated recovery page",
+      "status": "PASS",
+      "scope": "local browser; mocked server"
+    },
+    {
+      "name": "Editor displays paired frame and both leaves",
+      "status": "PASS",
+      "scope": "local browser; mocked server"
+    },
+    {
+      "name": "Editor retains three same-class records",
+      "status": "PASS",
+      "scope": "local browser; mocked server"
+    },
+    {
+      "name": "Photo target options separate opening, structures and components",
+      "status": "PASS",
+      "scope": "local browser; mocked server"
+    },
+    {
+      "name": "Editor mobile width fits",
+      "status": "PASS",
+      "scope": "local browser; mocked server"
+    },
+    {
+      "name": "Response-loss replay retains the same operation ID",
+      "status": "PASS",
+      "scope": "local browser; mocked server"
+    },
+    {
+      "name": "Different account cannot drain original owner queue",
+      "status": "PASS",
+      "scope": "local browser; mocked server"
+    },
+    {
+      "name": "Queued photograph survives page reload",
+      "status": "PASS",
+      "scope": "local browser; mocked server"
+    },
+    {
+      "name": "No browser runtime errors",
+      "status": "PASS",
+      "scope": "local browser; mocked server"
+    }
+  ],
+  "connected": false
+}
