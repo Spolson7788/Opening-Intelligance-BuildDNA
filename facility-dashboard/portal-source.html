@@ -174,7 +174,7 @@ table:has(#rows) thead{display:none;} .ohead .obadge{float:none;display:block;}
     <div class="card">
       <h2>Openings &amp; hardware</h2>
       <p class="hint">Each opening and every part on it — condition, health, and service date. Click an opening for the full breakdown.</p>
-      <table><thead><tr><th></th><th>Component</th><th>Mfr / Model</th><th>Condition</th><th>Health</th><th>Last serviced</th></tr></thead>
+      <table><thead><tr><th></th><th>Component</th><th>Mfr / Model</th><th>Condition</th><th>Health</th><th>Service record</th></tr></thead>
       <tbody id="rows"><tr><td colspan="6" style="color:var(--muted);padding:20px 10px">Loading…</td></tr></tbody></table>
     </div>
   </div>
@@ -265,7 +265,7 @@ function renderService(fid){
       (pending.length? '<b style="color:#8a6d0b">'+pending.length+' awaiting qualified verification.</b> ':'')+
       (open.length? '<b style="color:#8f2020">'+open.length+' open deficienc'+(open.length===1?'y':'ies')+'.</b> ':'')+
       (closed.length? closed.length+' verified closed. ':'')+
-      (repeat.length? '<span style="color:#8f2020">'+repeat.length+' opening'+(repeat.length===1?'':'s')+' with 3+ visits in 90 days.</span>':'');
+      (repeat.length? '<span style="color:#8f2020">'+repeat.length+' opening'+(repeat.length===1?'':'s')+' with 3+ service events in 90 days.</span>':'');
 
     var P=document.getElementById('svcPending');
     if(pending.length){
@@ -462,13 +462,13 @@ async function render(ops){
     else if(is&&is.state==='current')insp='<span class="fire" style="background:#0a6b0a">✓ Inspection recorded</span>';
     html+='<tr class="ohead" data-op="'+oi+'"><td colspan="6"><span class="opn">'+esc(o.opening_no)+'</span> '+fire+insp+'<span class="ar">'+esc(o.area||'')+'</span><span class="cnt">'+o.parts.length+' part'+(o.parts.length===1?'':'s')+'</span><span class="obadge" style="color:'+B[2]+'">'+B[1]+' '+B[0]+'</span></td></tr>';
     o.parts.forEach(function(p){var s=assessedScore(p);var pb=bandOf(s);var PB=BANDS[pb];var cond=p.condition||'unverified';
-      var serv=p.work_completed_at?'<span style="color:var(--good);font-weight:700">✓ '+formatCalendarDate(p.work_completed_at)+'</span>':'<span style="color:var(--muted)">No service date</span>';
+      var serv=p.last_service_event_date?'Last service event '+formatCalendarDate(p.last_service_event_date):p.work_completed_at?'Work completed '+formatCalendarDate(p.work_completed_at):'<span style="color:var(--muted)">No component service event</span>';
       html+='<tr class="prow" data-op="'+oi+'"><td class="cpt"></td>'+
         '<td data-label="Component">'+esc((p.component_class||'').replace(/_/g,' '))+'<small style="display:block">'+esc((p.hierarchy||'opening').replace(/_/g,' '))+'</small>'+'</td>'+
         '<td class="mm" data-label="Manufacturer / model">'+esc(p.manufacturer||'')+'<span class="mdl">'+esc(p.model||'')+'</span></td>'+
         '<td data-label="Condition"><span class="cond '+(CONDCLS[cond]||'cn')+'">'+(CONDLBL[cond]||cond)+'</span></td>'+
         '<td class="hc" data-label="Health"><span class="hb" style="color:'+PB[2]+'">'+PB[1]+'</span> <span class="hl">'+PB[0]+'</span><div class="scorebar"><i style="width:'+(s===null?0:s)+'%;background:'+PB[2]+'"></i></div><span class="sc">'+(s===null?'—':s)+'</span></td>'+
-        '<td class="vc" data-label="Last serviced">'+serv+'</td></tr>';
+        '<td class="vc" data-label="Service record">'+serv+'</td></tr>';
     });
   });
   $('rows').innerHTML=html;
@@ -501,7 +501,7 @@ function openDetail(oi){
     '<div style="color:var(--sec);font-size:13.5px;margin-bottom:4px">'+fire+esc(o.area||'')+' · '+o.parts.length+' parts · overall <b style="color:'+B[2]+'">'+B[0]+'</b></div>';
   o.parts.forEach(function(p){var s=assessedScore(p);var pb=bandOf(s);var PB=BANDS[pb];var cond=p.condition||'unverified';
     var cost=p.repair_cost!=null?' · $'+Number(p.repair_cost).toLocaleString():'';
-    var serv=p.work_completed_at?' · serviced '+formatCalendarDate(p.work_completed_at):'';
+    var serv=p.last_service_event_date?' · last service event '+formatCalendarDate(p.last_service_event_date):p.work_completed_at?' · work completed '+formatCalendarDate(p.work_completed_at):'';
     body+='<div class="detpart"><div class="part-header"><span class="pn">'+esc((p.component_class||'').replace(/_/g,' '))+'<small style="display:block">'+esc((p.hierarchy||'opening').replace(/_/g,' '))+'</small>'+'</span><span class="cond '+(CC[cond]||'cn')+'">'+(CL[cond]||cond)+'</span></div>'+
       '<div class="meta">'+esc(p.manufacturer||'')+' '+esc(p.model||'')+' · <b style="color:'+PB[2]+'">'+PB[1]+' '+PB[0]+' '+(s===null?'—':s+'/100')+'</b>'+cost+serv+'</div></div>';
   });
@@ -516,17 +516,34 @@ function openDetail(oi){
   body+='<div id="detsvcsec" style="margin-top:14px;display:none"></div>';
   body+='<div class="detrec" style="margin-top:14px;color:'+rec[1]+';background:'+rec[2]+';border:1px solid '+rec[1]+'44"><b>Priority:</b> '+rec[0]+'</div></div>';
   document.getElementById('detcard').innerHTML=body;
+  var detailPhotoContainer=document.getElementById('detphotos');
   function _addPhoto(path,label){
-    var container=document.getElementById('detphotos');
+    if(document.getElementById('detphotos')!==detailPhotoContainer)return;
+    var container=document.getElementById('detphotos'),sec=document.getElementById('detphotosec');
+    if(!container)return;
+    var figure=document.createElement('figure'),caption=document.createElement('figcaption'),status=document.createElement('p');
+    figure.style.cssText='margin:0;max-width:180px';
+    caption.textContent=label||'Attached image';caption.style.cssText='font-size:12px;margin-top:5px;overflow-wrap:anywhere';
+    status.textContent='Loading photo.';status.setAttribute('role','status');
+    figure.append(status,caption);container.appendChild(figure);if(sec)sec.style.display='';
+    function current(){return document.getElementById('detphotos')===container;}
+    function unavailable(){if(current()){status.textContent='Photo unavailable. The attachment record is retained; its media could not be loaded.';status.style.display='';}}
     sb.storage.from('opening-photos').createSignedUrl(path,3600).then(function(r){
+      if(!current())return;
       var url=(r&&r.data&&r.data.signedUrl)||null;
-      // Private photos require successful authorized signed retrieval; no public fallback.
-      if(url){var sec=document.getElementById('detphotosec');var c=document.getElementById('detphotos');if(c&&c===container){if(sec)sec.style.display='';var img=document.createElement('img');img.src=url;img.loading='lazy';img.style.cssText='width:104px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer';img.alt=label||'Attached image';img.title=(label||'Attached image')+' — open full size';img.onclick=function(){window.open(url,'_blank');};var figure=document.createElement('figure');figure.style.cssText='margin:0;max-width:180px';var caption=document.createElement('figcaption');caption.textContent=label||'Attached image';caption.style.cssText='font-size:12px;margin-top:5px;overflow-wrap:anywhere';figure.append(img,caption);img.onerror=function(){figure.remove();if(c&&!c.children.length&&sec)sec.style.display='none';};c.appendChild(figure);}}
-    }).catch(function(){});
+      if(!url){unavailable();return;}
+      var img=document.createElement('img');img.loading='lazy';img.style.cssText='width:104px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer';
+      img.alt=label||'Attached image';img.title=(label||'Attached image')+' - open full size';
+      img.onclick=function(){window.open(url,'_blank');};
+      img.onload=function(){if(current())status.style.display='none';};
+      img.onerror=function(){img.remove();unavailable();};
+      figure.prepend(img);img.src=url;
+    }).catch(unavailable);
   }
+
   // ── SERVICE RECORD · added 2026-09-06 ────────────────────────────────
   // What was reported, what was done, what remains open. Repeat service is
-  // shown with its window so three visits in ninety days reads differently
+  // shown with its window so three service events in ninety days reads differently
   // from three in three years.
   (function(){
     var sec=document.getElementById('detsvcsec'); if(!sec) return;
@@ -567,7 +584,7 @@ function openDetail(oi){
                    (d3y>=4 ? ['#8a6d0b','#fff7e6','Recurring service'] : null);
         if(flag){
           H+='<div style="margin-top:8px;padding:9px 11px;border-radius:8px;color:'+flag[0]+';background:'+flag[1]+';border:1px solid '+flag[0]+'44;font-size:13px">'+
-             '<b>▲ '+flag[2]+'</b> — '+d90+' visit'+(d90===1?'':'s')+' in 90 days, '+d3y+' in 3 years'+
+             '<b>▲ '+flag[2]+'</b> — '+d90+' service event'+(d90===1?'':'s')+' in 90 days, '+d3y+' service events in 3 years'+
              (spend>0?' · $'+spend.toLocaleString()+' recorded':'')+'</div>';
         }
       }

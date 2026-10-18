@@ -28,7 +28,7 @@ function healthClass(score: number | null) {
   return "health-poor";
 }
 
-function SyncedMedia({ photo, label }: { photo: any; label: string }) {
+export function SyncedMedia({ photo, label }: { photo: any; label: string }) {
   const [url, setUrl] = useState<string | null>(photo.storage_url?.startsWith("private:") ? null : photo.storage_url);
   const [failed, setFailed] = useState(false);
 
@@ -36,22 +36,23 @@ function SyncedMedia({ photo, label }: { photo: any; label: string }) {
     let active = true;
     setFailed(false);
     if (!photo.storage_url?.startsWith("private:")) {
-      setUrl(photo.storage_url);
+      setUrl(photo.storage_url || null);
+      setFailed(!photo.storage_url);
       return () => { active = false; };
     }
     setUrl(null);
     fetchPhotoAccessUrl(photo.id)
-      .then(({ url }) => { if (active) setUrl(url); })
+      .then(({ url }) => { if (active) { setUrl(url || null); setFailed(!url); } })
       .catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
   }, [photo.id, photo.storage_url]);
 
-  if (failed) return <div className="error-text" role="status">Photo unavailable</div>;
+  if (failed) return <div className="error-text" role="status">{photo.media_type === "video" ? "Video" : "Photo"} unavailable. The attachment record is retained; its media could not be loaded.</div>;
   if (!url) return <div style={{ aspectRatio: "1", display: "grid", placeItems: "center" }}>Loading…</div>;
   if (photo.media_type === "video") {
-    return <video src={url} controls style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} />;
+    return <video src={url} onError={() => setFailed(true)} controls style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} />;
   }
-  return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={label} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} /></a>;
+  return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={label} onError={() => setFailed(true)} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} /></a>;
 }
 
 export function OpeningDetailPage() {

@@ -25,6 +25,12 @@ export function componentLabel(h,o){
   const model=[h.manufacturer,h.model_number].filter(Boolean).join(' ');
   return [type.charAt(0).toUpperCase()+type.slice(1),place,model].filter(Boolean).join(' · ');
 }
+export function latestComponentServiceDate(events, componentId) {
+  return (events || []).filter(e => e.hardware_component_id === componentId)
+    .map(e => e.event_date).filter(date => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
+      && Number.isFinite(Date.parse(date+'T00:00:00Z')) && new Date(date+'T00:00:00Z').toISOString().slice(0,10) === date)
+    .sort().at(-1) || null;
+}
 export function mapSnapshot(snapshot) {
   const tables={opening_assemblies:[],opening_structure:[],opening_components:[],service_events:[],assembly_photos:[],opening_last_inspection:[]};
   for(const o of snapshot.openings||[]){
@@ -33,7 +39,7 @@ export function mapSnapshot(snapshot) {
     if(!o.frame&&!(o.door_leaves||[]).length&&!(o.hardware_components||[]).length)tables.opening_structure.push({...base,id:o.id,kind:'opening',material:'No parts saved',condition:'unverified',placeholder:true});
     if(o.frame)tables.opening_structure.push({...base,...o.frame,id:o.frame.id,kind:'frame',condition:o.frame.condition||'unverified'});
     for(const l of o.door_leaves||[])tables.opening_structure.push({...base,...l,kind:l.leaf_role==='single'?'door':l.leaf_role+'_leaf',condition:l.condition||'unverified'});
-    for(const h of o.hardware_components||[])tables.opening_components.push({...base,...h,component_class:h.component_type.toUpperCase(),model:h.model_number,structure_id:h.mounting_scope==='door_leaf'?h.door_leaf_id:h.mounting_scope==='frame'?h.frame_id:null,disposition:h.replacement_required&&['worn','failed'].includes(h.condition)?'replace':'record',repair_cost:h.unit_cost,work_completed_at:null});
+    for(const h of o.hardware_components||[])tables.opening_components.push({...base,...h,component_class:h.component_type.toUpperCase(),model:h.model_number,structure_id:h.mounting_scope==='door_leaf'?h.door_leaf_id:h.mounting_scope==='frame'?h.frame_id:null,disposition:h.replacement_required&&['worn','failed'].includes(h.condition)?'replace':'record',repair_cost:h.unit_cost,last_service_event_date:latestComponentServiceDate(o.service_events,h.id),work_completed_at:null});
     // Each event keeps its component (if any) so the history can be shown per component; opening-level events stay apart.
     const comps=new Map((o.hardware_components||[]).map(h=>[h.id,h]));
     for(const e of o.service_events||[]){const h=e.hardware_component_id?comps.get(e.hardware_component_id):null;
