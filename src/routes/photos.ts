@@ -90,8 +90,8 @@ function reservationMatches(
     existing.original_filename === requested.original_filename &&
     existing.actor_user_id === requested.actor_user_id &&
     existing.device_id === requested.device_id &&
-    (existing.latitude === null ? requested.latitude === undefined : Number(existing.latitude) === requested.latitude) &&
-    (existing.longitude === null ? requested.longitude === undefined : Number(existing.longitude) === requested.longitude);
+    existing.latitude_matches === true &&
+    existing.longitude_matches === true;
 }
 
 export async function createOrReplayPhotoReservation(
@@ -120,9 +120,13 @@ export async function createOrReplayPhotoReservation(
         requested.actor_user_id, requested.device_id, requested.latitude ?? null, requested.longitude ?? null],
     );
     const existing = await client.query(
-      `SELECT * FROM photo_upload_reservations
+      // Compare in Postgres at the column's precision, including its symmetric
+      // rounding of negative ties. A fresh insert has already rounded GPS values.
+      `SELECT *, latitude IS NOT DISTINCT FROM $3::numeric(9,6) AS latitude_matches,
+         longitude IS NOT DISTINCT FROM $4::numeric(9,6) AS longitude_matches
+       FROM photo_upload_reservations
        WHERE organization_id=$1 AND operation_id=$2 FOR UPDATE`,
-      [organizationId, requested.client_operation_id],
+      [organizationId, requested.client_operation_id, requested.latitude ?? null, requested.longitude ?? null],
     );
     const reservation = existing.rows[0];
     if (!reservation) { await client.query("ROLLBACK"); return { conflict: "photo_identity_reused" as const }; }
@@ -155,8 +159,10 @@ photosRouter.post("/offline/recover-reservation", async (req: AuthedRequest, res
     return res.status(400).json({ error: "photo_target_not_in_opening" });
   }
   const result = await pool.query(
-    `SELECT * FROM photo_upload_reservations WHERE organization_id=$1 AND photo_id=$2`,
-    [orgId, b.photo_id],
+    `SELECT *, latitude IS NOT DISTINCT FROM $3::numeric(9,6) AS latitude_matches,
+       longitude IS NOT DISTINCT FROM $4::numeric(9,6) AS longitude_matches
+     FROM photo_upload_reservations WHERE organization_id=$1 AND photo_id=$2`,
+    [orgId, b.photo_id, b.latitude ?? null, b.longitude ?? null],
   );
   const reservation = result.rows[0];
   if (!reservation) return res.status(404).json({ error: "reservation_not_found" });

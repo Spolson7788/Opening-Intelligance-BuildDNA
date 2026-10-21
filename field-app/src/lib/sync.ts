@@ -186,7 +186,7 @@ async function recordFailure(operation: SyncOperation, error: unknown) {
       entityId: operation.entityId, openingId: operation.openingId, organizationId: operation.organizationId,
       affectedFields: [], baseValues: {}, localValues: operation.payload as Record<string, unknown>, serverValues: {},
       detectedAt: new Date().toISOString(), resolutionState: "open" };
-    await putSyncConflict(item);
+    await putSyncConflict(item, message);
   } else await putSyncOperation({ ...operation, state, attemptCount: operation.attemptCount + 1,
     lastAttemptAt: new Date().toISOString(), nextAttemptAt: authRequired || tooLarge ? undefined : new Date(Date.now() + retryDelayMs(operation.attemptCount)).toISOString(),
     dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined, lastErrorCode: message, principalChangeStop: principalChange ? true : undefined });

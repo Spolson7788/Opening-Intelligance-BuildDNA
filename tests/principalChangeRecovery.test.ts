@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // IndexedDB code. Only the network is replaced: global fetch answers as the API and storage would,
 // keyed by the bearer token, so the account checks before and after each response run for real.
 import { closeFieldAppDb, getAllSyncOperations, getOfflineMedia, loadAuth, claimSyncOperation,
-  retrySyncOperationAfterReview, saveAuth, saveEntityAndOperation, saveMediaAndOperation } from "../field-app/src/lib/db";
+  retrySyncOperationAfterReview, saveAuth, saveEntityAndOperation, saveMediaAndOperation,
+  putSyncOperation, removeVerifiedLocalOriginal, getOpenConflictsForPrincipal } from "../field-app/src/lib/db";
 import { flushVersionedOperations } from "../field-app/src/lib/sync";
 import { recordFreshSignIn } from "../field-app/src/lib/freshSignIn";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "../field-app/src/lib/offlineTypes";
@@ -38,6 +39,28 @@ const tokenUser: Record<string, { userId: string; organizationId: string }> = {
   "token-b": { userId: user.b, organizationId: org.b }, "token-c": { userId: user.c, organizationId: org.a },
 };
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+describe("current conflict diagnostics", () => {
+  it("replaces a stale network error with the 409 reason atomically and retains the same photo for reviewed retry", async () => {
+    const p = photoFor(account.a);
+    p.operation.lastErrorCode = "Failed to fetch";
+    await saveMediaAndOperation(p.media, p.operation);
+    vi.stubGlobal("fetch", vi.fn(async () => json(409, { error: "idempotency_key_reused" })));
+    await flushVersionedOperations();
+    expect(await opOf(p.operation.operationId)).toMatchObject({ state: "conflict", lastErrorCode: "idempotency_key_reused" });
+    const retained = await getOfflineMedia(p.media.photoId);
+    expect(retained).toMatchObject({ photoId: p.media.photoId, operationId: p.operation.operationId, uploadState: "conflict" });
+    expect(await retained!.blob.arrayBuffer()).toEqual(await p.media.blob.arrayBuffer());
+    expect(await getOpenConflictsForPrincipal(user.a, org.a)).toHaveLength(1);
+    await closeFieldAppDb();
+    expect(await opOf(p.operation.operationId)).toMatchObject({ state: "conflict", lastErrorCode: "idempotency_key_reused" });
+    await retrySyncOperationAfterReview(p.operation.operationId, true);
+    expect(await opOf(p.operation.operationId)).toMatchObject({ state: "queued", entityId: p.media.photoId });
+    expect((await opOf(p.operation.operationId)).lastErrorCode).toBeUndefined();
+    expect(await getOpenConflictsForPrincipal(user.a, org.a)).toHaveLength(0);
+    expect(await (await getOfflineMedia(p.media.photoId))!.blob.arrayBuffer()).toEqual(await p.media.blob.arrayBuffer());
+  });
+});
 function receipt(operationId: string, entityId: string, entityType: string, organizationId: string, status: string) {
   return { operation_id: operationId, entity_id: entityId, entity_type: entityType, opening_id: opening, organization_id: organizationId,
     resulting_server_revision: 1, normalized_record_hash: "b".repeat(64), server_accepted_at: "2026-10-02T12:00:00.000Z",
@@ -119,6 +142,71 @@ const opOf = async (operationId: string) => (await getAllSyncOperations()).find(
 // Technician A's confirmation is applied by the server, then B signs in on this device before A's
 // browser receives the response.
 const switchToBWhenConfirmApplied = () => { server.afterConfirmApplied = async () => { await recordFreshSignIn(account.b, false); }; };
+
+describe("photo interruption and retention with mocked transport", () => {
+  async function retainedBytes(photoId: string) {
+    const media = await getOfflineMedia(photoId);
+    expect(media?.localBlobState).toBe("retained");
+    expect(Array.from(new Uint8Array(await media!.blob.arrayBuffer()))).toEqual([1, 2, 3, 4]);
+    await expect(removeVerifiedLocalOriginal(photoId)).rejects.toThrow("local_original_not_verified_for_cleanup");
+  }
+
+  it("retains original after lost confirmation, reopens IndexedDB, then replays without a second upload", async () => {
+    const p = photoFor(account.a);
+    await saveMediaAndOperation(p.media, p.operation);
+    server.afterConfirmApplied = async () => { throw new TypeError("synthetic_confirmation_response_lost"); };
+    await flushVersionedOperations();
+    expect(await opOf(p.operation.operationId)).toMatchObject({ state: "retry_wait", lastErrorCode: "synthetic_confirmation_response_lost" });
+    expect(server.photos.get(p.media.photoId)).toBe(1);
+    await retainedBytes(p.media.photoId);
+    await closeFieldAppDb(); // Connection restart only; not a real browser crash.
+    const waiting = await opOf(p.operation.operationId);
+    await retainedBytes(p.media.photoId);
+    await putSyncOperation({ ...waiting, state: "queued", nextAttemptAt: undefined });
+    await flushVersionedOperations();
+    expect(await opOf(p.operation.operationId)).toMatchObject({ state: "verified", operationId: p.operation.operationId });
+    expect(server.photos.get(p.media.photoId)).toBe(1);
+    expect(server.calls.filter(c => c.startsWith("PUT /private-upload/")).length).toBe(1);
+    const saved = await getOfflineMedia(p.media.photoId);
+    expect(saved?.localBlobState).toBe("verified_cleanup_allowed");
+    expect(Array.from(new Uint8Array(await saved!.blob.arrayBuffer()))).toEqual([1, 2, 3, 4]);
+  });
+
+  it("retains original after interrupted upload and retries the same photo identity", async () => {
+    const p = photoFor(account.a);
+    await saveMediaAndOperation(p.media, p.operation);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "PUT") throw new TypeError("synthetic_upload_interrupted");
+      return fakeFetch(input, init);
+    }));
+    await flushVersionedOperations();
+    expect(await opOf(p.operation.operationId)).toMatchObject({ state: "retry_wait" });
+    expect(server.photos.size).toBe(0);
+    expect(server.reservations.size).toBe(1);
+    await retainedBytes(p.media.photoId);
+    vi.stubGlobal("fetch", vi.fn(fakeFetch));
+    await putSyncOperation({ ...await opOf(p.operation.operationId), state: "queued", nextAttemptAt: undefined });
+    await flushVersionedOperations();
+    expect(await opOf(p.operation.operationId)).toMatchObject({ state: "verified", entityId: p.media.photoId });
+    expect(server.reservations.size).toBe(1);
+    expect(server.photos.get(p.media.photoId)).toBe(1);
+  });
+
+  it("does not permit cleanup when successful confirmation omits authorized retrieval proof", async () => {
+    const p = photoFor(account.a);
+    await saveMediaAndOperation(p.media, p.operation);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await fakeFetch(input, init);
+      if (String(input).endsWith("/photos/offline/confirm")) {
+        return json(200, { ...await response.json(), authorized_retrieval_verified: false });
+      }
+      return response;
+    }));
+    await flushVersionedOperations();
+    expect(await opOf(p.operation.operationId)).toMatchObject({ state: "retry_wait", lastErrorCode: "receipt_media_proof_incomplete" });
+    await retainedBytes(p.media.photoId);
+  });
+});
 
 beforeEach(async () => {
   server.reservations.clear(); server.receipts.clear(); server.photos.clear(); server.calls = [];

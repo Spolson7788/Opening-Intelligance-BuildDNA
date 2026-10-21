@@ -530,7 +530,7 @@ export async function putSyncReceipt(receipt: SyncReceipt) {
   await tx.done;
 }
 
-export async function putSyncConflict(conflict: SyncConflict) {
+export async function putSyncConflict(conflict: SyncConflict, errorCode?: string) {
   const db = await getDb();
   const tx = db.transaction(["conflicts", "operations", "entities", "media"], "readwrite");
   const operation = await tx.objectStore("operations").get(conflict.operationId);
@@ -547,7 +547,7 @@ export async function putSyncConflict(conflict: SyncConflict) {
   }
   await tx.objectStore("conflicts").put(conflict);
   await tx.objectStore("operations").put({ ...operation, state: "conflict",
-    dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined });
+    dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined, lastErrorCode: errorCode });
   await tx.done;
 }
 
