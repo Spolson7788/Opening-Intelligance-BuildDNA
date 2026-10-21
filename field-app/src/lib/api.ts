@@ -1,4 +1,6 @@
 import { loadAuth, cacheOpening, getCachedOpening } from "./db";
+import {diagnosticActor,diagnosticAvailable,PROBES,readBoundedProbe,runPhotoProbes} from './photoDiagnostic';
+import type {Principal,ProbeResponse} from './photoDiagnostic';
 
 // Point this at your deployed API. Left as a relative path + env var so it works
 // both in local dev (via Vite proxy) and once deployed.
@@ -33,7 +35,7 @@ export function isClientPrincipalChange(error: unknown): error is PrincipalChang
 
 export interface ExpectedPrincipal { userId: string; organizationId: string }
 
-async function authedFetch(path: string, options: RequestInit = {}, expectedPrincipal?: ExpectedPrincipal) {
+async function authedFetch(path: string, options: RequestInit = {}, expectedPrincipal?: ExpectedPrincipal, diagnostic=false) {
   const auth = await loadAuth();
   if (expectedPrincipal && (!auth || auth.userId !== expectedPrincipal.userId || auth.organizationId !== expectedPrincipal.organizationId)) {
     throw new PrincipalChangedError();
@@ -45,6 +47,12 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
   if (auth?.token) headers["Authorization"] = `Bearer ${auth.token}`;
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  if(diagnostic){
+    const response=await readBoundedProbe(res);
+    const current=await loadAuth();
+    if(!auth||!current||current.userId!==auth.userId||current.organizationId!==auth.organizationId||current.role!==auth.role)throw new PrincipalChangedError();
+    return response;
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, body.error || `request_failed_${res.status}`, typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
@@ -53,6 +61,20 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
   if(!auth||!current||current.userId!==auth.userId||current.organizationId!==auth.organizationId)throw new PrincipalChangedError();
   if (res.status === 204) return null; // DELETE endpoints return no body
   return res.json();
+}
+
+// Only the candidate diagnostic imports this export. No new auth mechanism.
+export async function runCandidatePhotoDiagnostic(principal:Principal){
+  if(!diagnosticAvailable(__PHOTO_ISOLATION_ENABLED__,window.location.origin,API_BASE))throw Error('diagnostic_disabled');
+  const current=await loadAuth();
+  const actor=diagnosticActor(principal);
+  if(!actor||!current||current.userId!==principal.userId||current.organizationId!==principal.organizationId||current.role!==principal.role)throw new PrincipalChangedError();
+  return runPhotoProbes(actor,async path=>{
+    if(!PROBES.includes(path))throw Error('diagnostic_path_refused');
+    const before=await loadAuth();
+    if(!before||before.userId!==principal.userId||before.organizationId!==principal.organizationId||before.role!==principal.role)throw new PrincipalChangedError();
+    return authedFetch(path,{method:'GET',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(10000)},principal,true) as Promise<ProbeResponse>;
+  });
 }
 
 export async function login(email: string, password: string) {
@@ -69,7 +91,7 @@ export async function login(email: string, password: string) {
 }
 
 // Decode the JWT payload client-side just to read organizationId/role for local
-// storage — this is NOT a security boundary, the server verifies the signature.
+// storage - this is NOT a security boundary, the server verifies the signature.
 export function decodeTokenPayload(token: string): { userId: string; organizationId: string; role: string } {
   const payload = JSON.parse(atob(token.split(".")[1]));
   return { userId: payload.userId, organizationId: payload.organizationId, role: payload.role };
@@ -85,7 +107,7 @@ export async function fetchOpeningByQr(qrToken: string) {
     return { opening, fromCache: false };
   } catch (err) {
     if (err instanceof TypeError || (err instanceof ApiError && err.status >= 500)) {
-      // Network-level failure — try the cache. (Cache is keyed by opening id, not
+      // Network-level failure - try the cache. (Cache is keyed by opening id, not
       // qr_token, so this only helps if the opening was already viewed before.)
       throw err;
     }
@@ -93,7 +115,7 @@ export async function fetchOpeningByQr(qrToken: string) {
   }
 }
 
-// For manual entry — a technician types the human-readable code printed on
+// For manual entry - a technician types the human-readable code printed on
 // the door tag, not the internal qr_token embedded in the QR image itself.
 export async function fetchOpeningByCode(openingCode: string) {
   const principal=await loadAuth();
@@ -154,7 +176,7 @@ export async function fetchPhotoAccessUrl(id: string): Promise<{ url: string; ex
   return authedFetch(`/photos/${id}/access`);
 }
 
-// Uploads directly to storage using the presigned URL — bypasses our own API
+// Uploads directly to storage using the presigned URL - bypasses our own API
 // entirely for the actual bytes, per authedFetch not being used here.
 export async function uploadToPresignedUrl(uploadUrl: string, blob: Blob, contentType: string) {
   const res = await fetch(uploadUrl, {
@@ -289,7 +311,7 @@ export interface FieldWorkOrder {
   due_date: string | null;
 }
 
-// This requires connectivity — unlike service/inspection logging, work
+// This requires connectivity - unlike service/inspection logging, work
 // order assignments aren't something a technician creates themselves, so
 // there's nothing meaningful to queue offline for. Same reasoning as
 // hardware capture.

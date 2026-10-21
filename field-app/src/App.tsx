@@ -1,6 +1,6 @@
 import {AccountRecoveryPage} from "./pages/AccountRecoveryPage";
 import {BranchesPage} from "./pages/BranchesPage";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/AuthContext";
 import { initSync } from "./lib/sync";
@@ -16,6 +16,7 @@ import { OpeningStructurePage } from "./pages/OpeningStructurePage";
 import { SetupOpeningPage } from "./pages/SetupOpeningPage";
 import { QrLabelPage } from "./pages/QrLabelPage";
 import { SyncIssuesPage } from "./pages/SyncIssuesPage";
+const PhotoIsolationPage=__PHOTO_ISOLATION_ENABLED__?lazy(()=>import('./pages/PhotoIsolationPage')):null;
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { auth, loading } = useAuth();
@@ -26,13 +27,17 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
 }
 
 function AppRoutes() {
+  const location=useLocation();
+  const diagnostic=location.pathname==='/diagnostics/photo-isolation'||(location.pathname==='/login'&&location.state?.from==='/diagnostics/photo-isolation');
   useEffect(() => {
+    if(diagnostic)return;
     const cleanup = initSync();
     return cleanup;
-  }, []);
+  }, [diagnostic]);
 
   return (
     <Routes>
+      {PhotoIsolationPage&&<Route path="/diagnostics/photo-isolation" element={<RequireAuth><Suspense fallback={<p>Loading check.</p>}><PhotoIsolationPage/></Suspense></RequireAuth>}/>}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/account-recovery" element={<AccountRecoveryPage />} />
       <Route path="/branches" element={<RequireAuth><BranchesPage /></RequireAuth>} />

@@ -1,10 +1,14 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import {photoIsolationBuildEnabled} from './photoDiagnosticBuild.js'
 
 const base = process.env.OI_UI_BASE || '/'
+// No user-configurable enable flag: only this exact Netlify candidate build.
+const photoIsolation = photoIsolationBuildEnabled(process.env);
 
 export default defineConfig({
+  define: {__PHOTO_ISOLATION_ENABLED__: JSON.stringify(photoIsolation)},
   base,
   plugins: [
     react(),
@@ -18,7 +22,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
       },
       manifest: {
-        name: 'Opening Intel — Field',
+        name: 'Opening Intel - Field',
         short_name: 'OpeningIntel',
         description: 'Scan and log commercial opening assets in the field',
         theme_color: '#14171a',
