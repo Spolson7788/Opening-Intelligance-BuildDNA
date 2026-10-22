@@ -1,3 +1,4 @@
+import {escapedGateHtml} from './fixtures/netlifyGate';
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -44,7 +45,7 @@ describe("current conflict diagnostics", () => {
   it("retains the same queued bytes and identifiers across a private-site gate and resumes once without signing in again", async () => {
     const p = photoFor(account.a);
     await saveMediaAndOperation(p.media, p.operation);
-    vi.stubGlobal("fetch", vi.fn(async () => new Response('<title>Login Redirect</title><script>window.location.href="https://app.netlify.com/edge-access?domain=oi-connected-release-candidate.netlify.app"</script>', {status:401,headers:{'content-type':'text/html'}})));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(escapedGateHtml, {status:401,headers:{'content-type':'text/html'}})));
     await flushVersionedOperations();
     expect(await opOf(p.operation.operationId)).toMatchObject({state:'retry_wait',lastErrorCode:'site_access_required',entityId:p.media.photoId});
     expect(await loadAuth()).toMatchObject(account.a);
@@ -364,4 +365,19 @@ describe("account switch while a confirmation is in flight (real request wrapper
     expect(await recordFreshSignIn(account.a, false)).toEqual([]);
     expect((await opOf(p.operation.operationId)).dispatchLeaseId).toBe("other-tab-lease");
   });
+});
+
+it.each(['opening','hardware_component'] as const)('preserves queued %s target in the real reservation request',async(targetType)=>{
+  const p=photoFor(account.a);const targetId=targetType==='opening'?opening:component;
+  p.media.targetType=targetType;p.media.targetId=targetId;
+  p.operation.payload={...p.operation.payload,target_type:targetType,target_id:targetId};
+  await saveMediaAndOperation(p.media,p.operation);
+  const reserves:any[]=[];
+  vi.stubGlobal('fetch',vi.fn(async(input,init)=>{
+    if(String(input).endsWith('/photos/offline/reserve'))reserves.push(JSON.parse(String(init?.body)));
+    return fakeFetch(input,init);
+  }));
+  await flushVersionedOperations();
+  expect(reserves).toHaveLength(1);expect(reserves[0]).toMatchObject({photo_id:p.media.photoId,target_type:targetType,target_id:targetId});
+  expect(await opOf(p.operation.operationId)).toMatchObject({state:'verified'});
 });

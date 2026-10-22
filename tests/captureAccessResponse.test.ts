@@ -1,3 +1,4 @@
+import {escapedGateHtml} from './fixtures/netlifyGate';
 import {afterEach,expect,it,vi} from 'vitest';
 import {isNetlifyAccessResponse,siteAccessRenewalUrl,SITE_ACCESS_REQUIRED} from '../field-app/src/lib/siteAccess';
 import {openingLoadFailure} from '../field-app/src/lib/openingLoadFailure';
@@ -29,5 +30,16 @@ it('unexpected HTML is not a password rejection and never leaks response content
   vi.stubGlobal('fetch',vi.fn(async()=>new Response('<html>SECRET</html>',{status:401,headers:{'content-type':'text/html'}})));
   const error=await fetchPhotoAccessUrl('test').catch(e=>e);
   expect(error.message).toBe('unexpected_response');expect(openingLoadFailure(error).signIn).toBe(false);
+  expect(JSON.stringify(error)).not.toContain('SECRET');
+});
+
+it('recognizes the escaped-slash Netlify response without weakening gates',async()=>{
+  expect(isNetlifyAccessResponse(401,'text/html; charset=utf-8',escapedGateHtml)).toBe(true);
+  for(const body of [escapedGateHtml.replace('app.netlify.com','attacker.example'),escapedGateHtml.replace("netlify.app'","netlify.app.evil'"),'<title>Login Redirect</title><p>unrelated</p>'])expect(isNetlifyAccessResponse(401,'text/html',body)).toBe(false);
+  expect(isNetlifyAccessResponse(403,'text/html',escapedGateHtml)).toBe(false);
+  expect(isNetlifyAccessResponse(401,'application/json',escapedGateHtml)).toBe(false);
+  vi.stubGlobal('fetch',vi.fn(async()=>new Response(escapedGateHtml+'SECRET',{status:401,headers:{'content-type':'text/html'}})));
+  const error=await fetchPhotoAccessUrl('test').catch(e=>e);
+  expect(error.message).toBe(SITE_ACCESS_REQUIRED);expect(openingLoadFailure(error)).toMatchObject({siteAccess:true,signIn:false});
   expect(JSON.stringify(error)).not.toContain('SECRET');
 });

@@ -16,7 +16,7 @@ import {fetchOpening} from '../field-app/src/lib/api';
 import {saveMediaAndOperation} from '../field-app/src/lib/db';
 import {flushOutbox} from '../field-app/src/lib/sync';
 import {OpeningDetailPage} from '../field-app/src/pages/OpeningDetailPage';
-const opening={id:'test',opening_code:'DEMO',opening_type:'door',opening_configuration:'single',photos:[],hardware_components:[{id:'closer',component_type:'closer',manufacturer:'Cal-Royal',model:'CR441',tracking_code:'TRACK'}],service_events:[],door_leaves:[]};
+const opening={id:'test',opening_code:'DEMO',opening_type:'door',opening_configuration:'single',photos:[],hardware_components:[{id:'closer',component_type:'closer',manufacturer:'Cal-Royal',model_number:'CR441',tracker_id:'TRACK'},{id:'other-closer',component_type:'closer',manufacturer:'Cal-Royal',model_number:'CR441',tracker_id:'OTHER'}],service_events:[],door_leaves:[]};
 let host:HTMLDivElement,root:Root;
 beforeEach(()=>{
   vi.clearAllMocks();state.media=[];state.operations=[];
@@ -64,3 +64,18 @@ it('keeps the picker mounted on a background network failure',async()=>{
   await act(async()=>state.listener({syncing:false}));expect(input()).toBe(node);expect(host.textContent).toContain('connection or service is unavailable');
 });
 
+
+it.each([['opening','test','opening'],['hardware_component','closer','closer / Cal-Royal / CR441 / TRACK'],['hardware_component','other-closer','closer / Cal-Royal / CR441 / OTHER']])('labels and queues the %s control with its exact target',async(type,id,label)=>{
+  await mount();
+  const node=host.querySelector('#photo-input-test-'+type+'-'+id) as HTMLInputElement;
+  expect(node.getAttribute('aria-label')).toBe('Choose photo for '+label);
+  expect(host.querySelector('label[for="'+node.id+'"]')!.textContent).toContain('Add photo to '+label);
+  Object.defineProperty(node,'files',{configurable:true,value:[new File(['synthetic'],'target.png',{type:'image/png'})]});
+  await act(async()=>node.dispatchEvent(new Event('change',{bubbles:true})));
+  expect(saveMediaAndOperation).toHaveBeenCalledTimes(1);
+  expect(state.media[0]).toMatchObject({targetType:type,targetId:id});
+  expect(state.operations[0].payload).toMatchObject({target_type:type,target_id:id});
+  const caption=Array.from(host.querySelectorAll('p')).find(p=>p.textContent?.startsWith('Target:'));
+  expect(caption?.textContent).toContain(type==='opening'?'Opening photograph':'CR441');
+  if(type!=='opening')expect(caption?.textContent).toContain(id==='closer'?'TRACK':'OTHER');
+});

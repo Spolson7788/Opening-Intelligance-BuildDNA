@@ -283,11 +283,12 @@ export function OpeningDetailPage() {
                 )}
                 <span
                   className="badge badge-offline"
-                  style={{ position: "absolute", bottom: 4, left: 4, fontSize: 10, padding: "2px 6px" }}
+                  style={{ position: "absolute", top: 4, left: 4, fontSize: 10, padding: "2px 6px" }}
                 >
                   {p.tooLarge ? <Link to="/sync-issues" style={{ color: "inherit" }}>Too large · review</Link>
                     : p.uploadState === "retry_wait" ? "Retrying…" : p.uploadState === "conflict" ? "Conflict" : "Queued"}
                 </span>
+                <p style={{ fontSize: 12, margin: "4px 0 0", overflowWrap: "anywhere" }}>Target: {mediaAssociationLabel(p, opening)}</p>
               </div>
             ))}
             {opening.photos && opening.photos.map((p: any) => (
@@ -366,7 +367,7 @@ export function OpeningDetailPage() {
                 </div>
               </Link>
               <div style={{ marginTop: 10 }}>
-                <PhotoCapture openingId={opening.id} relatedEntityType="hardware_component" relatedEntityId={hw.id} onQueued={loadQueuedPhotos} />
+                <PhotoCapture openingId={opening.id} relatedEntityType="hardware_component" relatedEntityId={hw.id} targetLabel={[hw.component_type.replace(/_/g, " "), hw.manufacturer, hw.model_number, hw.tracker_id].filter(Boolean).join(" / ")} onQueued={loadQueuedPhotos} />
               </div>
               <div data-component-history={hw.id} style={{ marginTop: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

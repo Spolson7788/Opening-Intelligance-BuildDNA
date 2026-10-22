@@ -10,6 +10,7 @@ interface Props {
   openingId: string;
   relatedEntityType?: "opening" | "frame" | "door_leaf" | "hardware_component";
   relatedEntityId?: string;
+  targetLabel?: string;
   onQueued: () => void; // fires the instant a photo/video is saved locally, not once it's uploaded
 }
 
@@ -26,7 +27,8 @@ function recentMessage(key: string) {
   return entry && Date.now() - entry.at < MESSAGE_TTL_MS ? entry : undefined;
 }
 
-export function PhotoCapture({ openingId, relatedEntityType = "opening", relatedEntityId, onQueued }: Props) {
+export function PhotoCapture({ openingId, relatedEntityType = "opening", relatedEntityId, targetLabel, onQueued }: Props) {
+  const captureTarget = targetLabel ?? relatedEntityType.replace(/_/g, " ");
   const inputSuffix = `${openingId}-${relatedEntityType}-${relatedEntityId ?? openingId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
   const [saving, setSaving] = useState(false);
   const [error, setErrorState] = useState<string | null>(() => recentMessage(inputSuffix)?.error ?? null);
@@ -137,12 +139,12 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <label htmlFor={`photo-input-${inputSuffix}`} className="btn btn-secondary" style={{ cursor: "pointer" }}>
-          {saving ? "Saving…" : "+ Add Photo"}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <label htmlFor={`photo-input-${inputSuffix}`} className="btn btn-secondary" style={{ cursor: "pointer", flex: "1 1 220px", padding: "8px 12px", overflowWrap: "anywhere" }}>
+          {saving ? "Saving…" : `+ Add photo to ${captureTarget}`}
           <input
             id={`photo-input-${inputSuffix}`}
-            aria-label="Choose photograph"
+            aria-label={`Choose photo for ${captureTarget}`}
             type="file"
             accept="image/*"
             capture="environment"
@@ -151,11 +153,11 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
             style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}
           />
         </label>
-        <label htmlFor={`video-input-${inputSuffix}`} className="btn btn-secondary" style={{ cursor: "pointer" }}>
-          {saving ? "Saving…" : "+ Add Video"}
+        <label htmlFor={`video-input-${inputSuffix}`} className="btn btn-secondary" style={{ cursor: "pointer", flex: "1 1 220px", padding: "8px 12px", overflowWrap: "anywhere" }}>
+          {saving ? "Saving…" : `+ Add video to ${captureTarget}`}
           <input
             id={`video-input-${inputSuffix}`}
-            aria-label="Choose video"
+            aria-label={`Choose video for ${captureTarget}`}
             type="file"
             accept="video/mp4,video/quicktime"
             capture="environment"
