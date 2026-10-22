@@ -3,6 +3,7 @@ import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhot
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
 import type { OfflineEntityEnvelope, OfflineEntityType, SyncConflict, SyncOperation, SyncOperationState, SyncReceipt } from "./offlineTypes";
 import { readyOperations, retryDelayMs } from "./offlineSyncModel";
+import { SITE_ACCESS_REQUIRED } from "./siteAccess";
 import { MEDIA_TOO_LARGE, maximumMediaBytes } from "./mediaLimits";
 import type { OutboxItem } from "./db";
 
@@ -178,7 +179,8 @@ async function recordFailure(operation: SyncOperation, error: unknown) {
   // failure, but is marked so that it resumes once the same account signs in again. A server 401/403
   // is not marked and stays stopped for review.
   const principalChange = isClientPrincipalChange(error);
-  const authRequired = principalChange || (error instanceof ApiError && (error.status === 401 || error.status === 403));
+  const siteAccess = error instanceof ApiError && error.message === SITE_ACCESS_REQUIRED;
+  const authRequired = principalChange || (!siteAccess && error instanceof ApiError && (error.status === 401 || error.status === 403));
   const state: SyncOperationState = tooLarge ? "permanent_failure" : conflict ? "conflict" : authRequired ? "auth_required" : "retry_wait";
   const message = tooLarge ? MEDIA_TOO_LARGE : error instanceof Error ? error.message : "unknown_error";
   if (conflict) {
@@ -221,6 +223,7 @@ export async function flushVersionedOperations() {
       await recordFailure(operation, error);
       if (isMediaSizeRejection(error)) continue;
       if (isClientPrincipalChange(error)) return;
+      if (error instanceof ApiError && error.message === SITE_ACCESS_REQUIRED) return;
       if (!(error instanceof ApiError) || error.status >= 500) return;
     }
   }

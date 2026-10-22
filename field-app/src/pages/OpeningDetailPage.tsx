@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchPhotoAccessUrl } from "../lib/api";
 import { mediaAssociationLabel } from "../lib/mediaAssociationLabel";
 import { openingLoadFailure } from "../lib/openingLoadFailure";
+import { siteAccessRenewalUrl } from "../lib/siteAccess";
 import { getAllOfflineMedia, getSyncOperationsForOpening, updateCachedOpening } from "../lib/db";
 import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
@@ -68,6 +69,10 @@ export function OpeningDetailPage() {
   const [deletingPhoto, setDeletingPhoto] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const openingIdRef = useRef<string | null>(id ?? null);
+  const loadedRoute = useRef<string | null>(null);
+  const routeKey = `${id ?? ""}/${qrToken ?? ""}/${openingCode ?? ""}`;
+  const requestVersion = useRef(0);
+  const renewalUrl = siteAccessRenewalUrl(window.location.origin);
 
   useEffect(() => {
     reload();
@@ -77,7 +82,7 @@ export function OpeningDetailPage() {
         loadQueuedPhotos();
       }
     });
-    return unsubscribe;
+    return () => { unsubscribe(); requestVersion.current++; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, qrToken, openingCode]);
 
@@ -120,7 +125,9 @@ export function OpeningDetailPage() {
   }
 
   function reload() {
-    setLoading(true);
+    const version = ++requestVersion.current;
+    const background = loadedRoute.current === routeKey;
+    if (!background) setLoading(true);
     setError(null);
     const load = qrToken
       ? fetchOpeningByQr(qrToken)
@@ -129,13 +136,25 @@ export function OpeningDetailPage() {
       : fetchOpening(id!);
     load
       .then(({ opening, fromCache }) => {
+        if (version !== requestVersion.current) return;
+        loadedRoute.current = routeKey;
         setOpening(opening);
         setFromCache(fromCache);
         openingIdRef.current = opening.id;
         loadQueuedPhotos();
       })
-      .catch((err) => { setOpening(null); setError(openingLoadFailure(err)); })
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (version !== requestVersion.current) return;
+        const failure = openingLoadFailure(err);
+        // A private-site gate must not discard an active picker. Application auth
+        // refusals still remove the opening; they are not treated as offline access.
+        if (!background || !failure.retry) {
+          setOpening(null);
+          loadedRoute.current = null;
+        }
+        setError(failure);
+      })
+      .finally(() => { if (version === requestVersion.current) setLoading(false); });
   }
 
   if (loading) {
@@ -146,7 +165,7 @@ export function OpeningDetailPage() {
     );
   }
 
-  if (error || !opening) {
+  if (!opening || (error && !error.retry)) {
     return (
       <div className="app-shell">
         <div className="top-bar">
@@ -155,6 +174,7 @@ export function OpeningDetailPage() {
         </div>
         <div className="screen empty-state">
           <p role="alert">{error?.message}</p>
+          {error?.siteAccess && renewalUrl && <a className="btn btn-primary" href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a>}
           {error?.signIn ? (
             <button className="btn btn-primary" onClick={() => navigate("/login", { state: { from: location.pathname } })}>Sign in again</button>
           ) : error?.retry ? (
@@ -180,6 +200,13 @@ export function OpeningDetailPage() {
       </div>
 
       <div className="screen">
+        <div>
+          {error?.retry && <div role="alert">
+            <p>{error.message}</p>
+            {error.siteAccess && renewalUrl && <a className="btn btn-primary" href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a>}
+            <button className="btn btn-secondary" onClick={() => reload()}>Check access again</button>
+          </div>}
+        </div>
         <div className="asset-plate" style={{ marginBottom: 10 }}>{opening.opening_code}</div>
         {fromCache && (
           <p className="error-text" style={{ marginTop: 0 }}>Showing last-saved data — no connection right now.</p>

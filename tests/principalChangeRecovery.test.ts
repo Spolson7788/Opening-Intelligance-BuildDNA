@@ -41,6 +41,26 @@ const tokenUser: Record<string, { userId: string; organizationId: string }> = {
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 describe("current conflict diagnostics", () => {
+  it("retains the same queued bytes and identifiers across a private-site gate and resumes once without signing in again", async () => {
+    const p = photoFor(account.a);
+    await saveMediaAndOperation(p.media, p.operation);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response('<title>Login Redirect</title><script>window.location.href="https://app.netlify.com/edge-access?domain=oi-connected-release-candidate.netlify.app"</script>', {status:401,headers:{'content-type':'text/html'}})));
+    await flushVersionedOperations();
+    expect(await opOf(p.operation.operationId)).toMatchObject({state:'retry_wait',lastErrorCode:'site_access_required',entityId:p.media.photoId});
+    expect(await loadAuth()).toMatchObject(account.a);
+    expect(await (await getOfflineMedia(p.media.photoId))!.blob.arrayBuffer()).toEqual(await p.media.blob.arrayBuffer());
+    await closeFieldAppDb();
+    // Advance the existing backoff for the simulation; never create a replacement operation.
+    const retained = await opOf(p.operation.operationId);
+    await putSyncOperation({...retained,nextAttemptAt:new Date(0).toISOString()});
+    vi.stubGlobal('fetch',vi.fn(fakeFetch));
+    await flushVersionedOperations();
+    await flushVersionedOperations();
+    expect(await opOf(p.operation.operationId)).toMatchObject({state:'verified',entityId:p.media.photoId});
+    expect(server.reservations.size).toBe(1);expect(server.photos.get(p.media.photoId)).toBe(1);
+    expect(server.receipts.get(p.operation.operationId)).toBe(1);
+    expect(await (await getOfflineMedia(p.media.photoId))!.blob.arrayBuffer()).toEqual(await p.media.blob.arrayBuffer());
+  });
   it("replaces a stale network error with the 409 reason atomically and retains the same photo for reviewed retry", async () => {
     const p = photoFor(account.a);
     p.operation.lastErrorCode = "Failed to fetch";

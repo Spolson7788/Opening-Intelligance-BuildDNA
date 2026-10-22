@@ -1,4 +1,5 @@
 import { loadAuth, cacheOpening, getCachedOpening } from "./db";
+import { isNetlifyAccessResponse, SITE_ACCESS_REQUIRED } from "./siteAccess";
 import {diagnosticActor,diagnosticAvailable,PROBES,readBoundedProbe,runPhotoProbes} from './photoDiagnostic';
 import type {Principal,ProbeResponse} from './photoDiagnostic';
 
@@ -54,6 +55,11 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
     return response;
   }
   if (!res.ok) {
+    if ((res.headers.get("content-type") || "").toLowerCase().startsWith("text/html")) {
+      const text = await res.text();
+      throw new ApiError(res.status, isNetlifyAccessResponse(res.status, res.headers.get("content-type") || "", text)
+        ? SITE_ACCESS_REQUIRED : "unexpected_response");
+    }
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, body.error || `request_failed_${res.status}`, typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
   }

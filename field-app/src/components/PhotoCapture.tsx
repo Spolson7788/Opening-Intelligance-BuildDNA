@@ -65,6 +65,7 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
     }
 
     setSaving(true);
+    let savedLocally = false;
     try {
       // Photographs above the upload limit are reduced to a JPEG copy that
       // fits. If that is impossible on this device, the original is still
@@ -117,13 +118,18 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
         schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: "offline-protocol-1", protocolVersion: SYNC_PROTOCOL_VERSION,
       };
       await saveMediaAndOperation(media, operation);
+      savedLocally = true;
       if (rejected) {
         setError(`This photograph is ${formatMegabytes(file.size)}, above the ${formatMegabytes(MAX_IMAGE_BYTES)} upload limit, and this device could not make a smaller copy. It is kept on this device: open Synchronization review to save a copy or remove it.`);
       } else if (prepared.reduced) {
         setNotice(`Photograph reduced from ${formatMegabytes(prepared.sourceBytes)} to ${formatMegabytes(blob.size)} to fit the ${formatMegabytes(MAX_IMAGE_BYTES)} upload limit.`);
       }
       onQueued();
-      flushOutbox(); // fire-and-forget: uploads now if online, otherwise sits queued
+      void flushOutbox().catch(() => setError("Photo saved on this device. Synchronization is unavailable; do not select it again."));
+    } catch {
+      setError(savedLocally
+        ? "Photo saved on this device, but its preview could not be refreshed. Do not select it again; check Synchronization review."
+        : "Photo could not be saved on this device. No new photo was queued. Keep the original file and check device storage and sign-in before trying again.");
     } finally {
       setSaving(false);
     }
