@@ -1,4 +1,5 @@
 import {commercialRouter} from './routes/commercial';
+import {planningRouter} from './routes/planning';
 import {CommercialStore} from './services/commercialStorage';
 import {lifecycleOperationsRouter} from './routes/lifecycleOperations';
 import {lifecycleRouter} from './routes/lifecycle';
@@ -63,9 +64,10 @@ export function isAllowedOrigin(origin: string, allowedOrigins: string[]): boole
   );
 }
 
-export function createApp(options: { accountRecoveryEnabled?: boolean; commercialStore?: CommercialStore } = {}) {
+export function createApp(options: { accountRecoveryEnabled?: boolean; commercialStore?: CommercialStore; planningSandboxEnabled?: boolean } = {}) {
   const app = express();
   app.locals.commercialStore=options.commercialStore;
+  app.locals.planningSandboxEnabled=options.planningSandboxEnabled===true;
   const allowedOrigins = corsOriginsFromEnv();
 
   app.use(
@@ -87,6 +89,7 @@ export function createApp(options: { accountRecoveryEnabled?: boolean; commercia
   app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
   app.use('/api/commercial',commercialRouter);
+  app.use('/api/planning',planningRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/recognition", recognitionRouter);
   if (options.accountRecoveryEnabled) app.use("/api/account-recovery", accountRecoveryRouter);
