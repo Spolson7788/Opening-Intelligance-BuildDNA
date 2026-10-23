@@ -29,9 +29,10 @@ export function PrintLabelsPage() {
     try {
       const res = await fetchQrCodesForBuilding(buildingId);
       if (res.count === 0) {
-        setError("This building has no openings yet — nothing to print. Import or add openings first.");
+        setError(res.blocked?.length ? "These openings need completion and review before labels can be printed." : "This building has no openings yet - nothing to print. Import or add openings first.");
       } else {
         setItems(res.items);
+        if(res.blocked?.length)setError(`${res.blocked.length} incomplete opening(s) excluded. Complete and review them before printing.`);
       }
     } catch {
       setError("Couldn't load QR codes. Check your connection and try again.");

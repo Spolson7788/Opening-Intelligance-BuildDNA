@@ -3,6 +3,7 @@ import {resolve} from 'node:path';
 export function buildFacilityDashboard(destination){
  const root=resolve(import.meta.dirname,'../facility-dashboard');
  let html=readFileSync(resolve(root,'portal-source.html'),'utf8');
+ html=html.replace('<script type="module">','<script type="module">\nimport {installLabelActions,addOpeningLabelAction} from "./labels.mjs";\nimport {addServiceRequestAction} from "./service-requests.mjs";');
  const replace=(a,b)=>{if(!html.includes(a))throw Error('Dashboard source changed: '+a.slice(0,80));html=html.replace(a,b);};
  replace('import {url,key} from "./preview-config.mjs";', 'import {sb,refreshScope,refreshFacility,readFieldSession,api} from "./api-client.mjs";');
  replace("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';",'');
@@ -39,6 +40,7 @@ export function buildFacilityDashboard(destination){
  html=html.replace('Recorded from the field app. Deficiencies awaiting qualified verification are listed first — a completed repair does not close them.', 'Recorded service events from the connected Field App.');
  html=html.replaceAll('new Date(e.performed_at).toLocaleDateString()', "formatCalendarDate(String(e.performed_at).slice(0,10))");
  replace("function clearFacility(){", "function clearFacility(){document.getElementById('purchaseResult')?.replaceChildren();");
+ replace("document.getElementById('detcard').innerHTML=body;", "document.getElementById('detcard').innerHTML=body;addOpeningLabelAction(document.getElementById('detcard'),{id:o.parts[0].assembly_id});addServiceRequestAction(document.getElementById('detcard'),{id:o.parts[0].assembly_id});");
  replace("_detailInit();boot();", `document.getElementById('recoverAccount').hidden=true;
  document.getElementById('recoverLogin').hidden=true;
  const refresh=document.createElement('button');refresh.textContent='Refresh saved records';refresh.onclick=()=> (current?load(current):boot()).catch(e=>{clearFacility();document.getElementById('facSub').textContent=e.message;});document.getElementById('facPickWrap').before(refresh);
@@ -54,8 +56,9 @@ export function buildFacilityDashboard(destination){
  for(const d of review.decisions){const p=document.createElement('p');const part=VIEW.flatMap(o=>o.parts).find(p=>p.id===d.component_id);p.textContent=(part?.opening_no||d.opening_id)+' · '+(part?.component_class||d.component_id)+': '+(d.eligible?(review.blocked?'Eligible item held because another requirement is unresolved':'Eligible') : d.reasons.map(r=>({condition_unverified:'Condition not verified',replacement_not_required:'Excluded — replacement not required',opening_not_complete:'Opening incomplete',component_not_reviewed:'Component not reviewed',identity_unresolved:'Replacement identity unresolved',approved_document_required:'Approved supporting document required'}[r]||r)).join('; '));result.append(p);}
  }catch(e){if(stamp===facilityEpoch)result.textContent=e.message;}finally{purchase.disabled=false;}};
  let displayedAccount=null;setInterval(async()=>{const a=await readFieldSession();const key=a?[a.userId,a.organizationId,a.token].join(':'):null;if(displayedAccount!==null&&displayedAccount!==key){clearFacility();location.reload();}displayedAccount=key;},1500);
+ installLabelActions({toolbar:document.getElementById('facPickWrap'),getOpenings:()=>VIEW.map(o=>({id:o.parts[0]?.assembly_id})).filter(o=>o.id)});
  _detailInit();boot().catch(e=>{clearFacility();document.getElementById('facSub').textContent=e.message;});`);
  mkdirSync(destination,{recursive:true});writeFileSync(resolve(destination,'index.html'),html);
- for(const name of ['api-client.mjs','connected.mjs','facility-search.mjs'])cpSync(resolve(root,name),resolve(destination,name));
+ for(const name of ['api-client.mjs','connected.mjs','facility-search.mjs','labels.mjs','service-requests.mjs'])cpSync(resolve(root,name),resolve(destination,name));
 }
 if(process.argv[1]&&resolve(process.argv[1])===import.meta.filename)buildFacilityDashboard(resolve(process.argv[2]||'dist/facility-dashboard'));

@@ -264,16 +264,22 @@ export async function submitOfflineOperation(payload: Record<string, unknown>, e
   return authedFetch("/sync/operations", { method: "POST", body: JSON.stringify(payload) }, expectedPrincipal);
 }
 
-export async function fetchHardwareForOpening(openingId: string) {
-  return authedFetch(`/hardware/by-opening/${openingId}`);
+export async function fetchHardwareForOpening(openingId: string, principal?: ExpectedPrincipal) {
+  return authedFetch(`/hardware/by-opening/${openingId}`, {}, principal);
 }
 
-export async function editHardwareComponent(id: string, payload: any) {
-  return authedFetch(`/hardware/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+export async function editHardwareComponent(id: string, payload: any, principal?: ExpectedPrincipal) {
+  return authedFetch(`/hardware/${id}`, { method: "PATCH", body: JSON.stringify(payload) }, principal);
 }
 
-export async function deleteHardwareComponent(id: string) {
-  return authedFetch(`/hardware/${id}`, { method: "DELETE" });
+export async function deleteHardwareComponent(id: string, principal?: ExpectedPrincipal) {
+  return authedFetch(`/hardware/${id}`, { method: "DELETE" }, principal);
+}
+
+export function fetchLabelConfig(principal: ExpectedPrincipal) { return authedFetch('/labels/config', {}, principal); }
+export function fetchServiceRequestContext(id: string, principal: ExpectedPrincipal) { return authedFetch(`/service-requests/context/${id}`, {}, principal); }
+export function submitServiceRequest(payload: Record<string, unknown>, principal: ExpectedPrincipal) {
+  return authedFetch('/service-requests', {method:'POST',body:JSON.stringify(payload)}, principal);
 }
 
 export async function addHardwareComponent(payload: any) {

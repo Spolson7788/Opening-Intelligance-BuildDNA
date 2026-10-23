@@ -1,5 +1,5 @@
 import { claimSyncOperation, getAllSyncOperations, getOfflineMedia, getOfflineSetting, getSyncOperationsForPrincipal, loadAuth, putOfflineSetting, putSyncConflict, putSyncOperation, putSyncReceipt, reconcileRecoveredMediaOperationId, saveEntityAndOperation } from "./db";
-import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, uploadPrivatePhoto, ApiError, PrincipalChangedError, isClientPrincipalChange } from "./api";
+import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, submitServiceRequest, uploadPrivatePhoto, ApiError, PrincipalChangedError, isClientPrincipalChange } from "./api";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
 import type { OfflineEntityEnvelope, OfflineEntityType, SyncConflict, SyncOperation, SyncOperationState, SyncReceipt } from "./offlineTypes";
 import { readyOperations, retryDelayMs } from "./offlineSyncModel";
@@ -49,6 +49,7 @@ async function refreshPendingCount() {
   notify();
 }
 function entityTypeForKind(kind: OutboxItem["kind"]): OfflineEntityType {
+  if (kind === "service_request") return "service_request";
   if (kind === "opening_frame") return "frame";
   if (kind === "door_leaf") return "door_leaf";
   if (kind === "hardware_component") return "component";
@@ -56,11 +57,19 @@ function entityTypeForKind(kind: OutboxItem["kind"]): OfflineEntityType {
   if (kind === "inspection_event") return "inspection_event";
   return "completion";
 }
-export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: string, payload: any, id = crypto.randomUUID()) {
+export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: string, payload: any, id = crypto.randomUUID(), principal?: Principal) {
   const auth = await loadAuth(); if (!auth) throw new Error("auth_required");
+  if(principal && (auth.userId!==principal.userId || auth.organizationId!==principal.organizationId))throw new PrincipalChangedError();
   const now = new Date().toISOString(); const entityType = entityTypeForKind(kind); const entityId = payload.id ?? id;
   const deviceId = await getOrCreateDeviceId(); const semanticPayload = { kind, ...payload };
   const existingOperations = await getAllSyncOperations();
+  if(entityType==='service_request'){
+    const existing=existingOperations.find(op=>op.operationId===id);
+    if(existing){
+      if(existing.actorUserId!==auth.userId || existing.organizationId!==auth.organizationId || existing.openingId!==openingId || JSON.stringify(canonicalize(existing.payload))!==JSON.stringify(canonicalize(semanticPayload)))throw new Error('request_retry_changed');
+      return id;
+    }
+  }
   let baseServerRevision: number | null = null;
   if (entityType === "frame" || entityType === "door_leaf") {
     const owned = existingOperations.filter(op => op.entityId === entityId && op.actorUserId === auth.userId && op.organizationId === auth.organizationId);
@@ -78,6 +87,7 @@ export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: 
     createdByUserId: auth.userId, createdByDeviceId: deviceId, createdAtLocal: now, updatedAtLocal: now,
     serverRevision: null, baseSnapshotHash: null, schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: APP_VERSION,
     syncState: "queued", retryCount: 0, payload: semanticPayload };
+  await assertPrincipal(auth);
   await saveEntityAndOperation(entity, operation); await refreshPendingCount(); void flushOutbox(); return id;
 }
 export function dependencyIdsForOperation(
@@ -164,6 +174,8 @@ async function submitPhoto(operation: SyncOperation, principal: Principal) {
 }
 async function submitGeneralOperation(operation: SyncOperation, principal: Principal) {
   const { kind: _kind, id: _id, opening_id: _opening, client_operation_id: _client, expected_revision: _revision, ...payload } = operation.payload as any;
+  if(operation.entityType==='service_request')return submitServiceRequest({operation_id:operation.operationId,entity_id:operation.entityId,opening_id:operation.openingId,
+    device_id:operation.deviceId,schema_version:operation.schemaVersion,app_version:operation.appVersion,protocol_version:operation.protocolVersion,payload},principal);
   return submitOfflineOperation({
     operation_id: operation.operationId, operation_type: operation.operationType,
     entity_id: operation.entityId, entity_type: operation.entityType,

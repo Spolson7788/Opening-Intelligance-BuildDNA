@@ -15,6 +15,7 @@ import { MyWorkOrdersPage } from "./pages/MyWorkOrdersPage";
 import { OpeningStructurePage } from "./pages/OpeningStructurePage";
 import { SetupOpeningPage } from "./pages/SetupOpeningPage";
 import { QrLabelPage } from "./pages/QrLabelPage";
+import { ServiceRequestPage } from './pages/ServiceRequestPage';
 import { SyncIssuesPage } from "./pages/SyncIssuesPage";
 const PhotoIsolationPage=__PHOTO_ISOLATION_ENABLED__?lazy(()=>import('./pages/PhotoIsolationPage')):null;
 
@@ -43,6 +44,7 @@ function AppRoutes() {
       <Route path="/branches" element={<RequireAuth><BranchesPage /></RequireAuth>} />
       <Route path="/setup-opening" element={<RequireAuth><SetupOpeningPage /></RequireAuth>} />
       <Route path="/opening/:id/label" element={<RequireAuth><QrLabelPage /></RequireAuth>} />
+      <Route path="/opening/:id/request-service" element={<RequireAuth><ServiceRequestPage /></RequireAuth>} />
       <Route path="/scan" element={<RequireAuth><ScanPage /></RequireAuth>} />
       <Route path="/my-work-orders" element={<RequireAuth><MyWorkOrdersPage /></RequireAuth>} />
       <Route path="/sync-issues" element={<RequireAuth><SyncIssuesPage /></RequireAuth>} />

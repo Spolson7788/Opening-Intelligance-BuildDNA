@@ -35,8 +35,8 @@ existing migrations there, then discards it. No hosted database was used.
   and assert status 200; all existing purchasing assertions remain.
 - vitest.offline.config.ts: 106 pass, including principal-change/photo recovery.
 - API and Field TypeScript checks pass.
-- Field bundle generation completed; service-worker generation stalled in this
-  Windows execution environment. Full build is not claimed passed.
+- Field production build passed, including service-worker generation. The final
+  service-worker step took longer than the initial progress checkpoint.
 
 The initial multi-suite database run suffered adapter connection failures after
 the first suite. Individual fresh-database runs above supersede that attempt.

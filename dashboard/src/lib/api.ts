@@ -449,7 +449,7 @@ export interface QrLabelItem {
   qr_data_url: string;
 }
 
-export async function fetchQrCodesForBuilding(buildingId: string): Promise<{ count: number; items: QrLabelItem[] }> {
+export async function fetchQrCodesForBuilding(buildingId: string): Promise<{ count: number; items: QrLabelItem[]; blocked: { id: string; opening_code: string; missing: string[] }[] }> {
   return authedFetch(`/openings/qr-codes?building_id=${buildingId}`);
 }
 

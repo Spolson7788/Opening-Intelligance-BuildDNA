@@ -8,6 +8,7 @@ export type OfflineEntityType =
   | "component"
   | "photo"
   | "service_event"
+  | "service_request"
   | "inspection_event"
   | "completion"
   | "purchasing_review";

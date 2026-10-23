@@ -75,7 +75,7 @@ interface FieldAppDB extends DBSchema {
 
 export interface OutboxItem {
   id: string; // uuid, generated client-side
-  kind: "service_event" | "inspection_event" | "opening_frame" | "door_leaf" | "hardware_component" | "complete_opening";
+  kind: "service_event" | "service_request" | "inspection_event" | "opening_frame" | "door_leaf" | "hardware_component" | "complete_opening";
   payload: any;
   openingId?: string;
   createdAt: number;
@@ -169,6 +169,15 @@ export async function saveEntityAndOperation(
   }
   const db = await getDb();
   const tx = db.transaction(["entities", "operations"], "readwrite");
+  if(operation.entityType==='service_request'){
+    const prior=await tx.objectStore('operations').get(operation.operationId);
+    if(prior){
+      if(prior.actorUserId!==operation.actorUserId||prior.organizationId!==operation.organizationId||prior.openingId!==operation.openingId||prior.entityId!==operation.entityId||prior.payloadHash!==operation.payloadHash){
+        tx.abort();await tx.done.catch(()=>{});throw new Error('request_retry_changed');
+      }
+      await tx.done;return;
+    }
+  }
   await Promise.all([
     tx.objectStore("entities").put(entity),
     tx.objectStore("operations").put(operation),

@@ -4,6 +4,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { ApiError, editHardwareComponent, deleteHardwareComponent, fetchHardwareForOpening } from "../lib/api";
 import { CARRIER_OPTIONS, carrierTrackingUrl } from "../lib/tracking";
 import { SyncBadge } from "../components/SyncBadge";
+import { useAuth } from '../lib/AuthContext';
 
 const COMPONENT_TYPES = [
   { value: "lockset", label: "Lockset" },
@@ -36,6 +37,8 @@ export function EditHardwarePage() {
   const { id, hardwareId } = useParams(); // id = opening id, hardwareId = hardware component id
   const navigate = useNavigate();
   const location = useLocation();
+  const {auth}=useAuth();
+  const [principal]=useState(()=>auth!);
 
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState<number | null>(null);
@@ -70,7 +73,7 @@ export function EditHardwarePage() {
       return;
     }
     // Fallback: loaded directly (e.g. a page refresh) — re-fetch and find it.
-    fetchHardwareForOpening(id!)
+    fetchHardwareForOpening(id!,principal)
       .then((list: any[]) => {
         const found = list.find((h) => h.id === hardwareId);
         if (found) applyHardware(found);
@@ -122,7 +125,7 @@ export function EditHardwarePage() {
         carrier: carrier || undefined,
         tracking_number: trackingNumber || undefined,
         shipment_status: shipmentStatus,
-      });
+      }, principal);
       setSaved(true);
       setTimeout(() => navigate(`/opening/${id}`), 700);
     } catch (err) {
@@ -140,7 +143,7 @@ export function EditHardwarePage() {
     setSubmitting(true);
     setError(null);
     try {
-      await deleteHardwareComponent(hardwareId!);
+      await deleteHardwareComponent(hardwareId!,principal);
       navigate(`/opening/${id}`);
     } catch {
       setError("Couldn't delete — check your connection and try again.");

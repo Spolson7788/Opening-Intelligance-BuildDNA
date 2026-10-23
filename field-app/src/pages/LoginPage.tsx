@@ -5,6 +5,7 @@ import { useAuth } from "../lib/AuthContext";
 import { ApiError } from "../lib/api";
 import { readLoginForm } from "../lib/loginForm";
 import { loginFailureMessage } from "../lib/authResponse";
+import { loginReturnPath } from "../lib/qrPayload";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -25,7 +26,7 @@ export function LoginPage() {
     try {
       await login(credentials.email, credentials.password);
       const from = location.state?.from;
-      navigate(typeof from === "string" && from.startsWith("/") && !from.startsWith("//") && from !== "/login" ? from : "/scan", { replace: true });
+      navigate(loginReturnPath(from), { replace: true });
     } catch (err) {
       if (err instanceof ApiError) setReference(err.reference || null);
       if (err instanceof ApiError) {

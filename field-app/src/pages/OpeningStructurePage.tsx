@@ -3,11 +3,14 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { queueOpeningMutation } from "../lib/sync";
 import { updateCachedOpening } from "../lib/db";
 import { PhotoCapture } from "../components/PhotoCapture";
+import { useAuth } from '../lib/AuthContext';
 
 export function OpeningStructurePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const {auth}=useAuth();
+  const [principal]=useState(()=>auth!);
   const opening = (location.state as any)?.opening;
   const configuration = opening?.opening_configuration ?? "single";
   const roles = configuration === "pair" ? ["active", "inactive"] : ["single"];
@@ -29,7 +32,7 @@ export function OpeningStructurePage() {
     setSaving(true);
     setMessage("Saving frame…");
     try {
-      await queueOpeningMutation("opening_frame", id!, { id: frameId, expected_revision: opening?.frame?.revision == null ? null : Number(opening.frame.revision), material: frameMaterial || undefined, condition: frameCondition });
+      await queueOpeningMutation("opening_frame", id!, { id: frameId, expected_revision: opening?.frame?.revision == null ? null : Number(opening.frame.revision), material: frameMaterial || undefined, condition: frameCondition }, undefined, principal);
       await updateCachedOpening(id!, (cached) => ({ ...cached, frame: { ...cached.frame, id: frameId, material: frameMaterial || null, condition: frameCondition, pending_sync: true } }));
       setSavedTargets(targets => [...targets, frameId]);
       setMessage("Frame saved locally. It will synchronize automatically.");
@@ -49,7 +52,7 @@ export function OpeningStructurePage() {
         material: leafMaterial || undefined,
         handing: handing || undefined,
         condition: leafCondition,
-      });
+      }, undefined, principal);
       await updateCachedOpening(id!, (cached) => {
         const pending = { id: leafIds[role], leaf_role: role, material: leafMaterial || null, handing: handing || null, condition: leafCondition, pending_sync: true };
         const leaves = [...(cached.door_leaves || []).filter((leaf: any) => leaf.leaf_role !== role), pending];

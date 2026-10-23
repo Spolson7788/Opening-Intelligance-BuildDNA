@@ -3,18 +3,23 @@ import { useNavigate } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
 import { SyncBadge } from "../components/SyncBadge";
 import { useAuth } from "../lib/AuthContext";
+import { parseOpeningQr } from "../lib/qrPayload";
+import { fetchLabelConfig } from '../lib/api';
 
 const SCANNER_ELEMENT_ID = "qr-reader";
 
 export function ScanPage() {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout,auth } = useAuth();
+  const canonicalBase=useRef('');
   const [manualCode, setManualCode] = useState("");
   const [cameraError, setCameraError] = useState<string | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
+    let active=true;
+    if(auth)fetchLabelConfig(auth).then(config=>{if(active)canonicalBase.current=config.field_base;}).catch(()=>{if(active)setCameraError('Label configuration unavailable. Reconnect and reload, or enter the opening code.');});
     const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID);
     scannerRef.current = scanner;
 
@@ -23,8 +28,9 @@ export function ScanPage() {
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 240, height: 240 } },
         (decodedText) => {
-          // Payload is a URL like https://app.openingintel.com/scan/<token> — extract the token.
-          const token = decodedText.split("/").pop() || decodedText;
+          // Accept canonical same-site labels and the original opaque-token format.
+          const token = parseOpeningQr(decodedText, canonicalBase.current);
+          if (!token) { setCameraError("This is not a supported opening label. Use the opening code below."); return; }
           handleScanned(token);
         },
         () => {
@@ -38,6 +44,7 @@ export function ScanPage() {
       });
 
     return () => {
+      active=false;
       if (scannerRef.current && scanning) {
         scannerRef.current.stop().catch(() => {});
       }
@@ -66,6 +73,7 @@ export function ScanPage() {
         </div>
       </div>
       <div className="screen">
+        <p>Opening lookup requires a connection. A QR label does not grant access.</p>
         <div className="card" style={{ overflow: "hidden", padding: 0 }}>
           <div id={SCANNER_ELEMENT_ID} style={{ width: "100%" }} />
         </div>

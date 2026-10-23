@@ -188,6 +188,7 @@ export function OpeningDetailPage() {
 
   const completionRequirements = openingCompletionRequirements(opening);
   const history = splitServiceHistory(opening);
+  const retired=opening.status==='decommissioned';
   const completionBlocked = opening.completion_state !== "complete" && opening.completion_state !== "pending_sync" && completionRequirements.length > 0;
 
   return (
@@ -230,6 +231,7 @@ export function OpeningDetailPage() {
           {opening.fire_rated && <span className="badge" style={{ marginTop: 8 }}>Fire Rated</span>}
         </div>
 
+        {retired?<p role="status">This opening is retired. Its records remain available for review; new requests and labels are unavailable.</p>:<Link className="btn btn-secondary" to={`/opening/${opening.id}/request-service`}>Request service</Link>}
         <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
           <Link to={`/opening/${opening.id}/log-service`} className="btn btn-primary" style={{ textDecoration: "none" }}>
             Log Service
@@ -248,7 +250,7 @@ export function OpeningDetailPage() {
           <Link to={`/opening/${opening.id}/structure`} state={{ opening }} className="btn btn-secondary" style={{ textDecoration: "none" }}>
             Door &amp; frame details
           </Link>
-          {opening.completion_state === "complete" && !fromCache && <Link className="btn btn-secondary" to={`/opening/${opening.id}/label`}>Print / save label</Link>}
+          {!retired && opening.completion_state === "complete" && !fromCache && <Link className="btn btn-secondary" to={`/opening/${opening.id}/label`}>Print / save label</Link>}
           {completionBlocked && (
             <div role="status" className="error-text" style={{ marginTop: 10 }}>
               <strong>Before finishing:</strong>
@@ -370,6 +372,7 @@ export function OpeningDetailPage() {
                 <PhotoCapture openingId={opening.id} relatedEntityType="hardware_component" relatedEntityId={hw.id} targetLabel={[hw.component_type.replace(/_/g, " "), hw.manufacturer, hw.model_number, hw.tracker_id].filter(Boolean).join(" / ")} onQueued={loadQueuedPhotos} />
               </div>
               <div data-component-history={hw.id} style={{ marginTop: 10 }}>
+                  {!retired&&<Link to={`/opening/${opening.id}/request-service?component=${hw.id}`}>Request service for this component</Link>}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span className="section-label" style={{ margin: 0 }}>Service history for this component</span>
                   <Link to={`/opening/${opening.id}/log-service?component=${hw.id}`} style={{ fontSize: 13 }}>Log service</Link>
