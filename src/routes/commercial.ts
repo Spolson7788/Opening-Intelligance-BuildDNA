@@ -27,7 +27,7 @@ async function property(c:any,id:string,org:string){
  const row=(await c.query(`SELECT p.id,pf.organization_id AS owner_id FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id WHERE p.id=$1 AND ${facilityAccessPredicate(2)}`,[id,org])).rows[0];if(!row)throw new Conflict('not_found',404);return row;
 }
 async function replay(c:any,table:string,id:string,hash:string,actor:string){const old=(await c.query(`SELECT * FROM ${table} WHERE id=$1`,[id])).rows[0];if(old&&(old.request_hash!==hash||old.recorded_by!==actor))throw new Conflict('version_id_reused');return old;}
-const documentSchema=z.object({...versionCommand,property_id:uuid.nullable(),title:z.string().trim().min(1).max(200),kind:z.enum(['technical','cut_sheet','installation','warranty','estimate']),pdf_base64:z.string().min(1).max(4_000_000)}).strict();
+const documentSchema=z.object({...versionCommand,property_id:uuid.nullable(),title:z.string().trim().min(1).max(200),kind:z.enum(['technical','cut_sheet','installation','warranty','estimate','invoice','payment_evidence']),pdf_base64:z.string().min(1).max(4_000_000)}).strict();
 endpoint('post','/documents',async(c,req)=>{
  const b=documentSchema.parse(req.body),a=req.auth!,store=req.app.locals.commercialStore;
  if(!store?.privateImmutable)throw new Conflict('private_immutable_storage_not_configured',503);

@@ -1,4 +1,5 @@
 import {commercialRouter} from './routes/commercial';
+import {sandboxFinanceRouter} from './routes/sandboxFinance';
 import {planningRouter} from './routes/planning';
 import {CommercialStore} from './services/commercialStorage';
 import {lifecycleOperationsRouter} from './routes/lifecycleOperations';
@@ -90,6 +91,7 @@ export function createApp(options: { accountRecoveryEnabled?: boolean; commercia
 
   app.use('/api/commercial',commercialRouter);
   app.use('/api/planning',planningRouter);
+  app.use('/api/sandbox-finance',sandboxFinanceRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/recognition", recognitionRouter);
   if (options.accountRecoveryEnabled) app.use("/api/account-recovery", accountRecoveryRouter);
