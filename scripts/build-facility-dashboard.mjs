@@ -59,6 +59,6 @@ export function buildFacilityDashboard(destination){
  installLabelActions({toolbar:document.getElementById('facPickWrap'),getOpenings:()=>VIEW.map(o=>({id:o.parts[0]?.assembly_id})).filter(o=>o.id)});
  _detailInit();boot().catch(e=>{clearFacility();document.getElementById('facSub').textContent=e.message;});`);
  mkdirSync(destination,{recursive:true});writeFileSync(resolve(destination,'index.html'),html);
- for(const name of ['api-client.mjs','connected.mjs','facility-search.mjs','labels.mjs','service-requests.mjs'])cpSync(resolve(root,name),resolve(destination,name));
+ for(const name of ['api-client.mjs','connected.mjs','facility-search.mjs','labels.mjs','service-requests.mjs','commercial.html','commercial.mjs'])cpSync(resolve(root,name),resolve(destination,name));
 }
 if(process.argv[1]&&resolve(process.argv[1])===import.meta.filename)buildFacilityDashboard(resolve(process.argv[2]||'dist/facility-dashboard'));

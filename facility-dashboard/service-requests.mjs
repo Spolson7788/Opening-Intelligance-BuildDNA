@@ -2,6 +2,8 @@
 // No separate database or notification transport is introduced here.
 import {readFieldSession} from './api-client.mjs';
 export function addServiceRequestAction(container,opening){
+  const commercial=document.createElement('a');commercial.textContent='Catalog and replacement estimates';commercial.href='/facility-dashboard/commercial.html?opening='+encodeURIComponent(opening.id);container.prepend(commercial);
+
   const history=document.createElement('a');history.textContent='Installation and service history';history.href='/field/opening/'+encodeURIComponent(opening.id)+'/lifecycle';container.prepend(history);
   const button=document.createElement('button');button.textContent='Request service';
   button.onclick=async()=>{

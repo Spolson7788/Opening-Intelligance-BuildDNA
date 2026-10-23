@@ -9,13 +9,17 @@ export async function readFieldSession() {
       get.onsuccess=()=>resolve(get.result||null);get.onerror=()=>resolve(null);tx.oncomplete=()=>db.close();};
   });
 }
-export async function api(path, body) {
+export async function api(path, body, expectedPrincipal) {
   const before=await readFieldSession();if(!before)throw Error('Sign in through the Field App.');
+  if(expectedPrincipal&&(before.userId!==expectedPrincipal.userId||before.organizationId!==expectedPrincipal.organizationId||before.token!==expectedPrincipal.token))throw Error('Account changed. Reopen the Dashboard.');
   const response=await fetch('/api'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+before.token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),cache:'no-store'});
+  const payload=await response.json().catch(()=>null);
   const after=await readFieldSession();
   if(!after||after.userId!==before.userId||after.organizationId!==before.organizationId||after.token!==before.token)throw Error('Account changed. Reload the Dashboard.');
+  if(!response.ok&&path.startsWith('/commercial/'))throw Error(String(payload?.error||'Commercial records unavailable').replace(/_/g,' '));
   if(!response.ok)throw Error([401,403,404].includes(response.status)?'Access unavailable. Sign in again or contact your administrator.':'Connected records unavailable. Reload to retry.');
-  return response.json();
+  if(payload===null)throw Error('Invalid response. Reload saved records.');
+  return payload;
 }
 // Same wording as the Field App (field-app/src/lib/serviceHistory.ts componentLabel).
 export function componentLabel(h,o){
