@@ -224,3 +224,11 @@ h1, h2, h3 {
   .qr-print-page.screen { padding:0; margin:0; max-width:none; }
   @page { size:letter portrait; margin:0.4in; }
 }
+
+/* Lifecycle forms keep evidence fields readable on narrow screens. */
+.lifecycle-screen label { display: block; margin: 12px 0; }
+.lifecycle-screen input:not([type=checkbox]), .lifecycle-screen select, .lifecycle-screen textarea { display:block; box-sizing:border-box; width:100%; min-width:0; padding:10px; margin-top:6px; font:inherit; }
+.lifecycle-screen fieldset { min-width:0; margin:12px 0; border:1px solid #637078; border-radius:6px; padding:12px; }
+.lifecycle-screen article { border-bottom:1px solid #637078; padding:10px 0; }
+.lifecycle-screen p { overflow-wrap:anywhere; }
+.lifecycle-screen h1 { font-size:18px; }

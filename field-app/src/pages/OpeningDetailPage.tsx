@@ -398,7 +398,7 @@ export function OpeningDetailPage() {
           <div data-opening-service-history>
             <div className="section-label" style={{ marginTop: 20 }}>Opening service history</div>
             {history.openingLevel.slice(0, 5).map((ev) => <ServiceEventCard key={ev.id} ev={ev} />)}
-            {history.unmatched.map((ev) => <ServiceEventCard key={ev.id} ev={ev} />)}
+            {history.unmatched.map((ev) => <div key={ev.id}><p>Historical component service — see Installation and service history for the retained component identity.</p><ServiceEventCard ev={ev} /></div>)}
           </div>
         )}
 

@@ -301,10 +301,17 @@ export function OpeningDetailPage() {
                   <>
                     <div data-opening-service-history>
                       <h3 style={{ fontSize: 14, margin: "8px 0 4px" }}>Whole opening</h3>
-                      {history.openingLevel.length + history.unmatched.length === 0
+                      {history.openingLevel.length === 0
                         ? <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No opening-level service recorded.</p>
-                        : <ServiceTable events={[...history.openingLevel, ...history.unmatched]} />}
+                        : <ServiceTable events={history.openingLevel} />}
                     </div>
+                    {history.unmatched.map(event => {
+                      const retired = (opening as any).retired_hardware_components?.find((c: any) => c.id === event.hardware_component_id);
+                      return <div key={event.id} data-historical-component={event.hardware_component_id}>
+                        <h3>{retired ? componentLabel(retired, opening as any) + ' (retired)' : 'Historical component ' + event.hardware_component_id}</h3>
+                        <ServiceTable events={[event]} />
+                      </div>;
+                    })}
                     {opening.hardware_components.map((hw) => (
                       <div key={hw.id} data-component-history={hw.id}>
                         <h3 style={{ fontSize: 14, margin: "14px 0 4px" }}>{componentLabel(hw as any, opening as any)}</h3>

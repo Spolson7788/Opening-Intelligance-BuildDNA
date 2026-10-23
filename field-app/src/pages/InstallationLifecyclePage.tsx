@@ -19,7 +19,7 @@ function InstallationForm(){
  useEffect(()=>{let active=true;fetchLifecycle(id!,principal).then(v=>{if(active){setData(v);setTarget('opening:'+id);}}).catch(e=>{if(active)setError(e.message);});
  const timer=setInterval(()=>{void loadAuth().then(a=>{if(active&&(!a||a.userId!==principal.userId||a.organizationId!==principal.organizationId)){setData(null);setPending(null);setError('Account changed. Reopen this record after signing in.');}});},1000);
  return()=>{active=false;clearInterval(timer);};},[id,principal]);
- const choices=data?[{type:'opening',id,label:'Whole opening'},...data.frames.map((f:any)=>({type:'frame',id:f.id,label:'Frame'})),...data.door_leaves.map((l:any)=>({type:'door_leaf',id:l.id,label:l.leaf_role+' leaf'})),...data.hardware_components.map((c:any)=>({type:'component',id:c.id,label:componentLabel(c,data)}))]:[];
+ const choices=data?[{type:'opening',id,label:'Whole opening'},...data.frames.map((f:any)=>({type:'frame',id:f.id,label:'Frame'})),...data.door_leaves.map((l:any)=>({type:'door_leaf',id:l.id,label:l.leaf_role+' leaf'})),...data.hardware_components.map((c:any)=>({type:'component',id:c.id,label:componentLabel(c,data)+(c.lifecycle_state==='retired'?' — retired':'')}))]:[];
  const selected=choices.find(c=>c.type+':'+c.id===target);
  const current=data?.installation_facts.find((f:any)=>f.is_current&&f.target.type===selected?.type&&f.target.id===selected?.id);
  const writable=['admin','facilities_manager'].includes(principal.role)&&data?.status!=='decommissioned';
@@ -34,8 +34,8 @@ function InstallationForm(){
   catch(e:any){setError(e.message+' — Submission outcome may need reconciliation. Retry sends the identical request; reload saved facts before changing it.');}
   finally{setBusy(false);}
  }
- return <div className="app-shell"><div className="top-bar"><h1>Installation and service history</h1></div><div className="screen">
-  <Link to={`/opening/${id}`}>Opening record</Link><p>Installation comes first. Unknown dates remain undated; recording time is separate from installation time.</p>
+ return <div className="app-shell lifecycle-screen"><div className="top-bar"><h1>Installation and service history</h1></div><div className="screen">
+  <Link to={`/opening/${id}`}>Opening record</Link><p><Link to={`/opening/${id}/lifecycle-records`}>Replacement, downtime and warranty records</Link></p><p>Installation comes first. Unknown dates remain undated; recording time is separate from installation time.</p>
   <p>This screen requires a connection. It does not queue offline changes.</p>
   {error&&<p role="alert">{error}</p>}{status&&<p role="status">{status}</p>}
   {data&&<><h2>{data.opening_code} — Installation</h2>

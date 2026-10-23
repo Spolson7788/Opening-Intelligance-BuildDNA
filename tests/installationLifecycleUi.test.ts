@@ -5,7 +5,7 @@ import {createRoot} from '../field-app/node_modules/react-dom/client';
 const state=vi.hoisted(()=>({auth:{userId:'u',organizationId:'o',role:'admin'},load:vi.fn(),save:vi.fn()}));
 vi.mock('../field-app/node_modules/react-router-dom/dist/index.js',()=>({useParams:()=>({id:'opening-a'}),Link:({children}:any)=>children}));
 vi.mock('../field-app/src/lib/AuthContext',()=>({useAuth:()=>({auth:state.auth})}));
-vi.mock('../field-app/src/lib/api',()=>({fetchLifecycle:state.load,saveInstallationFact:state.save}));
+vi.mock('../field-app/src/lib/api',()=>({fetchLifecycle:state.load,saveInstallationFact:state.save,saveLifecycleRecord:state.save}));
 vi.mock('../field-app/src/lib/db',()=>({loadAuth:async()=>state.auth}));
 import {InstallationLifecyclePage} from '../field-app/src/pages/InstallationLifecyclePage';
 let root:ReturnType<typeof createRoot>,host:HTMLDivElement;
@@ -43,3 +43,7 @@ it('resets a removed target on reload before allowing another installation submi
  await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
  expect(state.save.mock.calls[0][0].payload.target).toEqual({type:'opening',id:'opening-a'});
 });
+
+// Regression: partial UTC entry must remain editable; saved offsets display as UTC.
+import {timeDraft} from '../field-app/src/pages/LifecycleOperationsPage';
+it('preserves partial time drafts and displays saved offset times in UTC',()=>{expect(timeDraft('2')).toBe('2');expect(timeDraft('2020-01-')).toBe('2020-01-');expect(timeDraft('2020-01-01T03:00:00+02:00')).toBe('2020-01-01T01:00');expect(timeDraft(null)).toBe('');});
