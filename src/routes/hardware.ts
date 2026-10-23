@@ -166,7 +166,7 @@ hardwareRouter.get("/by-opening/:openingId", async (req: AuthedRequest, res) => 
       return res.status(403).json({ error: "forbidden" });
     }
     const result = await pool.query(
-      "SELECT * FROM hardware_components WHERE opening_id = $1 ORDER BY install_date",
+      "SELECT * FROM current_hardware_components WHERE opening_id = $1 ORDER BY install_date",
       [openingId]
     );
     res.json(result.rows);
@@ -209,7 +209,7 @@ hardwareRouter.get("/", async (req: AuthedRequest, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT * FROM hardware_components WHERE ${conditions.join(" AND ")} ORDER BY install_date LIMIT 1000`,
+      `SELECT * FROM current_hardware_components WHERE ${conditions.join(" AND ")} ORDER BY install_date LIMIT 1000`,
       values
     );
     res.json(result.rows);
@@ -241,6 +241,8 @@ hardwareRouter.patch("/:id", async (req: AuthedRequest, res) => {
         return res.json(prior.response_payload);
       }
     }
+    if(current.lifecycle_state==='retired'){await client.query("ROLLBACK");return res.status(409).json({error:'component_retired'});}
+    if(current.position_id&&['mounting_scope','door_leaf_id','frame_id','component_type'].some(k=>(changes as any)[k]!==undefined&&(changes as any)[k]!==current[k])){await client.query("ROLLBACK");return res.status(409).json({error:'position_identity_immutable'});}
     const conflict = revisionConflict(current, expected_revision);
     if (conflict) { await client.query("ROLLBACK"); return res.status(409).json(conflict); }
     const merged = { ...current, ...changes };

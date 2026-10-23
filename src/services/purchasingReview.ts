@@ -6,7 +6,7 @@ export async function purchasingReview(client:PoolClient,orgId:string,ids:string
  if(ops.rowCount!==unique.length)return null;
  const parts=await client.query(`SELECT h.*,a.document_url,a.document_sha256,a.provenance,
  (a.revoked_at IS NULL AND a.component_id IS NOT NULL AND a.manufacturer=h.manufacturer AND a.model_number=h.model_number AND a.component_type=h.component_type) AS approved
- FROM hardware_components h LEFT JOIN component_purchasing_approvals a ON a.component_id=h.id WHERE h.opening_id=ANY($1::uuid[]) ORDER BY h.id`,[unique]);
+ FROM current_hardware_components h LEFT JOIN component_purchasing_approvals a ON a.component_id=h.id WHERE h.opening_id=ANY($1::uuid[]) ORDER BY h.id`,[unique]);
  const frames=await client.query('SELECT opening_id,condition FROM opening_frames WHERE opening_id=ANY($1::uuid[])',[unique]);
  const leaves=await client.query('SELECT opening_id,leaf_role,condition FROM door_leaves WHERE opening_id=ANY($1::uuid[])',[unique]);
  const openingDecisions=ops.rows.map(o=>{

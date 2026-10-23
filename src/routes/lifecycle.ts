@@ -1,3 +1,4 @@
+import {downtimeSummary} from '../services/lifecycleRecords';
 import {Router} from 'express';
 import {z} from 'zod';
 import {pool} from '../db/pool';
@@ -23,13 +24,16 @@ lifecycleRouter.get('/:openingId',async(req:AuthedRequest,res)=>{
   if(!o){await c.query('ROLLBACK');return res.status(404).json({error:'not_found'});}
   const frames=(await c.query('SELECT id FROM opening_frames WHERE opening_id=$1',[o.id])).rows;
   const leaves=(await c.query('SELECT id,leaf_role FROM door_leaves WHERE opening_id=$1',[o.id])).rows;
-  const components=(await c.query('SELECT id,component_type,manufacturer,model_number,door_leaf_id,frame_id,mounting_scope,install_date::text FROM hardware_components WHERE opening_id=$1',[o.id])).rows;
+  const components=(await c.query('SELECT id,component_type,manufacturer,model_number,door_leaf_id,frame_id,mounting_scope,install_date::text,lifecycle_state,position_id,supersedes_component_id,revision,tracker_id,warranty_expiration::text FROM hardware_components WHERE opening_id=$1',[o.id])).rows;
   const facts=(await c.query(`SELECT f.*,NOT EXISTS(SELECT 1 FROM installation_facts n WHERE n.correction_of=f.id) AS is_current FROM installation_facts f WHERE opening_id=$1 ORDER BY recorded_at,id`,[o.id])).rows.map(f=>({...f,target:targetOf(f)}));
   const legacyOpening=(await c.query('SELECT install_date::text FROM openings WHERE id=$1',[o.id])).rows[0].install_date;
   // These are source values, never implicitly promoted to confirmed installation.
   const legacy=[...(legacyOpening?[{target:{type:'opening',id:o.id},date:legacyOpening,review_state:'unreviewed'}]:[]),...components.filter(v=>v.install_date).map(v=>({target:{type:'component',id:v.id},date:v.install_date,review_state:'unreviewed'}))];
+  const records=(await c.query('SELECT r.*,NOT EXISTS(SELECT 1 FROM lifecycle_records n WHERE n.correction_of=r.id) AS is_current FROM lifecycle_records r WHERE opening_id=$1 ORDER BY recorded_at,id',[o.id])).rows;
+  const replacements=(await c.query('SELECT * FROM component_replacements WHERE opening_id=$1 ORDER BY recorded_at,id',[o.id])).rows;
+  const positions=(await c.query('SELECT * FROM component_positions WHERE opening_id=$1 ORDER BY position_key',[o.id])).rows;
   const services=(await c.query('SELECT * FROM service_events WHERE opening_id=$1 ORDER BY event_date,id',[o.id])).rows;
-  await c.query('COMMIT');res.json({opening_id:o.id,opening_code:o.opening_code,status:o.status,revision:Number(o.revision),installation_facts:facts,legacy_installation_dates:legacy,frames,door_leaves:leaves,hardware_components:components,service_events:services});
+  await c.query('COMMIT');res.json({opening_id:o.id,opening_code:o.opening_code,status:o.status,revision:Number(o.revision),installation_facts:facts,legacy_installation_dates:legacy,frames,door_leaves:leaves,hardware_components:components,service_events:services,replacements,positions,records,downtime: downtimeSummary(records)});
  }catch(e){await c.query('ROLLBACK');console.error(e);res.status(500).json({error:'lifecycle_unavailable'});}finally{c.release();}
 });
 

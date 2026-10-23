@@ -35,7 +35,7 @@ serviceRequestsRouter.get('/context/:openingId',async(req:AuthedRequest,res)=>{
       WHERE a.property_id=$1 AND a.revoked_at IS NULL ORDER BY org.name`,[opening.property_id])).rows;
     const frame=(await client.query('SELECT id FROM opening_frames WHERE opening_id=$1',[opening.id])).rows[0]??null;
     const leaves=(await client.query('SELECT id,leaf_role FROM door_leaves WHERE opening_id=$1',[opening.id])).rows;
-    const components=(await client.query('SELECT id,component_type,manufacturer,model_number,door_leaf_id,frame_id,mounting_scope FROM hardware_components WHERE opening_id=$1',[opening.id])).rows;
+    const components=(await client.query('SELECT id,component_type,manufacturer,model_number,door_leaf_id,frame_id,mounting_scope FROM current_hardware_components WHERE opening_id=$1',[opening.id])).rows;
     const photos=(await client.query("SELECT id,related_entity_type,related_entity_id FROM photos WHERE opening_id=$1 AND upload_state='verified'",[opening.id])).rows;
     const requests=(await client.query(`SELECT id,symptom,priority,status,notification_status,created_at FROM service_requests
       WHERE opening_id=$1 AND ($2::uuid=$3::uuid OR requesting_organization_id=$2::uuid OR provider_organization_id=$2::uuid) ORDER BY created_at DESC`,
@@ -68,7 +68,7 @@ serviceRequestsRouter.post('/',async(req:AuthedRequest,res)=>{
     if(prior){await client.query('ROLLBACK');if(prior.actor_user_id!==actor||prior.payload_hash!==hash||prior.entity_id!==b.entity_id||prior.entity_type!=='service_request')return res.status(409).json({error:'idempotency_key_reused'});return res.json(prior);}
     if(opening.status==='decommissioned'){await client.query('ROLLBACK');return res.status(409).json({error:'opening_retired'});}
     for(const t of p.targets){
-      const table={frame:'opening_frames',door_leaf:'door_leaves',component:'hardware_components'}[t.type];
+      const table={frame:'opening_frames',door_leaf:'door_leaves',component:'current_hardware_components'}[t.type];
       if(!(await client.query(`SELECT id FROM ${table} WHERE id=$1 AND opening_id=$2 FOR SHARE`,[t.id,b.opening_id])).rows[0]){
         await client.query('ROLLBACK');return res.status(409).json({error:'target_not_in_opening'});
       }

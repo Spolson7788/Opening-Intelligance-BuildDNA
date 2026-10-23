@@ -310,7 +310,7 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       const [frame,leaves,hardware]=await Promise.all([
         client.query("SELECT condition FROM opening_frames WHERE opening_id=$1",[b.opening_id]),
         client.query("SELECT leaf_role,condition FROM door_leaves WHERE opening_id=$1",[b.opening_id]),
-        client.query("SELECT review_state,condition FROM hardware_components WHERE opening_id=$1",[b.opening_id]),
+        client.query("SELECT review_state,condition FROM current_hardware_components WHERE opening_id=$1",[b.opening_id]),
       ]);
       const roles=new Set(leaves.rows.map((row:any)=>row.leaf_role));
       const leavesComplete=opening.opening_configuration === "pair" ? roles.has("active")&&roles.has("inactive") : roles.has("single");

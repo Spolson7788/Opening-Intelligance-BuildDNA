@@ -11,7 +11,7 @@ export async function openingLabel(client: Pool | PoolClient, id: string, organi
   if (!opening) return null;
   const frame = (await client.query("SELECT condition FROM opening_frames WHERE opening_id=$1", [id])).rows;
   const leaves = (await client.query("SELECT leaf_role,condition FROM door_leaves WHERE opening_id=$1", [id])).rows;
-  const hardware = (await client.query("SELECT condition,review_state FROM hardware_components WHERE opening_id=$1", [id])).rows;
+  const hardware = (await client.query("SELECT condition,review_state FROM current_hardware_components WHERE opening_id=$1", [id])).rows;
   const assessed = (row: any) => ["good", "worn", "failed"].includes(row.condition);
   const requiredRoles = opening.opening_configuration === "pair" ? ["active", "inactive"] : ["single"];
   const missing = [

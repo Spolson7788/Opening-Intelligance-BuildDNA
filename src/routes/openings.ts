@@ -28,19 +28,21 @@ function forbidden(res: Response) {
 // so a scanned/looked-up opening showed no photos, hardware, or history at all.
 async function hydrateOpening(openingRow: any) {
   const openingId = openingRow.id;
-  const [frame, leaves, hardware, serviceEvents, inspections, photos] = await Promise.all([
+  const [frame, leaves, hardware, serviceEvents, inspections, photos, retiredHardware] = await Promise.all([
     pool.query("SELECT * FROM opening_frames WHERE opening_id = $1", [openingId]),
     pool.query("SELECT * FROM door_leaves WHERE opening_id = $1 ORDER BY CASE leaf_role WHEN 'single' THEN 0 WHEN 'active' THEN 1 ELSE 2 END", [openingId]),
-    pool.query("SELECT * FROM hardware_components WHERE opening_id = $1 ORDER BY install_date", [openingId]),
+    pool.query("SELECT * FROM current_hardware_components WHERE opening_id = $1 ORDER BY install_date", [openingId]),
     pool.query("SELECT * FROM service_events WHERE opening_id = $1 ORDER BY event_date DESC", [openingId]),
     pool.query("SELECT * FROM inspection_events WHERE opening_id = $1 ORDER BY event_date DESC", [openingId]),
     pool.query("SELECT * FROM photos WHERE opening_id = $1 ORDER BY created_at DESC", [openingId]),
+    pool.query("SELECT * FROM hardware_components WHERE opening_id=$1 AND lifecycle_state='retired' ORDER BY id", [openingId]),
   ]);
   return {
     ...openingRow,
     frame: frame.rows[0] ?? null,
     door_leaves: leaves.rows,
     hardware_components: hardware.rows,
+    retired_hardware_components: retiredHardware.rows,
     service_events: serviceEvents.rows,
     inspection_events: inspections.rows,
     photos: photos.rows,
@@ -212,7 +214,7 @@ openingsRouter.post("/:id/complete", async (req: AuthedRequest, res) => {
   const [frame, leaves, hardware] = await Promise.all([
     pool.query("SELECT condition FROM opening_frames WHERE opening_id=$1", [opening.id]),
     pool.query("SELECT leaf_role,condition FROM door_leaves WHERE opening_id=$1", [opening.id]),
-    pool.query("SELECT review_state,condition FROM hardware_components WHERE opening_id=$1", [opening.id]),
+    pool.query("SELECT review_state,condition FROM current_hardware_components WHERE opening_id=$1", [opening.id]),
   ]);
   const roles = new Set(leaves.rows.map((row) => row.leaf_role));
   const leavesComplete = opening.opening_configuration === "pair"

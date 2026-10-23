@@ -22,7 +22,8 @@ portfolioRouter.get("/facility-dashboard/:id", async (req: AuthedRequest, res) =
           'building_name', b.name,
           'frame', (SELECT to_jsonb(f) FROM opening_frames f WHERE f.opening_id=o.id),
           'door_leaves', COALESCE((SELECT jsonb_agg(l ORDER BY l.leaf_role) FROM door_leaves l WHERE l.opening_id=o.id),'[]'::jsonb),
-          'hardware_components', COALESCE((SELECT jsonb_agg(h ORDER BY h.id) FROM hardware_components h WHERE h.opening_id=o.id),'[]'::jsonb),
+          'hardware_components', COALESCE((SELECT jsonb_agg(h ORDER BY h.id) FROM current_hardware_components h WHERE h.opening_id=o.id),'[]'::jsonb),
+          'retired_hardware_components', COALESCE((SELECT jsonb_agg(h ORDER BY h.id) FROM hardware_components h WHERE h.opening_id=o.id AND h.lifecycle_state='retired'),'[]'::jsonb),
           'service_events', COALESCE((SELECT jsonb_agg(e ORDER BY e.event_date DESC,e.id) FROM service_events e WHERE e.opening_id=o.id),'[]'::jsonb),
           'inspection_events', COALESCE((SELECT jsonb_agg(i ORDER BY i.event_date DESC,i.id) FROM inspection_events i WHERE i.opening_id=o.id),'[]'::jsonb),
           'photos', COALESCE((SELECT jsonb_agg(jsonb_build_object(
@@ -247,7 +248,7 @@ portfolioRouter.get("/capital-forecast", async (req: AuthedRequest, res) => {
            COALESCE(SUM(hc.unit_cost), 0) AS known_cost,
            COUNT(hc.id) FILTER (WHERE hc.unit_cost IS NOT NULL) AS priced_parts
          FROM opening_bucket ob
-         LEFT JOIN hardware_components hc ON hc.opening_id = ob.id
+         LEFT JOIN current_hardware_components hc ON hc.opening_id = ob.id
          GROUP BY ob.id, ob.opening_type, ob.bucket
        )
        SELECT bucket, opening_type,
@@ -320,7 +321,7 @@ portfolioRouter.get("/capital-forecast/rollup", async (req: AuthedRequest, res) 
            COALESCE(SUM(hc.unit_cost), 0) AS known_cost,
            COUNT(hc.id) FILTER (WHERE hc.unit_cost IS NOT NULL) AS priced_parts
          FROM opening_bucket ob
-         LEFT JOIN hardware_components hc ON hc.opening_id = ob.id
+         LEFT JOIN current_hardware_components hc ON hc.opening_id = ob.id
          GROUP BY ob.id, ob.opening_type, ob.property_id, ob.property_name, ob.bucket
        )
        SELECT property_id, property_name, bucket, opening_type,
@@ -509,7 +510,7 @@ portfolioRouter.get("/warranty-alerts", async (req: AuthedRequest, res) => {
                 WHEN hc.warranty_expiration < CURRENT_DATE + INTERVAL '90 days' THEN 'expiring_soon'
                 ELSE 'not_yet'
               END AS alert_level
-       FROM hardware_components hc
+       FROM current_hardware_components hc
        JOIN openings o ON o.id = hc.opening_id
        JOIN buildings b ON b.id = o.building_id
        JOIN properties p ON p.id = b.property_id

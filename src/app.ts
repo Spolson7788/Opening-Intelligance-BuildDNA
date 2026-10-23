@@ -1,3 +1,4 @@
+import {lifecycleOperationsRouter} from './routes/lifecycleOperations';
 import {lifecycleRouter} from './routes/lifecycle';
 import {accountRecoveryRouter} from "./routes/accountRecovery";
 import {recognitionRouter} from "./routes/recognition";
@@ -102,6 +103,7 @@ export function createApp(options: { accountRecoveryEnabled?: boolean } = {}) {
   app.use("/api/labels", labelsRouter);
   app.use("/api/service-requests", serviceRequestsRouter);
   app.use('/api/lifecycle', lifecycleRouter);
+  app.use('/api/lifecycle', lifecycleOperationsRouter);
 
   return app;
 }

@@ -147,7 +147,7 @@ exportRouter.get("/capital-forecast.pdf", async (req: AuthedRequest, res) => {
              COALESCE(SUM(hc.unit_cost), 0) AS known_cost,
              COUNT(hc.id) FILTER (WHERE hc.unit_cost IS NOT NULL) AS priced_parts
            FROM opening_bucket ob
-           LEFT JOIN hardware_components hc ON hc.opening_id = ob.id
+           LEFT JOIN current_hardware_components hc ON hc.opening_id = ob.id
            GROUP BY ob.id, ob.opening_type, ob.bucket
          )
          SELECT bucket, opening_type,
@@ -200,7 +200,7 @@ exportRouter.get("/capital-forecast.pdf", async (req: AuthedRequest, res) => {
              COALESCE(SUM(hc.unit_cost), 0) AS known_cost,
              COUNT(hc.id) FILTER (WHERE hc.unit_cost IS NOT NULL) AS priced_parts
            FROM opening_bucket ob
-           LEFT JOIN hardware_components hc ON hc.opening_id = ob.id
+           LEFT JOIN current_hardware_components hc ON hc.opening_id = ob.id
            GROUP BY ob.id, ob.opening_type, ob.property_id, ob.property_name, ob.bucket
          )
          SELECT property_id, property_name, bucket, opening_type,
@@ -337,7 +337,7 @@ exportRouter.get("/hardware.csv", async (req: AuthedRequest, res) => {
          o.opening_code, p.name AS property_name, b.name AS building_name,
          hc.component_type, hc.manufacturer, hc.model_number, hc.finish,
          hc.install_date, hc.warranty_expiration
-       FROM hardware_components hc
+       FROM current_hardware_components hc
        JOIN openings o ON o.id = hc.opening_id
        JOIN buildings b ON b.id = o.building_id
        JOIN properties p ON p.id = b.property_id
