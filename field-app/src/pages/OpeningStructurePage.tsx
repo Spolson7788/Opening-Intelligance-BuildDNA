@@ -21,24 +21,30 @@ export function OpeningStructurePage() {
   const [leafMaterial, setLeafMaterial] = useState(opening?.door_leaves?.find((l:any)=>l.leaf_role===roles[0])?.material ?? "");
   const [handing, setHanding] = useState(opening?.door_leaves?.find((l:any)=>l.leaf_role===roles[0])?.handing ?? "");
   const [role, setRole] = useState(roles[0]);
+  const [savedTargets, setSavedTargets] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
   async function saveFrame() {
+    setSaving(true);
     setMessage("Saving frame…");
     try {
-      await queueOpeningMutation("opening_frame", id!, { id: frameId, material: frameMaterial || undefined, condition: frameCondition });
+      await queueOpeningMutation("opening_frame", id!, { id: frameId, expected_revision: opening?.frame?.revision == null ? null : Number(opening.frame.revision), material: frameMaterial || undefined, condition: frameCondition });
       await updateCachedOpening(id!, (cached) => ({ ...cached, frame: { ...cached.frame, id: frameId, material: frameMaterial || null, condition: frameCondition, pending_sync: true } }));
+      setSavedTargets(targets => [...targets, frameId]);
       setMessage("Frame saved locally. It will synchronize automatically.");
     } catch {
       setMessage("Frame was not saved. Check the connection and try again.");
-    }
+    } finally { setSaving(false); }
   }
 
   async function saveLeaf() {
+    setSaving(true);
     setMessage(`Saving ${role} leaf…`);
     try {
       await queueOpeningMutation("door_leaf", id!, {
         id: leafIds[role],
+        expected_revision: opening?.door_leaves?.find((leaf: any) => leaf.id === leafIds[role])?.revision == null ? null : Number(opening.door_leaves.find((leaf: any) => leaf.id === leafIds[role]).revision),
         leaf_role: role,
         material: leafMaterial || undefined,
         handing: handing || undefined,
@@ -49,10 +55,11 @@ export function OpeningStructurePage() {
         const leaves = [...(cached.door_leaves || []).filter((leaf: any) => leaf.leaf_role !== role), pending];
         return { ...cached, door_leaves: leaves };
       });
+      setSavedTargets(targets => [...targets, leafIds[role]]);
       setMessage(`${role[0].toUpperCase()}${role.slice(1)} leaf saved locally. It will synchronize automatically.`);
     } catch {
       setMessage("Door leaf was not saved. Check the opening configuration and try again.");
-    }
+    } finally { setSaving(false); }
   }
 
   return <div className="app-shell">
@@ -66,7 +73,7 @@ export function OpeningStructurePage() {
         <div className="section-label">Frame</div>
         <div className="field"><label htmlFor="frame-material">Material</label><input id="frame-material" value={frameMaterial} onChange={(e) => setFrameMaterial(e.target.value)} /></div>
         <div className="field"><label htmlFor="frame-condition">Frame condition</label><select id="frame-condition" value={frameCondition} onChange={e=>setFrameCondition(e.target.value)}>{["unverified","good","worn","failed"].map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-        <button className="btn btn-secondary" onClick={saveFrame}>Save frame</button>
+        <button className="btn btn-secondary" onClick={saveFrame} disabled={saving || savedTargets.includes(frameId)}>Save frame</button>
         <div style={{ marginTop: 10 }}><PhotoCapture openingId={id!} relatedEntityType="frame" relatedEntityId={frameId} onQueued={() => setMessage("Frame photograph saved locally.")} /></div>
       </div>
       <div className="card">
@@ -75,10 +82,11 @@ export function OpeningStructurePage() {
         <div className="field"><label htmlFor="leaf-material">Material</label><input id="leaf-material" value={leafMaterial} onChange={(e) => setLeafMaterial(e.target.value)} /></div>
         <div className="field"><label htmlFor="handing">Handing</label><input id="handing" value={handing} onChange={(e) => setHanding(e.target.value)} /></div>
         <div className="field"><label htmlFor="leaf-condition">Leaf condition</label><select id="leaf-condition" value={leafCondition} onChange={e=>setLeafCondition(e.target.value)}>{["unverified","good","worn","failed"].map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-        <button className="btn btn-secondary" onClick={saveLeaf}>Save {role} leaf</button>
+        <button className="btn btn-secondary" onClick={saveLeaf} disabled={saving || savedTargets.includes(leafIds[role])}>Save {role} leaf</button>
         <div style={{ marginTop: 10 }}><PhotoCapture openingId={id!} relatedEntityType="door_leaf" relatedEntityId={leafIds[role]} onQueued={() => setMessage(`${role} leaf photograph saved locally.`)} /></div>
       </div>
       {message && <p>{message}</p>}
+      {savedTargets.length > 0 && <p>Return to the opening and refresh saved records before editing these targets again.</p>}
     </div>
   </div>;
 }

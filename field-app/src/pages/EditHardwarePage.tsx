@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { editHardwareComponent, deleteHardwareComponent, fetchHardwareForOpening } from "../lib/api";
+import { ApiError, editHardwareComponent, deleteHardwareComponent, fetchHardwareForOpening } from "../lib/api";
 import { CARRIER_OPTIONS, carrierTrackingUrl } from "../lib/tracking";
 import { SyncBadge } from "../components/SyncBadge";
 
@@ -38,6 +38,8 @@ export function EditHardwarePage() {
   const location = useLocation();
 
   const [loading, setLoading] = useState(true);
+  const [revision, setRevision] = useState<number | null>(null);
+  const [operationId] = useState(() => crypto.randomUUID());
   const [trackerId, setTrackerId] = useState("");
   const [componentType, setComponentType] = useState("lockset");
   const [condition, setCondition] = useState("unverified");
@@ -80,6 +82,7 @@ export function EditHardwarePage() {
   }, [id, hardwareId]);
 
   function applyHardware(hw: any) {
+    setRevision(hw.revision == null ? null : Number(hw.revision));
     setTrackerId(hw.tracker_id || "");
     setComponentType(hw.component_type);
     setCondition(hw.condition || "unverified");
@@ -103,6 +106,8 @@ export function EditHardwarePage() {
     setError(null);
     try {
       await editHardwareComponent(hardwareId!, {
+        expected_revision: revision,
+        client_operation_id: operationId,
         component_type: componentType,
         condition,
         identity_status: identityStatus,
@@ -120,7 +125,11 @@ export function EditHardwarePage() {
       });
       setSaved(true);
       setTimeout(() => navigate(`/opening/${id}`), 700);
-    } catch {
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError("This record changed or this retry no longer matches. Return to the opening, refresh saved records, and review your changes before saving again.");
+        return;
+      }
       setError("Couldn't save — check your connection and try again.");
     } finally {
       setSubmitting(false);

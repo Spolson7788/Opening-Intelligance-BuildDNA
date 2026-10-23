@@ -1,3 +1,5 @@
+import { revisionConflict } from "../services/revision";
+import { canonicalPayloadHash, findSyncReceipt, writeSyncReceiptAndAudit } from "../services/syncProtocol";
 import { Router } from "express";
 import { z } from "zod";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -79,15 +81,16 @@ async function validateMountingTarget(
   openingId: string,
   mountingScope: "opening" | "frame" | "door_leaf",
   doorLeafId?: string,
-  frameId?: string
+  frameId?: string,
+  queryable: Pick<typeof pool, "query"> = pool
 ): Promise<string | null> {
   if (mountingScope === "door_leaf") {
     if (!doorLeafId || frameId) return "door_leaf_target_required";
-    const leaf = await pool.query("SELECT 1 FROM door_leaves WHERE id=$1 AND opening_id=$2", [doorLeafId, openingId]);
+    const leaf = await queryable.query("SELECT 1 FROM door_leaves WHERE id=$1 AND opening_id=$2", [doorLeafId, openingId]);
     if (!leaf.rows.length) return "door_leaf_not_in_opening";
   } else if (mountingScope === "frame") {
     if (!frameId || doorLeafId) return "frame_target_required";
-    const frame = await pool.query("SELECT 1 FROM opening_frames WHERE id=$1 AND opening_id=$2", [frameId, openingId]);
+    const frame = await queryable.query("SELECT 1 FROM opening_frames WHERE id=$1 AND opening_id=$2", [frameId, openingId]);
     if (!frame.rows.length) return "frame_not_in_opening";
   } else if (doorLeafId || frameId) {
     return "opening_scope_cannot_have_leaf_or_frame";
@@ -101,15 +104,27 @@ hardwareRouter.post("/", async (req: AuthedRequest, res) => {
   const b = parsed.data;
   const orgId = req.auth!.organizationId;
 
+  const client = await pool.connect();
   try {
-    if (!(await assertOpeningInOrg(b.opening_id, orgId))) {
+    await client.query("BEGIN");
+    if (!(await client.query(`SELECT id FROM openings WHERE id=$1 AND id IN (${openingsForOrgSubquery(2)}) FOR UPDATE`, [b.opening_id, orgId])).rows.length) {
+      await client.query("ROLLBACK");
       return res.status(403).json({ error: "forbidden" });
     }
+    const hash = canonicalPayloadHash({ command: "hardware_create", payload: b });
+    if (b.client_operation_id) {
+      const prior = await findSyncReceipt(client, orgId, b.client_operation_id);
+      if (prior) {
+        await client.query("ROLLBACK");
+        if (prior.actor_user_id !== req.auth!.userId || prior.payload_hash !== hash) return res.status(409).json({ error: "idempotency_key_reused" });
+        return res.status(201).json(prior.response_payload);
+      }
+    }
     const mountingScope = b.mounting_scope ?? "opening";
-    const targetError = await validateMountingTarget(b.opening_id, mountingScope, b.door_leaf_id, b.frame_id);
-    if (targetError) return res.status(400).json({ error: targetError });
+    const targetError = await validateMountingTarget(b.opening_id, mountingScope, b.door_leaf_id, b.frame_id, client);
+    if (targetError) { await client.query("ROLLBACK"); return res.status(400).json({ error: targetError }); }
     const trackerId = generateTrackerId();
-    const result = await pool.query(
+    const result = await client.query(
       `INSERT INTO hardware_components
         (id, opening_id, component_type, manufacturer, model_number, finish, install_date, warranty_expiration, notes,
          unit_cost, supplier_name, supplier_contact, tracker_id, serial_number, carrier, tracking_number,
@@ -117,8 +132,7 @@ hardwareRouter.post("/", async (req: AuthedRequest, res) => {
          mounting_scope, door_leaf_id, frame_id, position_label, client_operation_id,
          condition, identity_status, review_state, replacement_required)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
-       ON CONFLICT (opening_id, client_operation_id) WHERE client_operation_id IS NOT NULL
-       DO UPDATE SET opening_id=EXCLUDED.opening_id RETURNING *`,
+       RETURNING *`,
       [
         b.id ?? randomUUID(), b.opening_id, b.component_type, b.manufacturer ?? null, b.model_number ?? null,
         b.finish ?? null, b.install_date ?? null, b.warranty_expiration ?? null, b.notes ?? null,
@@ -132,11 +146,15 @@ hardwareRouter.post("/", async (req: AuthedRequest, res) => {
         b.review_state ?? "pending", b.replacement_required ?? false,
       ]
     );
+    if (b.client_operation_id) await hardwareReceipt(client, req, result.rows[0], b.client_operation_id, hash, "create", null, Object.keys(b));
+    await client.query("COMMIT");
     res.status(201).json(result.rows[0]);
-  } catch (err) {
+  } catch (err: any) {
+    await client.query("ROLLBACK");
+    if (err.code === "23505") return res.status(409).json({ error: "entity_or_operation_already_exists" });
     console.error(err);
     res.status(500).json({ error: "internal_error" });
-  }
+  } finally { client.release(); }
 });
 
 // List all hardware for a given opening
@@ -201,50 +219,55 @@ hardwareRouter.get("/", async (req: AuthedRequest, res) => {
   }
 });
 
-const updateHardwareSchema = createHardwareSchema.partial().omit({ id: true, opening_id: true });
+const updateHardwareSchema = createHardwareSchema.partial().omit({ id: true, opening_id: true }).extend({ expected_revision: z.number().int().positive().nullable().optional() });
 
 hardwareRouter.patch("/:id", async (req: AuthedRequest, res) => {
-  const { id } = req.params;
-  const orgId = req.auth!.organizationId;
   const parsed = updateHardwareSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-
+  const { expected_revision, client_operation_id, ...changes } = parsed.data;
+  const client = await pool.connect();
   try {
-    const openingId = await assertHardwareInOrg(id, orgId);
-    if (!openingId) return res.status(404).json({ error: "not_found" });
-
-    if (parsed.data.mounting_scope !== undefined || parsed.data.door_leaf_id !== undefined || parsed.data.frame_id !== undefined) {
-      const current = await pool.query(
-        "SELECT mounting_scope, door_leaf_id, frame_id FROM hardware_components WHERE id=$1",
-        [id]
-      );
-      const merged = { ...current.rows[0], ...parsed.data };
-      const targetError = await validateMountingTarget(
-        openingId,
-        merged.mounting_scope,
-        merged.door_leaf_id ?? undefined,
-        merged.frame_id ?? undefined
-      );
-      if (targetError) return res.status(400).json({ error: targetError });
+    await client.query("BEGIN");
+    const current = (await client.query(
+      `SELECT * FROM hardware_components WHERE id=$1 AND opening_id IN (${openingsForOrgSubquery(2)}) FOR UPDATE`,
+      [req.params.id, req.auth!.organizationId])).rows[0];
+    if (!current) { await client.query("ROLLBACK"); return res.status(404).json({ error: "not_found" }); }
+    const hash = canonicalPayloadHash({ command: "hardware_update", id: req.params.id, payload: parsed.data });
+    if (client_operation_id) {
+      const prior = await findSyncReceipt(client, req.auth!.organizationId, client_operation_id);
+      if (prior) {
+        await client.query("ROLLBACK");
+        if (prior.actor_user_id !== req.auth!.userId || prior.payload_hash !== hash) return res.status(409).json({ error: "idempotency_key_reused" });
+        return res.json(prior.response_payload);
+      }
     }
-
-    const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined);
-    if (fields.length === 0) return res.status(400).json({ error: "no_fields_to_update" });
-
-    const setClause = fields.map(([k], i) => `${k} = $${i + 1}`).join(", ");
-    const values = fields.map(([, v]) => v);
-    values.push(id);
-
-    const result = await pool.query(
-      `UPDATE hardware_components SET ${setClause} WHERE id = $${values.length} RETURNING *`,
-      values
-    );
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "internal_error" });
-  }
+    const conflict = revisionConflict(current, expected_revision);
+    if (conflict) { await client.query("ROLLBACK"); return res.status(409).json(conflict); }
+    const merged = { ...current, ...changes };
+    const targetError = await validateMountingTarget(current.opening_id, merged.mounting_scope, merged.door_leaf_id ?? undefined, merged.frame_id ?? undefined, client);
+    if (targetError) { await client.query("ROLLBACK"); return res.status(400).json({ error: targetError }); }
+    const fields = Object.entries(changes).filter(([, value]) => value !== undefined);
+    if (!fields.length) { await client.query("ROLLBACK"); return res.status(400).json({ error: "no_fields_to_update" }); }
+    const values: any[] = fields.map(([, value]) => value);
+    values.push(current.id);
+    const result = await client.query(`UPDATE hardware_components SET ${fields.map(([key], i) => key + '=$' + (i + 1)).join(',')}, revision=revision+1 WHERE id=$${values.length} RETURNING *`, values);
+    if (client_operation_id) await hardwareReceipt(client, req, result.rows[0], client_operation_id, hash, "update", expected_revision!, Object.keys(changes));
+    await client.query("COMMIT");
+    return res.json(result.rows[0]);
+  } catch (err: any) {
+    await client.query("ROLLBACK");
+    if (err.code === "23505") return res.status(409).json({ error: "idempotency_key_reused" });
+    console.error(err); return res.status(500).json({ error: "internal_error" });
+  } finally { client.release(); }
 });
+
+async function hardwareReceipt(client: any, req: AuthedRequest, row: any, operationId: string, payloadHash: string, operationType: "create" | "update", baseServerRevision: number | null, changedFields: string[]) {
+  return writeSyncReceiptAndAudit(client, { organizationId: req.auth!.organizationId, openingId: row.opening_id,
+    operationId, operationType, entityType: "component", entityId: row.id, payloadHash, baseServerRevision,
+    resultingServerRevision: Number(row.revision), actorUserId: req.auth!.userId, deviceId: req.auth!.userId,
+    schemaVersion: 3, appVersion: "connected-command-1", protocolVersion: 1, responsePayload: row,
+    action: "hardware_" + operationType, changedFields });
+}
 
 hardwareRouter.delete("/:id", async (req: AuthedRequest, res) => {
   const { id } = req.params;

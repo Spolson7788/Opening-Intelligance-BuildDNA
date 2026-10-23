@@ -41,10 +41,10 @@ it('purchasing requires owner-approved exact identity/document, excludes service
  expect((await request(app).put('/api/purchasing/approvals/'+h.body.id).set(auth(owner.token)).send(approval)).status).toBe(200);
  const ready=await review();expect(ready.body.blocked).toBe(false);expect(ready.body.items).toHaveLength(1);expect(ready.body.items[0]).toMatchObject({component_id:h.body.id,document_url:approval.document_url,provenance:'technician_selected'});expect(ready.body.excluded[0].component_id).toBe(good.body.id);
  const mixed=await review([o.id,unfinished.id]);expect(mixed.body.blocked).toBe(true);expect(mixed.body.items).toEqual([]);
- await request(app).patch('/api/hardware/'+h.body.id).set(auth(owner.token)).send({model_number:'CHANGED'});
+ expect((await request(app).patch('/api/hardware/'+h.body.id).set(auth(owner.token)).send({model_number:'CHANGED',expected_revision:Number(h.body.revision)})).status).toBe(200);
  expect((await review()).body.blocked).toBe(true);
  expect((await request(app).get(`/api/openings/${o.id}/purchasing-eligibility`).set(auth(owner.token))).body.blocked).toBe(true);
- await request(app).patch('/api/hardware/'+h.body.id).set(auth(owner.token)).send({condition:'good'});
+ expect((await request(app).patch('/api/hardware/'+h.body.id).set(auth(owner.token)).send({condition:'good',expected_revision:Number(h.body.revision)+1})).status).toBe(200);
  expect((await review()).body).toMatchObject({status:'no_replacements',items:[]});
  await pool.query("UPDATE users SET role='technician' WHERE organization_id=$1",[owner.organizationId]);
  expect((await request(app).put('/api/purchasing/approvals/'+h.body.id).set(auth(owner.token)).send(approval)).status).toBe(403);

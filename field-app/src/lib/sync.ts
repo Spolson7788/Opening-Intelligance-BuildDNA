@@ -61,10 +61,16 @@ export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: 
   const now = new Date().toISOString(); const entityType = entityTypeForKind(kind); const entityId = payload.id ?? id;
   const deviceId = await getOrCreateDeviceId(); const semanticPayload = { kind, ...payload };
   const existingOperations = await getAllSyncOperations();
+  let baseServerRevision: number | null = null;
+  if (entityType === "frame" || entityType === "door_leaf") {
+    const owned = existingOperations.filter(op => op.entityId === entityId && op.actorUserId === auth.userId && op.organizationId === auth.organizationId);
+    if (owned.some(op => op.state !== "verified")) throw new Error("structure_sync_pending_review");
+    baseServerRevision = payload.expected_revision ?? null;
+  }
   const dependencyOperationIds = dependencyIdsForOperation(existingOperations, entityType, openingId, payload);
-  const operation: SyncOperation = { operationId: id, operationType: kind === "complete_opening" ? "complete" : "create",
+  const operation: SyncOperation = { operationId: id, operationType: kind === "complete_opening" ? "complete" : baseServerRevision !== null ? "update" : "create",
     entityType, entityId, openingId, organizationId: auth.organizationId, actorUserId: auth.userId, deviceId,
-    baseServerRevision: null, payload: semanticPayload, payloadHash: await sha256Hex(JSON.stringify(canonicalize(semanticPayload))),
+    baseServerRevision, payload: semanticPayload, payloadHash: await sha256Hex(JSON.stringify(canonicalize(semanticPayload))),
     dependencyOperationIds, createdAtLocal: now, state: dependencyOperationIds.length ? "blocked_dependency" : "queued", attemptCount: 0,
     schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: APP_VERSION, protocolVersion: SYNC_PROTOCOL_VERSION };
   const entity: OfflineEntityEnvelope = { key: entityKey(entityType, entityId), id: entityId, entityType,
@@ -157,7 +163,7 @@ async function submitPhoto(operation: SyncOperation, principal: Principal) {
     schema_version: operation.schemaVersion, app_version: operation.appVersion, protocol_version: operation.protocolVersion }, principal);
 }
 async function submitGeneralOperation(operation: SyncOperation, principal: Principal) {
-  const { kind: _kind, id: _id, opening_id: _opening, client_operation_id: _client, ...payload } = operation.payload as any;
+  const { kind: _kind, id: _id, opening_id: _opening, client_operation_id: _client, expected_revision: _revision, ...payload } = operation.payload as any;
   return submitOfflineOperation({
     operation_id: operation.operationId, operation_type: operation.operationType,
     entity_id: operation.entityId, entity_type: operation.entityType,

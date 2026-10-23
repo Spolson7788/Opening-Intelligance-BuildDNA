@@ -1,3 +1,4 @@
+import { revisionConflict } from "../services/revision";
 import { randomBytes } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
@@ -111,6 +112,7 @@ syncRouter.post("/components", async (req: AuthedRequest, res) => {
 
     const prior = await findSyncReceipt(client, orgId, b.operation_id);
     if (prior) {
+      if (prior.actor_user_id !== userId) { await client.query("ROLLBACK"); return res.status(409).json({ error: "idempotency_key_reused" }); }
       const replay = assertReceiptReplay(prior, { entityId: b.entity_id, payloadHash });
       await client.query("ROLLBACK");
       if (replay === "idempotency_key_reused") {
@@ -175,12 +177,12 @@ syncRouter.post("/components", async (req: AuthedRequest, res) => {
 
 const generalSyncOperation = z.object({
   operation_id: z.string().uuid(),
-  operation_type: z.enum(["create", "complete"]),
+  operation_type: z.enum(["create", "update", "complete"]),
   entity_id: z.string().uuid(),
   entity_type: z.enum(["frame", "door_leaf", "service_event", "inspection_event", "completion"]),
   opening_id: z.string().uuid(),
   device_id: z.string().uuid(),
-  base_server_revision: z.null(),
+  base_server_revision: z.number().int().positive().nullable(),
   schema_version: z.number().int().positive(),
   app_version: z.string().min(1).max(100),
   protocol_version: z.number().int().positive(),
@@ -222,7 +224,7 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
   const orgId = req.auth!.organizationId;
   const userId = req.auth!.userId;
   const payloadHash = canonicalPayloadHash({ operation_type: b.operation_type, entity_type: b.entity_type,
-    entity_id: b.entity_id, opening_id: b.opening_id, base_server_revision: null, payload });
+    entity_id: b.entity_id, opening_id: b.opening_id, base_server_revision: b.base_server_revision, payload });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -233,46 +235,56 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
     if (!opening) { await client.query("ROLLBACK"); return res.status(403).json({ error: "forbidden" }); }
     const prior = await findSyncReceipt(client, orgId, b.operation_id);
     if (prior) {
+      if (prior.actor_user_id !== userId) { await client.query("ROLLBACK"); return res.status(409).json({ error: "idempotency_key_reused" }); }
       const replay = assertReceiptReplay(prior, { entityId: b.entity_id, payloadHash });
       await client.query("ROLLBACK");
       return replay === "idempotency_key_reused" ? res.status(409).json({ error: replay }) : res.json({ ...prior, status: "already_applied" });
     }
+    if (b.entity_type !== "frame" && b.entity_type !== "door_leaf" && (b.operation_type === "update" || b.base_server_revision !== null)) {
+      await client.query("ROLLBACK"); return res.status(400).json({ error: "operation_entity_mismatch" });
+    }
     let record: any;
     if (b.entity_type === "frame") {
-      const permanent = await client.query("SELECT id FROM opening_frames WHERE opening_id=$1", [b.opening_id]);
+      const permanent = await client.query("SELECT id, revision FROM opening_frames WHERE opening_id=$1 FOR UPDATE", [b.opening_id]);
       if (permanent.rows[0] && permanent.rows[0].id !== b.entity_id) {
         await client.query("ROLLBACK");
         return res.status(409).json({ error: "permanent_entity_identity_conflict", entity_id: permanent.rows[0].id });
       }
+      const conflict = revisionConflict(permanent.rows[0], b.base_server_revision);
+      if (conflict) { await client.query("ROLLBACK"); return res.status(409).json(conflict); }
       const result = await client.query(`INSERT INTO opening_frames
         (id,opening_id,material,frame_type,width_in,height_in,fire_rated,condition,notes,client_operation_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
         ON CONFLICT (opening_id) DO UPDATE SET material=EXCLUDED.material,frame_type=EXCLUDED.frame_type,
         width_in=EXCLUDED.width_in,height_in=EXCLUDED.height_in,fire_rated=EXCLUDED.fire_rated,
         condition=EXCLUDED.condition,notes=EXCLUDED.notes,client_operation_id=EXCLUDED.client_operation_id,
-        revision=opening_frames.revision+1,updated_at=now() RETURNING *`,
+        revision=opening_frames.revision+1,updated_at=now() WHERE opening_frames.revision=$11 RETURNING *`,
       [b.entity_id,b.opening_id,payload.material??null,payload.frame_type??null,payload.width_in??null,payload.height_in??null,
-        payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id]); record=result.rows[0];
+        payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id,b.base_server_revision]); record=result.rows[0];
+      if (!record) { await client.query("ROLLBACK"); return res.status(409).json({ error: "revision_conflict" }); }
     } else if (b.entity_type === "door_leaf") {
       if ((opening.opening_configuration === "single") !== (payload.leaf_role === "single")) {
         await client.query("ROLLBACK"); return res.status(409).json({ error: "leaf_role_configuration_mismatch" });
       }
       const permanent = await client.query(
-        "SELECT id FROM door_leaves WHERE opening_id=$1 AND leaf_role=$2", [b.opening_id, payload.leaf_role],
+        "SELECT id, revision FROM door_leaves WHERE opening_id=$1 AND leaf_role=$2 FOR UPDATE", [b.opening_id, payload.leaf_role],
       );
       if (permanent.rows[0] && permanent.rows[0].id !== b.entity_id) {
         await client.query("ROLLBACK");
         return res.status(409).json({ error: "permanent_entity_identity_conflict", entity_id: permanent.rows[0].id });
       }
-      const result=await client.query(`INSERT INTO door_leaves
+      const conflict = revisionConflict(permanent.rows[0], b.base_server_revision);
+      if (conflict) { await client.query("ROLLBACK"); return res.status(409).json(conflict); }
+      const result = await client.query(`INSERT INTO door_leaves
         (id,opening_id,leaf_role,handing,material,width_in,height_in,thickness_in,fire_rated,condition,notes,client_operation_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
         ON CONFLICT (opening_id,leaf_role) DO UPDATE SET handing=EXCLUDED.handing,material=EXCLUDED.material,
         width_in=EXCLUDED.width_in,height_in=EXCLUDED.height_in,thickness_in=EXCLUDED.thickness_in,
         fire_rated=EXCLUDED.fire_rated,condition=EXCLUDED.condition,notes=EXCLUDED.notes,
-        client_operation_id=EXCLUDED.client_operation_id,revision=door_leaves.revision+1,updated_at=now() RETURNING *`,
+        client_operation_id=EXCLUDED.client_operation_id,revision=door_leaves.revision+1,updated_at=now() WHERE door_leaves.revision=$13 RETURNING *`,
       [b.entity_id,b.opening_id,payload.leaf_role,payload.handing??null,payload.material??null,payload.width_in??null,
-        payload.height_in??null,payload.thickness_in??null,payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id]); record=result.rows[0];
+        payload.height_in??null,payload.thickness_in??null,payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id,b.base_server_revision]); record=result.rows[0];
+      if (!record) { await client.query("ROLLBACK"); return res.status(409).json({ error: "revision_conflict" }); }
     } else if (b.entity_type === "service_event") {
       if (payload.performed_by_org_id && payload.performed_by_org_id !== orgId) {
         await client.query("ROLLBACK");
@@ -313,7 +325,7 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       [b.opening_id,userId]); record=result.rows[0];
     }
     const receipt=await writeSyncReceiptAndAudit(client,{ organizationId:orgId,openingId:b.opening_id,operationId:b.operation_id,
-      operationType:b.operation_type,entityType:b.entity_type,entityId:b.entity_id,payloadHash,baseServerRevision:null,
+      operationType:b.operation_type,entityType:b.entity_type,entityId:b.entity_id,payloadHash,baseServerRevision:b.base_server_revision,
       resultingServerRevision:Number(record.revision??1),actorUserId:userId,deviceId:b.device_id,schemaVersion:b.schema_version,
       appVersion:b.app_version,protocolVersion:b.protocol_version,responsePayload:record,
       action:`${b.entity_type}_${b.operation_type}_offline`,changedFields:Object.keys(payload).sort() });
