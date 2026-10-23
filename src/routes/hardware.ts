@@ -344,19 +344,24 @@ hardwareRouter.post("/bulk-import", async (req: AuthedRequest, res) => {
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
+    const client=await pool.connect();
     try {
-      const openingResult = await pool.query(
-        `SELECT id FROM openings WHERE opening_code = $1 AND id IN (${openingsForOrgSubquery(2)})`,
+      await client.query('BEGIN');
+      const openingResult = await client.query(
+        `SELECT id FROM openings WHERE opening_code = $1 AND id IN (${openingsForOrgSubquery(2)}) ORDER BY id FOR UPDATE`,
         [row.opening_code, orgId]
       );
-      if (openingResult.rows.length === 0) {
+      if (openingResult.rows.length !== 1) {
         results.push({ row: i, opening_code: row.opening_code, component_type: row.component_type, status: "error", error: "opening_code not found" });
+        await client.query('ROLLBACK');
         continue;
       }
       const openingId = openingResult.rows[0].id;
 
+      await client.query('SELECT p.id FROM properties p JOIN buildings b ON b.property_id=p.id JOIN openings o ON o.building_id=b.id WHERE o.id=$1 FOR SHARE OF p',[openingId]);
+      if(!(await client.query(`SELECT id FROM openings WHERE id=$1 AND id IN (${openingsForOrgSubquery(2)})`,[openingId,orgId])).rowCount)throw Error('access_revoked');
       const trackerId = generateTrackerId();
-      const insertResult = await pool.query(
+      const insertResult = await client.query(
         `INSERT INTO hardware_components
           (opening_id, component_type, manufacturer, model_number, finish, install_date, warranty_expiration, notes,
            unit_cost, supplier_name, supplier_contact, tracker_id, serial_number, carrier, tracking_number,
@@ -371,11 +376,13 @@ hardwareRouter.post("/bulk-import", async (req: AuthedRequest, res) => {
           row.shipped_date ?? null, row.delivered_date ?? null,
         ]
       );
+      await client.query('COMMIT');
       results.push({ row: i, opening_code: row.opening_code, component_type: row.component_type, status: "created", id: insertResult.rows[0].id });
     } catch (err) {
+      await client.query('ROLLBACK');
       console.error(err);
       results.push({ row: i, opening_code: row.opening_code, component_type: row.component_type, status: "error", error: "insert_failed" });
-    }
+    } finally {client.release();}
   }
 
   const created = results.filter((r) => r.status === "created").length;

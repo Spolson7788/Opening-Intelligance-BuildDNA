@@ -1,3 +1,5 @@
+import {verifiedDocument} from '../services/commercialStorage';
+import {canReadCommercialDocument} from './commercial';
 import {Router} from 'express';
 import {z} from 'zod';
 import {randomUUID} from 'node:crypto';
@@ -13,7 +15,7 @@ const uuid=z.string().uuid();
 const envelope=z.object({operation_id:uuid,entity_id:uuid,opening_id:uuid,device_id:uuid,schema_version:z.literal(3),app_version:z.string().min(1).max(100),protocol_version:z.literal(1),expected_revision:z.number().int().positive().safe()});
 export class LifecycleConflict extends Error {constructor(public code:string,public status=409){super(code);}}
 // All lifecycle writes share opening/property lock order, tenant authorization and replay binding.
-export function registerLifecycleCommand(path:string,entityType:any,schema:z.ZodTypeAny,apply:(c:any,b:any,actor:string)=>Promise<any>){
+export function registerLifecycleCommand(path:string,entityType:any,schema:z.ZodTypeAny,apply:(c:any,b:any,actor:string,req:AuthedRequest)=>Promise<any>){
  lifecycleOperationsRouter.post(path,async(req:AuthedRequest,res)=>{
   const parsed=envelope.extend({payload:schema}).strict().safeParse(req.body);
   if(!parsed.success)return res.status(422).json({error:'invalid_lifecycle_record',details:parsed.error.flatten()});
@@ -28,7 +30,7 @@ export function registerLifecycleCommand(path:string,entityType:any,schema:z.Zod
    if(prior){if(prior.actor_user_id!==actor||prior.payload_hash!==hash||prior.entity_id!==b.entity_id||prior.entity_type!==entityType)throw new LifecycleConflict('idempotency_key_reused');await c.query('ROLLBACK');return res.json(prior);}
    if(o.status==='decommissioned')throw new LifecycleConflict('opening_retired');
    if(Number(o.revision)!==b.expected_revision)throw new LifecycleConflict('revision_conflict');
-   const result=await apply(c,b,actor);
+   const result=await apply(c,b,actor,req);
    const revision=Number((await c.query('UPDATE openings SET revision=revision+1 WHERE id=$1 RETURNING revision',[b.opening_id])).rows[0].revision);
    const receipt=await writeSyncReceiptAndAudit(c,{organizationId:org,openingId:b.opening_id,operationId:b.operation_id,operationType:'create',entityType,entityId:b.entity_id,payloadHash:hash,baseServerRevision:b.expected_revision,resultingServerRevision:revision,actorUserId:actor,deviceId:b.device_id,schemaVersion:3,appVersion:b.app_version,protocolVersion:1,responsePayload:result,action:entityType+'_recorded',changedFields:Object.keys(b.payload)});
    await c.query('COMMIT');res.status(201).json(receipt);
@@ -63,7 +65,7 @@ registerLifecycleCommand('/replacements','replacement',replacement,async(c,b,act
 
 import {downtimeSchema,warrantySchema} from '../services/lifecycleRecords';
 for(const [kind,schema] of [['downtime',downtimeSchema],['warranty',warrantySchema]] as const){
- registerLifecycleCommand('/'+kind,kind,schema,async(c,b,actor)=>{
+ registerLifecycleCommand('/'+kind,kind,schema,async(c,b,actor,req)=>{
   const p=b.payload,ids=kind==='warranty'?[p.component_id]:p.component_ids;
   for(const id of ids)if(!(await c.query('SELECT id FROM hardware_components WHERE id=$1 AND opening_id=$2 FOR SHARE',[id,b.opening_id])).rows[0])throw new LifecycleConflict('component_not_in_opening');
   if(p.correction_of){
@@ -72,8 +74,15 @@ for(const [kind,schema] of [['downtime',downtimeSchema],['warranty',warrantySche
    if(kind==='warranty'&&(old.payload.component_id!==p.component_id||old.payload.warranty_type!==p.warranty_type))throw new LifecycleConflict('warranty_identity_mismatch');
    if((await c.query('SELECT 1 FROM lifecycle_records WHERE correction_of=$1',[p.correction_of])).rows[0])throw new LifecycleConflict('record_already_corrected');
   }
+  if(kind==='warranty'&&p.proof_document_version_id){
+   if(!await canReadCommercialDocument(c,p.proof_document_version_id,req.auth!.organizationId))throw new LifecycleConflict('document_not_authorized');
+   let d:any;try{d=await verifiedDocument(c,p.proof_document_version_id,req.app.locals.commercialStore);}catch{throw new LifecycleConflict('verified_private_warranty_document_required');}
+   const facility=(await c.query('SELECT b.property_id FROM openings o JOIN buildings b ON b.id=o.building_id WHERE o.id=$1',[b.opening_id])).rows[0];
+   if(d.kind!=='warranty'||d.property_id!==facility.property_id)throw new LifecycleConflict('warranty_document_scope_mismatch');
+  }
   const record=(await c.query('INSERT INTO lifecycle_records(id,opening_id,kind,payload,correction_of,recorded_by_user_id) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',[b.entity_id,b.opening_id,kind,JSON.stringify(p),p.correction_of,actor])).rows[0];
   for(const id of ids)await c.query('INSERT INTO lifecycle_record_components(record_id,component_id,opening_id) VALUES($1,$2,$3)',[b.entity_id,id,b.opening_id]);
+  if(kind==='warranty'&&p.proof_document_version_id)await c.query('INSERT INTO commercial_document_links(document_version_id,lifecycle_record_id) VALUES($1,$2)',[p.proof_document_version_id,b.entity_id]);
   return record;
  });
 }
