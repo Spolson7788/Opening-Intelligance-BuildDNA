@@ -4,6 +4,23 @@ const {api,readFieldSession}=vi.hoisted(()=>({api:vi.fn(),readFieldSession:vi.fn
 vi.mock('../facility-dashboard/api-client.mjs',()=>({api,readFieldSession}));
 import {showLabelPreview} from '../facility-dashboard/labels.mjs';
 afterEach(()=>{document.querySelector('dialog')?.close();vi.clearAllMocks();});
+it('shows generated QR cards on screen and clears them when selection changes',async()=>{
+  HTMLDialogElement.prototype.showModal=function(){};
+  HTMLDialogElement.prototype.close=function(){this.dispatchEvent(new Event('close'));};
+  HTMLImageElement.prototype.decode=vi.fn().mockResolvedValue(undefined);
+  readFieldSession.mockResolvedValue({userId:'u',organizationId:'o'});
+  api.mockResolvedValueOnce({items:[{id:'a',eligible:true,facility_name:'F',building_name:'B',opening_code:'A',missing:[]}]});
+  await showLabelPreview([{id:'a'}]);
+  api.mockResolvedValueOnce({items:[{opening_code:'A',facility_name:'F',building_name:'B',qr_data_url:'data:image/png;base64,c3ludGhldGlj'}],count:1,template:'letter-2in-v1'});
+  [...document.querySelectorAll('button')].find(b=>b.textContent==='Generate print file')!.click();
+  await vi.waitFor(()=>expect(document.querySelector('[aria-label="Generated label preview"] img')).not.toBeNull());
+  const preview=document.querySelector<HTMLImageElement>('[aria-label="Generated label preview"] img')!;
+  expect(preview.src).toBe(document.querySelector<HTMLImageElement>('#oi-label-print img')!.src);
+  expect(preview.alt).toBe('QR for A');
+  const check=document.querySelector<HTMLInputElement>('input')!;
+  check.checked=false;check.dispatchEvent(new Event('change'));
+  expect(document.querySelector('[aria-label="Generated label preview"] img')).toBeNull();
+});
 it('discards an in-flight print response after the selected batch changes',async()=>{
   HTMLDialogElement.prototype.showModal=function(){};
   HTMLDialogElement.prototype.close=function(){this.dispatchEvent(new Event('close'));};
