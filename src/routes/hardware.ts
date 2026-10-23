@@ -278,7 +278,8 @@ hardwareRouter.delete("/:id", async (req: AuthedRequest, res) => {
 
     await pool.query("DELETE FROM hardware_components WHERE id = $1", [id]);
     res.status(204).send();
-  } catch (err) {
+  } catch (err:any) {
+    if(err.code==='23503')return res.status(409).json({error:'component_referenced_by_record'});
     console.error(err);
     res.status(500).json({ error: "internal_error" });
   }

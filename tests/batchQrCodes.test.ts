@@ -3,12 +3,17 @@ import request from "supertest";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
 
 describe("batch QR codes", () => {
-  it("returns a QR code for every opening in the building", async () => {
+  it("returns a QR code for every completed opening in the building", async () => {
     const org = await signupTestOrg();
     const { buildingId } = await createPortfolioHierarchy(org.token);
-    await createTestOpening(org.token, buildingId, { opening_code: "QR-001" });
-    await createTestOpening(org.token, buildingId, { opening_code: "QR-002" });
-    await createTestOpening(org.token, buildingId, { opening_code: "QR-003" });
+    for(const opening_code of ["QR-001","QR-002","QR-003"]){
+      const o=await createTestOpening(org.token,buildingId,{opening_code});
+      const auth={Authorization:`Bearer ${org.token}`};
+      await request(app).put(`/api/openings/${o.id}/frame`).set(auth).send({condition:'good'});
+      await request(app).post(`/api/openings/${o.id}/door-leaves`).set(auth).send({leaf_role:'single',condition:'good'});
+      await request(app).post('/api/hardware').set(auth).send({opening_id:o.id,component_type:'closer',condition:'good',review_state:'reviewed'});
+      expect((await request(app).post(`/api/openings/${o.id}/complete`).set(auth)).status).toBe(200);
+    }
 
     const res = await request(app)
       .get(`/api/openings/qr-codes?building_id=${buildingId}`)

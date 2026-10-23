@@ -17,6 +17,8 @@ import { documentsRouter } from "./routes/documents";
 import { workOrdersRouter } from "./routes/workOrders";
 import { maintenanceSchedulesRouter } from "./routes/maintenanceSchedulesRoute";
 import { syncRouter } from "./routes/sync";
+import { labelsRouter } from "./routes/labels";
+import { serviceRequestsRouter } from "./routes/serviceRequests";
 
 // In local dev, the field-app/dashboard talk to the API through their own
 // Vite dev-server proxy, so this never mattered. Once each piece is deployed
@@ -96,6 +98,8 @@ export function createApp(options: { accountRecoveryEnabled?: boolean } = {}) {
   app.use("/api/work-orders", workOrdersRouter);
   app.use("/api/maintenance-schedules", maintenanceSchedulesRouter);
   app.use("/api/sync", syncRouter);
+  app.use("/api/labels", labelsRouter);
+  app.use("/api/service-requests", serviceRequestsRouter);
 
   return app;
 }

@@ -1,8 +1,9 @@
+import { openingLabel } from "../services/openingLabels";
 import {purchasingReview} from "../services/purchasingReview";
 import { Router, Response } from "express";
 import { randomUUID } from "node:crypto";
-import QRCode from "qrcode";
-import { openingQrUrl } from "../services/openingQr";
+
+
 import { z } from "zod";
 import { pool } from "../db/pool";
 import { computeHealthScore } from "../services/healthScore";
@@ -359,23 +360,11 @@ openingsRouter.get("/qr-codes", async (req: AuthedRequest, res) => {
       [building_id]
     );
 
-    const items = await Promise.all(
-      openings.rows.map(async (o) => {
-        const payload = openingQrUrl(o.qr_token);
-        const qr_data_url = await QRCode.toDataURL(payload, { width: 300, margin: 4 });
-        return {
-          id: o.id,
-          opening_code: o.opening_code,
-          opening_type: o.opening_type,
-          floor_label: o.floor_label,
-          location_description: o.location_description,
-          qr_data_url,
-          payload, facility_name: o.facility_name, building_name: o.building_name,
-        };
-      })
-    );
-
-    res.json({ building_id, count: items.length, items });
+    const labels = [];
+    for (const o of openings.rows) labels.push(await openingLabel(pool, o.id, orgId));
+    const items = labels.filter(label => label?.eligible);
+    const blocked = labels.filter(label => label && !label.eligible).map(label => ({ id: label!.id, opening_code: label!.opening_code, missing: label!.missing }));
+    res.json({ building_id, count: items.length, items, blocked });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
@@ -444,16 +433,10 @@ openingsRouter.get("/:id/qr-code", async (req: AuthedRequest, res) => {
   const { id } = req.params;
   const orgId = req.auth!.organizationId;
   try {
-    const result = await pool.query(
-      `SELECT o.qr_token, o.opening_code, o.completion_state, p.name AS facility_name, b.name AS building_name FROM openings o JOIN buildings b ON b.id=o.building_id JOIN properties p ON p.id=b.property_id WHERE o.id = $1 AND o.id IN (${openingsForOrgSubquery(2)})`,
-      [id, orgId]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ error: "not_found" });
-
-    const { qr_token } = result.rows[0];
-    const payload = openingQrUrl(qr_token);
-    const dataUrl = await QRCode.toDataURL(payload, { width: 400, margin: 4 });
-    res.json({ qr_data_url: dataUrl, payload, opening_code: result.rows[0].opening_code, facility_name: result.rows[0].facility_name, building_name: result.rows[0].building_name, completion_state: result.rows[0].completion_state });
+    const label = await openingLabel(pool, id, orgId);
+    if (!label) return res.status(404).json({ error: "not_found" });
+    if (!label.eligible) return res.status(409).json({ error: "label_not_ready", missing: label.missing });
+    res.json(label);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal_error" });

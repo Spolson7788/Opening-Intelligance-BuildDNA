@@ -23,6 +23,8 @@ import { AuthedRequest } from "./auth";
 // Existing handlers enforce organization ownership of each parent. Bulk import,
 // portfolio creation and team administration remain outside technician writes.
 const FIELD_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp }> = [
+  { method: "POST", pattern: /^\/api\/service-requests\/?$/ },
+  { method: "POST", pattern: /^\/api\/labels\/generations$/ },
   { method: "POST", pattern: /^\/api\/events\/service-events$/ },
   { method: "POST", pattern: /^\/api\/events\/inspection-events$/ },
   { method: "POST", pattern: /^\/api\/hardware$/ },
