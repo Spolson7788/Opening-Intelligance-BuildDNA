@@ -2,6 +2,7 @@
 // No separate database or notification transport is introduced here.
 import {readFieldSession} from './api-client.mjs';
 export function addServiceRequestAction(container,opening){
+  const history=document.createElement('a');history.textContent='Installation and service history';history.href='/field/opening/'+encodeURIComponent(opening.id)+'/lifecycle';container.prepend(history);
   const button=document.createElement('button');button.textContent='Request service';
   button.onclick=async()=>{
     document.getElementById('oi-request-dialog')?.close();

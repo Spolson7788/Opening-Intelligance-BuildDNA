@@ -231,6 +231,7 @@ export function OpeningDetailPage() {
           {opening.fire_rated && <span className="badge" style={{ marginTop: 8 }}>Fire Rated</span>}
         </div>
 
+        <Link className="btn btn-secondary" to={`/opening/${opening.id}/lifecycle`}>Installation and service history</Link>
         {retired?<p role="status">This opening is retired. Its records remain available for review; new requests and labels are unavailable.</p>:<Link className="btn btn-secondary" to={`/opening/${opening.id}/request-service`}>Request service</Link>}
         <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
           <Link to={`/opening/${opening.id}/log-service`} className="btn btn-primary" style={{ textDecoration: "none" }}>
