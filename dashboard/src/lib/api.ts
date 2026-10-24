@@ -8,13 +8,6 @@ export class ApiError extends Error {
   }
 }
 
-export async function compareStagingStorage(): Promise<Record<string, boolean>> {
-  const result = await authedFetch('/staging-storage-comparison', { method: 'POST', body: '{}' });
-  const fields = ['accessKeyMatches', 'endpointMatches', 'regionMatches', 'bucketMatches', 'accessKeyPresent', 'secretKeyPresent'];
-  if (!result || Object.keys(result).length !== fields.length || fields.some(key => typeof result[key] !== 'boolean')) throw new Error('diagnostic_unavailable');
-  return Object.fromEntries(fields.map(key => [key, result[key]]));
-}
-
 function getToken() {
   return localStorage.getItem("oi_token");
 }

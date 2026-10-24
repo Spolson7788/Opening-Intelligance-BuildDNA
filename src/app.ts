@@ -26,7 +26,6 @@ import { syncRouter } from "./routes/sync";
 import { labelsRouter } from "./routes/labels";
 import { serviceRequestsRouter } from "./routes/serviceRequests";
 import { enforceJsonStructure } from './middleware/jsonStructure';
-import { stagingStorageDiagnosticRouter } from './routes/stagingStorageDiagnostic';
 
 // In local dev, the field-app/dashboard talk to the API through their own
 // Vite dev-server proxy, so this never mattered. Once each piece is deployed
@@ -67,7 +66,7 @@ export function isAllowedOrigin(origin: string, allowedOrigins: string[]): boole
   );
 }
 
-export function createApp(options: { accountRecoveryEnabled?: boolean; commercialStore?: CommercialStore; planningSandboxEnabled?: boolean; legacyDocumentsEnabled?: boolean; diagnosticPlatform?: {siteId?:string;deployId?:string;context?:string} } = {}) {
+export function createApp(options: { accountRecoveryEnabled?: boolean; commercialStore?: CommercialStore; planningSandboxEnabled?: boolean; legacyDocumentsEnabled?: boolean } = {}) {
   const app = express();
   app.locals.commercialStore=options.commercialStore;
   app.locals.planningSandboxEnabled=options.planningSandboxEnabled===true;
@@ -91,7 +90,6 @@ export function createApp(options: { accountRecoveryEnabled?: boolean; commercia
   app.use(enforceJsonStructure);
 
   app.get("/health", (_req, res) => res.json({ status: "ok" }));
-  app.use('/api/staging-storage-comparison', stagingStorageDiagnosticRouter(options.diagnosticPlatform || {}));
 
   app.use('/api/commercial',commercialRouter);
   app.use('/api/planning',planningRouter);

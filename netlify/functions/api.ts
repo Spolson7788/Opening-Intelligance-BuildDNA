@@ -5,7 +5,6 @@ import { netlifyExpressAdapter } from "./_shared/expressAdapter";
 
 export default async (request: Request, context: Context): Promise<Response> => {
   const app = createApp({
-    diagnosticPlatform: { siteId: context?.site?.id, deployId: context?.deploy?.id, context: context?.deploy?.context },
     accountRecoveryEnabled: recoveryDeploymentAllowed(context),
     // SQL metadata-write denial alone does not prevent legacy presigned uploads.
     legacyDocumentsEnabled: context?.site?.id !== "b64bf33c-a131-4ae2-b2b0-9aec16e9f77b",

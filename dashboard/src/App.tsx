@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/AuthContext";
 import { LoginPage } from "./pages/LoginPage";
 import { SignupPage } from "./pages/SignupPage";
-import { StagingStorageComparisonPage } from './pages/StagingStorageComparisonPage';
 import { DashboardPage } from "./pages/DashboardPage";
 import { OpeningDetailPage } from "./pages/OpeningDetailPage";
 import { NewPropertyPage } from "./pages/NewPropertyPage";
@@ -28,7 +27,6 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
-      <Route path="/staging-storage-comparison" element={<RequireAuth><StagingStorageComparisonPage /></RequireAuth>} />
       <Route path="/" element={<RequireAuth><DashboardPage /></RequireAuth>} />
       <Route path="/properties/new" element={<RequireAuth><NewPropertyPage /></RequireAuth>} />
       <Route path="/openings/new" element={<RequireAuth><NewOpeningPage /></RequireAuth>} />
