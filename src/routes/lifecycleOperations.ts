@@ -15,7 +15,7 @@ const uuid=z.string().uuid();
 const envelope=z.object({operation_id:uuid,entity_id:uuid,opening_id:uuid,device_id:uuid,schema_version:z.literal(3),app_version:z.string().min(1).max(100),protocol_version:z.literal(1),expected_revision:z.number().int().positive().safe()});
 export class LifecycleConflict extends Error {constructor(public code:string,public status=409){super(code);}}
 // All lifecycle writes share opening/property lock order, tenant authorization and replay binding.
-export function registerLifecycleCommand(path:string,entityType:any,schema:z.ZodTypeAny,apply:(c:any,b:any,actor:string,req:AuthedRequest)=>Promise<any>){
+export function registerLifecycleCommand(path:string,entityType:any,schema:z.ZodType<Record<string,unknown>>,apply:(c:any,b:any,actor:string,req:AuthedRequest)=>Promise<any>){
  lifecycleOperationsRouter.post(path,async(req:AuthedRequest,res)=>{
   const parsed=envelope.extend({payload:schema}).strict().safeParse(req.body);
   if(!parsed.success)return res.status(422).json({error:'invalid_lifecycle_record',details:parsed.error.flatten()});

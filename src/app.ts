@@ -25,6 +25,7 @@ import { maintenanceSchedulesRouter } from "./routes/maintenanceSchedulesRoute";
 import { syncRouter } from "./routes/sync";
 import { labelsRouter } from "./routes/labels";
 import { serviceRequestsRouter } from "./routes/serviceRequests";
+import { enforceJsonStructure } from './middleware/jsonStructure';
 
 // In local dev, the field-app/dashboard talk to the API through their own
 // Vite dev-server proxy, so this never mattered. Once each piece is deployed
@@ -86,6 +87,7 @@ export function createApp(options: { accountRecoveryEnabled?: boolean; commercia
   );
 
   app.use(express.json({ limit: "10mb" })); // generous limit for base64 photo payloads during MVP
+  app.use(enforceJsonStructure);
 
   app.get("/health", (_req, res) => res.json({ status: "ok" }));
 

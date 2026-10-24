@@ -25,7 +25,7 @@ const serviceEventSchema = z.object({
   performed_by_org_id: z.string().uuid().optional(),
   event_date: z.string(),
   work_performed: z.string().min(1),
-  parts_used: z.array(z.string()).optional(),
+  parts_used: z.array(z.string()).max(1000).optional(),
   cost: z.number().optional(),
 });
 
@@ -71,7 +71,7 @@ const inspectionEventSchema = z.object({
   opening_id: z.string().uuid(),
   event_date: z.string(),
   inspection_type: z.enum(["general", "fire_door_nfpa80", "ada_compliance", "access_control"]),
-  checklist_result: z.record(z.any()).optional(),
+  checklist_result: z.record(z.string(), z.any()).optional(),
   passed: z.boolean(),
   notes: z.string().optional(),
   signature_data: z.string().max(500_000).optional(), // a simple line-drawing PNG data URL is a few KB; 500KB is a generous sanity cap, not a real limit

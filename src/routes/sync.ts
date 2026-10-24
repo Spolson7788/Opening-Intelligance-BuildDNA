@@ -186,7 +186,7 @@ const generalSyncOperation = z.object({
   schema_version: z.number().int().positive(),
   app_version: z.string().min(1).max(100),
   protocol_version: z.number().int().positive(),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
 });
 
 const framePayload = z.object({
@@ -201,11 +201,11 @@ const leafPayload = z.object({
 });
 const servicePayload = z.object({
   hardware_component_id: z.string().uuid().optional(), performed_by_org_id: z.string().uuid().optional(),
-  event_date: z.string(), work_performed: z.string().min(1), parts_used: z.array(z.string()).optional(), cost: z.number().optional(),
+  event_date: z.string(), work_performed: z.string().min(1), parts_used: z.array(z.string()).max(1000).optional(), cost: z.number().optional(),
 });
 const inspectionPayload = z.object({
   event_date: z.string(), inspection_type: z.enum(["general", "fire_door_nfpa80", "ada_compliance", "access_control"]),
-  checklist_result: z.record(z.unknown()).optional(), passed: z.boolean(), notes: z.string().optional(),
+  checklist_result: z.record(z.string(), z.unknown()).optional(), passed: z.boolean(), notes: z.string().optional(),
   signature_data: z.string().max(500_000).optional(), signed_by_name: z.string().optional(),
 });
 
