@@ -68,7 +68,7 @@ describe("hardware", () => {
     const res = await request(app)
       .patch(`/api/hardware/${created.body.id}`)
       .set("Authorization", `Bearer ${org.token}`)
-      .send({ manufacturer: "Corrected Brand" });
+      .send({ expected_revision: Number(created.body.revision), manufacturer: "Corrected Brand" });
     expect(res.status).toBe(200);
     expect(res.body.manufacturer).toBe("Corrected Brand");
   });
@@ -129,7 +129,7 @@ describe("hardware", () => {
     const res = await request(app)
       .patch(`/api/hardware/${created.body.id}`)
       .set("Authorization", `Bearer ${org.token}`)
-      .send({ unit_cost: 189.5, supplier_name: "Desert Door Hardware" });
+      .send({ expected_revision: Number(created.body.revision), unit_cost: 189.5, supplier_name: "Desert Door Hardware" });
 
     expect(res.status).toBe(200);
     expect(res.body.unit_cost).toBe(189.5);
@@ -229,7 +229,7 @@ describe("hardware", () => {
     const delivered = await request(app)
       .patch(`/api/hardware/${created.body.id}`)
       .set("Authorization", `Bearer ${org.token}`)
-      .send({ shipment_status: "delivered", delivered_date: "2026-08-09" });
+      .send({ expected_revision: Number(created.body.revision), shipment_status: "delivered", delivered_date: "2026-08-09" });
 
     expect(delivered.status).toBe(200);
     expect(delivered.body.shipment_status).toBe("delivered");

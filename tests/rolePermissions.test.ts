@@ -94,7 +94,7 @@ describe("role-based permissions", () => {
       const edit = await request(app)
         .patch(`/api/hardware/${created.body.id}`)
         .set("Authorization", `Bearer ${techToken}`)
-        .send({ manufacturer: "Updated By Tech" });
+        .send({ expected_revision: Number(created.body.revision), manufacturer: "Updated By Tech" });
       expect(edit.status).toBe(200);
 
       const del = await request(app)
