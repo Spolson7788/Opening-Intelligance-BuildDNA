@@ -66,7 +66,7 @@ export function isAllowedOrigin(origin: string, allowedOrigins: string[]): boole
   );
 }
 
-export function createApp(options: { accountRecoveryEnabled?: boolean; commercialStore?: CommercialStore; planningSandboxEnabled?: boolean } = {}) {
+export function createApp(options: { accountRecoveryEnabled?: boolean; commercialStore?: CommercialStore; planningSandboxEnabled?: boolean; legacyDocumentsEnabled?: boolean } = {}) {
   const app = express();
   app.locals.commercialStore=options.commercialStore;
   app.locals.planningSandboxEnabled=options.planningSandboxEnabled===true;
@@ -107,7 +107,11 @@ export function createApp(options: { accountRecoveryEnabled?: boolean; commercia
   app.use("/api/portfolio", portfolioRouter);
   app.use("/api/export", exportRouter);
   app.use("/api/audit-log", auditLogRouter);
-  app.use("/api/documents", documentsRouter);
+  if (options.legacyDocumentsEnabled === false) {
+    app.use("/api/documents", (_req, res) => { res.status(503).json({ error: "documents_unavailable" }); });
+  } else {
+    app.use("/api/documents", documentsRouter);
+  }
   app.use("/api/work-orders", workOrdersRouter);
   app.use("/api/maintenance-schedules", maintenanceSchedulesRouter);
   app.use("/api/sync", syncRouter);
