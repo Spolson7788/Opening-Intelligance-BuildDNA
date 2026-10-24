@@ -1,7 +1,7 @@
 import {createHash} from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, renameSync, writeFileSync, readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertIsolatedReleaseContext } from './isolated-release-context.mjs';
 import { buildFacilityDashboard } from './build-facility-dashboard.mjs';
@@ -11,7 +11,13 @@ assertIsolatedReleaseContext(process.env);
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 function run(args, dir = root, extra = {}) {
-  execFileSync(npm, args, {
+  // Windows .cmd wrappers cannot be executed directly by execFileSync.
+  // Invoke the installed npm CLI through Node without shell interpolation.
+  const command = process.platform === 'win32' ? process.execPath : npm;
+  const commandArgs = process.platform === 'win32'
+    ? [resolve(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js'), ...args]
+    : args;
+  execFileSync(command, commandArgs, {
     cwd: dir, stdio: "inherit", env: { ...process.env, ...extra },
   });
 }
