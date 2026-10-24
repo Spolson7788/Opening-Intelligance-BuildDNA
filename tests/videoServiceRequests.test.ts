@@ -58,6 +58,13 @@ it('blocks retired requests and supports explicit uncertain opening-level intent
  await pool.query("UPDATE openings SET status='decommissioned' WHERE id=$1",[f.opening.id]);
  expect((await request(app).post('/api/service-requests').set(f.auth).send({...uncertain,operation_id:randomUUID(),entity_id:randomUUID()})).status).toBe(409);
 });
+it('rejects a retired component target while its opening remains active',async()=>{
+ const f=await fixture();
+ await pool.query("UPDATE hardware_components SET lifecycle_state='retired' WHERE id=$1",[f.hardware.id]);
+ const response=await request(app).post('/api/service-requests').set(f.auth).send(f.body);
+ expect(response.status).toBe(409);expect(response.body).toEqual({error:'target_not_in_opening'});
+ expect((await pool.query('SELECT count(*) FROM service_requests WHERE opening_id=$1',[f.opening.id])).rows[0].count).toBe('0');
+});
 it('permits the existing non-bypass API role while keeping browser roles without access',async()=>{
  const f=await fixture();const client=await pool.connect();
  try{

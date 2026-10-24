@@ -68,8 +68,9 @@ serviceRequestsRouter.post('/',async(req:AuthedRequest,res)=>{
     if(prior){await client.query('ROLLBACK');if(prior.actor_user_id!==actor||prior.payload_hash!==hash||prior.entity_id!==b.entity_id||prior.entity_type!=='service_request')return res.status(409).json({error:'idempotency_key_reused'});return res.json(prior);}
     if(opening.status==='decommissioned'){await client.query('ROLLBACK');return res.status(409).json({error:'opening_retired'});}
     for(const t of p.targets){
-      const table={frame:'opening_frames',door_leaf:'door_leaves',component:'current_hardware_components'}[t.type];
-      if(!(await client.query(`SELECT id FROM ${table} WHERE id=$1 AND opening_id=$2 FOR SHARE`,[t.id,b.opening_id])).rows[0]){
+      const table={frame:'opening_frames',door_leaf:'door_leaves',component:'hardware_components'}[t.type];
+      const activeComponent=t.type==='component'?" AND lifecycle_state='active'":'';
+      if(!(await client.query(`SELECT id FROM ${table} WHERE id=$1 AND opening_id=$2${activeComponent} FOR SHARE`,[t.id,b.opening_id])).rows[0]){
         await client.query('ROLLBACK');return res.status(409).json({error:'target_not_in_opening'});
       }
     }
