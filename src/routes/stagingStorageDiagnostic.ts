@@ -24,7 +24,7 @@ export function stagingStorageDiagnosticRouter(
   const router = Router();
   // Immutable per-instance settings. Absolute expiry also bounds cold starts.
   const config: NodeJS.ProcessEnv = Object.fromEntries([
-    "SITE_ID", "CONTEXT", "OI_STORAGE_DIAGNOSTIC_ENABLED", "OI_STORAGE_DIAGNOSTIC_START",
+    "SITE_ID", "OI_STORAGE_DIAGNOSTIC_CONTEXT", "OI_STORAGE_DIAGNOSTIC_ENABLED", "OI_STORAGE_DIAGNOSTIC_START",
     "OI_STORAGE_DIAGNOSTIC_END", "OI_STORAGE_DIAGNOSTIC_RUN_ID", "OI_STORAGE_DIAGNOSTIC_ADMIN",
     "OI_STORAGE_DIAGNOSTIC_NONCE", "OI_STORAGE_DIAGNOSTIC_EXPECTED",
   ].map(key => [key, env[key]]));
@@ -32,7 +32,7 @@ export function stagingStorageDiagnosticRouter(
   const end = Date.parse(config.OI_STORAGE_DIAGNOSTIC_END || "");
   const runId = config.OI_STORAGE_DIAGNOSTIC_RUN_ID;
   const enabled = () => config.OI_STORAGE_DIAGNOSTIC_ENABLED === "true" &&
-    platform.siteId === SITE && platform.context === 'production' && config.SITE_ID === SITE && config.CONTEXT === "production" &&
+    platform.siteId === SITE && platform.context === 'production' && config.SITE_ID === SITE && config.OI_STORAGE_DIAGNOSTIC_CONTEXT === "production" &&
     Boolean(runId && UUID.test(runId) && platform.deployId && /^[0-9a-f]{24}$(?![\s\S])/.test(platform.deployId)) &&
     UUID.test(config.OI_STORAGE_DIAGNOSTIC_ADMIN || "") &&
     HEX64.test(config.OI_STORAGE_DIAGNOSTIC_NONCE || "") &&

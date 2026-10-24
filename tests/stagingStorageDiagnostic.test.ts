@@ -16,7 +16,7 @@ const key = "synthetic-access-only";
 const clock = Date.parse("2026-10-24T15:00:00Z");
 const token = () => jwt.sign({userId:admin,organizationId:org,role:"admin",sessionVersion:0}, process.env.JWT_SECRET!);
 function config() { return {
-  SITE_ID:site, CONTEXT:"production", OI_STORAGE_DIAGNOSTIC_ENABLED:"true",
+  SITE_ID:site, OI_STORAGE_DIAGNOSTIC_CONTEXT:"production", OI_STORAGE_DIAGNOSTIC_ENABLED:"true",
   OI_STORAGE_DIAGNOSTIC_ADMIN:admin, OI_STORAGE_DIAGNOSTIC_RUN_ID:runId,
   OI_STORAGE_DIAGNOSTIC_NONCE:nonce, OI_STORAGE_DIAGNOSTIC_EXPECTED:storageIdentityProof(key,nonce,runId).toString("hex"),
   OI_STORAGE_DIAGNOSTIC_START:new Date(clock).toISOString(), OI_STORAGE_DIAGNOSTIC_END:new Date(clock+900000).toISOString(),
@@ -49,7 +49,7 @@ describe("staging-only storage comparison",()=>{
     const r=await request(app(env)).post("/compare").set("Authorization",`Bearer ${token()}`).send({});
     expect(r.body.accessKeyMatches).toBe(false);
   });
-  it.each(["SITE_ID","CONTEXT","OI_STORAGE_DIAGNOSTIC_ENABLED","OI_STORAGE_DIAGNOSTIC_ADMIN","OI_STORAGE_DIAGNOSTIC_RUN_ID","OI_STORAGE_DIAGNOSTIC_NONCE","OI_STORAGE_DIAGNOSTIC_EXPECTED","OI_STORAGE_DIAGNOSTIC_START","OI_STORAGE_DIAGNOSTIC_END"])("fails closed without %s",async(field)=>{
+  it.each(["SITE_ID","OI_STORAGE_DIAGNOSTIC_CONTEXT","OI_STORAGE_DIAGNOSTIC_ENABLED","OI_STORAGE_DIAGNOSTIC_ADMIN","OI_STORAGE_DIAGNOSTIC_RUN_ID","OI_STORAGE_DIAGNOSTIC_NONCE","OI_STORAGE_DIAGNOSTIC_EXPECTED","OI_STORAGE_DIAGNOSTIC_START","OI_STORAGE_DIAGNOSTIC_END"])("fails closed without %s",async(field)=>{
     const env:NodeJS.ProcessEnv=config(); delete env[field];
     expect((await request(app(env)).post("/compare")).status).toBe(404); expect(pool.query).not.toHaveBeenCalled();
   });
