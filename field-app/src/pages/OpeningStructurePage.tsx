@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { fetchOpening } from "../lib/api";
 import { queueOpeningMutation } from "../lib/sync";
 import { updateCachedOpening } from "../lib/db";
 import { PhotoCapture } from "../components/PhotoCapture";
@@ -7,11 +8,34 @@ import { useAuth } from '../lib/AuthContext';
 
 export function OpeningStructurePage() {
   const { id } = useParams();
+  const { auth } = useAuth();
+  if (!id || !auth) return <p role="alert">Sign in and open an authorized opening before editing its structure.</p>;
+  return <LoadedStructure key={`${auth.organizationId}:${auth.userId}:${id}`} id={id} />;
+}
+
+function LoadedStructure({ id }: { id: string }) {
+  const [opening, setOpening] = useState<any>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    fetchOpening(id).then(({ opening: record }) => {
+      if (!active) return;
+      if (record?.id !== id || !["single", "pair"].includes(record.opening_configuration)) {
+        setFailed(true); return;
+      }
+      setOpening(record);
+    }).catch(() => { if (active) setFailed(true); });
+    return () => { active = false; };
+  }, [id]);
+  if (failed) return <div role="alert">Opening structure could not be loaded. No changes were made. <Link to={`/opening/${id}`}>Return to opening</Link></div>;
+  if (!opening) return <p role="status">Loading opening structure…</p>;
+  return <StructureEditor id={id} opening={opening} />;
+}
+
+function StructureEditor({ id, opening }: { id: string; opening: any }) {
   const navigate = useNavigate();
-  const location = useLocation();
   const {auth}=useAuth();
   const [principal]=useState(()=>auth!);
-  const opening = (location.state as any)?.opening;
   const configuration = opening?.opening_configuration ?? "single";
   const roles = configuration === "pair" ? ["active", "inactive"] : ["single"];
   const [frameId] = useState(opening?.frame?.id ?? crypto.randomUUID());

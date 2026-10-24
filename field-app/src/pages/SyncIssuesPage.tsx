@@ -110,7 +110,7 @@ export function SyncIssuesPage() {
           <button className="btn btn-secondary" onClick={() => retry(issue)}>{issue.conflict ? "Keep local change and retry"
             : issue.kind === "orphaned_media" ? "Restore upload operation"
               : ["in_flight", "verifying"].includes(issue.status) ? "Recover interrupted operation"
-                : "Retry after authorization is restored"}</button>
+              : issue.status === "retry_wait" ? "Retry retained operation" : "Retry after authorization is restored"}</button>
         </>}
         {notes[issue.id] && <p className="error-text" role="status">{notes[issue.id]}</p>}
       </div>)}

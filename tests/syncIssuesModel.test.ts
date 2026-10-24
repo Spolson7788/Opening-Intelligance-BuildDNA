@@ -12,6 +12,13 @@ const baseOperation = {
 } satisfies SyncOperation;
 
 describe("sync issue presentation", () => {
+  it("shows retry failures without hiding or replacing the retained operation", () => {
+    const operation = { ...baseOperation, state: "retry_wait" as const, lastErrorCode: "upload_failed_403" };
+    expect(syncIssuesForRecords([operation], [], [])).toEqual([
+      expect.objectContaining({ id: operation.operationId, status: "retry_wait", error: "upload_failed_403" }),
+    ]);
+    expect(operation.state).toBe("retry_wait");
+  });
   it("surfaces conflicts, authorization blocks, and abandoned leases but not active dispatches", () => {
     const conflictOperation = { ...baseOperation, state: "conflict" as const };
     const authOperation = { ...baseOperation, operationId: "77777777-7777-4777-8777-777777777777",

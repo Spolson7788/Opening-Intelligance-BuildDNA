@@ -20,7 +20,7 @@ export function syncIssuesForRecords(
   const openConflictIds = new Set(conflicts.filter((item) => item.resolutionState === "open").map((item) => item.operationId));
   const operationPhotoIds = new Set(operations.filter((item) => item.entityType === "photo").map((item) => item.entityId));
   const mediaById = new Map(media.map((item) => [item.photoId, item]));
-  const attention = new Set(["conflict", "auth_required", "permanent_failure", "storage_pressure", "schema_blocked"]);
+  const attention = new Set(["conflict", "auth_required", "permanent_failure", "storage_pressure", "schema_blocked", "retry_wait"]);
   return [
     ...operations.filter((item) => attention.has(item.state) ||
       interruptedOperationIsRecoverable(item, new Date(now).toISOString()))
