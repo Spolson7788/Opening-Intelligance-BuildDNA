@@ -8,7 +8,7 @@ import { MEDIA_TOO_LARGE, maximumMediaBytes } from "./mediaLimits";
 import type { OutboxItem } from "./db";
 
 type SyncListener = (state: SyncState) => void;
-export interface SyncState { pending: number; syncing: boolean; failed: number; conflicts: number; lastError?: string; }
+export interface SyncState { pending: number; syncing: boolean; failed: number; conflicts: number; lastError?: string; checked?: boolean; checkFailed?: boolean; userId?: string; organizationId?: string; }
 const APP_VERSION = "offline-protocol-1";
 const DISPATCH_LEASE_MS = 2 * 60_000;
 const dispatchLeaseId = crypto.randomUUID();
@@ -39,14 +39,27 @@ export async function getOrCreateDeviceId(): Promise<string> {
   await putOfflineSetting({ key: "device_id", value, updatedAt: new Date().toISOString() });
   return value;
 }
-async function refreshPendingCount() {
+let statusRead = 0;
+export async function refreshPendingCount() {
+  const read = ++statusRead;
+  try {
   const auth = await loadAuth();
   const operations = auth ? await getSyncOperationsForPrincipal(auth.userId, auth.organizationId) : [];
+  const latest = await loadAuth();
+  if (read !== statusRead) return;
+  if (auth?.userId !== latest?.userId || auth?.organizationId !== latest?.organizationId) {
+    currentState = { pending: 0, syncing: false, failed: 0, conflicts: 0, checked: false }; notify(); return;
+  }
   currentState = { ...currentState,
+    checked: true, checkFailed: false, userId: auth?.userId, organizationId: auth?.organizationId,
     pending: operations.filter((item) => ["local_committed", "queued", "retry_wait", "blocked_dependency", "in_flight", "verifying"].includes(item.state)).length,
     failed: operations.filter((item) => ["permanent_failure", "auth_required", "storage_pressure", "schema_blocked"].includes(item.state)).length,
     conflicts: operations.filter((item) => item.state === "conflict").length };
   notify();
+  } catch {
+    if (read !== statusRead) return;
+    currentState = { pending: 0, syncing: false, failed: 0, conflicts: 0, checked: false, checkFailed: true }; notify();
+  }
 }
 function entityTypeForKind(kind: OutboxItem["kind"]): OfflineEntityType {
   if (kind === "service_request") return "service_request";

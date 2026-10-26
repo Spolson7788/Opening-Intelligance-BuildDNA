@@ -1,7 +1,7 @@
 import { requeueAfterFreshSignIn, saveAuth } from "./db";
 import { flushOutbox } from "./sync";
 
-export interface SignedInAccount { token: string; userId: string; organizationId: string; role: string }
+export interface SignedInAccount { token: string; userId: string; organizationId: string; role: string; email?: string }
 
 // Called after every successful sign-in (never when a stored session is merely reloaded). Each call
 // is a new sign-in event: operations this same account left stopped only because the account on

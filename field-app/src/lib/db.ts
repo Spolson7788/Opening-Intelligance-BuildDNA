@@ -35,7 +35,7 @@ interface FieldAppDB extends DBSchema {
   };
   auth: {
     key: string;
-    value: { token: string; userId: string; organizationId: string; role: string; savedAt: number; signInEventId?: string };
+    value: { token: string; userId: string; organizationId: string; role: string; email?: string; savedAt: number; signInEventId?: string };
   };
   entities: {
     key: string;
@@ -658,7 +658,7 @@ export async function retryOutboxItem(id: string, photo: boolean) {
   if (item) await db.put("outbox", { ...item, status: "pending", lastError: undefined });
 }
 
-export async function saveAuth(auth: { token: string; userId: string; organizationId: string; role: string; signInEventId?: string }) {
+export async function saveAuth(auth: { token: string; userId: string; organizationId: string; role: string; email?: string; signInEventId?: string }) {
   const db = await getDb();
   await db.put("auth", { ...auth, savedAt: Date.now() }, "current");
 }

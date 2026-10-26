@@ -1,5 +1,8 @@
 export const SITE_ACCESS_REQUIRED = "site_access_required";
-const CANDIDATE_ORIGIN = "https://oi-connected-release-candidate.netlify.app";
+const ACCESS_ORIGINS = [
+  "https://oi-connected-release-candidate.netlify.app",
+  "https://oi-video-workflows-staging.netlify.app",
+] as const;
 
 // Inspect text only. Never execute response HTML or derive a navigation target from it.
 export function isNetlifyAccessResponse(status: number, contentType: string, text: string) {
@@ -7,11 +10,14 @@ export function isNetlifyAccessResponse(status: number, contentType: string, tex
   const normalized = text.replace(/\\\//g, "/");
   return status === 401 && contentType.split(";")[0].trim().toLowerCase() === "text/html"
     && /<title>\s*Login Redirect\s*<\/title>/i.test(text)
-    && /https:\/\/app\.netlify\.com\/edge-access\?domain=oi-connected-release-candidate\.netlify\.app(?:["'&\s<]|$)/.test(normalized);
+    && ACCESS_ORIGINS.some(origin => {
+      const host = new URL(origin).hostname.replace(/\./g, "\\.");
+      return new RegExp(`https://app\\.netlify\\.com/edge-access\\?domain=${host}(?:["'&\\s<]|$)`).test(normalized);
+    });
 }
 
 export function siteAccessRenewalUrl(origin: string): string | null {
-  return origin === CANDIDATE_ORIGIN
-    ? "https://app.netlify.com/edge-access?domain=oi-connected-release-candidate.netlify.app"
+  return ACCESS_ORIGINS.some(allowed => allowed === origin)
+    ? `https://app.netlify.com/edge-access?domain=${new URL(origin).hostname}`
     : null;
 }

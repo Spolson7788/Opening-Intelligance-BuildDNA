@@ -1,4 +1,5 @@
 import {AccountRecoveryPage} from "./pages/AccountRecoveryPage";
+import {AccountIdentity} from "./components/AccountIdentity";
 import {BranchesPage} from "./pages/BranchesPage";
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
@@ -69,6 +70,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <AccountIdentity />
         <AppRoutes />
       </BrowserRouter>
     </AuthProvider>

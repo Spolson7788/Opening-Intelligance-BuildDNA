@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { syncIssueMessage } from "../lib/syncIssueMessage";
+import { useAuth } from "../lib/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { getOfflineMedia, getOfflineMediaForPrincipal, getOpenConflictsForPrincipal, getSyncOperationsForPrincipal, loadAuth, recoverOrphanedMediaOperation, removeRejectedMedia, replaceRejectedMediaWithReducedCopy, retrySyncOperationAfterReview } from "../lib/db";
 import { checksumBlob, flushOutbox } from "../lib/sync";
@@ -8,6 +10,9 @@ import { formatMegabytes, maximumMediaBytes } from "../lib/mediaLimits";
 import { prepareImageForUpload, reducedFilename } from "../lib/photoPreparation";
 
 export function SyncIssuesPage() {
+  const { auth } = useAuth();
+  const principal = auth ? `${auth.organizationId}/${auth.userId}` : "";
+  const [loadedPrincipal, setLoadedPrincipal] = useState<string | null>(null);
   const navigate = useNavigate();
   const [issues, setIssues] = useState<SyncIssueView[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -22,10 +27,13 @@ export function SyncIssuesPage() {
       getOpenConflictsForPrincipal(auth.userId, auth.organizationId),
       getOfflineMediaForPrincipal(auth.userId, auth.organizationId),
     ]);
+    const latest = await loadAuth();
+    if (latest?.userId !== auth.userId || latest?.organizationId !== auth.organizationId) return;
     setIssues(syncIssuesForRecords(operations, conflicts, media));
+    setLoadedPrincipal(`${auth.organizationId}/${auth.userId}`);
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load().catch(() => setLoadedPrincipal(null)); }, [principal]);
 
   const note = (id: string, text: string) => setNotes((current) => ({ ...current, [id]: text }));
 
@@ -91,7 +99,7 @@ export function SyncIssuesPage() {
     <div className="screen">
       <h2>Synchronization review</h2>
       <p style={{ color: "var(--text-secondary)" }}>Entries remain stored on this device until synchronization succeeds. Review conflicts before retrying.</p>
-      {issues.length === 0 ? <div className="card">No synchronization issues for the signed-in technician.</div> : issues.map((issue) => <div className="card" key={issue.id} data-issue-kind={issue.kind}>
+      {loadedPrincipal !== principal ? <p>Checking saved changes for this account. If this does not finish, return after checking access.</p> : issues.length === 0 ? <div className="card">No synchronization issues for the signed-in technician.</div> : issues.map((issue) => <div className="card" key={issue.id} data-issue-kind={issue.kind}>
         <strong style={{ textTransform: "capitalize" }}>{issue.label}</strong>
         {issue.kind === "rejected_media" ? <>
           <p style={{ margin: "6px 0" }}>Not uploaded: this {issue.contentType?.startsWith("video/") ? "video" : "photograph"} is {formatMegabytes(issue.mediaBytes ?? 0)}, above the {formatMegabytes(maximumMediaBytes(issue.contentType ?? ""))} upload limit. It is kept on this device and will not be retried automatically.</p>
@@ -105,8 +113,7 @@ export function SyncIssuesPage() {
           </div>
           {!issue.contentType?.startsWith("video/") && <p style={{ margin: "6px 0", color: "var(--text-secondary)" }}>Reducing replaces this local copy with a smaller JPEG that fits the limit. Save a copy first if you need the full-resolution original.</p>}
         </> : <>
-          <p style={{ margin: "6px 0", color: "var(--text-secondary)" }}>Status: {issue.status}</p>
-          {issue.error && <p className="error-text">{issue.error}</p>}
+          <p style={{ margin: "6px 0", color: "var(--text-secondary)" }}>{syncIssueMessage(issue.status, issue.error)}</p>
           <button className="btn btn-secondary" onClick={() => retry(issue)}>{issue.conflict ? "Keep local change and retry"
             : issue.kind === "orphaned_media" ? "Restore upload operation"
               : ["in_flight", "verifying"].includes(issue.status) ? "Recover interrupted operation"

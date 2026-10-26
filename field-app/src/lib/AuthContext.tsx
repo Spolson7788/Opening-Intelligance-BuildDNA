@@ -9,6 +9,7 @@ interface AuthState {
   userId: string;
   organizationId: string;
   role: string;
+  email?: string;
 }
 
 interface AuthContextValue {
@@ -26,7 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     loadAuth().then((stored) => {
-      if (stored) setAuth({ token: stored.token, userId: stored.userId, organizationId: stored.organizationId, role: stored.role });
+      if (stored) setAuth({ token: stored.token, userId: stored.userId, organizationId: stored.organizationId, role: stored.role, email: stored.email });
       setLoading(false);
     });
   }, []);
@@ -34,7 +35,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function login(email: string, password: string) {
     const { token } = await apiLogin(email, password);
     const { userId, organizationId, role } = decodeTokenPayload(token);
-    const next = { token, userId, organizationId, role };
+    // Display only; authorization continues to use the server-issued principal.
+    const next = { token, userId, organizationId, role, email: email.trim() };
     await recordFreshSignIn(next);
     setAuth(next);
   }
