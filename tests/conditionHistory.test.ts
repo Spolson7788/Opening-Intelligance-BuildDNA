@@ -5,17 +5,17 @@ import { randomUUID } from 'node:crypto';
 import express from 'express';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
-const state = vi.hoisted(() => ({ db: null as any, failAudit: false }));
+const state = vi.hoisted(() => ({ db: null as any, failAudit: false, failConnect: false }));
 // In-process disposable SQL only; no connection string, socket or hosted DB.
 vi.mock('../src/db/pool', () => ({ pool: {
   query: (s: string, a?: unknown[]) => state.db.query(s, a),
-  connect: async () => ({ query: (s: string, a?: unknown[]) => {
+  connect: async () => { if(state.failConnect){state.failConnect=false;throw Error('synthetic private connection detail');}return ({ query: (s: string, a?: unknown[]) => {
     if (state.failAudit && /INSERT INTO sync_audit_events/.test(s)) {
       state.failAudit = false;
       throw new Error('Synthetic audit failure after observation, revision, and receipt writes');
     }
     return state.db.query(s, a);
-  }, release: () => {} }),
+  }, release: () => {} });},
 } }));
 import { conditionHistoryRouter } from '../src/routes/conditionHistory';
 import { conditionObservationSchema } from '../src/services/conditionObservations';
@@ -66,6 +66,47 @@ async function fixture() {
   const submit = (b: any, u = a) => request(app).post('/api/condition-history/observations').set('Authorization','Bearer '+u.token).send(b);
   return { a, property, opening, frame, parts, context, command, submit };
 }
+it('exports one authorized facility snapshot with original correction chains, retired identities and unknown dates', async () => {
+  const f=await fixture(), other=await fixture();
+  const first=await f.command();expect((await f.submit(first)).status).toBe(201);
+  const correction=await f.command({condition:'good',correction_of:first.entity_id,correction_reason:'Synthetic correction'});
+  expect((await f.submit(correction)).status).toBe(201);
+  await sql("UPDATE hardware_components SET lifecycle_state='retired' WHERE id=$1",[f.parts[1].component]);
+  const response=await request(app).get('/api/condition-history/facility/'+f.opening).set('Authorization','Bearer '+f.a.token);
+  expect(response.status).toBe(200);expect(response.headers['cache-control']).toBe('no-store');const r=response.body;
+  expect(r.property_id).toBe(f.property);expect(r.openings.map((o:any)=>o.id)).toEqual([f.opening]);
+  expect(JSON.stringify(r)).not.toContain(other.opening);expect(r.hardware_components).toHaveLength(2);
+  expect(r.hardware_components.find((h:any)=>h.id===f.parts[1].component).lifecycle_state).toBe('retired');
+  expect(r.condition_observations).toHaveLength(2);
+  expect(r.condition_observations.find((o:any)=>o.id===first.entity_id)).toMatchObject({opening_id:f.opening,is_current:false,observed_date:unknown});
+  expect(r.condition_observations.find((o:any)=>o.id===correction.entity_id)).toMatchObject({correction_of:first.entity_id,is_current:true,target_snapshot:{leaf_role:'inactive'}});
+  expect(r.openings[0]).toMatchObject({install_date:'2010-01-01',legacy_installation_review_state:'unreviewed'});
+  expect(r.service_events).toEqual([]);expect(r.as_of).toBeTruthy();
+  expect((await request(app).get('/api/condition-history/facility/'+f.opening).set('Authorization','Bearer '+other.a.token)).status).toBe(404);
+  expect((await request(app).get('/api/condition-history/facility/not-a-uuid').set('Authorization','Bearer '+f.a.token)).status).toBe(400);
+});
+it('facility snapshot includes other openings in the same facility without multiplying shared event evidence',async()=>{
+  const f=await fixture();const building=(await sql('SELECT building_id FROM openings WHERE id=$1',[f.opening])).rows[0].building_id;
+  const id=randomUUID();await sql("INSERT INTO openings(id,building_id,opening_code,qr_token,opening_type) VALUES($1::uuid,$2,'SECOND','second-'||($1::uuid)::text,'door')",[id,building]);
+  const job=randomUUID();await sql("INSERT INTO service_events(id,opening_id,event_date,work_performed,cost) VALUES($1,$2,'2026-10-01','Synthetic shared job',null)",[job,f.opening]);
+  const r=await request(app).get('/api/condition-history/facility/'+f.opening).set('Authorization','Bearer '+f.a.token);
+  expect(r.status).toBe(200);expect(r.body.openings.map((o:any)=>o.id).sort()).toEqual([id,f.opening].sort());
+  for(const key of ['hardware_components','condition_observations','service_events','positions','replacements'])expect(new Set(r.body[key].map((v:any)=>v.id)).size).toBe(r.body[key].length);
+  expect(r.body.openings.find((o:any)=>o.id===id).install_date).toBeNull();
+  expect(r.body.service_events).toHaveLength(1);expect(r.body.service_events[0]).toMatchObject({id:job,opening_id:f.opening,cost:null});
+});
+it('returns a sanitized facility error when connection acquisition fails',async()=>{
+ const f=await fixture();state.failConnect=true;
+ const r=await request(app).get('/api/condition-history/facility/'+f.opening).set('Authorization','Bearer '+f.a.token);
+ expect(r.status).toBe(500);expect(r.body).toEqual({error:'facility_history_unavailable'});
+});
+it('reauthorizes facility history after provider revocation and rejects invalidated sessions',async()=>{
+ const f=await fixture(),provider=await user();
+ await sql('INSERT INTO facility_provider_assignments(property_id,provider_organization_id,granted_by_user_id) VALUES($1,$2,$3)',[f.property,provider.org,f.a.id]);
+ const read=()=>request(app).get('/api/condition-history/facility/'+f.opening).set('Authorization','Bearer '+provider.token);
+ expect((await read()).status).toBe(200);await sql('UPDATE facility_provider_assignments SET revoked_at=now() WHERE property_id=$1',[f.property]);expect((await read()).status).toBe(404);
+ await sql('UPDATE users SET session_version=1 WHERE id=$1',[provider.id]);expect((await read()).status).toBe(401);
+});
 it('migrates transactionally with RLS/default denial and no new API grants or policies', async () => {
   expect(rollbackProven).toBe(true);
   expect((await sql("SELECT relrowsecurity FROM pg_class WHERE oid='condition_observations'::regclass")).rows[0].relrowsecurity).toBe(true);

@@ -52,3 +52,5 @@ $('exportReport').onclick=()=>void exportReport();
 $('back').href='./commercial.html?opening='+encodeURIComponent(opening);
 setInterval(async()=>{if(!samePrincipal(await readFieldSession()))loseSession();},1000);
 try{if(!opening||!principal)throw Error('Sign in and select an opening.');await load();}catch(e){$('error').textContent=e.message;}
+
+$('historyLink').href='./history.html?opening='+encodeURIComponent(opening);

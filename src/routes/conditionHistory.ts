@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import { pool } from '../db/pool';
 import { openingsForOrgSubquery } from '../db/tenantScope';
@@ -6,6 +7,7 @@ import { requireAuth, AuthedRequest } from '../middleware/auth';
 import { enforceRolePermissions } from '../middleware/permissions';
 import { canonicalPayloadHash, findSyncReceipt, writeSyncReceiptAndAudit } from '../services/syncProtocol';
 import { conditionObservationSchema, conditionObservationView, conditionTargetView } from '../services/conditionObservations';
+import { facilityHistory } from '../services/facilityHistory';
 
 export const conditionHistoryRouter = Router();
 conditionHistoryRouter.use(requireAuth, enforceRolePermissions);
@@ -21,6 +23,24 @@ async function scope(c: any, id: string, org: string) {
 class ConditionConflict extends Error {
   constructor(public code: string, public status = 409) { super(code); }
 }
+
+conditionHistoryRouter.get('/facility/:openingId', async (req: AuthedRequest, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!uuid.safeParse(req.params.openingId).success) return res.status(400).json({ error: 'invalid_opening' });
+  let c: PoolClient | undefined;
+  try {
+    c = await pool.connect();
+    await c.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const report = await facilityHistory(c, req.params.openingId, req.auth!.organizationId);
+    await c.query('COMMIT');
+    return report ? res.json(report) : res.status(404).json({ error: 'not_found' });
+  } catch (e: any) {
+    if(c) await c.query('ROLLBACK').catch(()=>{});
+    return res.status(e.message === 'facility_history_too_large' ? 413 : 500).json({
+      error: e.message === 'facility_history_too_large' ? e.message : 'facility_history_unavailable',
+    });
+  } finally { c?.release(); }
+});
 
 conditionHistoryRouter.get('/:openingId', async (req: AuthedRequest, res) => {
   if (!uuid.safeParse(req.params.openingId).success) return res.status(400).json({ error: 'invalid_opening' });
