@@ -33,7 +33,13 @@ it('saves a user-chosen password, preserves authority, consumes sibling codes an
  expect(user).toMatchObject({session_version:1,role:'technician',organization_id:other,is_active:true});
  for(const value of [first,second])expect((await request(app).post('/recovery/confirm').send({code:value,email,password:'another-test-password'})).status).toBe(400);
 });
-it('rejects inactive users and overlong bcrypt inputs',async()=>{
+it('rejects overlong character and UTF-8 byte inputs for an active account without consuming its code',async()=>{
+ const value=await code();const before=(await state.db.query('SELECT session_version FROM users WHERE id=$1',[id])).rows[0].session_version;
+ for(const password of ['x'.repeat(73),'\u20ac'.repeat(25)])expect((await request(app).post('/recovery/confirm').send({code:value,email,password})).status).toBe(400);
+ expect((await state.db.query('SELECT session_version FROM users WHERE id=$1',[id])).rows[0].session_version).toBe(before);
+ expect((await state.db.query('SELECT consumed_at FROM account_recovery_tokens WHERE token_hash=$1',[createHash('sha256').update(value).digest('hex')])).rows[0].consumed_at).toBeNull();
+});
+it('rejects inactive users',async()=>{
  const value=await code();await state.db.query('UPDATE users SET is_active=false WHERE id=$1',[id]);
  expect((await request(app).post('/recovery/confirm').send({code:value,email,password:'long-enough-test-password'})).status).toBe(400);
  expect((await request(app).post('/recovery/confirm').send({code:value,email,password:'密'.repeat(30)})).status).toBe(400);
