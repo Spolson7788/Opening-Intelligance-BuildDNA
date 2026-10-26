@@ -12,7 +12,9 @@ export function isNetlifyAccessResponse(status: number, contentType: string, tex
     && /<title>\s*Login Redirect\s*<\/title>/i.test(text)
     && ACCESS_ORIGINS.some(origin => {
       const host = new URL(origin).hostname.replace(/\./g, "\\.");
-      return new RegExp(`https://app\\.netlify\\.com/edge-access\\?domain=${host}(?:["'&\\s<]|$)`).test(normalized);
+      // Netlify may encode the following query separator as literal \u0026.
+      // Accept it only at this exact hostname boundary; do not decode response scripts.
+      return new RegExp(`https://app\\.netlify\\.com/edge-access\\?domain=${host}(?:["'&\\s<]|\\\\u0026|$)`).test(normalized);
     });
 }
 

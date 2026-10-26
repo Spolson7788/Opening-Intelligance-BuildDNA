@@ -16,6 +16,27 @@ it('supports exact isolated staging gate and rejects hostile origin variants',()
   expect(isNetlifyAccessResponse(401,'application/json',gate)).toBe(false);
 });
 afterEach(()=>vi.unstubAllGlobals());
+it('recognizes only the exact encoded ampersand boundary on both supported gates',async()=>{
+  for(const host of ['oi-connected-release-candidate.netlify.app','oi-video-workflows-staging.netlify.app']) {
+    // Synthetic reproduction: no actual redirect parameters or credentials.
+    const prefix=String.raw`<title>Login Redirect</title><script>location="https:\/\/app.netlify.com\/edge-access?domain=${host}`;
+    const encoded=prefix+String.raw`\u0026synthetic=1";</script>`;
+    const ordinary=prefix+'&synthetic=1";</script>';
+    for(const body of [encoded,ordinary])expect(isNetlifyAccessResponse(401,'text/html; charset=utf-8',body)).toBe(true);
+    for(const suffix of [String.raw`\u002`,String.raw`\u0027`,String.raw`\u002G`,String.raw`\U0026`,String.raw`%26`,String.raw`.evil\u0026`])
+      expect(isNetlifyAccessResponse(401,'text/html',prefix+suffix+'synthetic=1";</script>')).toBe(false);
+    for(const body of [encoded.replace('app.netlify.com','app.netlify.com.evil'),encoded.replace('/edge-access?','/other?'),encoded.replace('https:','http:'),encoded.replace('<title>Login Redirect</title>',''),encoded.replace(host,host+'.evil')])
+      expect(isNetlifyAccessResponse(401,'text/html',body)).toBe(false);
+    for(const [status,mime] of [[403,'text/html'],[401,'application/json'],[403,'application/json'],[401,'']] as const)
+      expect(isNetlifyAccessResponse(status,mime,encoded)).toBe(false);
+    const fetchMock=vi.fn(async()=>new Response(encoded,{status:401,headers:{'content-type':'text/html'}}));
+    vi.stubGlobal('fetch',fetchMock);
+    const error=await fetchPhotoAccessUrl('synthetic').catch(e=>e);
+    expect(error.message).toBe(SITE_ACCESS_REQUIRED);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(error)).not.toContain('synthetic=1');
+  }
+});
 it('recognizes only the known HTML 401 candidate access response',()=>{
   expect(isNetlifyAccessResponse(401,'text/html; charset=utf-8',html)).toBe(true);
   for(const [status,type,text] of [[403,'text/html',html],[401,'application/json',html],[401,'text/html','unrelated'],[401,'text/html',html.replace('app.netlify.com/','app.netlify.com.evil/')] ] as const)expect(isNetlifyAccessResponse(status,type,text)).toBe(false);
