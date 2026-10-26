@@ -1,8 +1,8 @@
 import type {CommercialStore} from './commercialStorage';
 import {documentHash} from './commercialStorage';
 
-// Deliberately unwired. Runtime must explicitly supply approved server-only REST
-// credentials; existing S3 access keys cannot authenticate this REST transport.
+// Runtime must explicitly supply an approved server-only credential provider.
+// Existing S3 access keys cannot authenticate this REST transport.
 // Standard REST upload is create-only (x-upsert:false), unlike S3 PutObject.
 // https://supabase.com/docs/guides/storage/uploads/standard-uploads
 // This is application-level version immutability, NOT provider WORM retention.
@@ -15,7 +15,7 @@ type Transport=(input:string,init:RequestInit)=>Promise<Response>;
 export interface SupabaseCommercialConfiguration {
  enabled:true;
  apiKey:string;
- bearerToken:string;
+ getAccessToken:()=>Promise<string>;
 }
 function failure(code:string):never{throw new Error(code);}
 function objectPath(key:string){
@@ -35,10 +35,12 @@ async function bounded(response:Response,limit:number):Promise<Buffer>{
  return Buffer.concat(chunks,count);
 }
 export async function createSupabaseCommercialStore(config:SupabaseCommercialConfiguration,transport:Transport=fetch):Promise<CommercialStore>{
- if(config?.enabled!==true||!config.apiKey?.trim()||!config.bearerToken?.trim()||/[\r\n]/.test(config.apiKey+config.bearerToken))failure('commercial_storage_not_configured');
+ if(config?.enabled!==true||!config.apiKey?.trim()||typeof config.getAccessToken!=='function'||/[\r\n]/.test(config.apiKey))failure('commercial_storage_not_configured');
  // Capture config once; never read credentials from client input or global env.
- const headers={apikey:config.apiKey,Authorization:'Bearer '+config.bearerToken};
+ const apiKey=config.apiKey;
  async function request(path:string,method:'GET'|'POST',bytes?:Buffer){
+  const token=await config.getAccessToken();if(!token||/[\r\n]/.test(token))failure('commercial_storage_not_configured');
+  const headers={apikey:apiKey,Authorization:'Bearer '+token};
   return transport(path,{method,headers:{...headers,...(bytes?{'Content-Type':'application/pdf','Content-Length':String(bytes.length),'Cache-Control':'private, no-store','x-upsert':'false'}:{})},...(bytes?{body:new Uint8Array(bytes)}:{}),redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000)});
  }
  async function privateBucket(){

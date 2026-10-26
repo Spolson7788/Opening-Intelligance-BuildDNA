@@ -1,7 +1,7 @@
 import {it,expect,vi} from 'vitest';
 import {createSupabaseCommercialStore,COMMERCIAL_PDF_MAX_BYTES} from '../src/services/supabaseCommercialStorage';
 const key='01234567-89ab-4cde-8fab-0123456789ab',bucket='oi-video-workflows-media',bytes=Buffer.from('%PDF-1.4\nSynthetic local fixture only');
-const config={enabled:true as const,apiKey:'synthetic-private-api-key',bearerToken:'synthetic-private-bearer'};
+const config={enabled:true as const,apiKey:'synthetic-private-api-key',getAccessToken:async()=>'synthetic-private-bearer'};
 const bucketResponse=(isPublic=false)=>new Response(JSON.stringify({id:bucket,public:isPublic}),{headers:{'content-type':'application/json'}});
 const objectResponse=(body:Buffer=bytes)=>new Response(new Uint8Array(body),{headers:{'content-type':'application/pdf','content-length':String(body.length)}});
 function server(){const objects=new Map<string,Buffer>();const transport=vi.fn(async(path:string,init:RequestInit)=>{if(path.includes('/bucket/'))return bucketResponse();if(init.method==='POST'){if(objects.has(path))return new Response('Asset Already Exists',{status:400});objects.set(path,Buffer.from(init.body as Uint8Array));return new Response('{}',{status:200});}const data=objects.get(path);return data?objectResponse(data):new Response('not found',{status:404});});return {objects,transport};}
@@ -42,5 +42,5 @@ it('stops on authorization failures without a fallback read or exposing response
  const transport=vi.fn(async(path:string)=>path.includes('/bucket/')?bucketResponse():new Response('private auth detail',{status:403}));const store=await createSupabaseCommercialStore(config,transport);await expect(store.putOnce(key,bytes)).rejects.toThrow(/^commercial_object_create_failed$/);expect(transport.mock.calls).toHaveLength(3);
 });
 it('does not expose borrowed buffer mutations while waiting for storage',async()=>{
- const s=server();let release!:()=>void,count=0;const store=await createSupabaseCommercialStore(config,async(p,i)=>{if(p.includes('/bucket/')&&++count===2)await new Promise<void>(r=>release=r);return s.transport(p,i);});const input=Buffer.from(bytes),writing=store.putOnce(key,input);input.fill(0);release();await writing;expect([...s.objects.values()][0]).toEqual(bytes);
+ const s=server();let release!:()=>void,count=0;const store=await createSupabaseCommercialStore(config,async(p,i)=>{if(p.includes('/bucket/')&&++count===2)await new Promise<void>(r=>release=r);return s.transport(p,i);});const input=Buffer.from(bytes),writing=store.putOnce(key,input);input.fill(0);await vi.waitFor(()=>expect(release).toBeTypeOf('function'));release();await writing;expect([...s.objects.values()][0]).toEqual(bytes);
 });
