@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
@@ -8,15 +8,18 @@ import { loginFailureMessage } from "../lib/authResponse";
 import { loginReturnPath } from "../lib/qrPayload";
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { auth, loading, identityChecking, login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [error, setError] = useState<string | null>(null);
   const [reference, setReference] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => { setError(null); setReference(null); }, [auth?.userId, auth?.organizationId]);
+
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (loading || identityChecking || auth || submitting) return;
     // Read the actual form before any re-render. Autofill/password managers
     // can update native inputs without firing React onChange.
     const credentials = readLoginForm(new FormData(e.currentTarget));
@@ -38,6 +41,16 @@ export function LoginPage() {
       setSubmitting(false);
     }
   }
+
+  if (loading || identityChecking) return <div className="screen"><p role="status">Checking signed-in account.</p></div>;
+  if (auth) return <div className="screen">
+    <h1>Already signed in</h1>
+    <p>Signed in as {auth.email || `Account ${auth.userId}`}</p>
+    <p>Organization {auth.organizationId}</p>
+    <p>This sign-in page does not switch accounts. To use a different account, go to Scan and sign out first. Saved changes remain associated with their original account.</p>
+    <button type="button" className="btn btn-primary" onClick={() => navigate(loginReturnPath(location.state?.from), { replace: true })}>Continue with this account</button>
+    <button type="button" className="btn" onClick={() => navigate("/scan", { replace: true })}>Go to Scan</button>
+  </div>;
 
   return (
     <div className="screen" style={{ display: "flex", flexDirection: "column", justifyContent: "center", minHeight: "100vh" }}>
