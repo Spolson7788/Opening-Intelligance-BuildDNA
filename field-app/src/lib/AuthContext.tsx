@@ -16,6 +16,8 @@ interface AuthContextValue {
   auth: AuthState | null;
   loading: boolean;
   identityChecking: boolean;
+  logoutPending: boolean;
+  logoutError: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -28,6 +30,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [identityChecking, setIdentityChecking] = useState(true);
   const revision = useRef(0);
   const changing = useRef(false);
+  const [logoutPending, setLogoutPending] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -66,13 +70,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
-    changing.current = true; ++revision.current; setLoading(true);
+    // Synchronous guard also covers clicks before React renders the disabled button.
+    if (changing.current) return;
+    changing.current = true; ++revision.current;
+    setLogoutPending(true); setLogoutError(null);
     try { await clearAuth(); setAuth(null); }
-    finally { changing.current = false; setLoading(false); setIdentityChecking(false); }
+    catch { setLogoutError("Sign-out could not be completed. Your saved changes remain on this device. Stay offline if you are switching accounts with pending changes."); }
+    finally { changing.current = false; setLogoutPending(false); setIdentityChecking(false); }
   }
 
   return (
-    <AuthContext.Provider value={{ auth, loading, identityChecking, login, logout }}>
+    <AuthContext.Provider value={{ auth, loading, identityChecking, logoutPending, logoutError, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

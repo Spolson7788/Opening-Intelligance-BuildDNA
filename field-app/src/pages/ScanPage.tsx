@@ -10,7 +10,7 @@ const SCANNER_ELEMENT_ID = "qr-reader";
 
 export function ScanPage() {
   const navigate = useNavigate();
-  const { logout,auth } = useAuth();
+  const { logout,auth,logoutPending,logoutError } = useAuth();
   const canonicalBase=useRef('');
   const [manualCode, setManualCode] = useState("");
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -104,12 +104,16 @@ export function ScanPage() {
         </button>
 
         <button
+          type="button"
           className="btn btn-secondary"
           style={{ marginTop: 12, color: "var(--text-secondary)" }}
+          disabled={logoutPending}
           onClick={() => logout()}
         >
-          Sign Out
+          {logoutPending ? "Signing out…" : "Sign Out"}
         </button>
+        {logoutPending && <p role="status">Signing out. Your saved changes remain on this device.</p>}
+        {logoutError && <p role="alert">{logoutError}</p>}
       </div>
     </div>
   );

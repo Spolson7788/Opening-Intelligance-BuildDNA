@@ -15,6 +15,8 @@ import {
   saveEntityAndOperation,
   saveMediaAndOperation,
   saveAuth,
+  clearAuth,
+  loadAuth,
   putSyncOperation,
   retrySyncOperationAfterReview,
 } from "../field-app/src/lib/db";
@@ -271,4 +273,23 @@ describe('opening cache principal isolation',()=>{
   await cacheOpening({id:'late-a'}, {userId:'a',organizationId:'company-a'});
   expect(await getCachedOpening('late-a')).toBeUndefined();
  });
+});
+
+it("sign-out clears only auth and preserves queued photo bytes, identity and operation", async()=>{
+    const photoId = ids.entity;
+    const media: OfflineMediaRecord = {
+      photoId, openingId: ids.opening, organizationId: ids.organization, targetType: "opening", targetId: ids.opening,
+      capturedAtDevice: "2026-09-18T12:00:00.000Z", capturedByUserId: ids.user, capturedByDeviceId: ids.device,
+      originalFilename: "capture.jpg", generatedCaptureName: "capture.jpg", contentType: "image/jpeg", byteSize: 3,
+      sha256Checksum: "a".repeat(64), blob: new Blob(["abc"], { type: "image/jpeg" }), localBlobState: "retained",
+      uploadState: "queued", provenanceState: "original", reviewState: "pending",
+      createdAtLocal: "2026-09-18T12:00:00.000Z", updatedAtLocal: "2026-09-18T12:00:00.000Z",
+    };
+    const operation: SyncOperation = { ...record().operation, entityId: photoId, entityType: "photo", operationType: "confirm_media" };
+    await saveMediaAndOperation(media, operation);
+
+await saveAuth({token:"synthetic",userId:ids.user,organizationId:ids.organization,role:"technician"});
+const before=await getOfflineMedia(photoId);const ops=await getSyncOperationsForPrincipal(ids.user,ids.organization);
+await clearAuth();expect(await loadAuth()).toBeUndefined();
+const after=await getOfflineMedia(photoId);expect(after).toEqual(before);expect(await after!.blob.text()).toBe("abc");expect(await getSyncOperationsForPrincipal(ids.user,ids.organization)).toEqual(ops);
 });
