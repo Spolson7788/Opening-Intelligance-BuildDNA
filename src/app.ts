@@ -4,6 +4,7 @@ import {planningRouter} from './routes/planning';
 import {CommercialStore} from './services/commercialStorage';
 import {lifecycleOperationsRouter} from './routes/lifecycleOperations';
 import {lifecycleRouter} from './routes/lifecycle';
+import {conditionHistoryRouter} from './routes/conditionHistory';
 import {accountRecoveryRouter} from "./routes/accountRecovery";
 import {recognitionRouter} from "./routes/recognition";
 import {branchesRouter} from "./routes/branches";
@@ -118,6 +119,7 @@ export function createApp(options: { accountRecoveryEnabled?: boolean; commercia
   app.use("/api/labels", labelsRouter);
   app.use("/api/service-requests", serviceRequestsRouter);
   app.use('/api/lifecycle', lifecycleRouter);
+  app.use('/api/condition-history', conditionHistoryRouter);
   app.use('/api/lifecycle', lifecycleOperationsRouter);
 
   return app;

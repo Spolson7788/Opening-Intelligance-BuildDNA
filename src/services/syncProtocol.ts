@@ -49,7 +49,7 @@ export async function writeSyncReceiptAndAudit(client: PoolClient, input: {
   openingId: string;
   operationId: string;
   operationType: "create" | "update" | "complete" | "upload_media" | "confirm_media" | "tombstone";
-  entityType: "opening" | "frame" | "door_leaf" | "component" | "photo" | "service_event" | "inspection_event" | "completion" | "purchasing_review" | "service_request" | "installation_fact" | "replacement" | "downtime" | "warranty";
+  entityType: "opening" | "frame" | "door_leaf" | "component" | "photo" | "service_event" | "inspection_event" | "completion" | "purchasing_review" | "service_request" | "installation_fact" | "condition_observation" | "replacement" | "downtime" | "warranty";
   entityId: string;
   payloadHash: string;
   baseServerRevision: number | null;

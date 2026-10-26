@@ -4,6 +4,7 @@ import {useAuth} from '../lib/AuthContext';
 import {loadAuth} from '../lib/db';
 import {fetchLifecycle,saveInstallationFact} from '../lib/api';
 import {componentLabel} from '../lib/serviceHistory';
+import {ConditionHistoryPanel} from '../components/ConditionHistoryPanel';
 
 function dateLabel(f:any){
  if(f.certainty==='unknown')return 'Installation date unknown';
@@ -55,6 +56,7 @@ function InstallationForm(){
     {current&&<label>Correction reason<input required maxLength={2000} value={reason} onChange={e=>setReason(e.target.value)}/></label>}
    </fieldset><button className="btn btn-primary" disabled={busy} type="submit">{pending?'Retry identical submission':'Save installation fact'}</button></form>:<p>Installation facts are read-only for this account or retired opening.</p>}
    <button className="btn btn-secondary" disabled={busy} onClick={()=>void refresh()}>Reload saved facts</button>
+   <ConditionHistoryPanel openingId={id!}/>
    <h2>Recorded service history</h2><p>Service events retain their original identities and dates. Installation facts do not create service events or change condition.</p>
    {data.service_events.length?data.service_events.map((s:any)=><article key={s.id}><p>{s.event_date} — {s.work_performed}</p><p>Target: {s.hardware_component_id?choices.find(c=>c.type==='component'&&c.id===s.hardware_component_id)?.label||'Component record unavailable':'Whole opening'}</p></article>):<p>No recorded service events.</p>}
   </>}

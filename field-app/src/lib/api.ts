@@ -350,3 +350,5 @@ export const assignBranch = (id:string,branch_id:string|null) => authedFetch(`/b
 export async function fetchLifecycle(openingId:string,principal:ExpectedPrincipal){return authedFetch('/lifecycle/'+encodeURIComponent(openingId),{},principal);}
 export async function saveInstallationFact(command:unknown,principal:ExpectedPrincipal){return authedFetch('/lifecycle/installation-facts',{method:'POST',body:JSON.stringify(command)},principal);}
 export async function saveLifecycleRecord(kind:string,command:unknown,principal:ExpectedPrincipal){return authedFetch('/lifecycle/'+kind,{method:'POST',body:JSON.stringify(command)},principal);}
+export async function fetchConditionHistory(openingId:string,principal:ExpectedPrincipal){return authedFetch('/condition-history/'+encodeURIComponent(openingId),{},principal);}
+export async function saveConditionObservation(command:unknown,principal:ExpectedPrincipal){return authedFetch('/condition-history/observations',{method:'POST',body:JSON.stringify(command)},principal);}
