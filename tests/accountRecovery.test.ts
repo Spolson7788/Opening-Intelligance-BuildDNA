@@ -56,3 +56,12 @@ it('allows the isolated release only in its pinned context and excludes the publ
 });
 
 it('readiness probe returns no account or credential information',async()=>{const r=await request(app).get('/recovery/status');expect(r.status).toBe(200);expect(r.body).toEqual({status:'available'});});
+
+it('allows only the exact isolated video staging site in its production deploy context',async()=>{
+ const {recoveryDeploymentAllowed}=await import('../src/services/recoveryDeployment');
+ const id='b64bf33c-a131-4ae2-b2b0-9aec16e9f77b';
+ expect(recoveryDeploymentAllowed({site:{id},deploy:{context:'production'}})).toBe(true);
+ for(const context of ['deploy-preview','branch-deploy','dev','',undefined])expect(recoveryDeploymentAllowed({site:{id},deploy:{context}})).toBe(false);
+ for(const wrong of [id+'-other',id.toUpperCase(),'boaoedvyvifppuklbwad','ac07bb56-42f2-42b6-bcaf-0e543e99cac5',''])expect(recoveryDeploymentAllowed({site:{id:wrong},deploy:{context:'production'}})).toBe(false);
+ expect(recoveryDeploymentAllowed({deploy:{context:'production'}})).toBe(false);
+});

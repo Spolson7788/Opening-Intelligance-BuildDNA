@@ -347,6 +347,21 @@ describe("account switch while a confirmation is in flight (real request wrapper
     expect(await recordFreshSignIn({ ...account.a, token: "token-a2" }, false)).toEqual([]);
   });
 
+  it("preserves the same principal-bound photo across reset session revocation and reviewed recovery", async () => {
+    const p = photoFor(account.a); await saveMediaAndOperation(p.media, p.operation);
+    vi.stubGlobal('fetch',vi.fn(async()=>json(401,{error:'session_revoked'})));
+    await flushVersionedOperations();
+    expect(await opOf(p.operation.operationId)).toMatchObject({state:'auth_required',lastErrorCode:'session_revoked',actorUserId:user.a,organizationId:org.a,entityId:p.media.photoId});
+    expect(await recordFreshSignIn({...account.a,token:'token-a2'},false)).toEqual([]);
+    expect(await (await getOfflineMedia(p.media.photoId))!.blob.arrayBuffer()).toEqual(await p.media.blob.arrayBuffer());
+    vi.stubGlobal('fetch',vi.fn(fakeFetch));
+    await retrySyncOperationAfterReview(p.operation.operationId);
+    await flushVersionedOperations();
+    expect(await opOf(p.operation.operationId)).toMatchObject({state:'verified',actorUserId:user.a,organizationId:org.a,entityId:p.media.photoId});
+    expect(server.reservations.size).toBe(1);expect(server.photos.get(p.media.photoId)).toBe(1);
+    expect(await (await getOfflineMedia(p.media.photoId))!.blob.arrayBuffer()).toEqual(await p.media.blob.arrayBuffer());
+  });
+
   it("with two tabs, the resumed item is dispatched by only one (dispatch lease preserved)", async () => {
     const p = photoFor(account.a); await saveMediaAndOperation(p.media, p.operation);
     switchToBWhenConfirmApplied();
