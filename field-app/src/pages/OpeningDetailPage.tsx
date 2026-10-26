@@ -72,13 +72,20 @@ export function OpeningDetailPage() {
   const loadedRoute = useRef<string | null>(null);
   const routeKey = `${id ?? ""}/${qrToken ?? ""}/${openingCode ?? ""}`;
   const requestVersion = useRef(0);
+  const automaticReloadAllowed = useRef(true);
   const renewalUrl = siteAccessRenewalUrl(window.location.origin);
 
   useEffect(() => {
+    automaticReloadAllowed.current = true;
     reload();
+    let wasSyncing = false;
     const unsubscribe = onSyncStateChange((state) => {
+      // Badge mounting and queue-count refreshes also emit idle notifications.
+      // Only a completed sync cycle warrants another server read.
+      const completedSync = wasSyncing && !state.syncing;
+      wasSyncing = state.syncing;
       if (!state.syncing) {
-        reload();
+        if (completedSync && automaticReloadAllowed.current) reload();
         loadQueuedPhotos();
       }
     });
@@ -146,6 +153,8 @@ export function OpeningDetailPage() {
       .catch((err) => {
         if (version !== requestVersion.current) return;
         const failure = openingLoadFailure(err);
+        // Do not turn a terminal access/not-found response into a timed retry.
+        automaticReloadAllowed.current = failure.retry;
         // A private-site gate must not discard an active picker. Application auth
         // refusals still remove the opening; they are not treated as offline access.
         if (!background || !failure.retry) {
