@@ -67,9 +67,10 @@ export function isAllowedOrigin(origin: string, allowedOrigins: string[]): boole
   );
 }
 
-export function createApp(options: { accountRecoveryEnabled?: boolean; commercialStore?: CommercialStore; commercialInputsOnly?: boolean; commercialInputsEnabled?: boolean; facilityBudgetEnabled?: boolean; planningSandboxEnabled?: boolean; legacyDocumentsEnabled?: boolean } = {}) {
+export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boolean; accountRecoveryEnabled?: boolean; commercialStore?: CommercialStore; commercialInputsOnly?: boolean; commercialInputsEnabled?: boolean; facilityBudgetEnabled?: boolean; planningSandboxEnabled?: boolean; legacyDocumentsEnabled?: boolean } = {}) {
   const app = express();
   app.locals.commercialStore=options.commercialStore;
+  app.locals.retainedDocumentRecoveryAllowed=options.retainedDocumentRecoveryAllowed;
   app.locals.commercialInputsOnly=options.commercialInputsOnly===true;
   app.locals.commercialInputsEnabled=options.commercialInputsEnabled===true;
   app.locals.facilityBudgetEnabled=options.facilityBudgetEnabled===true;

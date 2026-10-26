@@ -1,3 +1,4 @@
+import {retainedRecoveryWindow} from '../../src/services/retainedDocumentRecovery';
 import {stagingInputCapabilities} from '../../src/services/stagingInputCapabilities';
 import {createSupabaseCommercialStore} from '../../src/services/supabaseCommercialStorage';
 import {runtimeStorageIdentity} from '../../src/services/storageTechnicalIdentity';
@@ -11,6 +12,7 @@ export default async (request: Request, context: Context): Promise<Response> => 
   let commercialStore;
   if(capabilities.providerEstimates&&new URL(request.url).pathname.startsWith('/api/commercial/')){try{commercialStore=await createSupabaseCommercialStore({enabled:true,apiKey:process.env.OI_COMMERCIAL_STORAGE_API_KEY||'',getAccessToken:()=>runtimeStorageIdentity().getAccessToken()});}catch{/* Fixed unavailable state; never log provider errors or credentials. */}}
   const app = createApp({
+    retainedDocumentRecoveryAllowed:()=>retainedRecoveryWindow(context,process.env),
     commercialStore,
     commercialInputsOnly:context?.site?.id==='b64bf33c-a131-4ae2-b2b0-9aec16e9f77b',
     commercialInputsEnabled:capabilities.providerEstimates&&!!commercialStore,
