@@ -5,7 +5,7 @@ import type { SyncState } from "../lib/sync";
 import { Link } from "react-router-dom";
 
 export function SyncBadge() {
-  const { auth, loading } = useAuth();
+  const { auth, loading, identityChecking } = useAuth();
   const [online, setOnline] = useState(navigator.onLine);
   const [syncState, setSyncState] = useState<SyncState>({ pending: 0, syncing: false, failed: 0, conflicts: 0 });
 
@@ -23,7 +23,7 @@ export function SyncBadge() {
   }, []);
 
   useEffect(() => { void refreshPendingCount(); }, [auth?.userId, auth?.organizationId]);
-  if (loading) return <span className="badge">Checking sync</span>;
+  if (loading || identityChecking) return <span className="badge">Checking sync</span>;
   if (!auth) return <span className="badge">Sign in to check pending changes</span>;
   if (syncState.checkFailed) return <span className="badge">Unable to check pending changes</span>;
   if (!syncState.checked || syncState.userId !== auth.userId || syncState.organizationId !== auth.organizationId)

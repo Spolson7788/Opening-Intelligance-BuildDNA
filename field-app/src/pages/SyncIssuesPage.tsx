@@ -10,7 +10,7 @@ import { formatMegabytes, maximumMediaBytes } from "../lib/mediaLimits";
 import { prepareImageForUpload, reducedFilename } from "../lib/photoPreparation";
 
 export function SyncIssuesPage() {
-  const { auth } = useAuth();
+  const { auth, identityChecking } = useAuth();
   const principal = auth ? `${auth.organizationId}/${auth.userId}` : "";
   const [loadedPrincipal, setLoadedPrincipal] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -99,7 +99,7 @@ export function SyncIssuesPage() {
     <div className="screen">
       <h2>Synchronization review</h2>
       <p style={{ color: "var(--text-secondary)" }}>Entries remain stored on this device until synchronization succeeds. Review conflicts before retrying.</p>
-      {loadedPrincipal !== principal ? <p>Checking saved changes for this account. If this does not finish, return after checking access.</p> : issues.length === 0 ? <div className="card">No synchronization issues for the signed-in technician.</div> : issues.map((issue) => <div className="card" key={issue.id} data-issue-kind={issue.kind}>
+      {identityChecking || loadedPrincipal !== principal ? <p>Checking saved changes for this account. If this does not finish, return after checking access.</p> : issues.length === 0 ? <div className="card">No synchronization issues for the signed-in technician.</div> : issues.map((issue) => <div className="card" key={issue.id} data-issue-kind={issue.kind}>
         <strong style={{ textTransform: "capitalize" }}>{issue.label}</strong>
         {issue.kind === "rejected_media" ? <>
           <p style={{ margin: "6px 0" }}>Not uploaded: this {issue.contentType?.startsWith("video/") ? "video" : "photograph"} is {formatMegabytes(issue.mediaBytes ?? 0)}, above the {formatMegabytes(maximumMediaBytes(issue.contentType ?? ""))} upload limit. It is kept on this device and will not be retried automatically.</p>

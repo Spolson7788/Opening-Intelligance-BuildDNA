@@ -48,7 +48,7 @@ export async function refreshPendingCount() {
   const latest = await loadAuth();
   if (read !== statusRead) return;
   if (auth?.userId !== latest?.userId || auth?.organizationId !== latest?.organizationId) {
-    currentState = { pending: 0, syncing: false, failed: 0, conflicts: 0, checked: false }; notify(); return;
+    currentState = { pending: 0, syncing: currentState.syncing, failed: 0, conflicts: 0, checked: false }; notify(); return;
   }
   currentState = { ...currentState,
     checked: true, checkFailed: false, userId: auth?.userId, organizationId: auth?.organizationId,
@@ -58,7 +58,7 @@ export async function refreshPendingCount() {
   notify();
   } catch {
     if (read !== statusRead) return;
-    currentState = { pending: 0, syncing: false, failed: 0, conflicts: 0, checked: false, checkFailed: true }; notify();
+    currentState = { pending: 0, syncing: currentState.syncing, failed: 0, conflicts: 0, checked: false, checkFailed: true }; notify();
   }
 }
 function entityTypeForKind(kind: OutboxItem["kind"]): OfflineEntityType {

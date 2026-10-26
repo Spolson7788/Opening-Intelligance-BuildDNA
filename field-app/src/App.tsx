@@ -1,5 +1,6 @@
 import {AccountRecoveryPage} from "./pages/AccountRecoveryPage";
 import {AccountIdentity} from "./components/AccountIdentity";
+import {AccountScope} from "./components/AccountScope";
 import {BranchesPage} from "./pages/BranchesPage";
 import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
@@ -27,7 +28,7 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
   const location = useLocation();
   if (loading) return null;
   if (!auth) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
-  return children;
+  return <AccountScope>{children}</AccountScope>;
 }
 
 function AppRoutes() {
