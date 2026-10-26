@@ -64,7 +64,7 @@ it('binds review retries and retains the existing whole-opening purchasing gate'
  const command={operation_id:randomUUID(),note:'Synthetic review'},path='/estimates/'+quote.version_id+'/review';
  const first=await f.post(path,command,f.owner.token);expect(first.status).toBe(200);expect((await f.post(path,command,f.owner.token)).body).toEqual(first.body);
  expect((await f.post(path,{...command,note:'changed'},f.owner.token)).status).toBe(409);
- expect((await pool.query('SELECT count(*) FROM estimate_reviews WHERE estimate_version_id=$1',[quote.version_id])).rows[0].count).toBe('1');
+ expect(Number((await pool.query('SELECT count(*) FROM estimate_reviews WHERE estimate_version_id=$1',[quote.version_id])).rows[0].count)).toBe(1);
  await request(f.api).put('/api/purchasing/approvals/'+f.h.id).set(f.auth(f.owner.token)).send({document_url:'https://synthetic.invalid/technical-proof',document_sha256:'a'.repeat(64),provenance:'technician_selected',active:false});
  expect((await f.post(path,{...command,operation_id:randomUUID()},f.owner.token)).body.error).toBe('whole_opening_review_required');
  const missingStore:CommercialStore={privateImmutable:true,mode:'fixture',putOnce:async()=>{},read:async()=>{throw Error('missing');}};
@@ -81,4 +81,24 @@ it('links verified private warranty versions to appended lifecycle records witho
  expect((await request(f.api).post('/api/lifecycle/warranty').set(f.auth(f.owner.token)).send(b)).status).toBe(201);
  expect((await pool.query('SELECT * FROM commercial_document_links WHERE lifecycle_record_id=$1',[b.entity_id])).rows[0].document_version_id).toBe(doc.version_id);
  expect((await request(f.api).get('/api/commercial/documents/'+doc.version_id).set(f.auth(f.other.token))).status).toBe(404);
+});
+it('calculates provider SKU labor with explicit units and preserves unknown inputs',()=>{
+ const parts=[{quantity:2,unit_price_minor:1234,catalog:{unit_label:'pair',installation_minutes_per_unit:45}}];
+ expect(estimateTotals(parts,{kind:'per_sku_hourly',rate_minor:9000},200,300).total_minor).toBe(16468);
+ expect(estimateTotals(parts,{kind:'fixed',amount_minor:1000},0,0).total_minor).toBe(3468);
+ expect(estimateTotals(parts,{kind:'per_sku_hourly',rate_minor:null},0,0).total_minor).toBeNull();
+ expect(estimateTotals([{quantity:2,unit_price_minor:1234}],{kind:'per_sku_hourly',rate_minor:9000},0,0).missing).toContain('part_1_installation_time_or_unit');
+ expect(estimateTotals(parts,{kind:'per_sku_hourly',rate_minor:9000},null,null).total_minor).toBeNull();
+ expect(()=>estimateTotals([{quantity:1,unit_price_minor:0,catalog:{unit_label:'each',installation_minutes_per_unit:1}}],{kind:'per_sku_hourly',rate_minor:100},0,0)).toThrow('labor_fractional_minor_unit');
+});
+it('retains provider installation assumptions in immutable estimate snapshots',async()=>{
+ const f=await fixture();await f.post('/documents',f.doc);
+ const cat={...f.catalog(),unit_label:'pair',installation_minutes_per_unit:45,pricing_as_of:'2026-10-26T00:00:00Z',installation_source:'Provider synthetic installation assumption'};
+ expect((await f.post('/catalog',cat)).status).toBe(200);
+ const estimate={...f.estimate(cat.version_id),labor:{kind:'per_sku_hourly',rate_minor:9000}};
+ expect((await f.post('/estimates',estimate)).status).toBe(200);
+ const row=(await pool.query('SELECT snapshot FROM replacement_estimate_versions WHERE id=$1',[estimate.version_id])).rows[0].snapshot;
+ expect(row.totals.total_minor).toBe(16468);expect(row.price_basis).toBe('provider_estimate_not_binding_quote');
+ expect(row.parts[0].catalog).toMatchObject({unit_label:'pair',installation_minutes_per_unit:45,pricing_as_of:'2026-10-26T00:00:00Z'});
+ expect((await f.post('/catalog',{...cat,version_id:randomUUID(),expected_version:1,installation_minutes_per_unit:-1})).status).toBe(422);
 });

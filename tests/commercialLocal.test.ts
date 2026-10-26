@@ -1,0 +1,9 @@
+import {beforeAll,afterAll,vi} from 'vitest';
+import {PGlite} from '@electric-sql/pglite';
+import {readFileSync,readdirSync} from 'node:fs';
+const state=vi.hoisted(()=>({db:null as any}));
+vi.mock('../src/db/pool',()=>({pool:{query:(s:string,a?:unknown[])=>state.db.query(s,a),connect:async()=>({query:(s:string,a?:unknown[])=>state.db.query(s,a),release:()=>{}})}}));
+beforeAll(async()=>{state.db=new PGlite();await state.db.exec('CREATE ROLE oi_pr2_api NOLOGIN');for(const name of readdirSync('migrations').filter(n=>n.endsWith('.sql')).sort())await state.db.exec(readFileSync('migrations/'+name,'utf8').replace(/CREATE EXTENSION IF NOT EXISTS "uuid-ossp";/g,'').replace(/uuid_generate_v4\(\)/g,'gen_random_uuid()'));});
+afterAll(async()=>{await state.db?.close();});
+import './commercialVersions.test';
+import './sandboxFinance.test';
