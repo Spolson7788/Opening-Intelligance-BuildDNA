@@ -7,3 +7,4 @@ beforeAll(async()=>{state.db=new PGlite();await state.db.exec('CREATE ROLE oi_pr
 afterAll(async()=>{await state.db?.close();});
 import './commercialVersions.test';
 import './sandboxFinance.test';
+import './stagingInputCapabilities.test';

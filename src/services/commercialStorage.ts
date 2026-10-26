@@ -18,6 +18,6 @@ export async function verifiedDocument(c:any,id:string,store:CommercialStore|und
 // Explicit disposable fixture adapter. Not wired into production createApp().
 export function createFixtureCommercialStore():CommercialStore {
  const objects=new Map<string,Buffer>();return {privateImmutable:true,mode:'fixture',
- async putOnce(key,bytes){if(objects.has(key))throw Error('immutable_object_exists');objects.set(key,Buffer.from(bytes));},
+ async putOnce(key,bytes){if(objects.has(key)){if(!objects.get(key)!.equals(bytes))throw Error('immutable_object_exists');return;}objects.set(key,Buffer.from(bytes));},
  async read(key){const bytes=objects.get(key);if(!bytes)throw Error('object_missing');return Buffer.from(bytes);}};
 }

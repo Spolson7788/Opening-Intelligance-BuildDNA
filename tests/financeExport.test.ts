@@ -66,3 +66,8 @@ it('renders, exports and revises facility assumptions without interpreting them 
 it('does not submit facility assumptions after the active account changes',async()=>{
  state.api.mockResolvedValue({...projection(),sandbox_enabled:true});await import('../facility-dashboard/finance.mjs');state.session.mockResolvedValue({...principal,userId:'b',organizationId:'org-b'});document.getElementById('budgetForm')!.dispatchEvent(new Event('submit',{cancelable:true}));await vi.waitFor(()=>expect(document.getElementById('error')!.textContent).toContain('Account changed'));expect(state.api).toHaveBeenCalledTimes(1);expect(document.getElementById('content')!.children).toHaveLength(0);
 });
+
+it('shows only the budget form for the scoped budget-only capability and respects explicit disabled capabilities',async()=>{
+ state.api.mockResolvedValue({...projection(),sandbox_enabled:false,budget_writes_enabled:true,cost_writes_enabled:false});await import('../facility-dashboard/finance.mjs');expect(document.getElementById('forms')!.hidden).toBe(false);expect(document.getElementById('budgetForm')!.hidden).toBe(false);expect(document.getElementById('costForm')!.hidden).toBe(true);expect(document.getElementById('status')!.textContent).toContain('writes remain disabled');expect(button().disabled).toBe(false);
+ state.api.mockResolvedValue({...projection(),sandbox_enabled:true,budget_writes_enabled:false,cost_writes_enabled:false});document.getElementById('reload')!.click();await vi.waitFor(()=>expect(state.api).toHaveBeenCalledTimes(2));await vi.waitFor(()=>expect(document.getElementById('forms')!.hidden).toBe(true));expect(document.getElementById('budgetForm')!.hidden).toBe(true);expect(document.getElementById('costForm')!.hidden).toBe(true);
+});

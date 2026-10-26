@@ -63,3 +63,15 @@ it('records facility best guesses without a provider estimate, preserves unknown
  await pool.query("UPDATE openings SET status='active' WHERE id=$1",[f.o.id]);
  await pool.query("UPDATE hardware_components SET lifecycle_state='retired' WHERE id=$1",[component]);expect((await f.post('/budgets',{...f.budget(),lines:[line]})).body.error).toBe('component_not_in_facility');
 });
+
+it('enables budget-only recording without enabling cost evidence, while preserving the read-only rollback',async()=>{
+ const f=await fixture(),api=createApp();api.locals.facilityBudgetEnabled=true;
+ const post=(path:string,body:any,token=f.owner.token)=>request(api).post('/api/sandbox-finance'+path).set('Authorization','Bearer '+token).send(body);
+ const get=()=>request(api).get('/api/sandbox-finance/'+f.o.id).set('Authorization','Bearer '+f.owner.token);
+ expect((await get()).body).toMatchObject({sandbox_enabled:false,budget_writes_enabled:true,cost_writes_enabled:false});
+ const b=f.budget();expect((await post('/budgets',b)).status).toBe(200);expect((await post('/budgets',b)).status).toBe(200);
+ expect((await post('/budgets',f.budget(),f.other.token)).status).toBe(404);
+ for(const kind of ['invoice','credit','payment'])expect((await post('/cost-records',{...f.cost(),kind})).body.error).toBe('planning_sandbox_disabled');
+ api.locals.facilityBudgetEnabled=false;expect((await post('/budgets',f.budget())).body.error).toBe('facility_budget_disabled');const read=await get();expect(read.status).toBe(200);expect(read.body.budgets.some((v:any)=>v.id===b.version_id)).toBe(true);expect(read.body).toMatchObject({budget_writes_enabled:false,cost_writes_enabled:false});
+ for(const unsafe of [undefined,'true',1]){api.locals.facilityBudgetEnabled=unsafe;expect((await post('/budgets',f.budget())).status).toBe(503);}
+});

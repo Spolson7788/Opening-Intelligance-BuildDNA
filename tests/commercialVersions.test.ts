@@ -102,3 +102,20 @@ it('retains provider installation assumptions in immutable estimate snapshots',a
  expect(row.parts[0].catalog).toMatchObject({unit_label:'pair',installation_minutes_per_unit:45,pricing_as_of:'2026-10-26T00:00:00Z'});
  expect((await f.post('/catalog',{...cat,version_id:randomUUID(),expected_version:1,installation_minutes_per_unit:-1})).status).toBe(422);
 });
+it('keeps estimating capability off by default and excludes reviews and financial documents when enabled',async()=>{
+ const f=await fixture(),held=createApp({commercialInputsOnly:true,commercialStore:f.store}),enabled=createApp({commercialInputsOnly:true,commercialInputsEnabled:true,commercialStore:f.store});
+ const post=(api:any,path:string,b:any)=>request(api).post('/api/commercial'+path).set(f.auth(f.provider.token)).send(b);
+ expect((await post(held,'/documents',f.doc)).body.error).toBe('commercial_write_held');
+ expect((await post(enabled,'/documents',{...f.doc,kind:'invoice'})).body.error).toBe('document_kind_or_scope_held');
+ expect((await post(enabled,'/documents',{...f.doc,property_id:f.scope.propertyId})).body.error).toBe('document_kind_or_scope_held');
+ expect((await post(enabled,'/documents',f.doc)).status).toBe(200);
+ const c=f.catalog();expect((await post(enabled,'/catalog',c)).status).toBe(200);const e=f.estimate(c.version_id);expect((await post(enabled,'/estimates',e)).status).toBe(200);
+ expect((await post(enabled,'/estimates/'+e.version_id+'/review',{operation_id:randomUUID(),note:'No review activation'})).body.error).toBe('commercial_write_held');
+ expect((await request(held).get('/api/commercial/context/'+f.o.id).set(f.auth(f.owner.token))).body).toMatchObject({input_writes_enabled:false,estimate_reviews_enabled:false});
+});
+it('reconciles the same immutable document object after a lost storage response without another key',async()=>{
+ const f=await fixture();let fail=true;const keys:string[]=[];const store:CommercialStore={privateImmutable:true,mode:'fixture',read:k=>f.store.read(k),putOnce:async(k,b)=>{keys.push(k);await f.store.putOnce(k,b);if(fail){fail=false;throw Error('document_object_unavailable');}}};
+ const api=createApp({commercialStore:store,commercialInputsOnly:true,commercialInputsEnabled:true});const send=()=>request(api).post('/api/commercial/documents').set(f.auth(f.provider.token)).send(f.doc);
+ expect((await send()).status).toBe(409);expect((await send()).status).toBe(200);expect(keys).toEqual([f.doc.version_id,f.doc.version_id]);
+ expect(Number((await pool.query('SELECT count(*) FROM commercial_document_versions WHERE id=$1',[f.doc.version_id])).rows[0].count)).toBe(1);
+});

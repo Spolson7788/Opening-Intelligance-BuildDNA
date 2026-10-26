@@ -1,0 +1,12 @@
+import {it,expect,vi,beforeEach,afterEach} from 'vitest';
+const s=vi.hoisted(()=>({app:vi.fn(()=>({})),store:vi.fn()}));
+vi.mock('../src/app',()=>({createApp:s.app}));
+vi.mock('../src/services/supabaseCommercialStorage',()=>({createSupabaseCommercialStore:s.store}));
+vi.mock('../netlify/functions/_shared/expressAdapter',()=>({netlifyExpressAdapter:()=>async()=>new Response('synthetic')}));
+import handler from '../netlify/functions/api';
+const context={site:{id:'b64bf33c-a131-4ae2-b2b0-9aec16e9f77b'},deploy:{context:'production'}};
+beforeEach(()=>{vi.stubEnv('OI_PROVIDER_ESTIMATES_ENABLED','true');vi.stubEnv('OI_FACILITY_BUDGET_ENABLED','true');s.app.mockClear();s.store.mockReset();s.store.mockRejectedValue(Error('Synthetic private storage outage'));});
+afterEach(()=>vi.unstubAllEnvs());
+it('storage outage cannot block health, auth or photo routes',async()=>{for(const path of ['/health','/api/auth/login','/api/photos/reserve'])expect((await handler(new Request('https://synthetic.invalid'+path),context as any)).status).toBe(200);expect(s.store).not.toHaveBeenCalled();});
+it('commercial outage fails closed while budget capability remains separately selected',async()=>{await handler(new Request('https://synthetic.invalid/api/commercial/context/id'),context as any);expect(s.store).toHaveBeenCalledTimes(1);expect(s.app.mock.calls[0][0]).toMatchObject({commercialInputsEnabled:false,commercialInputsOnly:true,facilityBudgetEnabled:true});});
+it('wrong context never initializes storage or enables saves',async()=>{await handler(new Request('https://synthetic.invalid/api/commercial/context/id'),{...context,deploy:{context:'deploy-preview'}} as any);expect(s.store).not.toHaveBeenCalled();expect(s.app.mock.calls[0][0]).toMatchObject({commercialInputsEnabled:false,facilityBudgetEnabled:false});});
