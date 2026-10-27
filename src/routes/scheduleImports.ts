@@ -136,9 +136,13 @@ scheduleImportsRouter.post("/:id/confirm", async (req: AuthedRequest, res: Respo
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // Lock the parent facility (property) row first, before any other read or write, so confirms on the
+    // same facility serialize. Uses the existing lock-only grant (20260927143010): UPDATE(id) + WITH CHECK(false).
+    // property_id is immutable on schedule_imports (schedule_imports_guard). The unique index stays as a backstop.
+    const facilityLock = await client.query("SELECT id FROM properties WHERE id=(SELECT property_id FROM schedule_imports WHERE id=$1) FOR UPDATE", [req.params.id]);
+    if (!facilityLock.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "not_found" }); }
     const locked = (await client.query("SELECT * FROM schedule_imports WHERE id=$1 FOR UPDATE", [req.params.id])).rows[0];
     if (locked.status === "confirmed") { await client.query("ROLLBACK"); return res.status(200).json({ already_confirmed: true, result: locked.result }); }
-    await client.query("SELECT id FROM buildings WHERE id=$1 FOR UPDATE", [locked.building_id]);
     const loaded = (await loadImport(client, req.params.id))!;
     const plan = await planImport(client, loaded, p.data.resolutions);
     if (plan.blocked) { await client.query("ROLLBACK"); return res.status(409).json({ error: "unresolved_blockers", issues: plan.issues.filter((i) => i.severity === "blocker") }); }
