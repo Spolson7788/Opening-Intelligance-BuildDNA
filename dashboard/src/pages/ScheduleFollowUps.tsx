@@ -28,7 +28,7 @@ export function ScheduleFollowUps({ propertyId }: { propertyId: string }) {
     } finally { setBusy(null); }
   }
   return (
-    <section>
+    <section className="panel">
       <h2>Schedule follow-ups</h2>
       {items.length === 0 ? <p>No open follow-ups.</p> : (
         <table>

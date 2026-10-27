@@ -1,0 +1,55 @@
+import { ApiError, type ScheduleImportResolutions } from "./api";
+
+// M3 UI round: pure helpers shared by the schedule pages and the login page.
+
+export type ScheduleKind = "door" | "hardware";
+
+/** Item 2: guess the schedule type from the file name. The user can still change it. */
+export function kindForFilename(name: string): ScheduleKind | null {
+  const ext = (name.toLowerCase().split(".").pop() ?? "").trim();
+  if (ext === "docx") return "hardware";
+  if (ext === "xlsx" || ext === "csv" || ext === "xls") return "door";
+  return null;
+}
+
+/** Item 6: shown when the signed-in account's organization has no facilities. */
+export const NO_FACILITIES_MESSAGE = "This account has no facilities. Sign in with the account that owns the facility.";
+
+/** Item 7: only a real credential rejection says the password didn't match. */
+export function loginErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 401 && err.message === "invalid_credentials") return "Email or password didn't match. Try again.";
+    if (err.status === 403) return "This account is deactivated.";
+  }
+  return "Couldn't reach the sign-in service. Reload the page and try again.";
+}
+
+/** Item 5: unsaved review choices are kept on this device, per import id, until confirm. */
+export type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+export const importDraftKey = (importId: string) => `oi.scheduleImportDraft.${importId}`;
+function browserStorage(): DraftStorage | null {
+  try { return typeof window !== "undefined" && window.localStorage ? window.localStorage : null; } catch { return null; }
+}
+export function isEmptyResolutions(r: ScheduleImportResolutions): boolean {
+  return Object.keys(r.rows ?? {}).length === 0 && Object.keys(r.set_map ?? {}).length === 0 && Object.keys(r.row_sets ?? {}).length === 0
+    && (r.accept_items ?? []).length === 0 && (r.overwrite ?? []).length === 0;
+}
+export function saveImportDraft(importId: string, res: ScheduleImportResolutions, storage: DraftStorage | null = browserStorage()): void {
+  try {
+    if (!storage) return;
+    if (isEmptyResolutions(res)) storage.removeItem(importDraftKey(importId));
+    else storage.setItem(importDraftKey(importId), JSON.stringify({ v: 1, res }));
+  } catch { /* storage full or blocked: drafts are best effort */ }
+}
+export function loadImportDraft(importId: string, storage: DraftStorage | null = browserStorage()): ScheduleImportResolutions | null {
+  try {
+    const raw = storage?.getItem(importDraftKey(importId));
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (!p || p.v !== 1 || typeof p.res !== "object" || p.res === null || Array.isArray(p.res)) return null;
+    return { rows: {}, set_map: {}, row_sets: {}, accept_items: [], overwrite: [], ...p.res };
+  } catch { return null; }
+}
+export function clearImportDraft(importId: string, storage: DraftStorage | null = browserStorage()): void {
+  try { storage?.removeItem(importDraftKey(importId)); } catch { /* ignore */ }
+}

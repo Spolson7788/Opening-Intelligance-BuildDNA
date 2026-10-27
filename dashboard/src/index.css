@@ -349,3 +349,13 @@ tbody tr:hover { background: var(--surface-sunken); }
 }
 
 @media print { .label-card { background: white; color: black; } .label-location { color: black; overflow-wrap: anywhere; } .label-code { overflow-wrap: anywhere; } }
+
+/* M3 schedule pages: same shell as the dashboard, with panels and a sticky confirm bar. */
+.schedule-page .panel { margin-bottom: 20px; overflow-x: auto; }
+.schedule-page .panel label { display: inline-flex; gap: 6px; align-items: center; margin: 0 16px 12px 0; font-size: 13px; color: var(--text-secondary); }
+.schedule-page .panel select, .schedule-page .panel input:not([type=checkbox]) { height: 36px; border: 1px solid var(--border); border-radius: 6px; padding: 0 8px; background: var(--surface); color: var(--text); }
+.schedule-page .btn { width: auto; }
+.schedule-page .schedule-back { margin-bottom: 4px; font-size: 13px; }
+.schedule-page .schedule-note { margin-bottom: 12px; font-size: 13px; color: var(--text-secondary); }
+.schedule-page .empty-state { margin-bottom: 16px; }
+.schedule-confirm-bar { position: sticky; bottom: 0; display: flex; gap: 16px; align-items: center; justify-content: flex-end; padding: 12px 0; background: var(--bg, #fff); border-top: 1px solid var(--border); }

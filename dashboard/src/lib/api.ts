@@ -643,6 +643,15 @@ export async function listFacilitySchedules(propertyId: string): Promise<Facilit
   return authedFetch(`/facility-schedules/by-property/${propertyId}`);
 }
 
+export interface ScheduleImportListItem {
+  id: string; building_id: string; building_name: string; door_version_id: string; hardware_version_id: string | null;
+  status: string; created_at: string; confirmed_at: string | null;
+}
+
+export async function listScheduleImports(propertyId: string): Promise<ScheduleImportListItem[]> {
+  return authedFetch(`/schedule-imports/by-property/${propertyId}`);
+}
+
 async function sha256Hex(file: File): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");

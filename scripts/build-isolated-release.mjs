@@ -51,7 +51,7 @@ writeFileSync(resolve(staging, 'build-info.json'), JSON.stringify({
   releaseStatus: 'acceptance-pending',
 }, null, 2) + '\n');
 writeFileSync(resolve(staging, "_redirects"),
-  "/field/* /field/index.html 200\n/dashboard/* /dashboard/index.html 200\n");
+  "/ /dashboard/ 302!\n/field/* /field/index.html 200\n/dashboard/* /dashboard/index.html 200\n");
 // Hash the files produced by this Netlify build, not a later local rebuild.
 const artifacts = {};
 function hashTree(directory, prefix = '') {

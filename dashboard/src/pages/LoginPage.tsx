@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { loginErrorMessage } from "../lib/scheduleUi";
 import { useAuth } from "../lib/AuthContext";
 
 export function LoginPage() {
@@ -18,8 +19,8 @@ export function LoginPage() {
     try {
       await login(email, password);
       navigate("/");
-    } catch {
-      setError("Email or password didn't match. Try again.");
+    } catch (err) {
+      setError(loginErrorMessage(err));
     } finally {
       setSubmitting(false);
     }

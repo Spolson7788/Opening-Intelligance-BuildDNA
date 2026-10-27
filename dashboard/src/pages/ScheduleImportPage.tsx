@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ApiError, type FacilitySchedule, type Property, type ScheduleImportPreview, type ScheduleImportResolutions,
   confirmScheduleImport, createScheduleImport, fetchScheduleImport, listFacilitySchedules, listProperties, previewScheduleImport,
 } from "../lib/api";
+import { SchedulePage } from "../components/SchedulePage";
+import { NO_FACILITIES_MESSAGE, clearImportDraft, isEmptyResolutions, loadImportDraft, saveImportDraft } from "../lib/scheduleUi";
 
 // M2: parse a stored door schedule (plus optional hardware schedule) for one
 // building, review issues and the change plan, resolve, then confirm.
@@ -18,8 +20,9 @@ export function ScheduleImportStartPage() {
   const [hardwareVersionId, setHardwareVersionId] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [noFacilities, setNoFacilities] = useState(false);
   useEffect(() => {
-    listProperties().then((ps) => { const p = ps.find((x) => x.id === propertyId) ?? null; setProperty(p); if (p?.buildings[0]) setBuildingId(p.buildings[0].id); }).catch(() => setMessage("Could not load facility."));
+    listProperties().then((ps) => { setNoFacilities(ps.length === 0); const p = ps.find((x) => x.id === propertyId) ?? null; setProperty(p); if (p?.buildings[0]) setBuildingId(p.buildings[0].id); }).catch(() => setMessage("Could not load facility."));
     if (propertyId) listFacilitySchedules(propertyId).then(setSchedules).catch(() => setMessage("Could not load schedules."));
   }, [propertyId]);
   const hardwareVersions = schedules.filter((s) => s.kind === "hardware").flatMap((s) => s.versions.map((v) => ({ ...v, title: s.title })));
@@ -36,10 +39,9 @@ export function ScheduleImportStartPage() {
     } finally { setBusy(false); }
   }
   return (
-    <div className="page">
-      <p><Link to="/facility-schedules">Back to schedules</Link></p>
-      <h1>Import door schedule</h1>
-      <p>{property ? property.name : "Facility"}</p>
+    <SchedulePage title="Import door schedule" subtitle={property ? property.name : "Facility"} back={{ to: "/facility-schedules", label: "Back to schedules" }}>
+      {noFacilities && <p className="empty-state" role="status">{NO_FACILITIES_MESSAGE}</p>}
+      <section className="panel">
       <label>Building{" "}
         <select value={buildingId} onChange={(e) => setBuildingId(e.target.value)}>
           {(property?.buildings ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -51,30 +53,40 @@ export function ScheduleImportStartPage() {
           {hardwareVersions.map((v) => <option key={v.id} value={v.id}>{v.title} v{v.version} ({v.original_filename})</option>)}
         </select>
       </label>
-      <button disabled={!buildingId || !doorVersionId || busy} onClick={start}>{busy ? "Reading..." : "Read schedule"}</button>
+      <button className="btn btn-primary" disabled={!buildingId || !doorVersionId || busy} onClick={start}>{busy ? "Reading..." : "Read schedule"}</button>
       {message && <p role="status">{message}</p>}
-    </div>
+      </section>
+    </SchedulePage>
   );
 }
 
 export function ScheduleImportPage() {
   const { id = "" } = useParams();
   const [data, setData] = useState<ScheduleImportPreview | null>(null);
-  const [res, setRes] = useState<ScheduleImportResolutions>({ rows: {}, set_map: {}, row_sets: {}, accept_items: [], overwrite: [] });
+  const [restored] = useState(() => loadImportDraft(id));
+  const [res, setRes] = useState<ScheduleImportResolutions>(() => restored ?? { rows: {}, set_map: {}, row_sets: {}, accept_items: [], overwrite: [] });
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { fetchScheduleImport(id).then(setData).catch(() => setMessage("Could not load import.")); }, [id]);
+  useEffect(() => {
+    fetchScheduleImport(id).then((d) => {
+      setData(d);
+      if (d.import.status === "confirmed") { clearImportDraft(id); return; }
+      // Re-plan with choices restored from this device so the preview matches them.
+      if (restored && !isEmptyResolutions(restored)) previewScheduleImport(id, restored).then(setData).catch(() => {});
+    }).catch(() => setMessage("Could not load import."));
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!data || data.import.status === "confirmed") return;
+    saveImportDraft(id, res);
     const t = setTimeout(() => previewScheduleImport(id, res).then(setData).catch(() => {}), 300);
     return () => clearTimeout(t);
   }, [res]); // eslint-disable-line react-hooks/exhaustive-deps
   const rowById = useMemo(() => new Map((data?.rows ?? []).map((r) => [r.id, r])), [data]);
   const setKeys = (data?.sets ?? []).map((s) => s.set_key);
-  if (!data) return <div className="page"><p>{message ?? "Loading..."}</p></div>;
+  if (!data) return <SchedulePage title="Review schedule import" back={{ to: "/facility-schedules", label: "Back to schedules" }}><p className="empty-state">{message ?? "Loading..."}</p></SchedulePage>;
   if (data.import.status === "confirmed") return (
-    <div className="page"><p><Link to="/facility-schedules">Back to schedules</Link></p><h1>Schedule import confirmed</h1>
-      <pre>{JSON.stringify(data.result, null, 2)}</pre></div>
+    <SchedulePage title="Schedule import confirmed" back={{ to: "/facility-schedules", label: "Back to schedules" }}>
+      <section className="panel"><pre>{JSON.stringify(data.result, null, 2)}</pre></section></SchedulePage>
   );
   const plan = data.plan!;
   const FOLLOW_UP_LABEL: Record<string, string> = { hw_varies: "Hardware <varies>", hw_group_x: "Group X", hw_group_undefined: "Group not in hardware schedule",
@@ -87,14 +99,15 @@ export function ScheduleImportPage() {
   const toggle = (list: string[] | undefined, v: string) => (list ?? []).includes(v) ? (list ?? []).filter((x) => x !== v) : [...(list ?? []), v];
   async function doConfirm() {
     setBusy(true); setMessage(null);
-    try { await confirmScheduleImport(id, res); setData(await fetchScheduleImport(id)); }
+    try { await confirmScheduleImport(id, res); clearImportDraft(id); setData(await fetchScheduleImport(id)); }
     catch (err) { setMessage(confirmErrorMessage(err)); }
     finally { setBusy(false); }
   }
   return (
-    <div className="page">
-      <p><Link to="/facility-schedules">Back to schedules</Link></p>
-      <h1>Review schedule import</h1>
+    <SchedulePage title="Review schedule import" back={{ to: "/facility-schedules", label: "Back to schedules" }}
+      subtitle="Resolve the issues, check the change preview, then use Confirm import at the bottom of the page.">
+      {restored && !isEmptyResolutions(restored) && <p role="note" className="schedule-note">Restored your unsaved choices from this device.</p>}
+      <section className="panel">
       <h2>Issues</h2>
       <ul>
         {plan.issues.map((i, n) => (
@@ -140,6 +153,8 @@ export function ScheduleImportPage() {
           </li>
         ))}
       </ul>
+      </section>
+      <section className="panel">
       <h2>Change preview</h2>
       <p>{Object.entries(plan.summary).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(" · ")}</p>
       <table>
@@ -159,9 +174,12 @@ export function ScheduleImportPage() {
           ))}
         </tbody>
       </table>
+      </section>
+      <div className="schedule-confirm-bar">
       {message && <p role="status">{message}</p>}
-      <button disabled={plan.blocked || busy} onClick={doConfirm}>{busy ? "Applying..." : plan.blocked ? "Resolve blocking issues to confirm" : "Confirm import"}</button>
-    </div>
+      <button className="btn btn-primary" disabled={plan.blocked || busy} onClick={doConfirm}>{busy ? "Applying..." : plan.blocked ? "Resolve blocking issues to confirm" : "Confirm import"}</button>
+      </div>
+    </SchedulePage>
   );
 }
 
