@@ -34,6 +34,8 @@ vi.mock("../field-app/src/lib/api", async (importOriginal) => {
 
 import { closeFieldAppDb, getSyncOperationsForOpening, putSyncOperation, saveAuth, saveEntityAndOperation } from "../field-app/src/lib/db";
 import { flushVersionedOperations } from "../field-app/src/lib/sync";
+import { setSyncReadOnly } from '../field-app/src/lib/syncNavigation';
+import { recordFreshSignIn } from '../field-app/src/lib/freshSignIn';
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "../field-app/src/lib/offlineTypes";
 import type { OfflineEntityEnvelope, SyncOperation } from "../field-app/src/lib/offlineTypes";
 
@@ -65,6 +67,7 @@ function records(sequence: number): { entity: OfflineEntityEnvelope; operation: 
 }
 
 beforeEach(() => {
+  setSyncReadOnly(false);
   apiState.calls = 0;
   apiState.loseFirstResponse = false;
   apiState.accepted.clear();
@@ -72,6 +75,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  setSyncReadOnly(false);
   await closeFieldAppDb();
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.deleteDatabase("opening-intel-field");
@@ -81,6 +85,25 @@ afterEach(async () => {
 });
 
 describe("flush interruption recovery", () => {
+  it('finishes recording an already sent result but stops subsequent dispatch on QR navigation', async () => {
+    const first=records(1),second=records(2);
+    await saveEntityAndOperation(first.entity,first.operation);await saveEntityAndOperation(second.entity,second.operation);
+    await saveAuth({token:'synthetic-a',userId:ids.userA,organizationId:ids.organization,role:'admin'});
+    apiState.afterAccepted=async()=>{setSyncReadOnly(true);};
+    await flushVersionedOperations();
+    const rows=await getSyncOperationsForOpening(ids.opening);
+    expect(apiState.calls).toBe(1);expect(rows.find(r=>r.operationId===first.operation.operationId)?.state).toBe('verified');
+    expect(rows.find(r=>r.operationId===second.operation.operationId)?.state).toBe('queued');
+    await flushVersionedOperations();expect(apiState.calls).toBe(1);
+    setSyncReadOnly(false);apiState.afterAccepted=undefined;await flushVersionedOperations();expect(apiState.calls).toBe(2);
+  });
+  it('QR sign-in preserves stopped operations without requeue or dispatch',async()=>{
+    const item=records(1);item.operation.state='auth_required';item.operation.principalChangeStop=true;
+    await saveEntityAndOperation(item.entity,item.operation);
+    const before=await getSyncOperationsForOpening(ids.opening);
+    await recordFreshSignIn({token:'synthetic-a',userId:ids.userA,organizationId:ids.organization,role:'admin'},false,false);
+    expect(await getSyncOperationsForOpening(ids.opening)).toEqual(before);expect(apiState.calls).toBe(0);
+  });
   it("replays the same operation ID after response loss following server acceptance", async () => {
     const { entity, operation } = records(1);
     await saveEntityAndOperation(entity, operation);

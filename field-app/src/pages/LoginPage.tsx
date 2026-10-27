@@ -6,6 +6,7 @@ import { ApiError } from "../lib/api";
 import { readLoginForm } from "../lib/loginForm";
 import { loginFailureMessage } from "../lib/authResponse";
 import { loginReturnPath } from "../lib/qrPayload";
+import { isQrDetailsPath } from '../lib/qrLanding';
 
 export function LoginPage() {
   const { auth, loading, identityChecking, login } = useAuth();
@@ -27,7 +28,8 @@ export function LoginPage() {
     setReference(null);
     setSubmitting(true);
     try {
-      await login(credentials.email, credentials.password);
+      if (isQrDetailsPath(location.state?.from)) await login(credentials.email, credentials.password, false);
+      else await login(credentials.email, credentials.password);
       const from = location.state?.from;
       navigate(loginReturnPath(from), { replace: true });
     } catch (err) {

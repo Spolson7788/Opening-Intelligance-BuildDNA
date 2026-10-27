@@ -6,6 +6,7 @@ import { readyOperations, retryDelayMs } from "./offlineSyncModel";
 import { SITE_ACCESS_REQUIRED } from "./siteAccess";
 import { MEDIA_TOO_LARGE, maximumMediaBytes } from "./mediaLimits";
 import type { OutboxItem } from "./db";
+import { assertSyncDispatchAllowed, SyncNavigationPaused } from './syncNavigation';
 
 type SyncListener = (state: SyncState) => void;
 export interface SyncState { pending: number; syncing: boolean; failed: number; conflicts: number; lastError?: string; checked?: boolean; checkFailed?: boolean; userId?: string; organizationId?: string; }
@@ -179,6 +180,7 @@ async function submitPhoto(operation: SyncOperation, principal: Principal) {
   await assertPrincipal(principal);
   if (reservation.status !== "verified") {
     if (!reservation.upload_url) throw new Error("photo_upload_authority_missing");
+    assertSyncDispatchAllowed();
     await uploadPrivatePhoto(reservation.upload_url, media.blob, media.contentType, media.sha256Checksum, media.photoId);
   }
   await assertPrincipal(principal);
@@ -226,10 +228,12 @@ async function recordFailure(operation: SyncOperation, error: unknown) {
   currentState = { ...currentState, lastError: message };
 }
 export async function flushVersionedOperations() {
+  try { assertSyncDispatchAllowed(); } catch { return; }
   const auth = await loadAuth();
   if (!auth) return;
   const principal = { userId: auth.userId, organizationId: auth.organizationId };
   while (true) {
+    try { assertSyncDispatchAllowed(); } catch { return; }
     try { await assertPrincipal(principal); }
     catch (error) {
       // The signed-in account changed since this pass started: stop this pass. The new account's
@@ -241,16 +245,24 @@ export async function flushVersionedOperations() {
     const verified = new Set(operations.filter((item) => item.state === "verified").map((item) => item.operationId));
     const [candidate] = readyOperations(operations.filter((item) => item.state !== "verified"), verified, new Date().toISOString());
     if (!candidate) break;
+    try { assertSyncDispatchAllowed(); } catch { return; }
     const operation = await claimSyncOperation({ operationId: candidate.operationId, ...principal,
       leaseId: dispatchLeaseId, nowIso: new Date().toISOString(), leaseDurationMs: DISPATCH_LEASE_MS });
     if (!operation) continue;
     try {
+      assertSyncDispatchAllowed();
       const row = operation.entityType === "photo" ? await submitPhoto(operation, principal)
         : operation.entityType === "component" ? await submitComponent(operation, principal)
           : await submitGeneralOperation(operation, principal);
       await putSyncReceipt(receiptFromApi(row));
     }
     catch (error) {
+      if (error instanceof SyncNavigationPaused) {
+        // Preserve identity and bytes for idempotent reconciliation on a later
+        // explicit workspace visit; an earlier request may already have succeeded.
+        await putSyncOperation({ ...operation, state: 'queued', dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined });
+        return;
+      }
       await recordFailure(operation, error);
       if (isMediaSizeRejection(error)) continue;
       if (isClientPrincipalChange(error)) return;

@@ -18,7 +18,7 @@ interface AuthContextValue {
   identityChecking: boolean;
   logoutPending: boolean;
   logoutError: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, resumeQueued?: boolean) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -57,14 +57,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", focus); };
   }, []);
 
-  async function login(email: string, password: string) {
+  async function login(email: string, password: string, resumeQueued = true) {
     changing.current = true; ++revision.current; setLoading(true);
     try {
     const { token } = await apiLogin(email, password);
     const { userId, organizationId, role } = decodeTokenPayload(token);
     // Display only; authorization continues to use the server-issued principal.
     const next = { token, userId, organizationId, role, email: email.trim() };
-    await recordFreshSignIn(next);
+    await recordFreshSignIn(next, resumeQueued, resumeQueued);
     setAuth(next);
     } finally { changing.current = false; setLoading(false); setIdentityChecking(false); }
   }

@@ -2,6 +2,7 @@ import { loadAuth, cacheOpening, getCachedOpening } from "./db";
 import { isNetlifyAccessResponse, SITE_ACCESS_REQUIRED } from "./siteAccess";
 import {diagnosticActor,diagnosticAvailable,PROBES,readBoundedProbe,runPhotoProbes} from './photoDiagnostic';
 import type {Principal,ProbeResponse} from './photoDiagnostic';
+import { assertSyncDispatchAllowed } from './syncNavigation';
 
 // Point this at your deployed API. Left as a relative path + env var so it works
 // both in local dev (via Vite proxy) and once deployed.
@@ -47,6 +48,7 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
   };
   if (auth?.token) headers["Authorization"] = `Bearer ${auth.token}`;
 
+  if (expectedPrincipal && options.method && !['GET','HEAD'].includes(options.method.toUpperCase())) assertSyncDispatchAllowed();
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if(diagnostic){
     const response=await readBoundedProbe(res);

@@ -2,7 +2,7 @@ import {AccountRecoveryPage} from "./pages/AccountRecoveryPage";
 import {AccountIdentity} from "./components/AccountIdentity";
 import {AccountScope} from "./components/AccountScope";
 import {BranchesPage} from "./pages/BranchesPage";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/AuthContext";
 import { initSync } from "./lib/sync";
@@ -21,6 +21,9 @@ import { ServiceRequestPage } from './pages/ServiceRequestPage';
 import { InstallationLifecyclePage } from './pages/InstallationLifecyclePage';
 import { LifecycleOperationsPage } from './pages/LifecycleOperationsPage';
 import { SyncIssuesPage } from "./pages/SyncIssuesPage";
+import { QrInformationPage } from './pages/QrInformationPage';
+import { isQrLandingPath, isQrLogin, isQrDetailsPath } from './lib/qrLanding';
+import { setSyncReadOnly } from './lib/syncNavigation';
 const PhotoIsolationPage=__PHOTO_ISOLATION_ENABLED__?lazy(()=>import('./pages/PhotoIsolationPage')):null;
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
@@ -34,11 +37,12 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
 function AppRoutes() {
   const location=useLocation();
   const diagnostic=location.pathname==='/diagnostics/photo-isolation'||(location.pathname==='/login'&&location.state?.from==='/diagnostics/photo-isolation');
+  const qrReadOnly = isQrDetailsPath(location.pathname) || isQrLogin(location.pathname, location.state?.from);
   useEffect(() => {
-    if(diagnostic)return;
+    if(diagnostic || qrReadOnly)return;
     const cleanup = initSync();
     return cleanup;
-  }, [diagnostic]);
+  }, [diagnostic, qrReadOnly]);
 
   return (
     <Routes>
@@ -54,7 +58,7 @@ function AppRoutes() {
       <Route path="/scan" element={<RequireAuth><ScanPage /></RequireAuth>} />
       <Route path="/my-work-orders" element={<RequireAuth><MyWorkOrdersPage /></RequireAuth>} />
       <Route path="/sync-issues" element={<RequireAuth><SyncIssuesPage /></RequireAuth>} />
-      <Route path="/opening/by-qr/:qrToken" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />
+      <Route path="/opening/by-qr/:qrToken/details" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />
       <Route path="/opening/by-code/:openingCode" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />
       <Route path="/opening/:id" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />
       <Route path="/opening/:id/log-service" element={<RequireAuth><LogServiceEventPage /></RequireAuth>} />
@@ -67,13 +71,25 @@ function AppRoutes() {
   );
 }
 
-export default function App() {
+export function FieldApplication() {
+  const location = useLocation();
+  const readOnly = isQrLandingPath(location.pathname) || isQrDetailsPath(location.pathname)
+    || isQrLogin(location.pathname, location.state?.from);
+  useLayoutEffect(() => { setSyncReadOnly(readOnly); return () => setSyncReadOnly(false); }, [readOnly]);
+  // Public landing is outside auth/identity and sync lifecycles, including when
+  // the device already has a signed-in account and a retained offline queue.
+  if (isQrLandingPath(location.pathname)) return <Routes>
+    <Route path="/opening/by-qr/:qrToken" element={<QrInformationPage />} />
+    <Route path="*" element={<QrInformationPage />} />
+  </Routes>;
   return (
     <AuthProvider>
-      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <AccountIdentity />
         <AppRoutes />
-      </BrowserRouter>
     </AuthProvider>
   );
+}
+
+export default function App() {
+  return <BrowserRouter basename={import.meta.env.BASE_URL}><FieldApplication /></BrowserRouter>;
 }
