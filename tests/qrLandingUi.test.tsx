@@ -52,7 +52,7 @@ it('does not show stale names when navigating to another QR or resolving a late 
 it('repeated landing visits never dispatch queued operations',async()=>{
   await render();await go('/opening/by-qr/'+other);await go(path);expect(state.sync).not.toHaveBeenCalled();expect(state.provider).not.toHaveBeenCalled();
 });
-it.each([response({...names,photos:['secret']}),response({},404),response({},429),response({},401,'text/html')])('fails closed without stale/private output for unavailable responses',async value=>{
+it.each([response({...names,photos:['secret']}),response({},404),response({},401,'text/html')])('fails closed without stale/private output for unavailable responses',async value=>{
   vi.mocked(fetch).mockResolvedValue(value as any);await render();expect(host.textContent).toContain('Opening information is unavailable');expect(host.textContent).not.toContain('secret');expect(host.querySelector('a')).toBeNull();expect(state.sync).not.toHaveBeenCalled();
 });
 it('rejects malformed tokens before any network access',async()=>{
@@ -60,4 +60,42 @@ it('rejects malformed tokens before any network access',async()=>{
 });
 it.each(['/opening/by-qr/','/opening/by-qr/bad/extra','/OPENING/BY-QR/bad'])('keeps malformed QR route %s out of the worker and auth lifecycle',async route=>{
   await render(route);expect(host.textContent).toContain('Opening information is unavailable');expect(state.sync).not.toHaveBeenCalled();expect(state.provider).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled();
+});
+
+const gateHtml='<title>Login Redirect</title><script>"https://app.netlify.com\\/edge-access?domain=oi-video-workflows-staging.netlify.app\\u0026synthetic=1"</script>';
+const htmlResponse=(html=gateHtml,status=401,type='text/html')=>new Response(html,{status,headers:{'content-type':type}});
+it('recognizes the gate without mounting auth/sync or retrying',async()=>{
+ vi.mocked(fetch).mockResolvedValue(htmlResponse());await render();
+ expect(host.textContent).toContain('Private staging site access needs renewal');
+ expect(fetch).toHaveBeenCalledTimes(1);expect(state.sync).not.toHaveBeenCalled();expect(state.provider).not.toHaveBeenCalled();
+ // Renewal uses the fixed trusted current origin, never a response-supplied URL.
+ expect(host.querySelector('a')?.href).toBe('https://app.netlify.com/edge-access?domain=oi-video-workflows-staging.netlify.app');expect(host.querySelector('a')?.target).toBe('_blank');expect(()=>assertSyncDispatchAllowed()).toThrow('sync_navigation_paused');
+});
+it.each([
+ gateHtml.replace('app.netlify.com','app.netlify.com.evil.invalid'),
+ gateHtml.replace('staging.netlify.app','staging.netlify.app.evil.invalid'),
+ gateHtml.replace('https:','http:'),
+ gateHtml.replace('Login Redirect','Other Page'),
+ '<html>Sign in</html>',
+ gateHtml+' '.repeat(16385),
+])('keeps untrusted or oversized HTML unavailable without renewal',async html=>{
+ vi.mocked(fetch).mockResolvedValue(htmlResponse(html));await render();
+ expect(host.textContent).toContain('Opening information is unavailable');expect(host.querySelector('a')).toBeNull();expect(state.sync).not.toHaveBeenCalled();
+});
+it.each([401,403])('does not turn JSON authorization denial %s into site renewal',async status=>{
+ vi.mocked(fetch).mockResolvedValue(new Response('{"error":"private-raw-detail"}',{status,headers:{'content-type':'application/json'}}));await render();
+ expect(host.textContent).toContain('Opening information is unavailable');expect(host.textContent).not.toContain('private-raw-detail');expect(host.querySelector('a')).toBeNull();
+});
+it.each([429,503])('shows service failure %s without automatic retries',async status=>{
+ vi.mocked(fetch).mockResolvedValue(response({},status) as any);await render();
+ expect(host.textContent).toContain('temporarily unavailable');expect(fetch).toHaveBeenCalledTimes(1);expect(host.querySelector('a')).toBeNull();expect(state.sync).not.toHaveBeenCalled();
+});
+it('shows network failure without raw details or automatic retry',async()=>{
+ vi.mocked(fetch).mockRejectedValue(new TypeError('private-network-detail'));await render();
+ expect(host.textContent).toContain('could not be reached');expect(host.textContent).not.toContain('private-network-detail');expect(fetch).toHaveBeenCalledTimes(1);expect(state.sync).not.toHaveBeenCalled();
+});
+it('does not carry a late gate failure into a different QR',async()=>{
+ let resolveFirst!:(r:Response)=>void;vi.mocked(fetch).mockImplementationOnce(()=>new Promise(r=>resolveFirst=r));
+ await render();vi.mocked(fetch).mockResolvedValue(response({...names,opening_code:'SECOND'}) as any);await go('/opening/by-qr/'+other);
+ await act(async()=>resolveFirst(htmlResponse()));expect(host.textContent).toContain('SECOND');expect(host.textContent).not.toContain('renewal');expect(state.sync).not.toHaveBeenCalled();
 });
