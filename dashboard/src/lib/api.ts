@@ -668,3 +668,34 @@ export async function uploadFacilitySchedule(input: {
       ...(input.scheduleId ? { schedule_id: input.scheduleId } : {}) }),
   });
 }
+
+// M2 schedule imports
+export type ScheduleImportResolutions = {
+  rows?: Record<string, { skip?: boolean; mark?: string }>;
+  set_map?: Record<string, string | null>;
+  accept_items?: string[];
+  overwrite?: string[];
+};
+export interface ScheduleImportIssue { code: string; severity: "blocker" | "warning" | "info"; message: string; row_ids?: string[]; item_ids?: string[]; key?: string }
+export interface ScheduleFieldChange { entity: string; entity_id: string | null; field: string; from: unknown; to: unknown; status: string; overwrite_key: string | null }
+export interface ScheduleOpeningPlan { row_id: string; source_row: number; mark: string | null; action: string; skip_reason?: string; opening_id: string | null;
+  fields: ScheduleFieldChange[]; hardware: { item_id: string; description: string; action: string; component_type: string }[] }
+export interface ScheduleImportPreview {
+  import: { id: string; status: "draft" | "confirmed"; building_id: string; property_id: string };
+  rows?: { id: string; source_row: number; room_name: string | null; door_mark: string | null }[];
+  sets?: { set_key: string; items: { id: string; description: string; catalog_raw: string | null; manufacturer_raw: string | null; review_reasons: string[] }[] }[];
+  plan?: { issues: ScheduleImportIssue[]; openings: ScheduleOpeningPlan[]; summary: Record<string, number>; blocked: boolean };
+  result?: Record<string, unknown>;
+}
+export async function createScheduleImport(body: { building_id: string; door_version_id: string; hardware_version_id?: string }): Promise<{ id: string }> {
+  return authedFetch("/schedule-imports", { method: "POST", body: JSON.stringify(body) });
+}
+export async function fetchScheduleImport(id: string): Promise<ScheduleImportPreview> {
+  return authedFetch(`/schedule-imports/${id}`);
+}
+export async function previewScheduleImport(id: string, resolutions: ScheduleImportResolutions): Promise<ScheduleImportPreview> {
+  return authedFetch(`/schedule-imports/${id}/preview`, { method: "POST", body: JSON.stringify({ resolutions }) });
+}
+export async function confirmScheduleImport(id: string, resolutions: ScheduleImportResolutions) {
+  return authedFetch(`/schedule-imports/${id}/confirm`, { method: "POST", body: JSON.stringify({ resolutions }) });
+}

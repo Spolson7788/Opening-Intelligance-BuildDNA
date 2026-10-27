@@ -1,0 +1,306 @@
+import { randomBytes, randomUUID } from "node:crypto";
+import { normalizeMark } from "./scheduleParsing/normalize";
+
+type Db = { query: (sql: string, args?: unknown[]) => Promise<{ rows: any[] }> };
+
+export type Resolutions = {
+  /** Per schedule row: skip it, or give it a corrected door mark (e.g. duplicate 150 -> 150A). */
+  rows?: Record<string, { skip?: boolean; mark?: string }>;
+  /** Door hardware reference -> hardware set key ("1" -> "1-INT"); null means "no hardware". */
+  set_map?: Record<string, string | null>;
+  /** Item ids flagged for review that the user accepts as parsed. */
+  accept_items?: string[];
+  /** Explicit per-field overwrites of field-verified values: "<entity>:<entityId>:<field>". */
+  overwrite?: string[];
+};
+
+export type ValidationIssue = { code: string; severity: "blocker" | "warning" | "info"; message: string; row_ids?: string[]; item_ids?: string[]; key?: string };
+export type FieldChange = { entity: "opening" | "door_leaf" | "frame" | "hardware"; entity_id: string | null; field: string; from: unknown; to: unknown;
+  status: "same" | "fill" | "update" | "protected" | "overwrite"; overwrite_key: string | null };
+export type HardwarePlan = { item_id: string; signature: string; description: string; item_type: string; component_type: string;
+  action: "add" | "update" | "unchanged" | "field_present" | "needs_review" | "protected"; component_id: string | null; changes: FieldChange[] };
+export type OpeningPlan = { row_id: string; source_row: number; mark: string | null; action: "create" | "update" | "unchanged" | "skip";
+  skip_reason?: string; opening_id: string | null; opening_code: string | null; set_key: string | null; fields: FieldChange[]; leaves: { role: string; id: string | null; create: boolean }[];
+  frame: { id: string | null; create: boolean } | null; hardware: HardwarePlan[] };
+export type ImportPlan = { issues: ValidationIssue[]; openings: OpeningPlan[]; summary: Record<string, number>; blocked: boolean };
+
+const VERIFIED_CONDITIONS = new Set(["good", "worn", "failed"]);
+const num = (v: unknown) => (v === null || v === undefined || v === "" ? null : Number(v));
+const eq = (a: unknown, b: unknown) => {
+  if ((a === null || a === undefined) && (b === null || b === undefined)) return true;
+  if (typeof a === "number" || typeof b === "number" || (typeof a === "string" && /^-?\d+(\.\d+)?$/.test(a) && typeof b !== "boolean")) {
+    const x = num(a), y = num(b); if (x !== null && y !== null && !Number.isNaN(x) && !Number.isNaN(y)) return Math.abs(x - y) < 0.001;
+  }
+  return String(a ?? "").trim().toUpperCase() === String(b ?? "").trim().toUpperCase();
+};
+
+function change(entity: FieldChange["entity"], id: string | null, field: string, from: unknown, to: unknown, verified: boolean, overwrite: Set<string>): FieldChange | null {
+  if (to === null || to === undefined || to === "") return null; // schedule is silent: never clear a value
+  const key = id ? `${entity}:${id}:${field}` : null;
+  if (!id) return { entity, entity_id: null, field, from: null, to, status: "fill", overwrite_key: null };
+  if (eq(from, to)) return { entity, entity_id: id, field, from, to, status: "same", overwrite_key: null };
+  if (from === null || from === undefined || from === "") return { entity, entity_id: id, field, from, to, status: "fill", overwrite_key: null };
+  if (!verified) return { entity, entity_id: id, field, from, to, status: "update", overwrite_key: null };
+  return { entity, entity_id: id, field, from, to, status: key && overwrite.has(key) ? "overwrite" : "protected", overwrite_key: key };
+}
+const applies = (c: FieldChange) => c.status === "fill" || c.status === "update" || c.status === "overwrite";
+
+export function locationFor(r: any): string | null {
+  const room = [r.room_name, r.room_number].filter(Boolean).join(" ");
+  const s = [room, r.to_room ? `(to ${r.to_room})` : ""].filter(Boolean).join(" ").trim();
+  return s ? s.slice(0, 500) : null;
+}
+export function configurationFor(r: any): "single" | "pair" {
+  return /\b(pair|double|dbl)\b/i.test(`${r.configuration ?? ""} ${r.description ?? ""}`) ? "pair" : "single";
+}
+
+export async function loadImport(db: Db, id: string) {
+  const imp = (await db.query("SELECT * FROM schedule_imports WHERE id=$1", [id])).rows[0];
+  if (!imp) return null;
+  const rows = (await db.query("SELECT * FROM schedule_rows WHERE import_id=$1 ORDER BY source_sheet, source_row", [id])).rows;
+  const sets = (await db.query("SELECT * FROM schedule_hardware_sets WHERE import_id=$1 ORDER BY source_table, set_key", [id])).rows;
+  const items = (await db.query("SELECT * FROM schedule_set_items WHERE import_id=$1 ORDER BY set_id, position", [id])).rows;
+  return { imp, rows, sets, items };
+}
+
+export async function planImport(db: Db, loaded: NonNullable<Awaited<ReturnType<typeof loadImport>>>, res: Resolutions = {}): Promise<ImportPlan> {
+  const { imp, rows, sets, items } = loaded;
+  const overwrite = new Set(res.overwrite ?? []);
+  const accepted = new Set(res.accept_items ?? []);
+  const issues: ValidationIssue[] = [];
+  for (const i of imp.parse_report?.issues ?? []) issues.push({ code: i.code, severity: "info", message: i.message });
+
+  const doorRows = rows.filter((r: any) => r.row_kind === "door");
+  const templates = rows.filter((r: any) => r.row_kind === "type_template");
+  if (templates.length) issues.push({ code: "type_template_rows", severity: "info", message: `${templates.length} type-template row(s) (e.g. units/cottages) describe door types, not openings; they are not imported`, row_ids: templates.map((r: any) => r.id) });
+
+  // Effective marks after user resolutions.
+  const markOf = new Map<string, string | null>();
+  for (const r of doorRows) {
+    const rr = res.rows?.[r.id];
+    markOf.set(r.id, rr?.skip ? null : rr?.mark !== undefined ? normalizeMark(rr.mark) : r.door_mark);
+  }
+  const byMark = new Map<string, any[]>();
+  for (const r of doorRows) { const m = markOf.get(r.id); if (m) (byMark.get(m) ?? byMark.set(m, []).get(m)!).push(r); }
+  const duplicates = new Set<string>();
+  for (const [m, list] of byMark) if (list.length > 1) {
+    duplicates.add(m);
+    issues.push({ code: "duplicate_mark", severity: "blocker", key: m, message: `Door mark ${m} appears on ${list.length} rows (${list.map((x: any) => "row " + x.source_row).join(", ")}); skip or re-mark all but one`, row_ids: list.map((x: any) => x.id) });
+  }
+
+  // Hardware set resolution.
+  const setByKey = new Map<string, any>(sets.map((s: any) => [s.set_key, s]));
+  const itemsBySet = new Map<string, any[]>();
+  for (const it of items) (itemsBySet.get(it.set_id) ?? itemsBySet.set(it.set_id, []).get(it.set_id)!).push(it);
+  const resolveSet = (key: string | null): { key: string | null; ok: boolean } => {
+    if (!key) return { key: null, ok: false };
+    if (res.set_map && Object.hasOwn(res.set_map, key)) { const t = res.set_map[key]; return { key: t ?? null, ok: t === null || setByKey.has(t) }; }
+    return { key, ok: setByKey.has(key) };
+  };
+  if (!imp.hardware_version_id) issues.push({ code: "no_hardware_schedule", severity: "info", message: "No hardware schedule was attached; only openings, leaves and frames are planned" });
+  else {
+    const refs = new Map<string, any[]>();
+    for (const r of doorRows) if (r.hw_set_key && markOf.get(r.id)) (refs.get(r.hw_set_key) ?? refs.set(r.hw_set_key, []).get(r.hw_set_key)!).push(r);
+    for (const [k, list] of refs) {
+      const mapped = res.set_map && Object.hasOwn(res.set_map, k);
+      if (mapped) { if (!resolveSet(k).ok) issues.push({ code: "unknown_group", severity: "warning", key: k, message: `Group ${k} is mapped to ${res.set_map![k]}, which is not in the hardware schedule`, row_ids: list.map((x: any) => x.id) }); continue; }
+      if (setByKey.has(k)) continue;
+      const variants = sets.filter((s: any) => s.set_key.startsWith(k + "-")).map((s: any) => s.set_key);
+      if (variants.length) issues.push({ code: "ambiguous_group", severity: "warning", key: k, message: `Group ${k} matches several hardware sets (${variants.join(", ")}); choose one or none`, row_ids: list.map((x: any) => x.id) });
+      else issues.push({ code: "unknown_group", severity: "warning", key: k, message: `Group ${k} is not in the hardware schedule; these doors get no hardware unless mapped`, row_ids: list.map((x: any) => x.id) });
+    }
+    const varies = doorRows.filter((r: any) => (r.issues ?? []).some((i: any) => i.code === "hw_varies"));
+    if (varies.length) issues.push({ code: "hw_varies", severity: "warning", message: `${varies.length} door(s) say <varies> for hardware; no hardware is planned for them`, row_ids: varies.map((r: any) => r.id) });
+    const numeric = sets.map((s: any) => /^(\d+)(?:-|$)/.exec(s.set_key)).filter(Boolean).map((m: any) => parseInt(m[1], 10));
+    if (numeric.length) {
+      const have = new Set(numeric); const gaps: number[] = [];
+      for (let n = Math.min(...numeric); n <= Math.max(...numeric); n++) if (!have.has(n)) gaps.push(n);
+      if (gaps.length) issues.push({ code: "missing_set_numbers", severity: "warning", message: `Hardware schedule has no set ${gaps.join(", ")}` });
+    }
+    const others = sets.filter((s: any) => s.furnished_by_others);
+    if (others.length) issues.push({ code: "furnished_by_others", severity: "info", message: `Set(s) ${others.map((s: any) => s.set_key).join(", ")} list no items (hardware furnished by others)` });
+    const unmatched = items.filter((i: any) => i.needs_review);
+    if (unmatched.length) issues.push({ code: "unmatched_items", severity: "warning", message: `${unmatched.length} hardware item(s) need review (unknown type or manufacturer); they are not applied unless accepted`, item_ids: unmatched.map((i: any) => i.id) });
+    const referenced = new Set(doorRows.map((r: any) => resolveSet(r.hw_set_key).key).filter(Boolean));
+    const unused = sets.filter((s: any) => !referenced.has(s.set_key)).map((s: any) => s.set_key);
+    if (unused.length) issues.push({ code: "unreferenced_sets", severity: "info", message: `Set(s) ${unused.join(", ")} are not used by any door in this import` });
+  }
+  for (const r of doorRows) for (const i of r.issues ?? []) if (!["hw_varies", "hw_missing"].includes(i.code))
+    issues.push({ code: i.code, severity: "warning", message: `Row ${r.source_row} (${r.door_mark_raw}): ${i.message}`, row_ids: [r.id] });
+
+  // Current state of the chosen building.
+  const openings = (await db.query("SELECT id, opening_code, schedule_door_mark, location_description, fire_rated, opening_configuration, completion_state FROM openings WHERE building_id=$1", [imp.building_id])).rows;
+  const ids = openings.map((o: any) => o.id);
+  const leaves = ids.length ? (await db.query("SELECT * FROM door_leaves WHERE opening_id = ANY($1::uuid[])", [ids])).rows : [];
+  const frames = ids.length ? (await db.query("SELECT * FROM opening_frames WHERE opening_id = ANY($1::uuid[])", [ids])).rows : [];
+  const hardware = ids.length ? (await db.query("SELECT * FROM hardware_components WHERE opening_id = ANY($1::uuid[]) AND lifecycle_state='active'", [ids])).rows : [];
+  const effects = ids.length ? (await db.query("SELECT entity_id, item_signature FROM schedule_import_effects WHERE entity_type='hardware' AND action='create' AND item_signature IS NOT NULL AND entity_id IN (SELECT id FROM hardware_components WHERE opening_id = ANY($1::uuid[]))", [ids])).rows : [];
+  const sigOf = new Map<string, string>(effects.map((e: any) => [e.entity_id, e.item_signature]));
+  const byScheduleMark = new Map(openings.filter((o: any) => o.schedule_door_mark).map((o: any) => [o.schedule_door_mark, o]));
+  const byCode = new Map(openings.filter((o: any) => !o.schedule_door_mark).map((o: any) => [normalizeMark(o.opening_code), o]));
+
+  const plans: OpeningPlan[] = [];
+  for (const r of doorRows) {
+    const mark = markOf.get(r.id) ?? null;
+    const base = { row_id: r.id, source_row: r.source_row, mark, opening_id: null, opening_code: null, set_key: null, fields: [], leaves: [], frame: null, hardware: [] } as Omit<OpeningPlan, "action">;
+    if (!mark) { plans.push({ ...base, action: "skip", skip_reason: res.rows?.[r.id]?.skip ? "skipped_by_user" : "no_mark" }); continue; }
+    if (duplicates.has(mark)) { plans.push({ ...base, action: "skip", skip_reason: "duplicate_mark" }); continue; }
+    const existing: any = byScheduleMark.get(mark) ?? byCode.get(mark) ?? null;
+    const config = configurationFor(r);
+    const verifiedOpening = existing?.completion_state === "complete";
+    const fields: FieldChange[] = [];
+    const push = (c: FieldChange | null) => { if (c) fields.push(c); };
+    const oid = existing?.id ?? null;
+    if (existing && !existing.schedule_door_mark) push({ entity: "opening", entity_id: oid, field: "schedule_door_mark", from: null, to: mark, status: "fill", overwrite_key: null });
+    push(change("opening", oid, "location_description", existing?.location_description, locationFor(r), verifiedOpening, overwrite));
+    push(change("opening", oid, "fire_rated", existing?.fire_rated, r.fire_rating_minutes === null ? null : r.fire_rating_minutes > 0, verifiedOpening, overwrite));
+    push(change("opening", oid, "opening_configuration", existing?.opening_configuration, config, verifiedOpening, overwrite));
+    const leafRoles = config === "pair" ? ["active", "inactive"] : ["single"];
+    const width = r.width_in === null ? null : config === "pair" ? Number(r.width_in) / 2 : Number(r.width_in);
+    const leafPlans: OpeningPlan["leaves"] = [];
+    for (const role of leafRoles) {
+      const leaf = leaves.find((l: any) => l.opening_id === oid && l.leaf_role === role) ?? null;
+      const v = !!leaf && VERIFIED_CONDITIONS.has(leaf.condition);
+      leafPlans.push({ role, id: leaf?.id ?? null, create: !leaf });
+      for (const [f, val] of [["material", r.door_material], ["width_in", width], ["height_in", num(r.height_in)], ["thickness_in", num(r.thickness_in)], ["fire_rated", r.fire_rating_minutes === null ? null : r.fire_rating_minutes > 0]] as const) {
+        const c = change("door_leaf", leaf?.id ?? null, f, leaf?.[f], val, v, overwrite);
+        if (c) fields.push({ ...c, field: leaf ? f : `${role}.${f}` });
+      }
+    }
+    const frame = frames.find((f: any) => f.opening_id === oid) ?? null;
+    const frameVals = [["material", r.frame_material], ["width_in", num(r.width_in)], ["height_in", num(r.height_in)]] as const;
+    let framePlan: OpeningPlan["frame"] = null;
+    if (frame || frameVals.some(([, v]) => v !== null)) {
+      framePlan = { id: frame?.id ?? null, create: !frame };
+      for (const [f, val] of frameVals) push(change("frame", frame?.id ?? null, f, frame?.[f], val, !!frame && VERIFIED_CONDITIONS.has(frame.condition), overwrite));
+    }
+    // Hardware for the resolved set.
+    const set = resolveSet(r.hw_set_key);
+    const hwPlans: HardwarePlan[] = [];
+    if (imp.hardware_version_id && set.ok && set.key) {
+      const s = setByKey.get(set.key);
+      const mine = hardware.filter((h: any) => h.opening_id === oid);
+      for (const it of itemsBySet.get(s.id) ?? []) {
+        const signature = `${s.set_key}#${it.position}`;
+        const hp: HardwarePlan = { item_id: it.id, signature, description: it.description, item_type: it.item_type, component_type: it.component_type, action: "add", component_id: null, changes: [] };
+        if (it.needs_review && !accepted.has(it.id)) { hwPlans.push({ ...hp, action: "needs_review" }); continue; }
+        const prior = mine.find((h: any) => sigOf.get(h.id) === signature);
+        if (prior) {
+          const hv = prior.review_state === "reviewed" || prior.identity_status === "established" || VERIFIED_CONDITIONS.has(prior.condition);
+          for (const [f, val] of [["manufacturer", it.manufacturer ?? it.manufacturer_raw], ["model_number", it.catalog], ["finish", it.finish]] as const) {
+            const c = change("hardware", prior.id, f, prior[f], val, hv, overwrite); if (c) hp.changes.push(c);
+          }
+          const act = hp.changes.some(applies) ? "update" : hp.changes.some((c) => c.status === "protected") ? "protected" : "unchanged";
+          hwPlans.push({ ...hp, action: act, component_id: prior.id }); continue;
+        }
+        const fieldOwned = it.component_type !== "other" && mine.find((h: any) => !sigOf.has(h.id) && h.component_type === it.component_type);
+        if (fieldOwned) { hwPlans.push({ ...hp, action: "field_present", component_id: fieldOwned.id }); continue; }
+        hwPlans.push(hp);
+      }
+    }
+    const any = fields.some(applies) || leafPlans.some((l) => l.create) || !!framePlan?.create || hwPlans.some((h) => h.action === "add" || h.action === "update");
+    plans.push({ ...base, action: existing ? (any ? "update" : "unchanged") : "create", opening_id: oid, opening_code: existing?.opening_code ?? null,
+      set_key: set.ok ? set.key : null, fields, leaves: leafPlans, frame: framePlan, hardware: hwPlans });
+  }
+  const protectedCount = plans.reduce((n, p) => n + p.fields.filter((f) => f.status === "protected").length + p.hardware.reduce((m, h) => m + h.changes.filter((c) => c.status === "protected").length, 0), 0);
+  if (protectedCount) issues.push({ code: "field_verified_protected", severity: "warning", message: `${protectedCount} field-verified value(s) differ from the schedule and will be kept unless you confirm each overwrite` });
+  const summary = {
+    door_rows: doorRows.length, type_template_rows: templates.length,
+    create_openings: plans.filter((p) => p.action === "create").length,
+    update_openings: plans.filter((p) => p.action === "update").length,
+    unchanged_openings: plans.filter((p) => p.action === "unchanged").length,
+    skipped_rows: plans.filter((p) => p.action === "skip").length,
+    add_hardware: plans.reduce((n, p) => n + p.hardware.filter((h) => h.action === "add").length, 0),
+    update_hardware: plans.reduce((n, p) => n + p.hardware.filter((h) => h.action === "update").length, 0),
+    hardware_needing_review: plans.reduce((n, p) => n + p.hardware.filter((h) => h.action === "needs_review").length, 0),
+    protected_fields: protectedCount,
+  };
+  return { issues, openings: plans, summary, blocked: issues.some((i) => i.severity === "blocker") };
+}
+
+async function effect(db: Db, importId: string, entity: string, id: string, action: string, field: string | null, oldV: unknown, newV: unknown, sig: string | null = null) {
+  await db.query("INSERT INTO schedule_import_effects(id,import_id,entity_type,entity_id,action,field,old_value,new_value,item_signature) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+    [randomUUID(), importId, entity, id, action, field, oldV === undefined ? null : JSON.stringify(oldV), newV === undefined ? null : JSON.stringify(newV), sig]);
+}
+
+async function uniqueOpeningCode(db: Db, buildingId: string, mark: string): Promise<string> {
+  const base = `${mark}-${buildingId.replace(/-/g, "").slice(0, 6).toUpperCase()}`.slice(0, 60);
+  for (let n = 0; n < 50; n++) {
+    const code = n ? `${base}-${n + 1}` : base;
+    if (!(await db.query("SELECT 1 FROM openings WHERE opening_code=$1", [code])).rows.length) return code;
+  }
+  return `${base}-${randomBytes(3).toString("hex").toUpperCase()}`;
+}
+
+/** Apply a plan inside the caller's transaction. Inserts and updates only; nothing is deleted. */
+export async function applyPlan(db: Db, imp: any, loaded: NonNullable<Awaited<ReturnType<typeof loadImport>>>, plan: ImportPlan) {
+  const rowById = new Map(loaded.rows.map((r: any) => [r.id, r]));
+  const itemById = new Map(loaded.items.map((i: any) => [i.id, i]));
+  const counts = { openings_created: 0, openings_updated: 0, leaves_created: 0, frames_created: 0, fields_written: 0, hardware_added: 0, hardware_updated: 0, protected_kept: 0 };
+  for (const p of plan.openings) {
+    if (p.action === "skip" || p.action === "unchanged") { counts.protected_kept += p.fields.filter((f) => f.status === "protected").length; continue; }
+    const r: any = rowById.get(p.row_id);
+    let openingId = p.opening_id;
+    const val = (entity: string, field: string) => p.fields.find((f) => f.entity === entity && f.field === field && applies(f))?.to;
+    if (!openingId) {
+      openingId = randomUUID();
+      const code = await uniqueOpeningCode(db, imp.building_id, p.mark!);
+      const fire = val("opening", "fire_rated");
+      await db.query(`INSERT INTO openings(id, opening_code, building_id, location_description, opening_type, fire_rated, qr_token, status, opening_configuration, schedule_door_mark)
+        VALUES($1,$2,$3,$4,'door',$5,$6,'pending_capture',$7,$8)`,
+        [openingId, code, imp.building_id, val("opening", "location_description") ?? null, fire ?? false, randomUUID(), val("opening", "opening_configuration") ?? "single", p.mark]);
+      await effect(db, imp.id, "opening", openingId, "create", null, null, { opening_code: code, schedule_door_mark: p.mark, source_row: r.source_row });
+      counts.openings_created++;
+    } else {
+      const set = p.fields.filter((f) => f.entity === "opening" && applies(f));
+      for (const f of set) {
+        await db.query(`UPDATE openings SET ${f.field}=$2, revision=revision+1, updated_at=now() WHERE id=$1`, [openingId, f.to]);
+        await effect(db, imp.id, "opening", openingId, "update", f.field, f.from, f.to); counts.fields_written++;
+      }
+      if (set.length || p.action === "update") counts.openings_updated++;
+    }
+    for (const l of p.leaves) {
+      if (l.create) {
+        const id = randomUUID();
+        const g = (f: string) => p.fields.find((x) => x.entity === "door_leaf" && x.entity_id === null && x.field === `${l.role}.${f}`)?.to ?? null;
+        await db.query("INSERT INTO door_leaves(id, opening_id, leaf_role, material, width_in, height_in, thickness_in, fire_rated, condition) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'unverified')",
+          [id, openingId, l.role, g("material"), g("width_in"), g("height_in"), g("thickness_in"), g("fire_rated") ?? false]);
+        await effect(db, imp.id, "door_leaf", id, "create", null, null, { leaf_role: l.role }); counts.leaves_created++;
+      } else for (const f of p.fields.filter((x) => x.entity === "door_leaf" && x.entity_id === l.id && applies(x))) {
+        await db.query(`UPDATE door_leaves SET ${f.field}=$2, revision=revision+1, updated_at=now() WHERE id=$1`, [l.id, f.to]);
+        await effect(db, imp.id, "door_leaf", l.id!, "update", f.field, f.from, f.to); counts.fields_written++;
+      }
+    }
+    if (p.frame?.create) {
+      const id = randomUUID();
+      const g = (f: string) => p.fields.find((x) => x.entity === "frame" && x.entity_id === null && x.field === f)?.to ?? null;
+      await db.query("INSERT INTO opening_frames(id, opening_id, material, width_in, height_in, fire_rated, condition) VALUES($1,$2,$3,$4,$5,$6,'unverified')",
+        [id, openingId, g("material"), g("width_in"), g("height_in"), r.fire_rating_minutes > 0]);
+      await effect(db, imp.id, "frame", id, "create", null, null, {}); counts.frames_created++;
+    } else if (p.frame?.id) for (const f of p.fields.filter((x) => x.entity === "frame" && applies(x))) {
+      await db.query(`UPDATE opening_frames SET ${f.field}=$2, revision=revision+1, updated_at=now() WHERE id=$1`, [p.frame.id, f.to]);
+      await effect(db, imp.id, "frame", p.frame.id, "update", f.field, f.from, f.to); counts.fields_written++;
+    }
+    for (const h of p.hardware) {
+      const it: any = itemById.get(h.item_id);
+      if (h.action === "add") {
+        const id = randomUUID();
+        const notes = [`From schedule import ${imp.id}, set ${h.signature.split("#")[0]}, qty ${it.qty ?? "?"}`,
+          it.item_type !== it.component_type ? `type: ${it.item_type}` : null, it.furnished_by, it.options ? `options: ${it.options}` : null,
+          it.finish_bhma ? `BHMA ${it.finish_bhma}` : null].filter(Boolean).join("; ");
+        await db.query(`INSERT INTO hardware_components(id, opening_id, component_type, manufacturer, model_number, finish, notes, tracker_id, mounting_scope, position_label, condition, identity_status, review_state)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,'opening',$9,'unverified','unresolved','pending')`,
+          [id, openingId, it.component_type, it.manufacturer ?? it.manufacturer_raw, it.catalog, it.finish, notes.slice(0, 2000), `TRK-${randomBytes(4).toString("hex").toUpperCase()}`, it.description.slice(0, 120)]);
+        await effect(db, imp.id, "hardware", id, "create", null, null, { item_id: it.id, description: it.description }, h.signature); counts.hardware_added++;
+      } else if (h.action === "update" && h.component_id) {
+        for (const c of h.changes.filter(applies)) {
+          await db.query(`UPDATE hardware_components SET ${c.field}=$2 WHERE id=$1`, [h.component_id, c.to]);
+          await effect(db, imp.id, "hardware", h.component_id, "update", c.field, c.from, c.to, h.signature);
+        }
+        counts.hardware_updated++;
+      }
+    }
+    counts.protected_kept += p.fields.filter((f) => f.status === "protected").length + p.hardware.reduce((m, h) => m + h.changes.filter((c) => c.status === "protected").length, 0);
+  }
+  return counts;
+}

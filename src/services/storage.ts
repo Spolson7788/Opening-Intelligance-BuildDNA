@@ -260,3 +260,19 @@ export async function deleteObject(key: string) {
   const client = getClient();
   await client.send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET, Key: key }));
 }
+
+/** Whole object bytes with a hard size limit (schedule files are <= 25 MB). */
+export async function getObjectBytes(key: string, maximumBytes: number): Promise<Uint8Array> {
+  const client = getClient();
+  const result = await client.send(new GetObjectCommand({ Bucket: process.env.S3_BUCKET, Key: key }));
+  if (!result.Body) throw new Error("object_missing");
+  const chunks: Uint8Array[] = []; let total = 0;
+  for await (const chunk of result.Body as AsyncIterable<Uint8Array>) {
+    total += chunk.byteLength;
+    if (total > maximumBytes) throw new Error("object_too_large");
+    chunks.push(chunk);
+  }
+  const out = new Uint8Array(total); let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.byteLength; }
+  return out;
+}
