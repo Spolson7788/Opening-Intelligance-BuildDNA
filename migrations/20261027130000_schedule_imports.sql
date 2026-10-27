@@ -114,8 +114,40 @@ BEGIN
 END $$;
 CREATE TRIGGER schedule_imports_guard BEFORE UPDATE OR DELETE ON schedule_imports FOR EACH ROW EXECUTE FUNCTION schedule_imports_guard();
 
+-- M2B: one hardware record per schedule line keeps the line quantity.
+ALTER TABLE hardware_components ADD COLUMN quantity INTEGER CHECK (quantity IS NULL OR quantity > 0);
+
+-- M2B: openings imported without hardware (Group X, <varies>, undefined group,
+-- or "no hardware" chosen) get a stored per-row follow-up. Never deleted; only
+-- the status may move open -> resolved.
+CREATE TABLE schedule_row_follow_ups (
+ id UUID PRIMARY KEY,
+ import_id UUID NOT NULL REFERENCES schedule_imports(id),
+ row_id UUID NOT NULL UNIQUE REFERENCES schedule_rows(id),
+ opening_id UUID NOT NULL REFERENCES openings(id),
+ reason TEXT NOT NULL CHECK (reason IN ('hw_varies','hw_group_x','hw_group_undefined','hw_variant_none','hw_none_chosen')),
+ detail TEXT,
+ status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')),
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ resolved_at TIMESTAMPTZ,
+ resolved_by_user_id UUID REFERENCES users(id),
+ CHECK ((status='open' AND resolved_at IS NULL) OR (status='resolved' AND resolved_at IS NOT NULL))
+);
+CREATE INDEX schedule_row_follow_ups_open ON schedule_row_follow_ups(opening_id) WHERE status='open';
+CREATE FUNCTION schedule_row_follow_ups_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF TG_OP='DELETE' THEN RAISE EXCEPTION 'schedule follow-ups are never deleted'; END IF;
+ IF OLD.status='resolved' THEN RAISE EXCEPTION 'resolved follow-up is immutable'; END IF;
+ IF NEW.id<>OLD.id OR NEW.import_id<>OLD.import_id OR NEW.row_id<>OLD.row_id OR NEW.opening_id<>OLD.opening_id
+  OR NEW.reason<>OLD.reason OR NEW.detail IS DISTINCT FROM OLD.detail OR NEW.created_at<>OLD.created_at THEN
+  RAISE EXCEPTION 'follow-up source is immutable'; END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER schedule_row_follow_ups_guard BEFORE UPDATE OR DELETE ON schedule_row_follow_ups FOR EACH ROW EXECUTE FUNCTION schedule_row_follow_ups_guard();
+
 ALTER TABLE schedule_imports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE schedule_rows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE schedule_hardware_sets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE schedule_set_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE schedule_import_effects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE schedule_row_follow_ups ENABLE ROW LEVEL SECURITY;

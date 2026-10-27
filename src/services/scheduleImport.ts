@@ -8,20 +8,28 @@ export type Resolutions = {
   rows?: Record<string, { skip?: boolean; mark?: string }>;
   /** Door hardware reference -> hardware set key ("1" -> "1-INT"); null means "no hardware". */
   set_map?: Record<string, string | null>;
+  /** Per schedule row: which lettered variant applies ("1" -> "1-GAR" for this door only); null means "no hardware". Wins over set_map. */
+  row_sets?: Record<string, string | null>;
   /** Item ids flagged for review that the user accepts as parsed. */
   accept_items?: string[];
   /** Explicit per-field overwrites of field-verified values: "<entity>:<entityId>:<field>". */
   overwrite?: string[];
 };
 
-export type ValidationIssue = { code: string; severity: "blocker" | "warning" | "info"; message: string; row_ids?: string[]; item_ids?: string[]; key?: string };
+export type ValidationIssue = { code: string; severity: "blocker" | "warning" | "info"; message: string; row_ids?: string[]; item_ids?: string[]; key?: string; variants?: string[]; unresolved_row_ids?: string[] };
+/** Why an imported opening got no hardware and needs a follow-up (stored per row on confirm). */
+export type FollowUpReason = "hw_varies" | "hw_group_x" | "hw_group_undefined" | "hw_variant_none" | "hw_none_chosen";
+export type FollowUp = { reason: FollowUpReason; detail: string | null };
 export type FieldChange = { entity: "opening" | "door_leaf" | "frame" | "hardware"; entity_id: string | null; field: string; from: unknown; to: unknown;
   status: "same" | "fill" | "update" | "protected" | "overwrite"; overwrite_key: string | null };
-export type HardwarePlan = { item_id: string; signature: string; description: string; item_type: string; component_type: string;
+export type HardwarePlan = { item_id: string; signature: string; description: string; item_type: string; component_type: string; qty: number | null;
   action: "add" | "update" | "unchanged" | "field_present" | "needs_review" | "protected"; component_id: string | null; changes: FieldChange[] };
 export type OpeningPlan = { row_id: string; source_row: number; mark: string | null; action: "create" | "update" | "unchanged" | "skip";
   skip_reason?: string; opening_id: string | null; opening_code: string | null; set_key: string | null; fields: FieldChange[]; leaves: { role: string; id: string | null; create: boolean }[];
-  frame: { id: string | null; create: boolean } | null; hardware: HardwarePlan[] };
+  frame: { id: string | null; create: boolean } | null; hardware: HardwarePlan[];
+  /** Lettered-variant choice this door needs (Group 1 vs 1-EXT/1-GAR/1-INT); pending blocks confirm. */
+  variant_choice: { group: string; options: string[]; chosen: string | null; pending: boolean } | null;
+  follow_up: FollowUp | null };
 export type ImportPlan = { issues: ValidationIssue[]; openings: OpeningPlan[]; summary: Record<string, number>; blocked: boolean };
 
 const VERIFIED_CONDITIONS = new Set(["good", "worn", "failed"]);
@@ -92,25 +100,41 @@ export async function planImport(db: Db, loaded: NonNullable<Awaited<ReturnType<
   const setByKey = new Map<string, any>(sets.map((s: any) => [s.set_key, s]));
   const itemsBySet = new Map<string, any[]>();
   for (const it of items) (itemsBySet.get(it.set_id) ?? itemsBySet.set(it.set_id, []).get(it.set_id)!).push(it);
-  const resolveSet = (key: string | null): { key: string | null; ok: boolean } => {
-    if (!key) return { key: null, ok: false };
-    if (res.set_map && Object.hasOwn(res.set_map, key)) { const t = res.set_map[key]; return { key: t ?? null, ok: t === null || setByKey.has(t) }; }
-    return { key, ok: setByKey.has(key) };
+  /** Lettered variants of a group that is not itself defined ("1" -> 1-EXT, 1-GAR, 1-INT). */
+  const variantsOf = (k: string): string[] => setByKey.has(k) ? [] : sets.filter((s: any) => s.set_key.startsWith(k + "-")).map((s: any) => s.set_key).sort();
+  /** Effective set for one door row: per-row choice, then bulk set_map, then the literal reference. */
+  const rowSet = (r: any): { key: string | null; ok: boolean; pending: boolean; explicitNone: boolean } => {
+    const k = r.hw_set_key as string | null;
+    if (!k) return { key: null, ok: false, pending: false, explicitNone: false };
+    const v = variantsOf(k);
+    const pick = (t: string | null) => t === null ? { key: null, ok: false, pending: false, explicitNone: true }
+      : (v.length ? v.includes(t) : setByKey.has(t)) ? { key: t, ok: true, pending: false, explicitNone: false }
+      : { key: null, ok: false, pending: v.length > 0, explicitNone: false };
+    if (res.row_sets && Object.hasOwn(res.row_sets, r.id)) return pick(res.row_sets[r.id]);
+    if (res.set_map && Object.hasOwn(res.set_map, k)) return pick(res.set_map[k]);
+    if (setByKey.has(k)) return { key: k, ok: true, pending: false, explicitNone: false };
+    return { key: null, ok: false, pending: v.length > 0, explicitNone: false };
   };
   if (!imp.hardware_version_id) issues.push({ code: "no_hardware_schedule", severity: "info", message: "No hardware schedule was attached; only openings, leaves and frames are planned" });
   else {
     const refs = new Map<string, any[]>();
     for (const r of doorRows) if (r.hw_set_key && markOf.get(r.id)) (refs.get(r.hw_set_key) ?? refs.set(r.hw_set_key, []).get(r.hw_set_key)!).push(r);
     for (const [k, list] of refs) {
+      const variants = variantsOf(k);
+      if (variants.length) {
+        const open = list.filter((x: any) => !duplicates.has(markOf.get(x.id)!) && rowSet(x).pending);
+        issues.push({ code: "ambiguous_group", severity: open.length ? "blocker" : "info", key: k, variants, row_ids: list.map((x: any) => x.id), unresolved_row_ids: open.map((x: any) => x.id),
+          message: open.length ? `Group ${k} has lettered variants (${variants.join(", ")}); choose the variant for each door (${open.length} still open) before confirming`
+            : `Group ${k} has lettered variants (${variants.join(", ")}); a choice was made for every door` });
+        continue;
+      }
       const mapped = res.set_map && Object.hasOwn(res.set_map, k);
-      if (mapped) { if (!resolveSet(k).ok) issues.push({ code: "unknown_group", severity: "warning", key: k, message: `Group ${k} is mapped to ${res.set_map![k]}, which is not in the hardware schedule`, row_ids: list.map((x: any) => x.id) }); continue; }
+      if (mapped) { const t = res.set_map![k]; if (t !== null && !setByKey.has(t)) issues.push({ code: "unknown_group", severity: "warning", key: k, message: `Group ${k} is mapped to ${t}, which is not in the hardware schedule; these doors are imported without hardware and flagged for follow-up`, row_ids: list.map((x: any) => x.id) }); continue; }
       if (setByKey.has(k)) continue;
-      const variants = sets.filter((s: any) => s.set_key.startsWith(k + "-")).map((s: any) => s.set_key);
-      if (variants.length) issues.push({ code: "ambiguous_group", severity: "warning", key: k, message: `Group ${k} matches several hardware sets (${variants.join(", ")}); choose one or none`, row_ids: list.map((x: any) => x.id) });
-      else issues.push({ code: "unknown_group", severity: "warning", key: k, message: `Group ${k} is not in the hardware schedule; these doors get no hardware unless mapped`, row_ids: list.map((x: any) => x.id) });
+      issues.push({ code: "unknown_group", severity: "warning", key: k, message: `Group ${k} is not defined in the hardware schedule; these doors are imported without hardware and flagged for follow-up`, row_ids: list.map((x: any) => x.id) });
     }
     const varies = doorRows.filter((r: any) => (r.issues ?? []).some((i: any) => i.code === "hw_varies"));
-    if (varies.length) issues.push({ code: "hw_varies", severity: "warning", message: `${varies.length} door(s) say <varies> for hardware; no hardware is planned for them`, row_ids: varies.map((r: any) => r.id) });
+    if (varies.length) issues.push({ code: "hw_varies", severity: "warning", message: `${varies.length} door(s) say <varies> for hardware; they are imported without hardware and flagged for follow-up`, row_ids: varies.map((r: any) => r.id) });
     const numeric = sets.map((s: any) => /^(\d+)(?:-|$)/.exec(s.set_key)).filter(Boolean).map((m: any) => parseInt(m[1], 10));
     if (numeric.length) {
       const have = new Set(numeric); const gaps: number[] = [];
@@ -121,7 +145,7 @@ export async function planImport(db: Db, loaded: NonNullable<Awaited<ReturnType<
     if (others.length) issues.push({ code: "furnished_by_others", severity: "info", message: `Set(s) ${others.map((s: any) => s.set_key).join(", ")} list no items (hardware furnished by others)` });
     const unmatched = items.filter((i: any) => i.needs_review);
     if (unmatched.length) issues.push({ code: "unmatched_items", severity: "warning", message: `${unmatched.length} hardware item(s) need review (unknown type or manufacturer); they are not applied unless accepted`, item_ids: unmatched.map((i: any) => i.id) });
-    const referenced = new Set(doorRows.map((r: any) => resolveSet(r.hw_set_key).key).filter(Boolean));
+    const referenced = new Set(doorRows.map((r: any) => rowSet(r).key).filter(Boolean));
     const unused = sets.filter((s: any) => !referenced.has(s.set_key)).map((s: any) => s.set_key);
     if (unused.length) issues.push({ code: "unreferenced_sets", severity: "info", message: `Set(s) ${unused.join(", ")} are not used by any door in this import` });
   }
@@ -142,7 +166,7 @@ export async function planImport(db: Db, loaded: NonNullable<Awaited<ReturnType<
   const plans: OpeningPlan[] = [];
   for (const r of doorRows) {
     const mark = markOf.get(r.id) ?? null;
-    const base = { row_id: r.id, source_row: r.source_row, mark, opening_id: null, opening_code: null, set_key: null, fields: [], leaves: [], frame: null, hardware: [] } as Omit<OpeningPlan, "action">;
+    const base = { row_id: r.id, source_row: r.source_row, mark, opening_id: null, opening_code: null, set_key: null, fields: [], leaves: [], frame: null, hardware: [], variant_choice: null, follow_up: null } as Omit<OpeningPlan, "action">;
     if (!mark) { plans.push({ ...base, action: "skip", skip_reason: res.rows?.[r.id]?.skip ? "skipped_by_user" : "no_mark" }); continue; }
     if (duplicates.has(mark)) { plans.push({ ...base, action: "skip", skip_reason: "duplicate_mark" }); continue; }
     const existing: any = byScheduleMark.get(mark) ?? byCode.get(mark) ?? null;
@@ -175,19 +199,19 @@ export async function planImport(db: Db, loaded: NonNullable<Awaited<ReturnType<
       for (const [f, val] of frameVals) push(change("frame", frame?.id ?? null, f, frame?.[f], val, !!frame && VERIFIED_CONDITIONS.has(frame.condition), overwrite));
     }
     // Hardware for the resolved set.
-    const set = resolveSet(r.hw_set_key);
+    const set = rowSet(r);
     const hwPlans: HardwarePlan[] = [];
     if (imp.hardware_version_id && set.ok && set.key) {
       const s = setByKey.get(set.key);
       const mine = hardware.filter((h: any) => h.opening_id === oid);
       for (const it of itemsBySet.get(s.id) ?? []) {
         const signature = `${s.set_key}#${it.position}`;
-        const hp: HardwarePlan = { item_id: it.id, signature, description: it.description, item_type: it.item_type, component_type: it.component_type, action: "add", component_id: null, changes: [] };
+        const hp: HardwarePlan = { item_id: it.id, signature, description: it.description, item_type: it.item_type, component_type: it.component_type, qty: it.qty ?? null, action: "add", component_id: null, changes: [] };
         if (it.needs_review && !accepted.has(it.id)) { hwPlans.push({ ...hp, action: "needs_review" }); continue; }
         const prior = mine.find((h: any) => sigOf.get(h.id) === signature);
         if (prior) {
           const hv = prior.review_state === "reviewed" || prior.identity_status === "established" || VERIFIED_CONDITIONS.has(prior.condition);
-          for (const [f, val] of [["manufacturer", it.manufacturer ?? it.manufacturer_raw], ["model_number", it.catalog], ["finish", it.finish]] as const) {
+          for (const [f, val] of [["manufacturer", it.manufacturer ?? it.manufacturer_raw], ["model_number", it.catalog], ["finish", it.finish], ["quantity", it.qty && it.qty > 0 ? it.qty : null]] as const) {
             const c = change("hardware", prior.id, f, prior[f], val, hv, overwrite); if (c) hp.changes.push(c);
           }
           const act = hp.changes.some(applies) ? "update" : hp.changes.some((c) => c.status === "protected") ? "protected" : "unchanged";
@@ -198,9 +222,20 @@ export async function planImport(db: Db, loaded: NonNullable<Awaited<ReturnType<
         hwPlans.push(hp);
       }
     }
+    let follow_up: FollowUp | null = null;
+    const variants = r.hw_set_key ? variantsOf(r.hw_set_key) : [];
+    const variant_choice = imp.hardware_version_id && variants.length ? { group: r.hw_set_key, options: variants, chosen: set.ok ? set.key : null, pending: set.pending } : null;
+    if (imp.hardware_version_id && !set.ok && !set.pending) {
+      const k = r.hw_set_key as string | null;
+      if ((r.issues ?? []).some((i: any) => i.code === "hw_varies")) follow_up = { reason: "hw_varies", detail: r.hw_ref_raw ?? null };
+      else if (k === "X") follow_up = { reason: "hw_group_x", detail: r.hw_ref_raw ?? null };
+      else if (k && variants.length) follow_up = { reason: "hw_variant_none", detail: r.hw_ref_raw ?? null };
+      else if (k && setByKey.has(k)) follow_up = { reason: "hw_none_chosen", detail: r.hw_ref_raw ?? null };
+      else if (k) follow_up = { reason: "hw_group_undefined", detail: r.hw_ref_raw ?? null };
+    }
     const any = fields.some(applies) || leafPlans.some((l) => l.create) || !!framePlan?.create || hwPlans.some((h) => h.action === "add" || h.action === "update");
     plans.push({ ...base, action: existing ? (any ? "update" : "unchanged") : "create", opening_id: oid, opening_code: existing?.opening_code ?? null,
-      set_key: set.ok ? set.key : null, fields, leaves: leafPlans, frame: framePlan, hardware: hwPlans });
+      set_key: set.ok ? set.key : null, fields, leaves: leafPlans, frame: framePlan, hardware: hwPlans, variant_choice, follow_up });
   }
   const protectedCount = plans.reduce((n, p) => n + p.fields.filter((f) => f.status === "protected").length + p.hardware.reduce((m, h) => m + h.changes.filter((c) => c.status === "protected").length, 0), 0);
   if (protectedCount) issues.push({ code: "field_verified_protected", severity: "warning", message: `${protectedCount} field-verified value(s) differ from the schedule and will be kept unless you confirm each overwrite` });
@@ -214,6 +249,8 @@ export async function planImport(db: Db, loaded: NonNullable<Awaited<ReturnType<
     update_hardware: plans.reduce((n, p) => n + p.hardware.filter((h) => h.action === "update").length, 0),
     hardware_needing_review: plans.reduce((n, p) => n + p.hardware.filter((h) => h.action === "needs_review").length, 0),
     protected_fields: protectedCount,
+    follow_up_rows: plans.filter((p) => p.follow_up).length,
+    variant_choices_pending: plans.filter((p) => p.variant_choice?.pending).length,
   };
   return { issues, openings: plans, summary, blocked: issues.some((i) => i.severity === "blocker") };
 }
@@ -236,9 +273,16 @@ async function uniqueOpeningCode(db: Db, buildingId: string, mark: string): Prom
 export async function applyPlan(db: Db, imp: any, loaded: NonNullable<Awaited<ReturnType<typeof loadImport>>>, plan: ImportPlan) {
   const rowById = new Map(loaded.rows.map((r: any) => [r.id, r]));
   const itemById = new Map(loaded.items.map((i: any) => [i.id, i]));
-  const counts = { openings_created: 0, openings_updated: 0, leaves_created: 0, frames_created: 0, fields_written: 0, hardware_added: 0, hardware_updated: 0, protected_kept: 0 };
+  const counts = { follow_ups: 0, openings_created: 0, openings_updated: 0, leaves_created: 0, frames_created: 0, fields_written: 0, hardware_added: 0, hardware_updated: 0, protected_kept: 0 };
+  const followUp = async (p: OpeningPlan, openingId: string | null) => {
+    if (!p.follow_up || !openingId) return;
+    await db.query("INSERT INTO schedule_row_follow_ups(id, import_id, row_id, opening_id, reason, detail) VALUES($1,$2,$3,$4,$5,$6)",
+      [randomUUID(), imp.id, p.row_id, openingId, p.follow_up.reason, p.follow_up.detail]);
+    counts.follow_ups++;
+  };
   for (const p of plan.openings) {
-    if (p.action === "skip" || p.action === "unchanged") { counts.protected_kept += p.fields.filter((f) => f.status === "protected").length; continue; }
+    if (p.action === "skip") continue;
+    if (p.action === "unchanged") { counts.protected_kept += p.fields.filter((f) => f.status === "protected").length; await followUp(p, p.opening_id); continue; }
     const r: any = rowById.get(p.row_id);
     let openingId = p.opening_id;
     const val = (entity: string, field: string) => p.fields.find((f) => f.entity === entity && f.field === field && applies(f))?.to;
@@ -288,9 +332,9 @@ export async function applyPlan(db: Db, imp: any, loaded: NonNullable<Awaited<Re
         const notes = [`From schedule import ${imp.id}, set ${h.signature.split("#")[0]}, qty ${it.qty ?? "?"}`,
           it.item_type !== it.component_type ? `type: ${it.item_type}` : null, it.furnished_by, it.options ? `options: ${it.options}` : null,
           it.finish_bhma ? `BHMA ${it.finish_bhma}` : null].filter(Boolean).join("; ");
-        await db.query(`INSERT INTO hardware_components(id, opening_id, component_type, manufacturer, model_number, finish, notes, tracker_id, mounting_scope, position_label, condition, identity_status, review_state)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,'opening',$9,'unverified','unresolved','pending')`,
-          [id, openingId, it.component_type, it.manufacturer ?? it.manufacturer_raw, it.catalog, it.finish, notes.slice(0, 2000), `TRK-${randomBytes(4).toString("hex").toUpperCase()}`, it.description.slice(0, 120)]);
+        await db.query(`INSERT INTO hardware_components(id, opening_id, component_type, manufacturer, model_number, finish, notes, tracker_id, mounting_scope, position_label, condition, identity_status, review_state, quantity)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,'opening',$9,'unverified','unresolved','pending',$10)`,
+          [id, openingId, it.component_type, it.manufacturer ?? it.manufacturer_raw, it.catalog, it.finish, notes.slice(0, 2000), `TRK-${randomBytes(4).toString("hex").toUpperCase()}`, it.description.slice(0, 120), it.qty && it.qty > 0 ? it.qty : null]);
         await effect(db, imp.id, "hardware", id, "create", null, null, { item_id: it.id, description: it.description }, h.signature); counts.hardware_added++;
       } else if (h.action === "update" && h.component_id) {
         for (const c of h.changes.filter(applies)) {
@@ -300,6 +344,7 @@ export async function applyPlan(db: Db, imp: any, loaded: NonNullable<Awaited<Re
         counts.hardware_updated++;
       }
     }
+    await followUp(p, openingId);
     counts.protected_kept += p.fields.filter((f) => f.status === "protected").length + p.hardware.reduce((m, h) => m + h.changes.filter((c) => c.status === "protected").length, 0);
   }
   return counts;

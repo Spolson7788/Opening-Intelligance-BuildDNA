@@ -673,13 +673,17 @@ export async function uploadFacilitySchedule(input: {
 export type ScheduleImportResolutions = {
   rows?: Record<string, { skip?: boolean; mark?: string }>;
   set_map?: Record<string, string | null>;
+  row_sets?: Record<string, string | null>;
   accept_items?: string[];
   overwrite?: string[];
 };
-export interface ScheduleImportIssue { code: string; severity: "blocker" | "warning" | "info"; message: string; row_ids?: string[]; item_ids?: string[]; key?: string }
+export interface ScheduleImportIssue { code: string; severity: "blocker" | "warning" | "info"; message: string; row_ids?: string[]; item_ids?: string[]; key?: string; variants?: string[]; unresolved_row_ids?: string[] }
 export interface ScheduleFieldChange { entity: string; entity_id: string | null; field: string; from: unknown; to: unknown; status: string; overwrite_key: string | null }
 export interface ScheduleOpeningPlan { row_id: string; source_row: number; mark: string | null; action: string; skip_reason?: string; opening_id: string | null;
-  fields: ScheduleFieldChange[]; hardware: { item_id: string; description: string; action: string; component_type: string }[] }
+  fields: ScheduleFieldChange[]; hardware: { item_id: string; description: string; action: string; component_type: string; qty: number | null }[];
+  set_key?: string | null;
+  variant_choice: { group: string; options: string[]; chosen: string | null; pending: boolean } | null;
+  follow_up: { reason: string; detail: string | null } | null }
 export interface ScheduleImportPreview {
   import: { id: string; status: "draft" | "confirmed"; building_id: string; property_id: string };
   rows?: { id: string; source_row: number; room_name: string | null; door_mark: string | null }[];

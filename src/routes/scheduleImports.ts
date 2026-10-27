@@ -21,6 +21,7 @@ const createBody = z.object({ building_id: uuid, door_version_id: uuid, hardware
 const resolutionsBody = z.object({
   rows: z.record(z.string(), z.object({ skip: z.boolean().optional(), mark: z.string().min(1).max(40).optional() }).strict()).optional(),
   set_map: z.record(z.string(), z.string().max(40).nullable()).optional(),
+  row_sets: z.record(z.string(), z.string().max(40).nullable()).optional(),
   accept_items: z.array(uuid).max(5000).optional(),
   overwrite: z.array(z.string().max(200)).max(5000).optional(),
 }).strict();

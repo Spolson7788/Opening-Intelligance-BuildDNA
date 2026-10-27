@@ -60,7 +60,7 @@ export function ScheduleImportStartPage() {
 export function ScheduleImportPage() {
   const { id = "" } = useParams();
   const [data, setData] = useState<ScheduleImportPreview | null>(null);
-  const [res, setRes] = useState<ScheduleImportResolutions>({ rows: {}, set_map: {}, accept_items: [], overwrite: [] });
+  const [res, setRes] = useState<ScheduleImportResolutions>({ rows: {}, set_map: {}, row_sets: {}, accept_items: [], overwrite: [] });
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => { fetchScheduleImport(id).then(setData).catch(() => setMessage("Could not load import.")); }, [id]);
@@ -77,6 +77,13 @@ export function ScheduleImportPage() {
       <pre>{JSON.stringify(data.result, null, 2)}</pre></div>
   );
   const plan = data.plan!;
+  const FOLLOW_UP_LABEL: Record<string, string> = { hw_varies: "Hardware <varies>", hw_group_x: "Group X", hw_group_undefined: "Group not in hardware schedule",
+    hw_variant_none: "No variant applies", hw_none_chosen: "No hardware chosen" };
+  const chooseRow = (rid: string, v: string) => { const m = { ...res.row_sets }; if (v === "") delete m[rid]; else m[rid] = v === "__none" ? null : v; setRes({ ...res, row_sets: m }); };
+  const applyToAllSimilar = (key: string, rowIds: string[], v: string) => {
+    const m = { ...res.set_map }; const rs = { ...res.row_sets }; rowIds.forEach((r) => delete rs[r]);
+    if (v === "") delete m[key]; else m[key] = v === "__none" ? null : v; setRes({ ...res, set_map: m, row_sets: rs });
+  };
   const toggle = (list: string[] | undefined, v: string) => (list ?? []).includes(v) ? (list ?? []).filter((x) => x !== v) : [...(list ?? []), v];
   async function doConfirm() {
     setBusy(true); setMessage(null);
@@ -99,11 +106,29 @@ export function ScheduleImportPage() {
                 <input placeholder="new mark" value={res.rows?.[rid]?.mark ?? ""} onChange={(e) => setRes({ ...res, rows: { ...res.rows, [rid]: e.target.value ? { mark: e.target.value } : {} } })} />
               </div>
             ))}
-            {(i.code === "unknown_group" || i.code === "ambiguous_group") && i.key && (
+            {i.code === "ambiguous_group" && i.key && (
+              <div>
+                <label>Apply to all similar (Group {i.key}){" "}
+                  <select value={res.set_map?.[i.key] === undefined ? "" : res.set_map[i.key] ?? "__none"} onChange={(e) => applyToAllSimilar(i.key!, i.row_ids ?? [], e.target.value)}>
+                    <option value="">(choose per door)</option><option value="__none">No hardware (follow-up)</option>
+                    {(i.variants ?? []).map((k) => <option key={k} value={k}>Set {k}</option>)}
+                  </select>
+                </label>
+                {(i.row_ids ?? []).map((rid) => {
+                  const row = rowById.get(rid); const open = (i.unresolved_row_ids ?? []).includes(rid);
+                  return <div key={rid} data-pending={open}>Door {row?.door_mark ?? "?"} (row {row?.source_row}) {row?.room_name ?? ""}{" "}
+                    <select value={res.row_sets?.[rid] === undefined ? "" : res.row_sets[rid] ?? "__none"} onChange={(e) => chooseRow(rid, e.target.value)}>
+                      <option value="">{res.set_map?.[i.key!] !== undefined ? "(same as all similar)" : "(choose variant)"}</option><option value="__none">No hardware (follow-up)</option>
+                      {(i.variants ?? []).map((k) => <option key={k} value={k}>Set {k}</option>)}
+                    </select>{open && <strong> choice required</strong>}</div>;
+                })}
+              </div>
+            )}
+            {i.code === "unknown_group" && i.key && (
               <select value={res.set_map?.[i.key] === undefined ? "" : res.set_map[i.key] ?? "__none"} onChange={(e) => {
                 const m = { ...res.set_map }; if (e.target.value === "") delete m[i.key!]; else m[i.key!] = e.target.value === "__none" ? null : e.target.value; setRes({ ...res, set_map: m });
               }}>
-                <option value="">(unresolved)</option><option value="__none">No hardware</option>
+                <option value="">(no hardware, follow-up)</option><option value="__none">No hardware, follow-up</option>
                 {setKeys.map((k) => <option key={k} value={k}>Set {k}</option>)}
               </select>
             )}
@@ -118,7 +143,7 @@ export function ScheduleImportPage() {
       <h2>Change preview</h2>
       <p>{Object.entries(plan.summary).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(" · ")}</p>
       <table>
-        <thead><tr><th>Row</th><th>Mark</th><th>Action</th><th>Changes</th><th>Hardware</th></tr></thead>
+        <thead><tr><th>Row</th><th>Mark</th><th>Action</th><th>Changes</th><th>Hardware (qty)</th><th>Follow-up</th></tr></thead>
         <tbody>
           {plan.openings.map((o) => (
             <tr key={o.row_id}>
@@ -127,7 +152,9 @@ export function ScheduleImportPage() {
                 <div key={n}>{f.entity} {f.field}: {String(f.from ?? "")} → {String(f.to)} [{f.status}]
                   {f.overwrite_key && <label> <input type="checkbox" checked={(res.overwrite ?? []).includes(f.overwrite_key)} onChange={() => setRes({ ...res, overwrite: toggle(res.overwrite, f.overwrite_key!) })} /> overwrite field-verified value</label>}
                 </div>))}</td>
-              <td>{o.hardware.map((h) => <div key={h.item_id}>{h.description} [{h.action}]</div>)}</td>
+              <td>{o.variant_choice && <div>Group {o.variant_choice.group}: {o.variant_choice.pending ? <strong>choose a variant</strong> : o.variant_choice.chosen ? `set ${o.variant_choice.chosen}` : "none"}</div>}
+                {o.hardware.map((h) => <div key={h.item_id}>{h.qty ?? "?"} × {h.description} [{h.action}]</div>)}</td>
+              <td>{o.follow_up ? <strong data-follow-up={o.follow_up.reason}>Follow up: {FOLLOW_UP_LABEL[o.follow_up.reason] ?? o.follow_up.reason}{o.follow_up.detail ? ` (${o.follow_up.detail})` : ""}</strong> : ""}</td>
             </tr>
           ))}
         </tbody>

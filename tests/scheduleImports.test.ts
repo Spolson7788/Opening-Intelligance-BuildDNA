@@ -243,4 +243,96 @@ describe('schedule imports M2', () => {
     await confirm(f.admin, id, resolveAll((await get(f.admin, id)).body));
     await expect(sql("UPDATE schedule_imports SET result='{}' WHERE id=$1", [id])).rejects.toThrow(/immutable/);
   });
+
+  // M2B (answers of 2026-10-27 13:30)
+  const previewWith = (u: any, id: string, resolutions: any) => request(app).post(`/api/schedule-imports/${id}/preview`).set(auth(u)).send({ resolutions });
+  const dupOnly = (p: any) => ({ rows: resolveAll(p).rows });
+
+  it('M2B: lettered group variants need a per-door choice before confirm', async () => {
+    const f = await facility();
+    const id = await newImport(f);
+    const p = (await get(f.admin, id)).body;
+    const e1 = p.rows.find((r: any) => r.row_kind === 'door' && r.door_mark === 'E1').id;
+    const amb = p.plan.issues.find((i: any) => i.code === 'ambiguous_group');
+    expect(amb).toMatchObject({ key: '1', severity: 'blocker', variants: ['1-EXT', '1-GAR', '1-INT'], unresolved_row_ids: [e1] });
+    expect(p.plan.openings.find((o: any) => o.row_id === e1).variant_choice).toMatchObject({ group: '1', pending: true });
+    expect(p.plan.summary.variant_choices_pending).toBe(1);
+    const base = dupOnly(p);
+    let r = await confirm(f.admin, id, base);
+    expect(r.status).toBe(409);
+    expect(r.body.issues.map((i: any) => i.code)).toEqual(['ambiguous_group']);
+    r = await confirm(f.admin, id, { ...base, row_sets: { [e1]: '22' } }); // not a variant of group 1
+    expect(r.status).toBe(409);
+    r = await confirm(f.admin, id, { ...base, set_map: { '1': '7' } });
+    expect(r.status).toBe(409);
+    const pv = (await previewWith(f.admin, id, { ...base, set_map: { '1': '1-EXT' }, row_sets: { [e1]: '1-INT' } })).body.plan;
+    expect(pv.blocked).toBe(false);
+    expect(pv.issues.find((i: any) => i.code === 'ambiguous_group')).toMatchObject({ severity: 'info', unresolved_row_ids: [] });
+    expect(pv.openings.find((o: any) => o.row_id === e1)).toMatchObject({ set_key: '1-INT', follow_up: null, variant_choice: { chosen: '1-INT', pending: false } });
+    expect(pv.summary.variant_choices_pending).toBe(0);
+    r = await confirm(f.admin, id, { ...base, set_map: { '1': '1-EXT' }, row_sets: { [e1]: '1-INT' } });
+    expect(r.status).toBe(200);
+    expect(await count('schedule_import_effects', "import_id=$1 AND item_signature LIKE '1-INT#%'", [id])).toBe(2);
+    expect(await count('schedule_import_effects', "import_id=$1 AND item_signature LIKE '1-EXT#%'", [id])).toBe(0);
+  });
+
+  it('M2B: choosing no variant imports the door without hardware and flags it', async () => {
+    const f = await facility();
+    const id = await newImport(f);
+    const p = (await get(f.admin, id)).body;
+    const e1 = p.rows.find((r: any) => r.row_kind === 'door' && r.door_mark === 'E1').id;
+    const pv = (await previewWith(f.admin, id, { ...dupOnly(p), row_sets: { [e1]: null } })).body.plan;
+    expect(pv.blocked).toBe(false);
+    expect(pv.openings.find((o: any) => o.row_id === e1).follow_up).toMatchObject({ reason: 'hw_variant_none' });
+  });
+
+  it('M2B: Group X, <varies> and undefined groups import without hardware, are flagged, and do not block', async () => {
+    const f = await facility();
+    const id = await newImport(f);
+    const p = (await get(f.admin, id)).body;
+    const res = { ...dupOnly(p), set_map: { '1': '1-EXT' } }; // nothing said about X, <varies> or 23
+    const pv = (await previewWith(f.admin, id, res)).body.plan;
+    expect(pv.blocked).toBe(false);
+    expect(pv.issues.filter((i: any) => ['unknown_group', 'hw_varies'].includes(i.code)).every((i: any) => i.severity === 'warning')).toBe(true);
+    const fu = (m: string) => pv.openings.find((o: any) => o.mark === m && o.action !== 'skip').follow_up;
+    expect(fu('150')).toMatchObject({ reason: 'hw_group_x' });
+    expect(fu('155')).toMatchObject({ reason: 'hw_varies' });
+    expect(fu('160')).toMatchObject({ reason: 'hw_group_undefined', detail: 'Group 23' });
+    expect(fu('101')).toBeNull();
+    expect(fu('E1')).toBeNull();
+    expect(pv.summary.follow_up_rows).toBe(3);
+    const c = await confirm(f.admin, id, res);
+    expect(c.status).toBe(200);
+    expect(c.body.result).toMatchObject({ openings_created: 12, follow_ups: 3 });
+    const stored = (await sql(`SELECT o.schedule_door_mark AS mark, f.reason, f.status FROM schedule_row_follow_ups f JOIN openings o ON o.id=f.opening_id
+      WHERE f.import_id=$1 ORDER BY o.schedule_door_mark`, [id])).rows;
+    expect(stored).toEqual([{ mark: '150', reason: 'hw_group_x', status: 'open' }, { mark: '155', reason: 'hw_varies', status: 'open' }, { mark: '160', reason: 'hw_group_undefined', status: 'open' }]);
+    for (const m of ['150', '155', '160']) expect(await count('hardware_components', 'opening_id=(SELECT id FROM openings WHERE building_id=$1 AND schedule_door_mark=$2)', [f.building, m])).toBe(0);
+    // Unit/cottage type templates (marks 1 and 3) stay skipped.
+    expect(await count('openings', "building_id=$1 AND schedule_door_mark IN ('1','3')", [f.building])).toBe(0);
+    // Follow-ups are never deleted and only move open -> resolved.
+    await expect(sql('DELETE FROM schedule_row_follow_ups WHERE import_id=$1', [id])).rejects.toThrow(/never deleted/);
+    await expect(sql("UPDATE schedule_row_follow_ups SET reason='hw_varies' WHERE import_id=$1", [id])).rejects.toThrow(/immutable/);
+    await sql("UPDATE schedule_row_follow_ups SET status='resolved', resolved_at=now() WHERE import_id=$1 AND reason='hw_varies'", [id]);
+    await expect(sql("UPDATE schedule_row_follow_ups SET status='open', resolved_at=NULL WHERE import_id=$1 AND reason='hw_varies'", [id])).rejects.toThrow(/immutable/);
+  });
+
+  it('M2B: one hardware record per line keeps the line quantity, shown in the preview', async () => {
+    expect((await sql("SELECT count(*)::int AS n FROM information_schema.columns WHERE table_name='hardware_components' AND column_name='quantity'")).rows[0].n).toBe(1);
+    const f = await facility();
+    const id = await newImport(f);
+    const res = resolveAll((await get(f.admin, id)).body);
+    const pv = (await previewWith(f.admin, id, res)).body.plan;
+    const hinge = pv.openings.find((o: any) => o.mark === '108A').hardware.find((h: any) => h.description === 'Hinge');
+    expect(hinge).toMatchObject({ qty: 3, action: 'add' });
+    expect(pv.openings.find((o: any) => o.mark === 'S301').hardware.map((h: any) => h.qty)).toEqual([2, 2]);
+    expect((await confirm(f.admin, id, res)).status).toBe(200);
+    const o108 = (await sql("SELECT id FROM openings WHERE building_id=$1 AND schedule_door_mark='108A'", [f.building])).rows[0].id;
+    const rows = (await sql('SELECT position_label, quantity FROM hardware_components WHERE opening_id=$1 ORDER BY position_label', [o108])).rows;
+    expect(rows.find((x: any) => x.position_label === 'Hinge')).toEqual({ position_label: 'Hinge', quantity: 3 });
+    expect(rows.filter((x: any) => x.position_label === 'Hinge')).toHaveLength(1); // one record per line, not three
+    const pair = (await sql("SELECT h.quantity FROM hardware_components h JOIN openings o ON o.id=h.opening_id WHERE o.building_id=$1 AND o.schedule_door_mark='S301'", [f.building])).rows;
+    expect(pair.map((x: any) => x.quantity)).toEqual([2, 2]);
+    await expect(sql("UPDATE hardware_components SET quantity=0 WHERE opening_id=$1", [o108])).rejects.toThrow();
+  });
 });
