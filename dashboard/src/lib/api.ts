@@ -616,3 +616,55 @@ export function decodeTokenPayload(token: string): { userId: string; organizatio
   const payload = JSON.parse(atob(token.split(".")[1]));
   return { userId: payload.userId, organizationId: payload.organizationId, role: payload.role };
 }
+
+export interface FacilityScheduleVersion {
+  id: string;
+  version: number;
+  original_filename: string;
+  content_type: string;
+  byte_size: number;
+  sha256: string;
+  uploaded_by_organization_id: string;
+  uploaded_at: string;
+}
+
+export interface FacilitySchedule {
+  id: string;
+  kind: "door" | "hardware";
+  title: string;
+  head_version: number;
+  created_at: string;
+  versions: FacilityScheduleVersion[];
+}
+
+export const FACILITY_SCHEDULE_MAX_BYTES = 25 * 1024 * 1024;
+
+export async function listFacilitySchedules(propertyId: string): Promise<FacilitySchedule[]> {
+  return authedFetch(`/facility-schedules/by-property/${propertyId}`);
+}
+
+async function sha256Hex(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Same two-step presigned pattern as documents: bytes go straight to storage.
+export async function uploadFacilitySchedule(input: {
+  propertyId: string;
+  kind: "door" | "hardware";
+  title: string;
+  file: File;
+  scheduleId?: string;
+}) {
+  const sha256 = await sha256Hex(input.file);
+  const contentType = input.file.type || (input.file.name.toLowerCase().endsWith(".csv") ? "text/csv" : "");
+  const base = { property_id: input.propertyId, kind: input.kind, content_type: contentType, byte_size: input.file.size, sha256 };
+  const presign = await authedFetch("/facility-schedules/presign", { method: "POST", body: JSON.stringify(base) });
+  const putRes = await fetch(presign.uploadUrl, { method: "PUT", headers: { "Content-Type": contentType }, body: input.file });
+  if (!putRes.ok) throw new ApiError(putRes.status, "upload_failed");
+  return authedFetch("/facility-schedules", {
+    method: "POST",
+    body: JSON.stringify({ ...base, title: input.title, original_filename: input.file.name, storage_key: presign.key,
+      ...(input.scheduleId ? { schedule_id: input.scheduleId } : {}) }),
+  });
+}

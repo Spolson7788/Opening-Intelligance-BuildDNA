@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "./lib/AuthContext";
 import { LoginPage } from "./pages/LoginPage";
 import { SignupPage } from "./pages/SignupPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { FacilitySchedulesPage } from "./pages/FacilitySchedulesPage";
 import { OpeningDetailPage } from "./pages/OpeningDetailPage";
 import { NewPropertyPage } from "./pages/NewPropertyPage";
 import { NewOpeningPage } from "./pages/NewOpeningPage";
@@ -38,6 +39,7 @@ function AppRoutes() {
       <Route path="/team" element={<RequireAuth><TeamPage /></RequireAuth>} />
       <Route path="/audit-log" element={<RequireAuth><AuditLogPage /></RequireAuth>} />
       <Route path="/work-orders" element={<RequireAuth><WorkOrdersPage /></RequireAuth>} />
+      <Route path="/facility-schedules" element={<RequireAuth><FacilitySchedulesPage /></RequireAuth>} />
       <Route path="/maintenance-schedules" element={<RequireAuth><MaintenanceSchedulesPage /></RequireAuth>} />
       <Route path="/opening/:id" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -39,3 +39,23 @@ export function openingsForOrgSubquery(paramIndex: number): string {
     WHERE ${facilityAccessPredicate(paramIndex)}
   `;
 }
+
+// Facility schedules (M1). A "service provider" is an organization holding an
+// active facility_provider_assignments row for the property; access starts on
+// assignment and ends on revocation. Owner and provider org members with these
+// roles may upload and list; all other roles are denied.
+export const SCHEDULE_WRITE_ROLES = ["admin", "facilities_manager"];
+
+export async function facilityScheduleAccess(
+  db: { query: (sql: string, args?: unknown[]) => Promise<{ rows: any[] }> },
+  propertyId: string,
+  orgId: string,
+): Promise<"owner" | "provider" | null> {
+  const r = await db.query(
+    `SELECT CASE WHEN pf.organization_id=$2 THEN 'owner' ELSE 'provider' END AS access
+     FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id
+     WHERE p.id=$1 AND ${facilityAccessPredicate(2)}`,
+    [propertyId, orgId],
+  );
+  return r.rows[0]?.access ?? null;
+}

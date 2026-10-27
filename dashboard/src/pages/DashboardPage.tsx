@@ -155,6 +155,13 @@ export function DashboardPage() {
             >
               Maintenance Schedules
             </Link>
+            <Link
+              to="/facility-schedules"
+              className="btn btn-secondary"
+              style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
+            >
+              Door Schedules
+            </Link>
             {canManageSetup && (
               <Link
                 to="/audit-log"

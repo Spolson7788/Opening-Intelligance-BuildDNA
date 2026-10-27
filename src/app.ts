@@ -9,6 +9,7 @@ import {accountRecoveryRouter} from "./routes/accountRecovery";
 import {recognitionRouter} from "./routes/recognition";
 import {branchesRouter} from "./routes/branches";
 import {providerAssignmentsRouter} from "./routes/providerAssignments";
+import { facilitySchedulesRouter } from "./routes/facilitySchedules";
 import {purchasingRouter} from "./routes/purchasing";
 import express from "express";
 import cors from "cors";
@@ -105,6 +106,7 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   app.use("/api/recognition", recognitionRouter);
   if (options.accountRecoveryEnabled) app.use("/api/account-recovery", accountRecoveryRouter);
   app.use("/api/provider-assignments",providerAssignmentsRouter);
+  app.use("/api/facility-schedules", facilitySchedulesRouter);
   app.use("/api/branches",branchesRouter);
   app.use("/api/purchasing",purchasingRouter);
   app.use("/api/openings", openingsRouter);
