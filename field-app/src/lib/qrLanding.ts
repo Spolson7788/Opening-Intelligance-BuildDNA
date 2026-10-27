@@ -9,7 +9,8 @@ export const validQrToken = (token: string) => new RegExp(`^${tokenPattern}$`, '
 export interface PublicOpeningSummary { facility_name: string; building_name: string; opening_code: string }
 export type QrFailureKind = 'site_access' | 'service' | 'network' | 'unavailable';
 export class QrInformationError extends Error {
-  constructor(readonly kind: QrFailureKind) { super('unavailable'); }
+  readonly kind: QrFailureKind;
+  constructor(kind: QrFailureKind) { super('unavailable'); this.kind = kind; }
 }
 // Inspect only a bounded HTML body. Never render it or navigate to its contents.
 async function gateBody(response: Response): Promise<string> {
