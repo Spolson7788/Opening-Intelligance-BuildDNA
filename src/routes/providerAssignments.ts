@@ -1,3 +1,4 @@
+import { acquireClient } from '../db/acquireClient';
 import {Router} from 'express';
 import {z} from 'zod';
 import {pool} from '../db/pool';
@@ -12,7 +13,7 @@ providerAssignmentsRouter.put('/:propertyId/:providerId',async(req:AuthedRequest
  const body=z.object({active:z.boolean()}).strict().safeParse(req.body);
  if(!parsed.success||!body.success)return res.status(400).json({error:'invalid_assignment'});
  const {propertyId,providerId}=parsed.data;
- const client=await pool.connect();try{
+ const client = await acquireClient(res); if (!client) return;try{
  await client.query('BEGIN');
  const owner=await client.query(`SELECT p.id FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id WHERE p.id=$1 AND pf.organization_id=$2 FOR UPDATE OF p`,[propertyId,req.auth!.organizationId]);
  if(!owner.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'not_found'});}

@@ -1,3 +1,4 @@
+import { acquireClient } from '../db/acquireClient';
 import { revisionConflict } from "../services/revision";
 import { randomBytes } from "node:crypto";
 import { Router } from "express";
@@ -97,7 +98,7 @@ syncRouter.post("/components", async (req: AuthedRequest, res) => {
     base_server_revision: b.base_server_revision,
     payload: b.payload,
   });
-  const client = await pool.connect();
+  const client = await acquireClient(res); if (!client) return;
 
   try {
     await client.query("BEGIN");
@@ -225,7 +226,7 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
   const userId = req.auth!.userId;
   const payloadHash = canonicalPayloadHash({ operation_type: b.operation_type, entity_type: b.entity_type,
     entity_id: b.entity_id, opening_id: b.opening_id, base_server_revision: b.base_server_revision, payload });
-  const client = await pool.connect();
+  const client = await acquireClient(res); if (!client) return;
   try {
     await client.query("BEGIN");
     const openingResult = await client.query(

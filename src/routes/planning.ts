@@ -1,3 +1,4 @@
+import { acquireClient } from '../db/acquireClient';
 import {Router} from 'express';
 import {z} from 'zod';
 import {pool} from '../db/pool';
@@ -10,7 +11,7 @@ export const planningRouter=Router();planningRouter.use(requireAuth,enforceRoleP
 const uuid=z.string().uuid();
 class DomainError extends Error {constructor(public code:string,public status=409){super(code);}}
 function endpoint(method:'get'|'post',path:string,fn:(c:any,r:AuthedRequest)=>Promise<any>){planningRouter[method](path,async(req:AuthedRequest,res)=>{
- const c=await pool.connect();try{await c.query('BEGIN');const data=await fn(c,req);await c.query('COMMIT');res.set('Cache-Control','no-store').json(data);}catch(e:any){await c.query('ROLLBACK');if(e instanceof z.ZodError)return res.status(422).json({error:'invalid_planning_record'});if(e instanceof DomainError)return res.status(e.status).json({error:e.code});if(['23505','23503'].includes(e.code))return res.status(409).json({error:'planning_identity_conflict'});console.error(e);res.status(500).json({error:'planning_unavailable'});}finally{c.release();}
+ const c = await acquireClient(res); if (!c) return;try{await c.query('BEGIN');const data=await fn(c,req);await c.query('COMMIT');res.set('Cache-Control','no-store').json(data);}catch(e:any){await c.query('ROLLBACK');if(e instanceof z.ZodError)return res.status(422).json({error:'invalid_planning_record'});if(e instanceof DomainError)return res.status(e.status).json({error:e.code});if(['23505','23503'].includes(e.code))return res.status(409).json({error:'planning_identity_conflict'});console.error(e);res.status(500).json({error:'planning_unavailable'});}finally{c.release();}
 });}
 async function owner(c:any,id:string,org:string){
  const o=(await c.query(`SELECT o.* FROM openings o JOIN buildings b ON b.id=o.building_id JOIN properties p ON p.id=b.property_id JOIN portfolios pf ON pf.id=p.portfolio_id WHERE o.id=$1 AND pf.organization_id=$2 FOR UPDATE OF o`,[uuid.parse(id),org])).rows[0];

@@ -1,3 +1,4 @@
+import { acquireClient } from '../db/acquireClient';
 import { Router } from 'express';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
@@ -44,7 +45,7 @@ conditionHistoryRouter.get('/facility/:openingId', async (req: AuthedRequest, re
 
 conditionHistoryRouter.get('/:openingId', async (req: AuthedRequest, res) => {
   if (!uuid.safeParse(req.params.openingId).success) return res.status(400).json({ error: 'invalid_opening' });
-  const c = await pool.connect();
+  const c = await acquireClient(res); if (!c) return;
   try {
     await c.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const o = await scope(c, req.params.openingId, req.auth!.organizationId);
@@ -74,7 +75,7 @@ conditionHistoryRouter.post('/observations', async (req: AuthedRequest, res) => 
   const b = parsed.data, p = b.payload, org = req.auth!.organizationId, actor = req.auth!.userId;
   const hash = canonicalPayloadHash({ command: 'condition_observation', entity_id: b.entity_id,
     opening_id: b.opening_id, expected_revision: b.expected_revision, payload: p });
-  const c = await pool.connect();
+  const c = await acquireClient(res); if (!c) return;
   try {
     await c.query('BEGIN');
     // Same lock order as installation/replacement writes and provider assignment changes.

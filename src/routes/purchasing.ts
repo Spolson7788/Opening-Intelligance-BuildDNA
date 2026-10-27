@@ -1,3 +1,4 @@
+import { acquireClient } from '../db/acquireClient';
 import {Router} from 'express';
 import {z} from 'zod';
 import {pool} from '../db/pool';
@@ -10,7 +11,7 @@ purchasingRouter.use(requireAuth,enforceRolePermissions,auditLog);
 purchasingRouter.post('/review',async(req:AuthedRequest,res)=>{
  const p=z.object({opening_ids:z.array(z.string().uuid()).min(1).max(100)}).strict().safeParse(req.body);
  if(!p.success)return res.status(400).json({error:'invalid_review'});
- const c=await pool.connect();try{await c.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+ const c = await acquireClient(res); if (!c) return;try{await c.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
  const result=await purchasingReview(c,req.auth!.organizationId,p.data.opening_ids);await c.query('COMMIT');
  if(!result)return res.status(404).json({error:'not_found'});res.set('Cache-Control','no-store').json(result);
  }catch(e){await c.query('ROLLBACK');console.error(e);res.status(500).json({error:'review_failed'});}finally{c.release();}
@@ -20,7 +21,7 @@ purchasingRouter.put('/approvals/:id',async(req:AuthedRequest,res)=>{
  if(req.auth!.role!=='admin')return res.status(403).json({error:'owner_admin_required'});
  const p=z.object({document_url:z.string().url().refine(v=>new URL(v).protocol==='https:'),document_sha256:z.string().regex(/^[0-9a-f]{64}$/),provenance:z.enum(['technician_selected','oi_established']),active:z.boolean()}).strict().safeParse(req.body);
  if(!p.success||!z.string().uuid().safeParse(req.params.id).success)return res.status(400).json({error:'invalid_approval'});
- const c=await pool.connect();try{await c.query('BEGIN');
+ const c = await acquireClient(res); if (!c) return;try{await c.query('BEGIN');
  const h=await c.query(`SELECT h.* FROM hardware_components h JOIN openings o ON o.id=h.opening_id JOIN buildings b ON b.id=o.building_id JOIN properties p ON p.id=b.property_id JOIN portfolios pf ON pf.id=p.portfolio_id WHERE h.id=$1 AND h.lifecycle_state='active' AND pf.organization_id=$2 FOR UPDATE OF h`,[req.params.id,req.auth!.organizationId]);
  if(!h.rowCount){await c.query('ROLLBACK');return res.status(404).json({error:'not_found'});}
  const row=h.rows[0];if(!row.manufacturer?.trim()||!row.model_number?.trim()||row.identity_status!=='established'){await c.query('ROLLBACK');return res.status(409).json({error:'identity_unresolved'});}

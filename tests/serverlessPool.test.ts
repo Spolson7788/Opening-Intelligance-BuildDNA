@@ -1,0 +1,15 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import {EventEmitter} from 'node:events';
+import {Pool} from 'pg';
+import {serverlessPoolConfig,databaseConnectionConfig} from '../src/db/connectionConfig';
+import {readFileSync} from 'node:fs';
+const env={OI_DATABASE_POOL_PROFILE:'isolated-serverless',DATABASE_URL:'postgresql://oi_pr2_api.boaoedvyvifppuklbwad:synthetic@aws-0-us-west-1.pooler.supabase.com:5432/postgres?sslmode=verify-full'};
+afterEach(()=>vi.useRealTimers());
+it('is opt-in and rejects other projects without exposing URL',()=>{expect(serverlessPoolConfig({})).toEqual({});expect(()=>serverlessPoolConfig({...env,DATABASE_URL:env.DATABASE_URL.replace('boaoedvyvifppuklbwad','wrong')})).toThrow('database_pool_profile_target_mismatch');});
+it('preserves mode, role and verified TLS with bounded limits',()=>{const ca=readFileSync('tests/fixtures/tls/supabase-prod-ca-2021.crt','utf8');const c=databaseConnectionConfig({...env,DATABASE_CA_CERT:ca});expect(c).toMatchObject({max:1,min:0,idleTimeoutMillis:1000,connectionTimeoutMillis:5000,maxLifetimeSeconds:60,ssl:{ca,rejectUnauthorized:true}});expect(new URL(c.connectionString!).port).toBe('5432');});
+class FakeClient extends EventEmitter {static created=0;static ended=0;_queryable=true;_ending=false;constructor(){super();FakeClient.created++;}connect(cb:any){queueMicrotask(()=>cb(null));}end(cb?:any){this._ending=true;FakeClient.ended++;this.emit('end');cb?.();}query(_q:any,cb?:any){if(cb){queueMicrotask(()=>cb(null,{rows:[]}));return;}return Promise.resolve({rows:[]});}ref(){}unref(){}}
+function pool(){FakeClient.created=0;FakeClient.ended=0;return new Pool({...serverlessPoolConfig(env),Client:FakeClient} as any);}
+it('serializes checked-out transactions and releases queued work without replay',async()=>{const p=pool();try{const a=await p.connect();let received=false;const waiting=p.connect().then(c=>{received=true;return c;});await new Promise(r=>setImmediate(r));expect(received).toBe(false);expect(FakeClient.created).toBe(1);await a.query('BEGIN');await a.query('ROLLBACK');a.release();const b=await waiting;expect(b).toBe(a);b.release();}finally{await p.end();}});
+it('closes idle clients and allows a later fresh connection',async()=>{vi.useFakeTimers();const p=pool();const a=await p.connect();a.release();await vi.advanceTimersByTimeAsync(1001);expect(FakeClient.ended).toBe(1);expect(p.totalCount).toBe(0);const b=await p.connect();b.release();await p.end();});
+it('expires lifetime only after the checked-out transaction releases',async()=>{vi.useFakeTimers();const p=pool();const a=await p.connect();await vi.advanceTimersByTimeAsync(60001);expect(FakeClient.ended).toBe(0);a.release();expect(FakeClient.ended).toBe(1);await p.end();});
+it('bounds queue waiting without executing or retrying queued work',async()=>{vi.useFakeTimers();const p=pool();const a=await p.connect();const result=p.connect().catch(e=>e);await vi.advanceTimersByTimeAsync(5001);expect(await result).toBeInstanceOf(Error);expect(FakeClient.created).toBe(1);a.release();await p.end();});

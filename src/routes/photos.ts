@@ -1,3 +1,5 @@
+import { databaseRoute } from '../db/databaseRoute';
+import { acquireClient } from '../db/acquireClient';
 import { Router } from "express";
 import { z } from "zod";
 import { createHash } from "node:crypto";
@@ -154,6 +156,7 @@ photosRouter.post("/offline/recover-reservation", async (req: AuthedRequest, res
   const b = parsed.data;
   const orgId = req.auth!.organizationId;
   const userId = req.auth!.userId;
+  try {
   if (!(await assertOpeningInOrg(b.opening_id, orgId))) return res.status(403).json({ error: "forbidden" });
   if (!(await assertPhotoTarget(b.opening_id, b.target_type, b.target_id))) {
     return res.status(400).json({ error: "photo_target_not_in_opening" });
@@ -175,6 +178,7 @@ photosRouter.post("/offline/recover-reservation", async (req: AuthedRequest, res
     client_operation_id: reservation.operation_id,
     status: reservation.status,
   });
+  } catch { return res.status(503).json({error:'database_unavailable'}); }
 });
 
 // Offline protocol step 1: reserve one immutable private object identity.
@@ -194,12 +198,12 @@ photosRouter.post("/offline/reserve", async (req: AuthedRequest, res) => {
   if (b.byte_size > maximumMediaBytes(b.content_type)) {
     return res.status(413).json({ error: "media_too_large" });
   }
+  try {
   if (!(await assertOpeningInOrg(b.opening_id, orgId))) return res.status(403).json({ error: "forbidden" });
   if (!(await assertPhotoTarget(b.opening_id, b.target_type, b.target_id))) {
     return res.status(400).json({ error: "photo_target_not_in_opening" });
   }
 
-  try {
     // Fail before creating an immutable reservation when no private storage
     // backend exists. A configuration error must not strand a database row
     // that never had an upload authorization.
@@ -242,12 +246,12 @@ const confirmOfflinePhotoSchema = z.object({
   protocol_version: z.number().int().positive(),
 });
 
-photosRouter.post("/offline/confirm", async (req: AuthedRequest, res) => {
+photosRouter.post("/offline/confirm", databaseRoute(async (req: AuthedRequest, res) => {
   const parsed = confirmOfflinePhotoSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
   const orgId = req.auth!.organizationId;
-  const client = await pool.connect();
+  const client = await acquireClient(res); if (!client) return;
   try {
     await client.query("BEGIN");
     const reserved = await client.query(
@@ -423,9 +427,9 @@ photosRouter.post("/offline/confirm", async (req: AuthedRequest, res) => {
   } finally {
     client.release();
   }
-});
+}));
 
-photosRouter.get("/:id/access", async (req: AuthedRequest, res) => {
+photosRouter.get("/:id/access", databaseRoute(async (req: AuthedRequest, res) => {
   const photo = await pool.query(
     `SELECT p.* FROM photos p WHERE p.id=$1 AND p.opening_id IN (${openingsForOrgSubquery(2)})`,
     [req.params.id, req.auth!.organizationId],
@@ -442,7 +446,7 @@ photosRouter.get("/:id/access", async (req: AuthedRequest, res) => {
     console.error(err);
     return res.status(500).json({ error: "internal_error" });
   }
-});
+}));
 
 const presignSchema = z.object({
   opening_id: z.string().uuid(),
@@ -638,10 +642,12 @@ photosRouter.post("/deletion-jobs/process", async (req: AuthedRequest, res) => {
   }
   const parsed = z.object({ limit: z.number().int().min(1).max(25).optional() }).safeParse(req.body ?? {});
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
   const result = await processPhotoDeletionJobs({
     organizationId: req.auth!.organizationId, operatorUserId: req.auth!.userId, limit: parsed.data.limit,
   });
   return res.json(result);
+  } catch { return res.status(503).json({error:'database_unavailable'}); }
 });
 
 photosRouter.delete("/:id", async (req: AuthedRequest, res) => {

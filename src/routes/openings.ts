@@ -1,3 +1,5 @@
+import { databaseRoute } from '../db/databaseRoute';
+import { acquireClient } from '../db/acquireClient';
 import { openingLabel } from "../services/openingLabels";
 import {purchasingReview} from "../services/purchasingReview";
 import { Router, Response } from "express";
@@ -140,7 +142,7 @@ async function getOpeningForOrg(openingId: string, orgId: string) {
 }
 
 // One frame per opening. PUT is deliberately idempotent for field retries.
-openingsRouter.put("/:id/frame", async (req: AuthedRequest, res) => {
+openingsRouter.put("/:id/frame", databaseRoute(async (req: AuthedRequest, res) => {
   const parsed = frameSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const opening = await getOpeningForOrg(req.params.id, req.auth!.organizationId);
@@ -167,11 +169,11 @@ openingsRouter.put("/:id/frame", async (req: AuthedRequest, res) => {
     return res.status(409).json({ error: "revision_conflict", server_revision: current.rows[0] ? Number(current.rows[0].revision) : null });
   }
   res.json(result.rows[0]);
-});
+}));
 
 // A role identifies a physical leaf within an opening, not a viewing direction.
 // POST is idempotent on (opening_id, leaf_role) so offline retries do not duplicate leaves.
-openingsRouter.post("/:id/door-leaves", async (req: AuthedRequest, res) => {
+openingsRouter.post("/:id/door-leaves", databaseRoute(async (req: AuthedRequest, res) => {
   const parsed = leafSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const opening = await getOpeningForOrg(req.params.id, req.auth!.organizationId);
@@ -205,10 +207,10 @@ openingsRouter.post("/:id/door-leaves", async (req: AuthedRequest, res) => {
     return res.status(409).json({ error: "revision_conflict", server_revision: current.rows[0] ? Number(current.rows[0].revision) : null });
   }
   res.status(201).json(result.rows[0]);
-});
+}));
 
 // Completion is a backend fact. It requires the whole physical opening hierarchy.
-openingsRouter.post("/:id/complete", async (req: AuthedRequest, res) => {
+openingsRouter.post("/:id/complete", databaseRoute(async (req: AuthedRequest, res) => {
   const opening = await getOpeningForOrg(req.params.id, req.auth!.organizationId);
   if (!opening) return res.status(404).json({ error: "not_found" });
   const [frame, leaves, hardware] = await Promise.all([
@@ -237,16 +239,16 @@ openingsRouter.post("/:id/complete", async (req: AuthedRequest, res) => {
     [opening.id, req.auth!.userId]
   );
   res.json(result.rows[0]);
-});
+}));
 
-openingsRouter.get("/:id/purchasing-eligibility", async (req: AuthedRequest, res) => {
+openingsRouter.get("/:id/purchasing-eligibility", databaseRoute(async (req: AuthedRequest, res) => {
   if(!z.string().uuid().safeParse(req.params.id).success)return res.status(400).json({error:'invalid_opening'});
-  const c=await pool.connect();try{await c.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+  const c = await acquireClient(res); if (!c) return;try{await c.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
   const result=await purchasingReview(c,req.auth!.organizationId,[req.params.id]);await c.query('COMMIT');
   if(!result)return res.status(404).json({error:'not_found'});
   res.set('Cache-Control','no-store').json({...result,opening_id:req.params.id,opening_complete:result.openings[0].opening_complete});
   }catch(e){await c.query('ROLLBACK');res.status(500).json({error:'review_failed'});}finally{c.release();}
-});
+}));
 
 const bulkImportRowSchema = z.object({
   opening_code: z.string().min(1),
@@ -272,7 +274,7 @@ const bulkImportSchema = z.object({
 // otherwise-good 300-row import. The response reports success/failure per
 // row so the dashboard can show exactly what happened, not just "it worked"
 // or "it didn't."
-openingsRouter.post("/bulk-import", async (req: AuthedRequest, res) => {
+openingsRouter.post("/bulk-import", databaseRoute(async (req: AuthedRequest, res) => {
   const parsed = bulkImportSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { building_id, rows } = parsed.data;
@@ -330,7 +332,7 @@ openingsRouter.post("/bulk-import", async (req: AuthedRequest, res) => {
     failed: rows.length - created,
     results,
   });
-});
+}));
 
 // Batch QR generation for an entire building — pairs with bulk import:
 // import 200 openings from a CSV, then get all 200 QR codes in one request
@@ -340,7 +342,7 @@ openingsRouter.post("/bulk-import", async (req: AuthedRequest, res) => {
 // otherwise swallow /qr-codes (treating "qr-codes" as the id value) before
 // this handler is ever reached — caught by testing the route directly
 // rather than trusting registration order would sort itself out.
-openingsRouter.get("/qr-codes", async (req: AuthedRequest, res) => {
+openingsRouter.get("/qr-codes", databaseRoute(async (req: AuthedRequest, res) => {
   const { building_id } = req.query;
   const orgId = req.auth!.organizationId;
 
@@ -371,7 +373,7 @@ openingsRouter.get("/qr-codes", async (req: AuthedRequest, res) => {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
   }
-});
+}));
 
 // Get a single opening with its hardware, service history, and inspection history —
 // only if it belongs to the caller's organization.

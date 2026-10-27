@@ -1,3 +1,4 @@
+import { acquireClient } from '../db/acquireClient';
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool';
@@ -26,7 +27,7 @@ async function scope(client:any,id:string,org:string,lock=false){
 
 serviceRequestsRouter.get('/context/:openingId',async(req:AuthedRequest,res)=>{
   if(!z.string().uuid().safeParse(req.params.openingId).success)return res.status(400).json({error:'invalid_opening'});
-  const client=await pool.connect();
+  const client = await acquireClient(res); if (!client) return;
   try{
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const opening=await scope(client,req.params.openingId,req.auth!.organizationId);
@@ -49,7 +50,7 @@ serviceRequestsRouter.post('/',async(req:AuthedRequest,res)=>{
   const parsed=command.safeParse(req.body);if(!parsed.success)return res.status(400).json({error:'invalid_service_request'});
   const b=parsed.data,p=b.payload,org=req.auth!.organizationId,actor=req.auth!.userId;
   const hash=canonicalPayloadHash({command:'service_request',opening_id:b.opening_id,entity_id:b.entity_id,payload:p});
-  const client=await pool.connect();
+  const client = await acquireClient(res); if (!client) return;
   try{
     await client.query('BEGIN');
     // All request submissions lock the opening before checking the receipt.

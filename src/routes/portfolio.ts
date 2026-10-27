@@ -1,3 +1,4 @@
+import { databaseRoute } from '../db/databaseRoute';
 import { facilityAccessPredicate } from "../db/tenantScope";
 import { Router } from "express";
 import { z } from "zod";
@@ -396,7 +397,7 @@ portfolioRouter.get("/capital-forecast/rollup", async (req: AuthedRequest, res) 
 // this project doesn't have. What this gives you is the same "who needs
 // attention" answer an email would carry, live in the dashboard instead.
 // property_id is optional — omit it to see alerts across the whole org.
-portfolioRouter.get("/compliance-alerts", async (req: AuthedRequest, res) => {
+portfolioRouter.get("/compliance-alerts", databaseRoute(async (req: AuthedRequest, res) => {
   const { property_id } = req.query;
   const orgId = req.auth!.organizationId;
 
@@ -468,7 +469,7 @@ portfolioRouter.get("/compliance-alerts", async (req: AuthedRequest, res) => {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
   }
-});
+}));
 
 // warranty_expiration has been captured on every hardware part since the
 // cost/supplier work (see README §23), but nothing ever surfaced it — it
@@ -478,7 +479,7 @@ portfolioRouter.get("/compliance-alerts", async (req: AuthedRequest, res) => {
 // compliance-alerts. Unlike inspections, a missing warranty_expiration
 // isn't itself alert-worthy (plenty of hardware is never warrantied, or the
 // warranty just wasn't logged) — only rows with a real date get evaluated.
-portfolioRouter.get("/warranty-alerts", async (req: AuthedRequest, res) => {
+portfolioRouter.get("/warranty-alerts", databaseRoute(async (req: AuthedRequest, res) => {
   const { property_id } = req.query;
   const orgId = req.auth!.organizationId;
 
@@ -538,4 +539,4 @@ portfolioRouter.get("/warranty-alerts", async (req: AuthedRequest, res) => {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
   }
-});
+}));

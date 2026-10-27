@@ -1,3 +1,4 @@
+import { acquireClient } from '../db/acquireClient';
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
@@ -20,7 +21,7 @@ const command = z.object({ opening_ids: ids, operation_id: z.string().uuid(), te
 labelsRouter.get("/preview", async (req: AuthedRequest, res) => {
   const parsed = ids.safeParse(typeof req.query.opening_ids === "string" ? req.query.opening_ids.split(",") : []);
   if (!parsed.success) return res.status(400).json({ error: "invalid_openings" });
-  const client = await pool.connect();
+  const client = await acquireClient(res); if (!client) return;
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     const items = [];
@@ -39,7 +40,7 @@ labelsRouter.post("/generations", async (req: AuthedRequest, res) => {
   if (!parsed.success) return res.status(400).json({ error: "invalid_label_request" });
   const b = parsed.data, org = req.auth!.organizationId, actor = req.auth!.userId;
   const hash = canonicalPayloadHash({ command: "label_generation", ...b });
-  const client = await pool.connect();
+  const client = await acquireClient(res); if (!client) return;
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
     const items = [];

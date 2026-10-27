@@ -1,0 +1,1 @@
+import {defineConfig} from 'vitest/config';export default defineConfig({test:{env:{JWT_SECRET:'synthetic-local-pool-test-only',CORS_ORIGINS:''},include:['tests/serverlessPool.test.ts','tests/checkoutAvailability.test.ts','tests/databaseTls.test.ts','tests/authAvailability.test.ts','tests/signupConnectionFailure.test.ts']}});

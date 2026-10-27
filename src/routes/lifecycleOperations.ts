@@ -1,3 +1,4 @@
+import { acquireClient } from '../db/acquireClient';
 import {verifiedDocument} from '../services/commercialStorage';
 import {canReadCommercialDocument} from './commercial';
 import {Router} from 'express';
@@ -20,7 +21,7 @@ export function registerLifecycleCommand(path:string,entityType:any,schema:z.Zod
   const parsed=envelope.extend({payload:schema}).strict().safeParse(req.body);
   if(!parsed.success)return res.status(422).json({error:'invalid_lifecycle_record',details:parsed.error.flatten()});
   const b=parsed.data,org=req.auth!.organizationId,actor=req.auth!.userId,hash=canonicalPayloadHash({command:entityType,entity_id:b.entity_id,opening_id:b.opening_id,expected_revision:b.expected_revision,payload:b.payload});
-  const c=await pool.connect();try{
+  const c = await acquireClient(res); if (!c) return;try{
    await c.query('BEGIN');
    await c.query('SELECT id FROM openings WHERE id=$1 FOR UPDATE',[b.opening_id]);
    await c.query('SELECT p.id FROM properties p JOIN buildings b ON b.property_id=p.id JOIN openings o ON o.building_id=b.id WHERE o.id=$1 FOR SHARE OF p',[b.opening_id]);

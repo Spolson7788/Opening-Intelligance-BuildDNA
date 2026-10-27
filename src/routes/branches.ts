@@ -1,3 +1,4 @@
+import { acquireClient } from '../db/acquireClient';
 import {Router} from 'express';
 import {z} from 'zod';
 import {pool} from '../db/pool';
@@ -22,7 +23,7 @@ branchesRouter.put('/:id',async(req:AuthedRequest,res)=>{
 branchesRouter.put('/assignments/:userId',async(req:AuthedRequest,res)=>{
  const body=z.object({branch_id:z.string().uuid().nullable()}).strict().safeParse(req.body);
  if(!body.success||!z.string().uuid().safeParse(req.params.userId).success)return res.status(400).json({error:'invalid_assignment'});
- const c=await pool.connect();try{
+ const c = await acquireClient(res); if (!c) return;try{
  await c.query('BEGIN');const u=await c.query('SELECT id FROM users WHERE id=$1 AND organization_id=$2 AND is_active=true FOR UPDATE',[req.params.userId,req.auth!.organizationId]);
  if(!u.rowCount){await c.query('ROLLBACK');return res.status(404).json({error:'not_found'});}
  if(body.data.branch_id){const b=await c.query('SELECT id FROM company_branches WHERE id=$1 AND organization_id=$2 AND is_active=true FOR SHARE',[body.data.branch_id,req.auth!.organizationId]);

@@ -1,3 +1,4 @@
+import { acquireClient } from '../db/acquireClient';
 import { revisionConflict } from "../services/revision";
 import { canonicalPayloadHash, findSyncReceipt, writeSyncReceiptAndAudit } from "../services/syncProtocol";
 import { Router } from "express";
@@ -104,7 +105,7 @@ hardwareRouter.post("/", async (req: AuthedRequest, res) => {
   const b = parsed.data;
   const orgId = req.auth!.organizationId;
 
-  const client = await pool.connect();
+  const client = await acquireClient(res); if (!client) return;
   try {
     await client.query("BEGIN");
     if (!(await client.query(`SELECT id FROM openings WHERE id=$1 AND id IN (${openingsForOrgSubquery(2)}) FOR UPDATE`, [b.opening_id, orgId])).rows.length) {
@@ -225,7 +226,7 @@ hardwareRouter.patch("/:id", async (req: AuthedRequest, res) => {
   const parsed = updateHardwareSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { expected_revision, client_operation_id, ...changes } = parsed.data;
-  const client = await pool.connect();
+  const client = await acquireClient(res); if (!client) return;
   try {
     await client.query("BEGIN");
     const current = (await client.query(
@@ -344,7 +345,14 @@ hardwareRouter.post("/bulk-import", async (req: AuthedRequest, res) => {
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const client=await pool.connect();
+    let client;
+    try { client = await pool.connect(); }
+    catch {
+      for (let j = i; j < rows.length; j++) {
+        results.push({row:j,opening_code:rows[j].opening_code,component_type:rows[j].component_type,status:'error',error:'database_unavailable_not_attempted'});
+      }
+      break;
+    }
     try {
       await client.query('BEGIN');
       const openingResult = await client.query(

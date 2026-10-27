@@ -1,3 +1,4 @@
+import { databaseRoute } from '../db/databaseRoute';
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
@@ -163,7 +164,7 @@ const updateSchema = z.object({
   is_active: z.boolean().optional(),
 });
 
-maintenanceSchedulesRouter.patch("/:id", requireRole("admin", "facilities_manager"), async (req: AuthedRequest, res) => {
+maintenanceSchedulesRouter.patch("/:id", requireRole("admin", "facilities_manager"), databaseRoute(async (req: AuthedRequest, res) => {
   const parsed = updateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
@@ -204,7 +205,7 @@ maintenanceSchedulesRouter.patch("/:id", requireRole("admin", "facilities_manage
     console.error(err);
     res.status(500).json({ error: "internal_error" });
   }
-});
+}));
 
 maintenanceSchedulesRouter.post("/generate-due", requireRole("admin", "facilities_manager"), async (req: AuthedRequest, res) => {
   try {

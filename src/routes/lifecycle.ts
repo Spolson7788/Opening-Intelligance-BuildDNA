@@ -1,3 +1,4 @@
+import { acquireClient } from '../db/acquireClient';
 import {downtimeSummary} from '../services/lifecycleRecords';
 import {Router} from 'express';
 import {z} from 'zod';
@@ -18,7 +19,7 @@ function targetOf(f:any){return f.frame_id?{type:'frame',id:f.frame_id}:f.door_l
 
 lifecycleRouter.get('/:openingId',async(req:AuthedRequest,res)=>{
  if(!uuid.safeParse(req.params.openingId).success)return res.status(400).json({error:'invalid_opening'});
- const c=await pool.connect();try{
+ const c = await acquireClient(res); if (!c) return;try{
   await c.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
   const o=await scope(c,req.params.openingId,req.auth!.organizationId);
   if(!o){await c.query('ROLLBACK');return res.status(404).json({error:'not_found'});}
@@ -41,7 +42,7 @@ lifecycleRouter.post('/installation-facts',async(req:AuthedRequest,res)=>{
  const parsed=command.safeParse(req.body);if(!parsed.success)return res.status(422).json({error:'invalid_installation_fact',details:parsed.error.flatten()});
  const b=parsed.data,p=b.payload,org=req.auth!.organizationId,actor=req.auth!.userId;
  const hash=canonicalPayloadHash({command:'installation_fact',entity_id:b.entity_id,opening_id:b.opening_id,expected_revision:b.expected_revision,payload:p});
- const c=await pool.connect();try{
+ const c = await acquireClient(res); if (!c) return;try{
   await c.query('BEGIN');
   await c.query('SELECT id FROM openings WHERE id=$1 FOR UPDATE',[b.opening_id]);
   await c.query('SELECT p.id FROM properties p JOIN buildings b ON b.property_id=p.id JOIN openings o ON o.building_id=b.id WHERE o.id=$1 FOR SHARE OF p',[b.opening_id]);

@@ -19,12 +19,22 @@ export function databaseTargetDescriptor(connectionString: string | undefined): 
   }
 }
 
+// Explicit opt-in for this isolated database only. Connection mode and TLS are unchanged.
+export function serverlessPoolConfig(env: NodeJS.ProcessEnv): PoolConfig {
+  if (env.OI_DATABASE_POOL_PROFILE !== 'isolated-serverless') return {};
+  if (databaseTargetDescriptor(env.DATABASE_URL) !== 'supabase:boaoedvyvifppuklbwad') {
+    throw new Error('database_pool_profile_target_mismatch');
+  }
+  return {max:1,min:0,idleTimeoutMillis:1000,connectionTimeoutMillis:5000,maxLifetimeSeconds:60};
+}
+
 // A provider CA is optional for existing deployments and local databases.
 // When supplied, trust it only for Postgres and retain certificate/host checks.
 export function databaseConnectionConfig(env: NodeJS.ProcessEnv): PoolConfig {
+  const limits = serverlessPoolConfig(env);
   const connectionString = env.DATABASE_URL;
   const ca = env.DATABASE_CA_CERT?.replace(/\\n/g, "\n");
-  if (!ca) return { connectionString };
+  if (!ca) return { ...limits, connectionString };
   try {
     if (!new X509Certificate(ca).ca) throw new Error();
   } catch {
@@ -48,5 +58,5 @@ export function databaseConnectionConfig(env: NodeJS.ProcessEnv): PoolConfig {
     throw new Error("database_tls_configuration_conflict");
   }
   url.searchParams.delete("sslmode");
-  return { connectionString: url.toString(), ssl: { ca, rejectUnauthorized: true } };
+  return { ...limits, connectionString: url.toString(), ssl: { ca, rejectUnauthorized: true } };
 }

@@ -1,3 +1,4 @@
+import { databaseRoute } from '../db/databaseRoute';
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
@@ -81,7 +82,7 @@ workOrdersRouter.post("/", requireRole("admin", "facilities_manager"), async (re
 // Open/in-progress work sorts first and by urgency; done/cancelled work
 // sorts to the bottom — the list is meant to answer "what's outstanding
 // right now," not just "everything in creation order."
-workOrdersRouter.get("/", async (req: AuthedRequest, res) => {
+workOrdersRouter.get("/", databaseRoute(async (req: AuthedRequest, res) => {
   const orgId = req.auth!.organizationId;
   // Lazy generation: no real background scheduler runs in this app, so any
   // due recurring maintenance gets checked and generated right here,
@@ -125,7 +126,7 @@ workOrdersRouter.get("/", async (req: AuthedRequest, res) => {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
   }
-});
+}));
 
 async function fetchWorkOrderInOrg(id: string, orgId: string) {
   const result = await pool.query(
@@ -135,11 +136,11 @@ async function fetchWorkOrderInOrg(id: string, orgId: string) {
   return result.rows[0] ?? null;
 }
 
-workOrdersRouter.get("/:id", async (req: AuthedRequest, res) => {
+workOrdersRouter.get("/:id", databaseRoute(async (req: AuthedRequest, res) => {
   const wo = await fetchWorkOrderInOrg(req.params.id, req.auth!.organizationId);
   if (!wo) return res.status(404).json({ error: "not_found" });
   res.json(wo);
-});
+}));
 
 const updateSchema = z.object({
   title: z.string().min(1).optional(),
@@ -152,7 +153,7 @@ const updateSchema = z.object({
 
 // Full update — reassigning, rescheduling, changing priority — stays
 // admin/facilities_manager-only, same reasoning as creation.
-workOrdersRouter.patch("/:id", requireRole("admin", "facilities_manager"), async (req: AuthedRequest, res) => {
+workOrdersRouter.patch("/:id", requireRole("admin", "facilities_manager"), databaseRoute(async (req: AuthedRequest, res) => {
   const parsed = updateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
@@ -186,7 +187,7 @@ workOrdersRouter.patch("/:id", requireRole("admin", "facilities_manager"), async
     console.error(err);
     res.status(500).json({ error: "internal_error" });
   }
-});
+}));
 
 const statusOnlySchema = z.object({
   status: z.enum(["open", "in_progress", "done", "cancelled"]),
@@ -197,7 +198,7 @@ const statusOnlySchema = z.object({
 // reassign work, change its priority, or touch anyone else's task. A
 // technician marking their own job "in progress" or "done" is real field
 // work; letting them reassign or reprioritize work orders is not.
-workOrdersRouter.post("/:id/status", async (req: AuthedRequest, res) => {
+workOrdersRouter.post("/:id/status", databaseRoute(async (req: AuthedRequest, res) => {
   const parsed = statusOnlySchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const orgId = req.auth!.organizationId;
@@ -221,4 +222,4 @@ workOrdersRouter.post("/:id/status", async (req: AuthedRequest, res) => {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
   }
-});
+}));
