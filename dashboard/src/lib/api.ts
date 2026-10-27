@@ -703,3 +703,16 @@ export async function previewScheduleImport(id: string, resolutions: ScheduleImp
 export async function confirmScheduleImport(id: string, resolutions: ScheduleImportResolutions) {
   return authedFetch(`/schedule-imports/${id}/confirm`, { method: "POST", body: JSON.stringify({ resolutions }) });
 }
+
+// M2C schedule follow-ups
+export interface ScheduleFollowUp {
+  id: string; import_id: string; row_id: string; opening_id: string; reason: string; detail: string | null; status: "open" | "resolved";
+  created_at: string; resolved_at: string | null; resolved_by_user_id: string | null; resolution_note: string | null;
+  door_mark: string | null; opening_code: string; building_id: string; building_name: string; import_confirmed_at: string | null;
+}
+export async function listScheduleFollowUps(propertyId: string, status: "open" | "resolved" | "all" = "open"): Promise<ScheduleFollowUp[]> {
+  return authedFetch(`/schedule-imports/follow-ups/by-property/${propertyId}?status=${status}`);
+}
+export async function resolveScheduleFollowUp(id: string, note: string): Promise<ScheduleFollowUp> {
+  return authedFetch(`/schedule-imports/follow-ups/${id}/resolve`, { method: "POST", body: JSON.stringify({ note }) });
+}

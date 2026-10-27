@@ -18,7 +18,7 @@ export type Resolutions = {
 
 export type ValidationIssue = { code: string; severity: "blocker" | "warning" | "info"; message: string; row_ids?: string[]; item_ids?: string[]; key?: string; variants?: string[]; unresolved_row_ids?: string[] };
 /** Why an imported opening got no hardware and needs a follow-up (stored per row on confirm). */
-export type FollowUpReason = "hw_varies" | "hw_group_x" | "hw_group_undefined" | "hw_variant_none" | "hw_none_chosen";
+export type FollowUpReason = "hw_missing" | "hw_varies" | "hw_group_x" | "hw_group_undefined" | "hw_variant_none" | "hw_none_chosen";
 export type FollowUp = { reason: FollowUpReason; detail: string | null };
 export type FieldChange = { entity: "opening" | "door_leaf" | "frame" | "hardware"; entity_id: string | null; field: string; from: unknown; to: unknown;
   status: "same" | "fill" | "update" | "protected" | "overwrite"; overwrite_key: string | null };
@@ -232,6 +232,7 @@ export async function planImport(db: Db, loaded: NonNullable<Awaited<ReturnType<
       else if (k && variants.length) follow_up = { reason: "hw_variant_none", detail: r.hw_ref_raw ?? null };
       else if (k && setByKey.has(k)) follow_up = { reason: "hw_none_chosen", detail: r.hw_ref_raw ?? null };
       else if (k) follow_up = { reason: "hw_group_undefined", detail: r.hw_ref_raw ?? null };
+      else follow_up = { reason: "hw_missing", detail: null }; // blank hardware column: treated like Group X
     }
     const any = fields.some(applies) || leafPlans.some((l) => l.create) || !!framePlan?.create || hwPlans.some((h) => h.action === "add" || h.action === "update");
     plans.push({ ...base, action: existing ? (any ? "update" : "unchanged") : "create", opening_id: oid, opening_code: existing?.opening_code ?? null,

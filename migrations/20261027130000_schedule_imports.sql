@@ -125,12 +125,13 @@ CREATE TABLE schedule_row_follow_ups (
  import_id UUID NOT NULL REFERENCES schedule_imports(id),
  row_id UUID NOT NULL UNIQUE REFERENCES schedule_rows(id),
  opening_id UUID NOT NULL REFERENCES openings(id),
- reason TEXT NOT NULL CHECK (reason IN ('hw_varies','hw_group_x','hw_group_undefined','hw_variant_none','hw_none_chosen')),
+ reason TEXT NOT NULL CHECK (reason IN ('hw_missing','hw_varies','hw_group_x','hw_group_undefined','hw_variant_none','hw_none_chosen')),
  detail TEXT,
  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')),
  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
  resolved_at TIMESTAMPTZ,
  resolved_by_user_id UUID REFERENCES users(id),
+ resolution_note TEXT CHECK (resolution_note IS NULL OR length(resolution_note) <= 2000),
  CHECK ((status='open' AND resolved_at IS NULL) OR (status='resolved' AND resolved_at IS NOT NULL))
 );
 CREATE INDEX schedule_row_follow_ups_open ON schedule_row_follow_ups(opening_id) WHERE status='open';

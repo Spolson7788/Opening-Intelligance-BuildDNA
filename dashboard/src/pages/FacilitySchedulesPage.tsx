@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { ScheduleFollowUps } from "./ScheduleFollowUps";
 import {
   ApiError, FACILITY_SCHEDULE_MAX_BYTES, type FacilitySchedule, type Property,
   listFacilitySchedules, listProperties, uploadFacilitySchedule,
@@ -88,6 +89,7 @@ export function FacilitySchedulesPage() {
           {schedules.length === 0 && <tr><td colSpan={8}>No schedules uploaded for this facility.</td></tr>}
         </tbody>
       </table>
+      {propertyId && <ScheduleFollowUps propertyId={propertyId} />}
     </div>
   );
 }

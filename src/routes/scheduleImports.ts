@@ -153,3 +153,44 @@ scheduleImportsRouter.post("/:id/confirm", async (req: AuthedRequest, res: Respo
     return res.status(500).json({ error: "confirm_failed" });
   } finally { client.release(); }
 });
+
+// M2C: schedule follow-ups (openings imported without hardware).
+// Read: any role in the owner org or an actively assigned provider org.
+// Resolve (open -> resolved only, with a note): admin / facilities_manager there.
+const followUpStatus = z.enum(["open", "resolved", "all"]);
+const resolveBody = z.object({ note: z.string().trim().min(1).max(2000) }).strict();
+const FOLLOW_UP_COLUMNS = `f.id, f.import_id, f.row_id, f.opening_id, f.reason, f.detail, f.status, f.created_at, f.resolved_at, f.resolved_by_user_id, f.resolution_note,
+  o.schedule_door_mark AS door_mark, o.opening_code, i.building_id, b.name AS building_name, i.confirmed_at AS import_confirmed_at`;
+const FOLLOW_UP_FROM = `FROM schedule_row_follow_ups f JOIN schedule_imports i ON i.id=f.import_id JOIN openings o ON o.id=f.opening_id JOIN buildings b ON b.id=i.building_id`;
+
+scheduleImportsRouter.get("/follow-ups/by-property/:propertyId", async (req: AuthedRequest, res: Response) => {
+  const status = followUpStatus.safeParse(req.query.status ?? "open");
+  if (!status.success) return res.status(400).json({ error: "invalid_request" });
+  if (!uuid.safeParse(req.params.propertyId).success || !(await facilityScheduleAccess(pool, req.params.propertyId, req.auth!.organizationId))) return res.status(404).json({ error: "not_found" });
+  const r = await pool.query(`SELECT ${FOLLOW_UP_COLUMNS} ${FOLLOW_UP_FROM} WHERE i.property_id=$1 AND ($2='all' OR f.status=$2) ORDER BY f.created_at DESC, o.schedule_door_mark`,
+    [req.params.propertyId, status.data]);
+  return res.json(r.rows);
+});
+
+scheduleImportsRouter.post("/follow-ups/:followUpId/resolve", async (req: AuthedRequest, res: Response) => {
+  if (!uuid.safeParse(req.params.followUpId).success) return res.status(404).json({ error: "not_found" });
+  const row = (await pool.query(`SELECT f.id, i.property_id FROM schedule_row_follow_ups f JOIN schedule_imports i ON i.id=f.import_id WHERE f.id=$1`, [req.params.followUpId])).rows[0];
+  if (!row || !(await facilityScheduleAccess(pool, row.property_id, req.auth!.organizationId))) return res.status(404).json({ error: "not_found" });
+  if (!requireRole(req, res)) return;
+  const body = resolveBody.safeParse(req.body ?? {});
+  if (!body.success) return res.status(400).json({ error: "resolution_note_required" });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const locked = (await client.query("SELECT status FROM schedule_row_follow_ups WHERE id=$1 FOR UPDATE", [row.id])).rows[0];
+    if (locked.status !== "open") { await client.query("ROLLBACK"); return res.status(409).json({ error: "already_resolved" }); }
+    await client.query("UPDATE schedule_row_follow_ups SET status='resolved', resolved_at=now(), resolved_by_user_id=$2, resolution_note=$3 WHERE id=$1",
+      [row.id, req.auth!.userId, body.data.note]);
+    const out = (await client.query(`SELECT ${FOLLOW_UP_COLUMNS} ${FOLLOW_UP_FROM} WHERE f.id=$1`, [row.id])).rows[0];
+    await client.query("COMMIT");
+    return res.json(out);
+  } catch {
+    await client.query("ROLLBACK").catch(() => {});
+    return res.status(500).json({ error: "resolve_failed" });
+  } finally { client.release(); }
+});

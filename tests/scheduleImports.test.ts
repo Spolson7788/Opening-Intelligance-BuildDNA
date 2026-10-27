@@ -335,4 +335,79 @@ describe('schedule imports M2', () => {
     expect(pair.map((x: any) => x.quantity)).toEqual([2, 2]);
     await expect(sql("UPDATE hardware_components SET quantity=0 WHERE opening_id=$1", [o108])).rejects.toThrow();
   });
+
+  // M2C (answers of 2026-10-27 13:50)
+  it('M2C: a blank hardware column imports without hardware, is flagged and stored, and does not block', async () => {
+    const f = await facility();
+    const csv = new TextEncoder().encode('MARK,ROOM,HW GROUP\n201,OFFICE 201,Group 2\n202,OFFICE 202,\n');
+    const door = await version(f.property, f.admin, 'door', 'text/csv', csv);
+    const r = await create(f.admin, { building_id: f.building, door_version_id: door, hardware_version_id: f.hw });
+    expect(r.status).toBe(201);
+    const pv = (await get(f.admin, r.body.id)).body.plan;
+    expect(pv.blocked).toBe(false);
+    expect(pv.openings.find((o: any) => o.mark === '202').follow_up).toEqual({ reason: 'hw_missing', detail: null });
+    expect(pv.openings.find((o: any) => o.mark === '201').follow_up).toBeNull();
+    expect(pv.summary.follow_up_rows).toBe(1);
+    const c = await confirm(f.admin, r.body.id);
+    expect(c.status).toBe(200);
+    expect(c.body.result).toMatchObject({ openings_created: 2, follow_ups: 1 });
+    const stored = (await sql('SELECT o.schedule_door_mark AS mark, f.reason, f.status FROM schedule_row_follow_ups f JOIN openings o ON o.id=f.opening_id WHERE f.import_id=$1', [r.body.id])).rows;
+    expect(stored).toEqual([{ mark: '202', reason: 'hw_missing', status: 'open' }]);
+    expect(await count('hardware_components', 'opening_id=(SELECT id FROM openings WHERE building_id=$1 AND schedule_door_mark=$2)', [f.building, '202'])).toBe(0);
+    expect(await count('hardware_components', 'opening_id=(SELECT id FROM openings WHERE building_id=$1 AND schedule_door_mark=$2)', [f.building, '201'])).toBeGreaterThan(0);
+  });
+
+  it('M2C: follow-ups can be listed by facility and resolved open -> resolved with a note, within scope only', async () => {
+    const f = await facility();
+    const id = await newImport(f);
+    expect((await confirm(f.admin, id, resolveAll((await get(f.admin, id)).body))).status).toBe(200);
+    const list = (u: any, status?: string) => request(app).get(`/api/schedule-imports/follow-ups/by-property/${f.property}${status ? '?status=' + status : ''}`).set(auth(u));
+    const resolve = (u: any, fid: string, body: any) => request(app).post(`/api/schedule-imports/follow-ups/${fid}/resolve`).set(auth(u)).send(body);
+    const open = await list(f.admin);
+    expect(open.status).toBe(200);
+    expect(open.body.map((x: any) => [x.door_mark, x.reason, x.import_id, x.status]).sort()).toEqual([
+      ['150', 'hw_group_x', id, 'open'], ['155', 'hw_varies', id, 'open'], ['160', 'hw_group_undefined', id, 'open']]);
+    expect(open.body[0]).toMatchObject({ building_name: 'Building A', created_at: expect.anything() });
+    const target = open.body.find((x: any) => x.door_mark === '155').id;
+    // Read-only roles can list but not resolve.
+    for (const role of ['technician', 'inspector', 'viewer']) {
+      const u = await user(f.owner, role);
+      expect((await list(u)).body).toHaveLength(3);
+      expect((await resolve(u, target, { note: 'nope' })).status).toBe(403);
+    }
+    // Outside the org: 404 for list and resolve.
+    const stranger = await user(await org());
+    expect((await list(stranger)).status).toBe(404);
+    expect((await resolve(stranger, target, { note: 'nope' })).status).toBe(404);
+    expect((await resolve(f.admin, randomUUID(), { note: 'x' })).status).toBe(404);
+    // Input validation.
+    expect((await resolve(f.admin, target, {})).status).toBe(400);
+    expect((await resolve(f.admin, target, { note: '   ' })).status).toBe(400);
+    expect((await list(f.admin, 'bogus')).status).toBe(400);
+    // An assigned provider facilities manager may resolve.
+    const provider = await org(), pfm = await user(provider, 'facilities_manager');
+    expect((await resolve(pfm, target, { note: 'x' })).status).toBe(404);
+    await sql('INSERT INTO facility_provider_assignments(property_id,provider_organization_id,granted_by_user_id) VALUES($1,$2,$3)', [f.property, provider, f.admin.id]);
+    const done = await resolve(pfm, target, { note: 'Hardware confirmed on site: storeroom set' });
+    expect(done.status).toBe(200);
+    expect(done.body).toMatchObject({ status: 'resolved', resolved_by_user_id: pfm.id, resolution_note: 'Hardware confirmed on site: storeroom set', resolved_at: expect.anything() });
+    expect((await resolve(f.admin, target, { note: 'again' })).status).toBe(409);
+    expect((await list(f.admin)).body).toHaveLength(2);
+    expect((await list(f.admin, 'resolved')).body.map((x: any) => x.door_mark)).toEqual(['155']);
+    expect((await list(f.admin, 'all')).body).toHaveLength(3);
+    // The facility owner admin may resolve too.
+    const other = (await list(f.admin)).body[0].id;
+    expect((await resolve(f.admin, other, { note: 'Owner resolved' })).status).toBe(200);
+    // A revoked provider loses access.
+    await sql('UPDATE facility_provider_assignments SET revoked_at=now() WHERE property_id=$1 AND provider_organization_id=$2', [f.property, provider]);
+    expect((await list(pfm)).status).toBe(404);
+    const last = (await list(f.admin)).body[0].id;
+    expect((await resolve(pfm, last, { note: 'x' })).status).toBe(404);
+    // Another facility's follow-ups never leak into this list.
+    const g = await facility();
+    const gid = await newImport(g);
+    await confirm(g.admin, gid, resolveAll((await get(g.admin, gid)).body));
+    expect((await list(f.admin, 'all')).body.every((x: any) => x.import_id === id)).toBe(true);
+    expect((await sql('SELECT status FROM schedule_row_follow_ups WHERE id=$1', [target])).rows[0].status).toBe('resolved');
+  });
 });
