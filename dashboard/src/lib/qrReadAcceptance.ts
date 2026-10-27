@@ -1,5 +1,5 @@
 import {withQrReadSession} from './api';
-export const QR_CHECK_END=Date.parse('2026-10-27T18:00:00Z');
+export const QR_CHECK_END=Date.parse('2026-10-28T18:00:00Z');
 const KEY='oi_qr_read_acceptance_20261027';
 export const qrCheckAvailable=()=>{
   if(window.location.origin!=='https://oi-video-workflows-staging.netlify.app'||Date.now()>=QR_CHECK_END)return false;
@@ -13,10 +13,11 @@ const targets=[
 export type ReadResult={target:string;status:number;outcome:'denied'|'inconclusive'|'unexpected_access'};
 let running=false;
 export async function runQrReadChecks(mode:'anonymous'|'foreign', outer:AbortSignal):Promise<ReadResult[]> {
-  if(!['anonymous','foreign'].includes(mode)||!qrCheckAvailable()||running||outer.aborted)throw Error('check_unavailable');
+  if(!['anonymous','foreign'].includes(mode)||running||outer.aborted)throw Error('unavailable');
+  if(!qrCheckAvailable())throw Error(Date.now()>=QR_CHECK_END?'expired':'unavailable');
   const saved=JSON.parse(sessionStorage.getItem(KEY)||'null') || {end:Math.min(Date.now()+15*60_000,QR_CHECK_END),used:[]};
-  if(!Number.isFinite(saved.end)||saved.end>Date.now()+15*60_000||saved.end>QR_CHECK_END||Date.now()>=saved.end||!Array.isArray(saved.used)||saved.used.includes(mode))throw Error('check_unavailable');
-  saved.used.push(mode);sessionStorage.setItem(KEY,JSON.stringify(saved));
+  if(!Number.isFinite(saved.end)||saved.end>Date.now()+15*60_000||saved.end>QR_CHECK_END||Date.now()>=saved.end||!Array.isArray(saved.used))throw Error(Date.now()>=saved.end?'expired':'unavailable');
+  if(saved.used.includes(mode))throw Error('phase_already_used');
   running=true;
   const controller=new AbortController();const abort=()=>controller.abort();outer.addEventListener('abort',abort);
   // Bound the entire phase, including identity and response-body reads.
@@ -42,6 +43,6 @@ export async function runQrReadChecks(mode:'anonymous'|'foreign', outer:AbortSig
         results.push({target,status:r.status,outcome});if(outcome!=='denied')break;
       }
       return results;
-    });
+    },()=>{saved.used.push(mode);sessionStorage.setItem(KEY,JSON.stringify(saved));});
   }finally{clearTimeout(timeout);outer.removeEventListener('abort',abort);controller.abort();running=false;}
 }
