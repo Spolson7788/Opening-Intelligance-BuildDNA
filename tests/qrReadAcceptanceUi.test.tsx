@@ -1,0 +1,14 @@
+import React,{act} from 'react';
+import {createRoot} from 'react-dom/client';
+import {beforeEach,afterEach,it,expect,vi} from 'vitest';
+const state=vi.hoisted(()=>({available:true,run:vi.fn()}));
+vi.mock('../dashboard/src/lib/qrReadAcceptance',()=>({qrCheckAvailable:()=>state.available,runQrReadChecks:state.run}));
+import {QrReadAcceptancePage} from '../dashboard/src/pages/QrReadAcceptancePage';
+let host:HTMLDivElement,root:ReturnType<typeof createRoot>;
+beforeEach(()=>{vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);state.available=true;state.run.mockReset();host=document.createElement('div');document.body.append(host);root=createRoot(host);});
+afterEach(()=>{act(()=>root.unmount());host.remove();vi.unstubAllGlobals();});
+const render=()=>act(async()=>root.render(<QrReadAcceptancePage/>));
+it('mount has no reads, login submissions, private content or workspace',async()=>{await render();expect(state.run).not.toHaveBeenCalled();expect(host.querySelector('form')).toBeNull();expect(host.querySelector('img')).toBeNull();expect(host.querySelectorAll('button')).toHaveLength(2);});
+it('pending phase disables controls and unmount aborts',async()=>{state.run.mockImplementation(()=>new Promise(()=>{}));await render();await act(async()=>host.querySelector('button')!.click());expect(host.textContent).toContain('Checking read access');expect(Array.from(host.querySelectorAll('button')).every(b=>b.disabled)).toBe(true);const signal=state.run.mock.calls[0][1];act(()=>root.unmount());expect(signal.aborted).toBe(true);root=createRoot(host);});
+it('failure displays only fixed safe text',async()=>{state.run.mockRejectedValue(Error('sensitive-provider-body'));await render();await act(async()=>host.querySelector('button')!.click());expect(host.textContent).toContain('Verification stopped');expect(host.textContent).not.toContain('sensitive-provider-body');expect(state.run).toHaveBeenCalledTimes(1);});
+it('expired page has no controls or requests',async()=>{state.available=false;await render();expect(host.textContent).toBe('Verification unavailable');expect(host.querySelector('button')).toBeNull();expect(state.run).not.toHaveBeenCalled();});

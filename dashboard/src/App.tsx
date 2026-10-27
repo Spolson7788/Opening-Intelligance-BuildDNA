@@ -15,6 +15,8 @@ import { TeamPage } from "./pages/TeamPage";
 import { AuditLogPage } from "./pages/AuditLogPage";
 import { WorkOrdersPage } from "./pages/WorkOrdersPage";
 import { MaintenanceSchedulesPage } from "./pages/MaintenanceSchedulesPage";
+import { QrReadAcceptancePage } from './pages/QrReadAcceptancePage';
+declare const __QR_READ_CHECK_BUILD__: boolean;
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { auth } = useAuth();
@@ -46,6 +48,8 @@ function AppRoutes() {
 }
 
 export default function App() {
+  // Unlinked operator page, outside workspace/auth providers and all queue code.
+  if(__QR_READ_CHECK_BUILD__ && window.location.pathname==='/dashboard/qr-read-acceptance')return <QrReadAcceptancePage/>;
   return (
     <AuthProvider>
       <BrowserRouter basename={import.meta.env.BASE_URL}>
