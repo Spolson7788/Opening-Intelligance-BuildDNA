@@ -2,7 +2,24 @@ import { Response, NextFunction } from "express";
 import { AuthedRequest } from "./auth";
 
 // The permission model, stated plainly in one place rather than scattered
-// across route handlers:
+// across route handlers.
+//
+// Role ladder (Stephan, 2026-10-27): each role is a strict superset of the one
+// below: viewer < inspector < technician < facilities_manager < admin.
+//   inspector          = read + record findings (condition observations,
+//                        inspection events, photos, inspection-report
+//                        documents, service requests).
+//   technician         = inspector + service work and authorized edits
+//                        (hardware, frames, door leaves, completion, work
+//                        orders, service events, labels, opening creation,
+//                        all document types).
+//   facilities_manager = technician + schedule upload, bulk import,
+//                        facility/building/opening management.
+//   admin              = facilities_manager + team management and provider
+//                        assignment.
+// The same ladder applies in owner organizations (their own facilities) and in
+// provider organizations, including OI (assigned facilities only). Enforced by
+// tests/inspectorPermissions.test.ts ("role ladder"). Details:
 //
 //   admin              — everything, including team management.
 //   facilities_manager — everything EXCEPT team management (that stays
@@ -11,6 +28,10 @@ import { AuthedRequest } from "./auth";
 //   technician          — read everything; write only the specific field
 //                        actions listed in FIELD_WRITE_ACTIONS below, plus
 //                        property/building/opening creation (setup).
+//                        Technicians record exactly what they see in the
+//                        field, so they may record condition observations
+//                        (Stephan, 2026-10-27 12:30 PM MST). Observations use
+//                        their own route; no sync path carries them.
 //   inspector           — inspectors check and document; they don't change
 //                        hardware (Stephan, 2026-10-27). Read everything
 //                        (still facility- and organization-scoped by each
@@ -22,6 +43,9 @@ import { AuthedRequest } from "./auth";
 //                        door leaves, completion, work-order status, health
 //                        score recompute, purchasing review, setup creation,
 //                        labels, photo/document deletion, schedule upload.
+//                        Inspectors may be facility staff or provider staff;
+//                        either way they are scoped by organization and, for
+//                        providers, by active facility assignment.
 //   viewer              — read-only, full stop.
 //
 // Schedule documents (facility-schedules router, its own role check):
@@ -38,6 +62,7 @@ const FIELD_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp }> = [
   { method: "POST", pattern: /^\/api\/labels\/generations$/ },
   { method: "POST", pattern: /^\/api\/events\/service-events$/ },
   { method: "POST", pattern: /^\/api\/events\/inspection-events$/ },
+  { method: "POST", pattern: /^\/api\/condition-history\/observations$/ },
   { method: "POST", pattern: /^\/api\/hardware$/ },
   { method: "PATCH", pattern: /^\/api\/hardware\/[^/]+$/ },
   { method: "DELETE", pattern: /^\/api\/hardware\/[^/]+$/ },

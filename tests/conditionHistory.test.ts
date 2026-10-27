@@ -153,8 +153,8 @@ it('denies other tenants, invalid targets, stale revisions and non-admin/manager
   expect((await f.context(other.a)).status).toBe(404); expect((await f.submit(b,other.a)).status).toBe(404);
   expect((await f.submit({ ...b, expected_revision: 999 })).body.error).toBe('revision_conflict');
   expect((await f.submit({ ...b, payload: { ...b.payload, target: { type: 'component', id: other.parts[0].component } } })).body.error).toBe('target_not_in_opening');
-  // Inspectors may record observations since the 2026-10-27 role split (covered in rolePermissions.test.ts).
- for (const role of ['technician','viewer']) expect((await f.submit(b,await user(f.a.org,role))).status).toBe(403);
+  // Technicians and inspectors may record observations since 2026-10-27 (role matrix in inspectorPermissions.test.ts).
+ for (const role of ['viewer']) expect((await f.submit(b,await user(f.a.org,role))).status).toBe(403);
   expect((await f.submit(b,await user(f.a.org,'facilities_manager'))).status).toBe(201);
   expect((await request(app).get('/api/condition-history/'+f.opening)).status).toBe(401);
 });
@@ -218,4 +218,11 @@ it('rolls back observation, revision and receipt when the final audit insert fai
   expect((await sql('SELECT * FROM sync_operation_receipts WHERE operation_id=$1',[b.operation_id])).rows).toHaveLength(0);
   expect((await sql('SELECT * FROM sync_audit_events WHERE operation_id=$1',[b.operation_id])).rows).toHaveLength(0);
   expect((await f.submit(b)).status).toBe(201);
+});
+
+it('technicians and inspectors record observations in their own facility only; viewers cannot', async () => {
+ const f=await fixture(), other=await fixture();
+ for (const role of ['technician','inspector']) { const u=await user(f.a.org,role); expect((await f.submit(await f.command(),u)).status).toBe(201); }
+ expect((await f.submit(await f.command(),await user(f.a.org,'viewer'))).status).toBe(403);
+ expect((await f.submit(await f.command(),await user(other.a.org,'technician'))).status).toBe(404);
 });
