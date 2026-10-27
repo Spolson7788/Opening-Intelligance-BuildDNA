@@ -9,17 +9,28 @@ import { AuthedRequest } from "./auth";
 //                        admin-only via requireRole on the specific routes
 //                        in auth.ts, unaffected by this middleware).
 //   technician          — read everything; write only the specific field
-//   inspector            actions listed in FIELD_WRITE_ACTIONS below.
-//                        Treated identically to each other on purpose: the
-//                        app has no UI distinction between what a
-//                        technician vs. an inspector logs (both use the
-//                        same field app), and without a real customer
-//                        drawing that line, guessing at a finer split would
-//                        be exactly the kind of thing this project has
-//                        consistently avoided doing without real input.
+//                        actions listed in FIELD_WRITE_ACTIONS below, plus
+//                        property/building/opening creation (setup).
+//   inspector           — inspectors check and document; they don't change
+//                        hardware (Stephan, 2026-10-27). Read everything
+//                        (still facility- and organization-scoped by each
+//                        handler). Writes are limited to INSPECTOR_WRITE_ACTIONS:
+//                        inspection events, condition observations, offline
+//                        sync of inspection events only, photo capture,
+//                        inspection-report documents, and service requests.
+//                        Denied: hardware changes, component sync, frame,
+//                        door leaves, completion, work-order status, health
+//                        score recompute, purchasing review, setup creation,
+//                        labels, photo/document deletion, schedule upload.
 //   viewer              — read-only, full stop.
 //
-// Technician setup now permits exactly property, building and opening creation.
+// Schedule documents (facility-schedules router, its own role check):
+// facility staff review schedule documents and hand them off; only admins and
+// facilities managers of the owner organization, or of an assigned provider
+// organization, upload. OI staff upload on a facility's behalf only by
+// assigning the OI organization as a provider; there is no platform-wide role.
+//
+// Technician setup permits exactly property, building and opening creation.
 // Existing handlers enforce organization ownership of each parent. Bulk import,
 // portfolio creation and team administration remain outside technician writes.
 const FIELD_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp }> = [
@@ -46,6 +57,17 @@ const FIELD_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp }> = [
   { method: "POST", pattern: /^\/api\/purchasing\/review$/ },
 ];
 
+const INSPECTOR_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp; body?: (b: any) => boolean }> = [
+  { method: "POST", pattern: /^\/api\/events\/inspection-events$/ },
+  { method: "POST", pattern: /^\/api\/condition-history\/observations$/ },
+  { method: "POST", pattern: /^\/api\/sync\/operations$/, body: (b) => b?.entity_type === "inspection_event" },
+  { method: "POST", pattern: /^\/api\/photos\/presign$/ },
+  { method: "POST", pattern: /^\/api\/photos\/offline\/(reserve|confirm|recover-reservation)$/ },
+  { method: "POST", pattern: /^\/api\/photos$/ },
+  { method: "POST", pattern: /^\/api\/documents\/presign$/ },
+  { method: "POST", pattern: /^\/api\/documents$/, body: (b) => b?.document_type === "inspection_report" },
+  { method: "POST", pattern: /^\/api\/service-requests\/?$/ },
+];
 const WRITE_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
 export function enforceRolePermissions(req: AuthedRequest, res: Response, next: NextFunction) {
@@ -67,7 +89,13 @@ export function enforceRolePermissions(req: AuthedRequest, res: Response, next: 
   if (role === "technician" && req.method === "POST" &&
       ["/api/portfolio/properties", "/api/portfolio/buildings", "/api/openings"].includes(path)) return next();
 
-  if (role === "technician" || role === "inspector") {
+  if (role === "inspector") {
+    const allowed = INSPECTOR_WRITE_ACTIONS.some((a) => a.method === req.method && a.pattern.test(path) && (!a.body || a.body(req.body)));
+    if (allowed) return next();
+    return res.status(403).json({ error: "insufficient_role_for_action" });
+  }
+
+  if (role === "technician") {
     const allowed = FIELD_WRITE_ACTIONS.some((a) => a.method === req.method && a.pattern.test(path));
     if (allowed) return next();
     return res.status(403).json({ error: "insufficient_role_for_action" });

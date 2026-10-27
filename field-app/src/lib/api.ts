@@ -354,3 +354,16 @@ export async function saveInstallationFact(command:unknown,principal:ExpectedPri
 export async function saveLifecycleRecord(kind:string,command:unknown,principal:ExpectedPrincipal){return authedFetch('/lifecycle/'+kind,{method:'POST',body:JSON.stringify(command)},principal);}
 export async function fetchConditionHistory(openingId:string,principal:ExpectedPrincipal){return authedFetch('/condition-history/'+encodeURIComponent(openingId),{},principal);}
 export async function saveConditionObservation(command:unknown,principal:ExpectedPrincipal){return authedFetch('/condition-history/observations',{method:'POST',body:JSON.stringify(command)},principal);}
+
+export interface FieldFacilitySchedule {
+  id: string;
+  kind: "door" | "hardware";
+  title: string;
+  head_version: number;
+  versions: { id: string; version: number; original_filename: string; uploaded_at: string }[];
+}
+
+// Read-only: the facility's uploaded door / hardware schedules for an opening.
+export async function fetchFacilitySchedulesForOpening(openingId: string): Promise<FieldFacilitySchedule[]> {
+  return authedFetch(`/facility-schedules/by-opening/${encodeURIComponent(openingId)}`);
+}

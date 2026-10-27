@@ -144,4 +144,21 @@ describe('facility schedules M1', () => {
     await expect(sql('UPDATE facility_schedule_versions SET byte_size=1 WHERE id=$1', [up.body.version.id])).rejects.toThrow(/immutable/);
     await expect(sql('DELETE FROM facility_schedule_versions WHERE id=$1', [up.body.version.id])).rejects.toThrow(/immutable/);
   });
+
+  it('field list by opening works for technician and inspector, is 404 for another org, and inspectors cannot upload', async () => {
+    const f = await facility(), building = randomUUID(), opening = randomUUID();
+    await sql("INSERT INTO buildings(id,property_id,name) VALUES($1,$2,'Synthetic building')", [building, f.property]);
+    await sql("INSERT INTO openings(id,building_id,opening_code,qr_token,opening_type) VALUES($1::uuid,$2,($1::uuid)::text,($1::uuid)::text,'door')", [opening, building]);
+    await upload(f.admin, f.property);
+    for (const role of ['technician', 'inspector']) {
+      const u = await user(f.owner, role);
+      const r = await request(app).get('/api/facility-schedules/by-opening/' + opening).set('Authorization', 'Bearer ' + u.token);
+      expect(r.status).toBe(200);
+      expect(r.body[0].versions[0].original_filename).toBe('hw.xlsx');
+    }
+    const inspector = await user(f.owner, 'inspector');
+    expect((await upload(inspector, f.property)).status).toBe(403);
+    const other = await user(await org());
+    expect((await request(app).get('/api/facility-schedules/by-opening/' + opening).set('Authorization', 'Bearer ' + other.token)).status).toBe(404);
+  });
 });

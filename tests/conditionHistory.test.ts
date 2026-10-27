@@ -153,7 +153,8 @@ it('denies other tenants, invalid targets, stale revisions and non-admin/manager
   expect((await f.context(other.a)).status).toBe(404); expect((await f.submit(b,other.a)).status).toBe(404);
   expect((await f.submit({ ...b, expected_revision: 999 })).body.error).toBe('revision_conflict');
   expect((await f.submit({ ...b, payload: { ...b.payload, target: { type: 'component', id: other.parts[0].component } } })).body.error).toBe('target_not_in_opening');
-  for (const role of ['technician','inspector','viewer']) expect((await f.submit(b,await user(f.a.org,role))).status).toBe(403);
+  // Inspectors may record observations since the 2026-10-27 role split (covered in rolePermissions.test.ts).
+ for (const role of ['technician','viewer']) expect((await f.submit(b,await user(f.a.org,role))).status).toBe(403);
   expect((await f.submit(b,await user(f.a.org,'facilities_manager'))).status).toBe(201);
   expect((await request(app).get('/api/condition-history/'+f.opening)).status).toBe(401);
 });

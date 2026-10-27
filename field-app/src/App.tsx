@@ -18,6 +18,7 @@ import { OpeningStructurePage } from "./pages/OpeningStructurePage";
 import { SetupOpeningPage } from "./pages/SetupOpeningPage";
 import { QrLabelPage } from "./pages/QrLabelPage";
 import { ServiceRequestPage } from './pages/ServiceRequestPage';
+import { FacilitySchedulesPage } from './pages/FacilitySchedulesPage';
 import { InstallationLifecyclePage } from './pages/InstallationLifecyclePage';
 import { LifecycleOperationsPage } from './pages/LifecycleOperationsPage';
 import { SyncIssuesPage } from "./pages/SyncIssuesPage";
@@ -52,7 +53,7 @@ function AppRoutes() {
       <Route path="/branches" element={<RequireAuth><BranchesPage /></RequireAuth>} />
       <Route path="/setup-opening" element={<RequireAuth><SetupOpeningPage /></RequireAuth>} />
       <Route path="/opening/:id/label" element={<RequireAuth><QrLabelPage /></RequireAuth>} />
-      <Route path="/opening/:id/request-service" element={<RequireAuth><ServiceRequestPage /></RequireAuth>} />
+      <Route path="/opening/:id/request-service" element={<RequireAuth><ServiceRequestPage /></RequireAuth>} /><Route path="/opening/:id/schedules" element={<RequireAuth><FacilitySchedulesPage /></RequireAuth>} />
       <Route path="/opening/:id/lifecycle" element={<RequireAuth><InstallationLifecyclePage /></RequireAuth>} />
       <Route path="/opening/:id/lifecycle-records" element={<RequireAuth><LifecycleOperationsPage /></RequireAuth>} />
       <Route path="/scan" element={<RequireAuth><ScanPage /></RequireAuth>} />

@@ -119,17 +119,40 @@ facilitySchedulesRouter.post("/", requireWriteRole, async (req: AuthedRequest, r
   }
 });
 
+// Read-only list for the field app, resolved from an opening the caller can see.
+facilitySchedulesRouter.get("/by-opening/:openingId", async (req: AuthedRequest, res) => {
+  const parsed = uuid.safeParse(req.params.openingId);
+  if (!parsed.success) return res.status(400).json({ error: "invalid_opening" });
+  try {
+    const r = await pool.query("SELECT b.property_id FROM openings o JOIN buildings b ON b.id=o.building_id WHERE o.id=$1", [parsed.data]);
+    const propertyId = r.rows[0]?.property_id;
+    if (!propertyId || !(await facilityScheduleAccess(pool, propertyId, req.auth!.organizationId))) return res.status(404).json({ error: "not_found" });
+    return res.json(await listForProperty(propertyId));
+  } catch {
+    console.error("facility schedule list failed");
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
 facilitySchedulesRouter.get("/by-property/:propertyId", async (req: AuthedRequest, res) => {
   const parsed = uuid.safeParse(req.params.propertyId);
   if (!parsed.success) return res.status(400).json({ error: "invalid_property" });
   try {
     if (!(await facilityScheduleAccess(pool, parsed.data, req.auth!.organizationId))) return res.status(404).json({ error: "not_found" });
+    return res.json(await listForProperty(parsed.data));
+  } catch {
+    console.error("facility schedule list failed");
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+async function listForProperty(propertyId: string) {
     const rows = (await pool.query(
       `SELECT s.id AS schedule_id, s.kind, s.title, s.head_version, s.created_at,
               v.id AS version_id, v.version, v.original_filename, v.content_type, v.byte_size, v.sha256,
               v.uploaded_by_organization_id, v.created_at AS uploaded_at
        FROM facility_schedules s JOIN facility_schedule_versions v ON v.schedule_id=s.id
-       WHERE s.property_id=$1 ORDER BY s.created_at DESC, v.version DESC`, [parsed.data])).rows;
+       WHERE s.property_id=$1 ORDER BY s.created_at DESC, v.version DESC`, [propertyId])).rows;
     const out: any[] = [];
     const byId = new Map<string, any>();
     for (const r of rows) {
@@ -138,9 +161,5 @@ facilitySchedulesRouter.get("/by-property/:propertyId", async (req: AuthedReques
       s.versions.push({ id: r.version_id, version: Number(r.version), original_filename: r.original_filename, content_type: r.content_type,
         byte_size: Number(r.byte_size), sha256: r.sha256, uploaded_by_organization_id: r.uploaded_by_organization_id, uploaded_at: r.uploaded_at });
     }
-    return res.json(out);
-  } catch {
-    console.error("facility schedule list failed");
-    return res.status(500).json({ error: "internal_error" });
-  }
-});
+    return out;
+}
