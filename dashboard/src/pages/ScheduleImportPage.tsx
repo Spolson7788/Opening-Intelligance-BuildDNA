@@ -88,7 +88,7 @@ export function ScheduleImportPage() {
   async function doConfirm() {
     setBusy(true); setMessage(null);
     try { await confirmScheduleImport(id, res); setData(await fetchScheduleImport(id)); }
-    catch (err) { setMessage(err instanceof ApiError && err.message === "unresolved_blockers" ? "Resolve the blocking issues first." : "Confirm failed. Nothing was changed."); }
+    catch (err) { setMessage(confirmErrorMessage(err)); }
     finally { setBusy(false); }
   }
   return (
@@ -163,4 +163,11 @@ export function ScheduleImportPage() {
       <button disabled={plan.blocked || busy} onClick={doConfirm}>{busy ? "Applying..." : plan.blocked ? "Resolve blocking issues to confirm" : "Confirm import"}</button>
     </div>
   );
+}
+
+/** Confirm failure text; a gateway timeout (502/504) rolls the whole transaction back. */
+export function confirmErrorMessage(err: unknown): string {
+  if (err instanceof ApiError && err.message === "unresolved_blockers") return "Resolve the blocking issues first.";
+  if (err instanceof ApiError && (err.status === 502 || err.status === 504)) return "Import timed out. Nothing was changed. Try again.";
+  return "Confirm failed. Nothing was changed.";
 }

@@ -256,75 +256,103 @@ export async function planImport(db: Db, loaded: NonNullable<Awaited<ReturnType<
   return { issues, openings: plans, summary, blocked: issues.some((i) => i.severity === "blocker") };
 }
 
-async function effect(db: Db, importId: string, entity: string, id: string, action: string, field: string | null, oldV: unknown, newV: unknown, sig: string | null = null) {
-  await db.query("INSERT INTO schedule_import_effects(id,import_id,entity_type,entity_id,action,field,old_value,new_value,item_signature) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-    [randomUUID(), importId, entity, id, action, field, oldV === undefined ? null : JSON.stringify(oldV), newV === undefined ? null : JSON.stringify(newV), sig]);
+type BulkRow = Record<string, unknown>;
+const ident = (s: string) => { if (!/^[a-z_][a-z0-9_]*$/.test(s)) throw new Error(`bad identifier ${s}`); return `"${s}"`; };
+
+/** One multi-row INSERT; column types come from the table's own row type. */
+async function bulkInsert(db: Db, table: string, cols: string[], rows: BulkRow[]) {
+  if (!rows.length) return;
+  const c = cols.map(ident).join(", ");
+  await db.query(`INSERT INTO ${ident(table)}(${c}) SELECT ${c} FROM jsonb_populate_recordset(NULL::${ident(table)}, $1::jsonb)`, [JSON.stringify(rows)]);
 }
 
-async function uniqueOpeningCode(db: Db, buildingId: string, mark: string): Promise<string> {
-  const base = `${mark}-${buildingId.replace(/-/g, "").slice(0, 6).toUpperCase()}`.slice(0, 60);
-  for (let n = 0; n < 50; n++) {
-    const code = n ? `${base}-${n + 1}` : base;
-    if (!(await db.query("SELECT 1 FROM openings WHERE opening_code=$1", [code])).rows.length) return code;
-  }
-  return `${base}-${randomBytes(3).toString("hex").toUpperCase()}`;
+/** One multi-row UPDATE of a single column; the value is typed through the table's row type. */
+async function bulkUpdate(db: Db, table: string, field: string, rows: { id: string; v: unknown }[], revision: boolean) {
+  if (!rows.length) return;
+  const f = ident(field), t = ident(table);
+  await db.query(`UPDATE ${t} AS t SET ${f} = (jsonb_populate_record(NULL::${t}, jsonb_build_object('${field}', x.v))).${f}${revision ? ", revision = t.revision + 1, updated_at = now()" : ""}
+    FROM jsonb_to_recordset($1::jsonb) AS x(id uuid, v jsonb) WHERE t.id = x.id`, [JSON.stringify(rows.map((r) => ({ id: r.id, v: r.v === undefined ? null : r.v })))]);
 }
 
-/** Apply a plan inside the caller's transaction. Inserts and updates only; nothing is deleted. */
+/** Reserve opening codes for every new opening with a single lookup (same naming as before: base, base-2 .. base-50, then random). */
+async function reserveOpeningCodes(db: Db, buildingId: string, marks: string[]): Promise<string[]> {
+  if (!marks.length) return [];
+  const bases = marks.map((m) => `${m}-${buildingId.replace(/-/g, "").slice(0, 6).toUpperCase()}`.slice(0, 60));
+  const candidates = [...new Set(bases.flatMap((b) => Array.from({ length: 50 }, (_, n) => (n ? `${b}-${n + 1}` : b))))];
+  const taken = new Set<string>((await db.query("SELECT opening_code FROM openings WHERE opening_code = ANY($1::text[])", [candidates])).rows.map((r: any) => r.opening_code));
+  return bases.map((base) => {
+    for (let n = 0; n < 50; n++) { const code = n ? `${base}-${n + 1}` : base; if (!taken.has(code)) { taken.add(code); return code; } }
+    const code = `${base}-${randomBytes(3).toString("hex").toUpperCase()}`; taken.add(code); return code;
+  });
+}
+
+/**
+ * Apply a plan inside the caller's transaction. Inserts and updates only; nothing is deleted.
+ * All writes are batched: one statement per table (plus one per updated column), so a full schedule
+ * confirms in a fixed, small number of round trips instead of one per row/field.
+ */
 export async function applyPlan(db: Db, imp: any, loaded: NonNullable<Awaited<ReturnType<typeof loadImport>>>, plan: ImportPlan) {
   const rowById = new Map(loaded.rows.map((r: any) => [r.id, r]));
   const itemById = new Map(loaded.items.map((i: any) => [i.id, i]));
   const counts = { follow_ups: 0, openings_created: 0, openings_updated: 0, leaves_created: 0, frames_created: 0, fields_written: 0, hardware_added: 0, hardware_updated: 0, protected_kept: 0 };
-  const followUp = async (p: OpeningPlan, openingId: string | null) => {
+  const ins = { openings: [] as BulkRow[], door_leaves: [] as BulkRow[], opening_frames: [] as BulkRow[], hardware_components: [] as BulkRow[] };
+  const effects: BulkRow[] = [], followUps: BulkRow[] = [];
+  // table.field -> batches; an id appears at most once per batch so repeated writes keep their order.
+  const updates = new Map<string, { table: string; field: string; revision: boolean; batches: { ids: Set<string>; rows: { id: string; v: unknown }[] }[] }>();
+  const update = (table: string, field: string, id: string, v: unknown, revision: boolean) => {
+    const k = `${table}.${field}`;
+    let u = updates.get(k); if (!u) updates.set(k, u = { table, field, revision, batches: [] });
+    let b = u.batches.find((x) => !x.ids.has(id)); if (!b) u.batches.push(b = { ids: new Set(), rows: [] });
+    b.ids.add(id); b.rows.push({ id, v });
+  };
+  const effect = (entity: string, id: string, action: string, field: string | null, oldV: unknown, newV: unknown, sig: string | null = null) => {
+    effects.push({ id: randomUUID(), import_id: imp.id, entity_type: entity, entity_id: id, action, field,
+      old_value: oldV === undefined ? null : JSON.stringify(oldV), new_value: newV === undefined ? null : JSON.stringify(newV), item_signature: sig });
+  };
+  const followUp = (p: OpeningPlan, openingId: string | null) => {
     if (!p.follow_up || !openingId) return;
-    await db.query("INSERT INTO schedule_row_follow_ups(id, import_id, row_id, opening_id, reason, detail) VALUES($1,$2,$3,$4,$5,$6)",
-      [randomUUID(), imp.id, p.row_id, openingId, p.follow_up.reason, p.follow_up.detail]);
+    followUps.push({ id: randomUUID(), import_id: imp.id, row_id: p.row_id, opening_id: openingId, reason: p.follow_up.reason, detail: p.follow_up.detail });
     counts.follow_ups++;
   };
+  const newOpenings = plan.openings.filter((p) => p.action !== "skip" && p.action !== "unchanged" && !p.opening_id);
+  const codes = await reserveOpeningCodes(db, imp.building_id, newOpenings.map((p) => p.mark!));
+  const codeFor = new Map(newOpenings.map((p, i) => [p, codes[i]]));
   for (const p of plan.openings) {
     if (p.action === "skip") continue;
-    if (p.action === "unchanged") { counts.protected_kept += p.fields.filter((f) => f.status === "protected").length; await followUp(p, p.opening_id); continue; }
+    if (p.action === "unchanged") { counts.protected_kept += p.fields.filter((f) => f.status === "protected").length; followUp(p, p.opening_id); continue; }
     const r: any = rowById.get(p.row_id);
     let openingId = p.opening_id;
     const val = (entity: string, field: string) => p.fields.find((f) => f.entity === entity && f.field === field && applies(f))?.to;
     if (!openingId) {
       openingId = randomUUID();
-      const code = await uniqueOpeningCode(db, imp.building_id, p.mark!);
+      const code = codeFor.get(p)!;
       const fire = val("opening", "fire_rated");
-      await db.query(`INSERT INTO openings(id, opening_code, building_id, location_description, opening_type, fire_rated, qr_token, status, opening_configuration, schedule_door_mark)
-        VALUES($1,$2,$3,$4,'door',$5,$6,'pending_capture',$7,$8)`,
-        [openingId, code, imp.building_id, val("opening", "location_description") ?? null, fire ?? false, randomUUID(), val("opening", "opening_configuration") ?? "single", p.mark]);
-      await effect(db, imp.id, "opening", openingId, "create", null, null, { opening_code: code, schedule_door_mark: p.mark, source_row: r.source_row });
+      ins.openings.push({ id: openingId, opening_code: code, building_id: imp.building_id, location_description: val("opening", "location_description") ?? null, opening_type: "door",
+        fire_rated: fire ?? false, qr_token: randomUUID(), status: "pending_capture", opening_configuration: val("opening", "opening_configuration") ?? "single", schedule_door_mark: p.mark });
+      effect("opening", openingId, "create", null, null, { opening_code: code, schedule_door_mark: p.mark, source_row: r.source_row });
       counts.openings_created++;
     } else {
       const set = p.fields.filter((f) => f.entity === "opening" && applies(f));
-      for (const f of set) {
-        await db.query(`UPDATE openings SET ${f.field}=$2, revision=revision+1, updated_at=now() WHERE id=$1`, [openingId, f.to]);
-        await effect(db, imp.id, "opening", openingId, "update", f.field, f.from, f.to); counts.fields_written++;
-      }
+      for (const f of set) { update("openings", f.field, openingId, f.to, true); effect("opening", openingId, "update", f.field, f.from, f.to); counts.fields_written++; }
       if (set.length || p.action === "update") counts.openings_updated++;
     }
     for (const l of p.leaves) {
       if (l.create) {
         const id = randomUUID();
         const g = (f: string) => p.fields.find((x) => x.entity === "door_leaf" && x.entity_id === null && x.field === `${l.role}.${f}`)?.to ?? null;
-        await db.query("INSERT INTO door_leaves(id, opening_id, leaf_role, material, width_in, height_in, thickness_in, fire_rated, condition) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'unverified')",
-          [id, openingId, l.role, g("material"), g("width_in"), g("height_in"), g("thickness_in"), g("fire_rated") ?? false]);
-        await effect(db, imp.id, "door_leaf", id, "create", null, null, { leaf_role: l.role }); counts.leaves_created++;
+        ins.door_leaves.push({ id, opening_id: openingId, leaf_role: l.role, material: g("material"), width_in: g("width_in"), height_in: g("height_in"), thickness_in: g("thickness_in"), fire_rated: g("fire_rated") ?? false, condition: "unverified" });
+        effect("door_leaf", id, "create", null, null, { leaf_role: l.role }); counts.leaves_created++;
       } else for (const f of p.fields.filter((x) => x.entity === "door_leaf" && x.entity_id === l.id && applies(x))) {
-        await db.query(`UPDATE door_leaves SET ${f.field}=$2, revision=revision+1, updated_at=now() WHERE id=$1`, [l.id, f.to]);
-        await effect(db, imp.id, "door_leaf", l.id!, "update", f.field, f.from, f.to); counts.fields_written++;
+        update("door_leaves", f.field, l.id!, f.to, true); effect("door_leaf", l.id!, "update", f.field, f.from, f.to); counts.fields_written++;
       }
     }
     if (p.frame?.create) {
       const id = randomUUID();
       const g = (f: string) => p.fields.find((x) => x.entity === "frame" && x.entity_id === null && x.field === f)?.to ?? null;
-      await db.query("INSERT INTO opening_frames(id, opening_id, material, width_in, height_in, fire_rated, condition) VALUES($1,$2,$3,$4,$5,$6,'unverified')",
-        [id, openingId, g("material"), g("width_in"), g("height_in"), r.fire_rating_minutes > 0]);
-      await effect(db, imp.id, "frame", id, "create", null, null, {}); counts.frames_created++;
+      ins.opening_frames.push({ id, opening_id: openingId, material: g("material"), width_in: g("width_in"), height_in: g("height_in"), fire_rated: r.fire_rating_minutes > 0, condition: "unverified" });
+      effect("frame", id, "create", null, null, {}); counts.frames_created++;
     } else if (p.frame?.id) for (const f of p.fields.filter((x) => x.entity === "frame" && applies(x))) {
-      await db.query(`UPDATE opening_frames SET ${f.field}=$2, revision=revision+1, updated_at=now() WHERE id=$1`, [p.frame.id, f.to]);
-      await effect(db, imp.id, "frame", p.frame.id, "update", f.field, f.from, f.to); counts.fields_written++;
+      update("opening_frames", f.field, p.frame.id, f.to, true); effect("frame", p.frame.id, "update", f.field, f.from, f.to); counts.fields_written++;
     }
     for (const h of p.hardware) {
       const it: any = itemById.get(h.item_id);
@@ -333,20 +361,28 @@ export async function applyPlan(db: Db, imp: any, loaded: NonNullable<Awaited<Re
         const notes = [`From schedule import ${imp.id}, set ${h.signature.split("#")[0]}, qty ${it.qty ?? "?"}`,
           it.item_type !== it.component_type ? `type: ${it.item_type}` : null, it.furnished_by, it.options ? `options: ${it.options}` : null,
           it.finish_bhma ? `BHMA ${it.finish_bhma}` : null].filter(Boolean).join("; ");
-        await db.query(`INSERT INTO hardware_components(id, opening_id, component_type, manufacturer, model_number, finish, notes, tracker_id, mounting_scope, position_label, condition, identity_status, review_state, quantity)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,'opening',$9,'unverified','unresolved','pending',$10)`,
-          [id, openingId, it.component_type, it.manufacturer ?? it.manufacturer_raw, it.catalog, it.finish, notes.slice(0, 2000), `TRK-${randomBytes(4).toString("hex").toUpperCase()}`, it.description.slice(0, 120), it.qty && it.qty > 0 ? it.qty : null]);
-        await effect(db, imp.id, "hardware", id, "create", null, null, { item_id: it.id, description: it.description }, h.signature); counts.hardware_added++;
+        ins.hardware_components.push({ id, opening_id: openingId, component_type: it.component_type, manufacturer: it.manufacturer ?? it.manufacturer_raw ?? null, model_number: it.catalog ?? null, finish: it.finish ?? null,
+          notes: notes.slice(0, 2000), tracker_id: `TRK-${randomBytes(4).toString("hex").toUpperCase()}`, mounting_scope: "opening", position_label: it.description.slice(0, 120),
+          condition: "unverified", identity_status: "unresolved", review_state: "pending", quantity: it.qty && it.qty > 0 ? it.qty : null });
+        effect("hardware", id, "create", null, null, { item_id: it.id, description: it.description }, h.signature); counts.hardware_added++;
       } else if (h.action === "update" && h.component_id) {
-        for (const c of h.changes.filter(applies)) {
-          await db.query(`UPDATE hardware_components SET ${c.field}=$2 WHERE id=$1`, [h.component_id, c.to]);
-          await effect(db, imp.id, "hardware", h.component_id, "update", c.field, c.from, c.to, h.signature);
-        }
+        for (const c of h.changes.filter(applies)) { update("hardware_components", c.field, h.component_id, c.to, false); effect("hardware", h.component_id, "update", c.field, c.from, c.to, h.signature); }
         counts.hardware_updated++;
       }
     }
-    await followUp(p, openingId);
+    followUp(p, openingId);
     counts.protected_kept += p.fields.filter((f) => f.status === "protected").length + p.hardware.reduce((m, h) => m + h.changes.filter((c) => c.status === "protected").length, 0);
   }
+  // Parents before children (foreign keys), then field updates, then the effect ledger and follow-ups.
+  await bulkInsert(db, "openings", ["id", "opening_code", "building_id", "location_description", "opening_type", "fire_rated", "qr_token", "status", "opening_configuration", "schedule_door_mark"], ins.openings);
+  await bulkInsert(db, "door_leaves", ["id", "opening_id", "leaf_role", "material", "width_in", "height_in", "thickness_in", "fire_rated", "condition"], ins.door_leaves);
+  await bulkInsert(db, "opening_frames", ["id", "opening_id", "material", "width_in", "height_in", "fire_rated", "condition"], ins.opening_frames);
+  await bulkInsert(db, "hardware_components", ["id", "opening_id", "component_type", "manufacturer", "model_number", "finish", "notes", "tracker_id", "mounting_scope", "position_label", "condition", "identity_status", "review_state", "quantity"], ins.hardware_components);
+  for (const u of updates.values()) for (const b of u.batches) await bulkUpdate(db, u.table, u.field, b.rows, u.revision);
+  if (effects.length) await db.query(`INSERT INTO schedule_import_effects(id,import_id,entity_type,entity_id,action,field,old_value,new_value,item_signature)
+    SELECT id, import_id, entity_type, entity_id, action, field, old_value::jsonb, new_value::jsonb, item_signature
+    FROM jsonb_to_recordset($1::jsonb) AS x(id uuid, import_id uuid, entity_type text, entity_id uuid, action text, field text, old_value text, new_value text, item_signature text)`, [JSON.stringify(effects)]);
+  if (followUps.length) await db.query(`INSERT INTO schedule_row_follow_ups(id, import_id, row_id, opening_id, reason, detail)
+    SELECT id, import_id, row_id, opening_id, reason, detail FROM jsonb_to_recordset($1::jsonb) AS x(id uuid, import_id uuid, row_id uuid, opening_id uuid, reason text, detail text)`, [JSON.stringify(followUps)]);
   return counts;
 }
