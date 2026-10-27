@@ -12,43 +12,6 @@ function getToken() {
   return localStorage.getItem("oi_token");
 }
 
-// Operator-only acceptance transport: token stays inside the normal API module.
-// Callers receive a fixed-request transport and a session-stability predicate, never a token.
-export async function withQrReadSession<T>(mode: 'anonymous'|'foreign', signal: AbortSignal,
-  work: (read: (path: string)=>Promise<Response>, stable: ()=>boolean)=>Promise<T>, ready: ()=>void = ()=>{}): Promise<T> {
-  const origin = 'https://oi-video-workflows-staging.netlify.app';
-  const paths = ['/api/openings/faedecd4-4e92-44ec-a224-3c1c4f5c8256',
-    '/api/photos/0c8ab3d0-5c2a-41ca-a951-44e1c5328af6/access',
-    '/api/commercial/documents/ca665af9-a08b-423d-97ef-a90ecdee95f5'];
-  if (!['anonymous','foreign'].includes(mode) || window.location.origin !== origin) throw Error('check_unavailable');
-  const token = getToken();
-  // Coded, non-sensitive pre-flight reasons; nothing has been sent yet.
-  if (mode==='anonymous' && token) throw Error('still_signed_in');
-  if (mode==='foreign' && !token) throw Error('not_signed_in_as_b');
-  const stable = ()=>getToken()===token && !signal.aborted;
-  const headers: Record<string,string> = token ? {Authorization:`Bearer ${token}`} : {};
-  if(mode==='foreign') {
-    let subject;try{subject=decodeTokenPayload(token!);}catch{throw Error('not_signed_in_as_b');}
-    if(subject.userId!=='a09de7c1-9843-4379-a11c-b8b7035b758d'||subject.organizationId!=='2946f91a-4f3b-4f61-8c4f-31601613fc85')throw Error('not_signed_in_as_b');
-    ready();
-    // Existing authenticated API validates this same JWT's signature, current
-    // subject, organization and session version before returning the team list.
-    const r=await fetch('/api/auth/users',{method:'GET',credentials:'same-origin',cache:'no-store',redirect:'error',headers,signal});
-    if(!r.ok||!r.headers.get('content-type')?.startsWith('application/json')){await r.body?.cancel();throw Error('check_unavailable');}
-    const reader=r.body?.getReader();if(!reader)throw Error('check_unavailable');
-    let size=0;const chunks:Uint8Array[]=[];
-    try{while(true){const part=await reader.read();if(part.done)break;size+=part.value.length;if(size>8192)throw Error('check_unavailable');chunks.push(part.value);}}
-    finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
-    const bytes=new Uint8Array(size);let offset=0;for(const part of chunks){bytes.set(part,offset);offset+=part.length;}
-    const users=JSON.parse(new TextDecoder().decode(bytes));
-    if(!stable()||!Array.isArray(users)||!users.some(u=>u.id===subject.userId&&u.is_active===true))throw Error('check_unavailable');
-  } else ready();
-  return work(async path=>{
-    if(!stable()||!paths.includes(path))throw Error('check_unavailable');
-    return fetch(path,{method:'GET',credentials:'same-origin',cache:'no-store',redirect:'error',headers,signal});
-  },stable);
-}
-
 export function setToken(token: string | null) {
   if (token) localStorage.setItem("oi_token", token);
   else localStorage.removeItem("oi_token");
