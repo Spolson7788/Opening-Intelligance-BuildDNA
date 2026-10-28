@@ -754,6 +754,11 @@ export interface ComparisonSnapshot extends ComparisonSnapshotListItem { buildin
 export async function listComparisonSnapshots(importId: string): Promise<{ import: { id: string; status: string; building_name: string }; snapshots: ComparisonSnapshotListItem[] }> {
   return authedFetch(`/schedule-comparisons/by-import/${importId}`);
 }
+export interface ComparisonReportItem { import_id: string; confirmed_at: string | null; property_name: string; building_id: string; building_name: string;
+  latest_snapshot_id: string | null; latest_snapshot_at: string | null; latest_summary: Record<string, number> | null; latest_engine_version: number | null }
+export async function listComparisonReports(): Promise<{ imports: ComparisonReportItem[] }> {
+  return authedFetch("/schedule-comparisons");
+}
 export async function runComparison(importId: string): Promise<ComparisonSnapshotListItem> {
   return authedFetch(`/schedule-comparisons/by-import/${importId}`, { method: "POST", body: "{}" });
 }

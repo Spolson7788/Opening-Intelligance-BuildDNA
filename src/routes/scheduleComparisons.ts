@@ -4,8 +4,8 @@ import { z } from "zod";
 import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { auditLog } from "../middleware/auditLog";
-import { facilityScheduleAccess } from "../db/tenantScope";
-import { COMPARISON_ENGINE_VERSION, compareImport, comparisonCsv } from "../services/scheduleComparison";
+import { facilityAccessPredicate, facilityScheduleAccess } from "../db/tenantScope";
+import { COMPARISON_ENGINE_VERSION, compareImport, comparisonCsv, csvRowCount } from "../services/scheduleComparison";
 
 // M4: schedule vs field comparison snapshots.
 // Who: admin, facilities_manager, technician and inspector of the facility owner
@@ -44,6 +44,19 @@ async function accessibleSnapshot(req: AuthedRequest, id: string, full: boolean)
 }
 const strip = ({ property_id, ...rest }: any) => rest;
 
+// Report index (v2): every confirmed import the caller's organization can reach (owner or
+// active provider assignment), with its latest snapshot. This is the technician/inspector
+// entry point; the import pages themselves stay admin / facilities manager only.
+scheduleComparisonsRouter.get("/", async (req: AuthedRequest, res: Response) => {
+  if (!(await guard(req, res))) return;
+  const r = await pool.query(`SELECT i.id AS import_id, i.confirmed_at, p.id AS property_id, p.name AS property_name, b.id AS building_id, b.name AS building_name,
+      ls.id AS latest_snapshot_id, ls.created_at AS latest_snapshot_at, ls.summary AS latest_summary, ls.engine_version AS latest_engine_version
+    FROM schedule_imports i JOIN buildings b ON b.id=i.building_id JOIN properties p ON p.id=i.property_id JOIN portfolios pf ON pf.id=p.portfolio_id
+    LEFT JOIN LATERAL (SELECT s.id, s.created_at, s.summary, s.engine_version FROM schedule_comparison_snapshots s WHERE s.import_id=i.id ORDER BY s.created_at DESC, s.id LIMIT 1) ls ON true
+    WHERE i.status='confirmed' AND ${facilityAccessPredicate(1)}
+    ORDER BY p.name, b.name, i.confirmed_at DESC LIMIT 500`, [req.auth!.organizationId]);
+  res.json({ imports: r.rows.map(({ property_id, ...x }: any) => x) });
+});
 scheduleComparisonsRouter.post("/by-import/:importId", async (req: AuthedRequest, res: Response) => {
   if (!(await guard(req, res))) return;
   const imp = await accessibleImport(req, req.params.importId);
@@ -52,7 +65,7 @@ scheduleComparisonsRouter.post("/by-import/:importId", async (req: AuthedRequest
   const result = await compareImport(pool, imp.id);
   if (!result) return res.status(404).json({ error: "not_found" });
   const id = randomUUID();
-  const lines = result.openings.reduce((n, o) => n + o.lines.length, 0);
+  const lines = csvRowCount(result); // line_count = CSV data rows
   await pool.query(`INSERT INTO schedule_comparison_snapshots(id, import_id, property_id, building_id, engine_version, summary, results, opening_count, line_count, created_by_user_id, created_by_organization_id, created_by_role)
     VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9,$10,$11,$12)`,
     [id, imp.id, imp.property_id, imp.building_id, COMPARISON_ENGINE_VERSION, JSON.stringify(result.summary), JSON.stringify(result.openings), result.openings.length, lines, req.auth!.userId, req.auth!.organizationId, req.auth!.role]);

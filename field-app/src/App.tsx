@@ -14,6 +14,7 @@ import { LogInspectionEventPage } from "./pages/LogInspectionEventPage";
 import { LogHardwarePage } from "./pages/LogHardwarePage";
 import { EditHardwarePage } from "./pages/EditHardwarePage";
 import { MyWorkOrdersPage } from "./pages/MyWorkOrdersPage";
+import { FacilityOpeningsPage } from "./pages/FacilityOpeningsPage";
 import { OpeningStructurePage } from "./pages/OpeningStructurePage";
 import { SetupOpeningPage } from "./pages/SetupOpeningPage";
 import { QrLabelPage } from "./pages/QrLabelPage";
@@ -58,6 +59,7 @@ function AppRoutes() {
       <Route path="/opening/:id/lifecycle-records" element={<RequireAuth><LifecycleOperationsPage /></RequireAuth>} />
       <Route path="/scan" element={<RequireAuth><ScanPage /></RequireAuth>} />
       <Route path="/my-work-orders" element={<RequireAuth><MyWorkOrdersPage /></RequireAuth>} />
+      <Route path="/facility-openings" element={<RequireAuth><FacilityOpeningsPage /></RequireAuth>} />
       <Route path="/sync-issues" element={<RequireAuth><SyncIssuesPage /></RequireAuth>} />
       <Route path="/opening/by-qr/:qrToken/details" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />
       <Route path="/opening/by-code/:openingCode" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />

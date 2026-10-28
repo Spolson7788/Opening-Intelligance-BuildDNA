@@ -136,17 +136,21 @@ describe('M4 schedule vs field comparison snapshots', () => {
     await scenario();
     const r = await post(F.admin, `/api/schedule-comparisons/by-import/${imp.id}`);
     expect(r.status).toBe(201);
-    expect(r.body).toMatchObject({ import_id: imp.id, engine_version: 1, created_by_role: 'admin', created_by_name: 'Synthetic user', opening_count: 7 });
+    expect(r.body).toMatchObject({ import_id: imp.id, engine_version: 2, created_by_role: 'admin', created_by_name: 'Synthetic user', opening_count: 7 });
     expect(r.body.summary).toMatchObject({ schedule_rows: 6, live_openings: 6, matched_by_code: 1, surveyed: 3, openings_matched: 2, openings_with_differences: 1,
-      scheduled_not_surveyed: 1, scheduled_opening_missing: 2, not_in_schedule: 1, field_mismatch: 2, hardware_difference: 4, open_follow_up: 1 });
+      scheduled_not_surveyed: 1, scheduled_opening_missing: 2, not_in_schedule: 1, field_mismatch: 2, hardware_difference: 1, open_follow_up: 1,
+      ambiguous_code_matches: 0, hardware_sets_compared: 2, hardware_sets_matched: 1, hardware_sets_differ: 1, hardware_items_missing: 1, hardware_items_extra: 1, hardware_items_changed: 2 });
     const s = (await get(F.admin, `/api/schedule-comparisons/${r.body.id}`)).body;
     const by = (m: string) => s.results.find((o: any) => o.mark === m || o.opening_code === m);
     expect(by('101').status).toBe('differences');
     expect(by('101').lines.filter((l: any) => l.category === 'field_mismatch').map((l: any) => [l.entity, l.field, l.schedule_value, l.field_value]))
       .toEqual([['opening', 'fire_rated', 'yes', 'no'], ['door_leaf', 'single.height_in', '84', '80']]);
-    expect(by('101').lines.filter((l: any) => l.category === 'hardware_difference').map((l: any) => l.note).sort())
-      .toEqual(['field hardware not in schedule', 'scheduled item not found in field', 'verified failed: needs replacement', null].sort());
-    expect(by('102')).toMatchObject({ status: 'matched', surveyed: true, match: 'mark' });
+    const hwl = by('101').lines.filter((l: any) => l.category === 'hardware_difference');
+    expect(hwl.filter((l: any) => l.level === 'set').map((l: any) => [l.field, l.schedule_value, l.field_value, l.note]))
+      .toEqual([['set S1', 'S1 (Set S1): 3 item(s)', '3 item(s)', 'set differs: 1 missing, 1 extra, 2 changed']]);
+    expect(hwl.filter((l: any) => l.level === 'item').map((l: any) => l.change).sort()).toEqual(['changed', 'changed', 'extra', 'missing']);
+    expect(by('101').hardware_set).toMatchObject({ set_key: 'S1', status: 'differs', scheduled_items: 3, field_items: 3, missing: 1, extra: 1, changed: 2 });
+    expect(by('102')).toMatchObject({ status: 'matched', surveyed: true, match: 'mark', hardware_set: { set_key: 'S1', status: 'matches', missing: 0, extra: 0, changed: 0 } });
     expect(by('103')).toMatchObject({ status: 'not_surveyed', surveyed: false });
     expect(by('D104')).toMatchObject({ status: 'matched', match: 'code', surveyed: true });
     expect(by('D104').lines.map((l: any) => [l.category, l.note])).toEqual([['open_follow_up', 'hw_missing']]);
@@ -165,6 +169,9 @@ describe('M4 schedule vs field comparison snapshots', () => {
     expect(lines.length - 1).toBe(list.snapshots[0].line_count);
     expect(r.text).toContain(",'=Stanley,");
     expect(r.text).toContain('matched by code');
+    expect(lines.some((l) => l.includes(',set,S1,,hardware,set S1,') && l.includes('set differs: 1 missing, 1 extra, 2 changed'))).toBe(true);
+    expect(lines.some((l) => l.includes(',set,S1,,hardware,set S1,') && l.endsWith(',set matches'))).toBe(true);
+    expect(lines.filter((l) => l.includes(',item,S1,')).length).toBe(4);
     expect(csvCell('=1+1')).toBe("'=1+1"); expect(csvCell('+x')).toBe("'+x"); expect(csvCell('-x')).toBe("'-x"); expect(csvCell('@x')).toBe("'@x");
     expect(csvCell('a,"b"')).toBe('"a,""b"""'); expect(csvCell(null)).toBe('');
     expect(comparisonCsv('i', 'B', { openings: [] })).toBe(CSV_COLUMNS.join(',') + '\r\n');
@@ -203,6 +210,59 @@ describe('M4 schedule vs field comparison snapshots', () => {
     await expect(sql(`INSERT INTO schedule_comparison_snapshots(id,import_id,property_id,building_id,engine_version,summary,results,opening_count,line_count,created_by_user_id,created_by_organization_id,created_by_role)
       VALUES($1,$2,$3,$4,1,'{}','[]',0,0,$5,$6,'admin')`, [randomUUID(), d.id, f.property, f.building, f.admin.id, f.owner])).rejects.toThrow(/confirmed import/);
     expect((await sql('SELECT count(*)::int AS c FROM schedule_comparison_snapshots WHERE import_id=$1', [d.id])).rows[0].c).toBe(0);
+  });
+  it('v2 loose code matching: punctuation, case, leading zeros and a Door prefix match; ambiguity is flagged, not guessed', async () => {
+    const f = await facility();
+    const d = await draft(f, [{ mark: '201A', set: null }, { mark: '0202-B', set: null }, { mark: '203', set: null }, { mark: '204', set: null }, { mark: '205', set: null }, { mark: '20-5', set: null }]);
+    { const c = await post(f.admin, `/api/schedule-imports/${d.id}/confirm`, { resolutions: {} }); expect([c.status, c.body]).toEqual([200, expect.anything()]); }
+    // Turn the imported openings into legacy field openings with differently written codes and no schedule mark.
+    const recode = async (mark: string, code: string) => sql("UPDATE openings SET schedule_door_mark=NULL, opening_code=$2 WHERE building_id=$1 AND schedule_door_mark=$3", [f.building, code, mark]);
+    await recode('201A', 'Door 201-A'); await recode('0202-B', '202 b'); await recode('203', 'DR-0203');
+    await recode('204', '204'); // plus a second field opening whose code also reduces to 204: ambiguous
+    await sql("INSERT INTO openings(id,opening_code,building_id,opening_type,fire_rated,qr_token,status) VALUES($1,'204.',$2,'door',false,$3,'active')", [randomUUID(), f.building, randomUUID()]);
+    await recode('205', 'Door 205'); await recode('20-5', '020_05');
+    const r = await post(f.admin, `/api/schedule-comparisons/by-import/${d.id}`);
+    expect(r.status).toBe(201);
+    const s = (await get(f.admin, `/api/schedule-comparisons/${r.body.id}`)).body;
+    const row = (m: string) => s.results.find((o: any) => o.source_row !== null && o.mark === m);
+    for (const [m, code] of [['201A', 'Door 201-A'], ['0202-B', '202 b'], ['203', 'DR-0203']]) expect(row(m)).toMatchObject({ match: 'code', opening_code: code, status: 'not_surveyed' });
+    expect(row('203').lines.find((l: any) => l.category === 'scheduled_not_surveyed').note).toBe('matched by code');
+    expect(row('204')).toMatchObject({ status: 'missing', match: null, opening_id: null });
+    expect(row('204').match_candidates.sort()).toEqual(['204', '204.']);
+    expect(row('204').lines[0].note).toMatch(/^ambiguous_code_match: 2 candidate/);
+    // "20-5" keys to "20.5", not "205": both rows still resolve, one each.
+    expect(row('205')).toMatchObject({ match: 'code', opening_code: 'Door 205' });
+    expect(row('20-5')).toMatchObject({ match: 'code', opening_code: '020_05' });
+    expect(s.summary).toMatchObject({ matched_by_code: 5, ambiguous_code_matches: 1 });
+    expect(s.results.filter((o: any) => o.status === 'not_in_schedule').map((o: any) => o.opening_code).sort()).toEqual(['204', '204.']);
+  });
+  it('v2 many-to-one: two schedule rows that reduce to one opening code are both flagged', async () => {
+    const f = await facility();
+    const d = await draft(f, [{ mark: '301-A', set: null }, { mark: '301A', set: null }]);
+    expect((await post(f.admin, `/api/schedule-imports/${d.id}/confirm`, { resolutions: {} })).status).toBe(200);
+    await sql("UPDATE openings SET schedule_door_mark=NULL WHERE building_id=$1", [f.building]);
+    await sql("DELETE FROM openings WHERE building_id=$1 AND opening_code<>(SELECT min(opening_code) FROM openings WHERE building_id=$1)", [f.building]).catch(() => null);
+    const left = (await sql('SELECT id FROM openings WHERE building_id=$1', [f.building])).rows;
+    if (left.length > 1) await sql("UPDATE openings SET opening_code='ZZ-'||id::text WHERE building_id=$1 AND id<>$2", [f.building, left[0].id]);
+    await sql("UPDATE openings SET opening_code='Door 301 a' WHERE id=$1", [left[0].id]);
+    const s = (await get(f.admin, `/api/schedule-comparisons/${(await post(f.admin, `/api/schedule-comparisons/by-import/${d.id}`)).body.id}`)).body;
+    const rows = s.results.filter((o: any) => o.source_row !== null);
+    expect(rows.map((o: any) => [o.status, o.match_candidates])).toEqual([['missing', ['Door 301 a']], ['missing', ['Door 301 a']]]);
+    expect(s.summary.ambiguous_code_matches).toBe(2);
+  });
+  it('v2 hardware set: no scheduled set but field hardware is a differing set with extra items', async () => {
+    const f = await facility();
+    const d = await draft(f, [{ mark: '401', set: null }]);
+    expect((await post(f.admin, `/api/schedule-imports/${d.id}/confirm`, { resolutions: {} })).status).toBe(200);
+    const o = await opening(f.building, '401');
+    await sql("UPDATE openings SET completion_state='complete', completed_at=now(), completed_by_user_id=$2 WHERE id=$1", [o.id, f.admin.id]);
+    await sql(`INSERT INTO hardware_components(id,opening_id,component_type,manufacturer,tracker_id,mounting_scope,condition,identity_status,review_state)
+      VALUES($1,$2,'closer','LCN','TRK-SYN0401','opening','good','established','reviewed')`, [randomUUID(), o.id]);
+    const s = (await get(f.admin, `/api/schedule-comparisons/${(await post(f.admin, `/api/schedule-comparisons/by-import/${d.id}`)).body.id}`)).body;
+    const r = s.results.find((x: any) => x.mark === '401');
+    expect(r.hardware_set).toMatchObject({ set_key: null, status: 'differs', scheduled_items: 0, field_items: 1, extra: 1 });
+    expect(r.lines.filter((l: any) => l.level).map((l: any) => [l.level, l.change ?? null, l.field])).toEqual([['set', null, 'no scheduled set'], ['item', 'extra', 'no scheduled set: closer']]);
+    expect(s.summary).toMatchObject({ hardware_difference: 1, hardware_sets_differ: 1 });
   });
   it('running a comparison changes no field or schedule data', async () => {
     const tables = ['openings', 'door_leaves', 'opening_frames', 'hardware_components', 'schedule_rows', 'schedule_import_effects', 'schedule_row_follow_ups', 'schedule_imports'];

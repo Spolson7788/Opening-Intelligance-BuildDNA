@@ -104,6 +104,14 @@ export function ScanPage() {
         </button>
 
         <button
+          className="btn btn-secondary"
+          style={{ marginTop: 12 }}
+          onClick={() => navigate("/facility-openings")}
+        >
+          Facility Openings
+        </button>
+
+        <button
           type="button"
           className="btn btn-secondary"
           style={{ marginTop: 12, color: "var(--text-secondary)" }}

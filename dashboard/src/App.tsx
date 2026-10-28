@@ -6,6 +6,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { FacilitySchedulesPage } from "./pages/FacilitySchedulesPage";
 import { ScheduleImportPage, ScheduleImportStartPage } from "./pages/ScheduleImportPage";
 import { ScheduleComparisonPage } from "./pages/ScheduleComparisonPage";
+import { ScheduleComparisonsPage } from "./pages/ScheduleComparisonsPage";
 import { OpeningDetailPage } from "./pages/OpeningDetailPage";
 import { NewPropertyPage } from "./pages/NewPropertyPage";
 import { NewOpeningPage } from "./pages/NewOpeningPage";
@@ -44,7 +45,8 @@ function AppRoutes() {
       <Route path="/facility-schedules" element={<RequireAuth><FacilitySchedulesPage /></RequireAuth>} />
       <Route path="/schedule-imports/new" element={<RequireAuth><ScheduleImportStartPage /></RequireAuth>} />
       <Route path="/schedule-imports/:id" element={<RequireAuth><ScheduleImportPage /></RequireAuth>} />
-      <Route path="/schedule-imports/:id/comparison" element={<RequireAuth><ScheduleComparisonPage /></RequireAuth>} />
+      <Route path="/schedule-comparisons" element={<RequireAuth><ScheduleComparisonsPage /></RequireAuth>} />
+<Route path="/schedule-imports/:id/comparison" element={<RequireAuth><ScheduleComparisonPage /></RequireAuth>} />
       <Route path="/schedule-imports/:id/comparison/:snapshotId" element={<RequireAuth><ScheduleComparisonPage /></RequireAuth>} />
       <Route path="/maintenance-schedules" element={<RequireAuth><MaintenanceSchedulesPage /></RequireAuth>} />
       <Route path="/opening/:id" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />

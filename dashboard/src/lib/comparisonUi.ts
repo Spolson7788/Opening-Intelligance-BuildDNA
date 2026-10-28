@@ -1,10 +1,12 @@
 // M4: labels and filtering for the schedule vs field comparison page (pure, testable).
 export type ComparisonCategory = "scheduled_not_surveyed" | "scheduled_opening_missing" | "not_in_schedule" | "field_mismatch" | "hardware_difference" | "open_follow_up";
 export interface ComparisonLine { category: ComparisonCategory; mark: string | null; opening_id: string | null; opening_code: string | null; entity: string; field: string | null;
-  schedule_value: string | null; field_value: string | null; note: string | null }
+  schedule_value: string | null; field_value: string | null; note: string | null; level?: "set" | "item"; change?: "missing" | "extra" | "changed" }
+export interface HardwareSetResult { set_key: string | null; heading: string | null; status: "matches" | "differs"; scheduled_items: number; field_items: number; missing: number; extra: number; changed: number }
 export interface ComparisonOpening { mark: string | null; source_row: number | null; opening_id: string | null; opening_code: string | null; floor_label: string | null;
   match: "mark" | "code" | null; surveyed: boolean; surveyed_at: string | null; surveyed_by_role: string | null;
-  status: "matched" | "differences" | "not_surveyed" | "missing" | "not_in_schedule"; set_key: string | null; lines: ComparisonLine[] }
+  status: "matched" | "differences" | "not_surveyed" | "missing" | "not_in_schedule"; set_key: string | null; lines: ComparisonLine[];
+  hardware_set?: HardwareSetResult | null; match_candidates?: string[] }
 
 export const CATEGORY_LABEL: Record<ComparisonCategory, string> = {
   scheduled_not_surveyed: "Scheduled, not surveyed",
@@ -19,6 +21,14 @@ export const STATUS_LABEL: Record<ComparisonOpening["status"], string> = {
   matched: "Matches schedule", differences: "Differences", not_surveyed: "Not surveyed", missing: "Missing", not_in_schedule: "Not in schedule",
 };
 export const MATCH_LABEL = (m: ComparisonOpening["match"]) => (m === "code" ? "matched by code" : m === "mark" ? "schedule mark" : "");
+
+/** One-line hardware set verdict for the table ("" when the set was not compared). */
+export function hardwareSetLabel(o: Pick<ComparisonOpening, "hardware_set">): string {
+  const h = o.hardware_set;
+  if (!h) return "";
+  const name = h.set_key ? `Set ${h.set_key}` : "No scheduled set";
+  return h.status === "matches" ? `${name}: matches` : `${name}: differs (${h.missing} missing, ${h.extra} extra, ${h.changed} changed)`;
+}
 
 export interface ComparisonFilter { category?: ComparisonCategory | ""; surveyed?: "" | "yes" | "no"; field?: string; search?: string; floor?: string; onlyDifferences?: boolean }
 

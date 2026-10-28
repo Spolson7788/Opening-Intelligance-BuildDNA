@@ -29,6 +29,8 @@ export function DashboardPage() {
   // imports. This is a UX nicety, not the actual security boundary — the
   // API enforces this regardless of what the dashboard shows or hides.
   const canManageSetup = auth?.role === "admin" || auth?.role === "facilities_manager";
+  // M4 v2: comparison reports are open to admin, facilities manager, technician and inspector.
+  const canViewComparisons = canManageSetup || auth?.role === "technician" || auth?.role === "inspector";
   const [openings, setOpenings] = useState<Opening[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
@@ -166,6 +168,15 @@ export function DashboardPage() {
             >
               Door Schedules
             </Link>
+            {canViewComparisons && (
+              <Link
+                to="/schedule-comparisons"
+                className="btn btn-secondary"
+                style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
+              >
+                Schedule Comparisons
+              </Link>
+            )}
             {canManageSetup && (
               <Link
                 to="/audit-log"
