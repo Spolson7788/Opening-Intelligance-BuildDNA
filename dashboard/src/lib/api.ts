@@ -746,3 +746,26 @@ export async function listScheduleFollowUps(propertyId: string, status: "open" |
 export async function resolveScheduleFollowUp(id: string, note: string): Promise<ScheduleFollowUp> {
   return authedFetch(`/schedule-imports/follow-ups/${id}/resolve`, { method: "POST", body: JSON.stringify({ note }) });
 }
+
+// M4: schedule vs field comparison snapshots (read-only once saved).
+export interface ComparisonSnapshotListItem { id: string; import_id: string; engine_version: number; summary: Record<string, number>; opening_count: number; line_count: number;
+  created_at: string; created_by_role: string; created_by_name: string | null; building_name?: string }
+export interface ComparisonSnapshot extends ComparisonSnapshotListItem { building_name: string; results: import("./comparisonUi").ComparisonOpening[] }
+export async function listComparisonSnapshots(importId: string): Promise<{ import: { id: string; status: string; building_name: string }; snapshots: ComparisonSnapshotListItem[] }> {
+  return authedFetch(`/schedule-comparisons/by-import/${importId}`);
+}
+export async function runComparison(importId: string): Promise<ComparisonSnapshotListItem> {
+  return authedFetch(`/schedule-comparisons/by-import/${importId}`, { method: "POST", body: "{}" });
+}
+export async function fetchComparisonSnapshot(id: string): Promise<ComparisonSnapshot> {
+  return authedFetch(`/schedule-comparisons/${id}`);
+}
+export async function downloadComparisonCsv(id: string) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/schedule-comparisons/${id}/csv`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new ApiError(res.status, "export_failed");
+  const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "schedule-comparison.csv";
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a"); a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+}

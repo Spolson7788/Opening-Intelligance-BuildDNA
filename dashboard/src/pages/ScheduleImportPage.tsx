@@ -94,7 +94,8 @@ export function ScheduleImportPage() {
   if (!data) return <SchedulePage title="Review schedule import" back={{ to: "/facility-schedules", label: "Back to schedules" }}><p className="empty-state">{message ?? "Loading..."}</p></SchedulePage>;
   if (data.import.status === "confirmed") return (
     <SchedulePage title="Schedule import confirmed" back={{ to: "/facility-schedules", label: "Back to schedules" }}>
-      <section className="panel"><pre>{JSON.stringify(data.result, null, 2)}</pre></section></SchedulePage>
+      <section className="panel"><p><Link className="btn btn-primary" to={`/schedule-imports/${id}/comparison`}>Compare with field</Link></p>
+        <pre>{JSON.stringify(data.result, null, 2)}</pre></section></SchedulePage>
   );
   const plan = data.plan!;
   const FOLLOW_UP_LABEL: Record<string, string> = { hw_varies: "Hardware <varies>", hw_group_x: "Group X", hw_group_undefined: "Group not in hardware schedule",

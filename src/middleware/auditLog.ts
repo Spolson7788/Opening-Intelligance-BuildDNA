@@ -36,6 +36,7 @@ const AUDIT_ACTIONS: Array<{ method: string; pattern: RegExp; label: string }> =
   { method: "POST", pattern: /^\/api\/facility-schedules\/[^/]+\/kind$/, label: "Changed schedule type" },
   { method: "POST", pattern: /^\/api\/facility-schedules\/[^/]+\/archive$/, label: "Archived schedule" },
   { method: "POST", pattern: /^\/api\/facility-schedules\/[^/]+\/unarchive$/, label: "Unarchived schedule" },
+  { method: "POST", pattern: /^\/api\/schedule-comparisons\/by-import\/[^/]+$/, label: "Ran schedule comparison" },
 ];
 
 function redact(body: unknown): unknown {
