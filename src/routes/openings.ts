@@ -465,9 +465,9 @@ openingsRouter.post("/:id/recompute-health-score", async (req: AuthedRequest, re
     const opening = openingRes.rows[0];
 
     const serviceCountRes = await pool.query(
-      `SELECT COUNT(*) FROM service_events
-       WHERE opening_id = $1 AND event_date >= now() - interval '12 months'`,
-      [id]
+      `SELECT COUNT(*) FROM service_events se
+       WHERE se.opening_id = $1 AND se.event_date >= now() - interval '12 months' AND ${serviceEventVisibleSql('se', 2)}`,
+      [id, orgId]
     );
     const failedInspectionsRes = await pool.query(
       `SELECT COUNT(*) FROM inspection_events

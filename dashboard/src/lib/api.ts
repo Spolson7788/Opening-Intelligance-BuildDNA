@@ -103,6 +103,14 @@ export interface Property {
   city: string | null;
   state: string | null;
   buildings: Building[];
+  /** True when the caller's organization owns this facility (server-computed). */
+  is_owner?: boolean;
+  /** Absent before migration 20261029100000; treated as off. */
+  share_provider_service_history?: boolean;
+}
+
+export async function setProviderHistorySharing(propertyId: string, enabled: boolean): Promise<{ id: string; share_provider_service_history: boolean }> {
+  return authedFetch(`/portfolio/properties/${propertyId}/provider-history-sharing`, { method: "PUT", body: JSON.stringify({ enabled }) });
 }
 
 export interface TeamMember {

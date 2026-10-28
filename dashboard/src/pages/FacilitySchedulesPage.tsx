@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ScheduleFollowUps } from "./ScheduleFollowUps";
 import { SchedulePage } from "../components/SchedulePage";
+import { ProviderHistorySharingToggle } from "../components/ProviderHistorySharingToggle";
+import { useAuth } from "../lib/AuthContext";
 import {
   ApiError, FACILITY_SCHEDULE_MAX_BYTES, type FacilitySchedule, type Property, type ScheduleImportListItem,
   archiveSchedule, changeScheduleKind, listFacilitySchedules, listProperties, listScheduleImports, unarchiveSchedule, uploadFacilitySchedule,
@@ -14,6 +16,7 @@ const ACCEPT = ".pdf,.csv,.xlsx,.xls,.docx";
 // M2: door schedule versions (XLSX/CSV) link to the import review page.
 // M3: dashboard shell, type picked from the file name, drafts list, no-facility notice.
 export function FacilitySchedulesPage() {
+  const { auth } = useAuth();
   const [properties, setProperties] = useState<Property[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [propertyId, setPropertyId] = useState("");
@@ -105,6 +108,8 @@ export function FacilitySchedulesPage() {
             {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
+        <ProviderHistorySharingToggle property={properties.find((p) => p.id === propertyId)} role={auth?.role}
+          onChanged={(on) => setProperties((ps) => ps.map((p) => p.id === propertyId ? { ...p, share_provider_service_history: on } : p))} />
         <form onSubmit={submit} aria-label="Upload schedule">
           <label>File <input type="file" accept={ACCEPT} onChange={(e) => pickFile(e.target.files?.[0] ?? null)} /></label>
           <label>Type{" "}

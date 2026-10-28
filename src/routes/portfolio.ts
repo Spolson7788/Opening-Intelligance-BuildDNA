@@ -175,7 +175,7 @@ portfolioRouter.get("/properties", async (req: AuthedRequest, res) => {
   const orgId = req.auth!.organizationId;
   try {
     const propertiesRes = await pool.query(
-      `SELECT p.* FROM properties p
+      `SELECT p.*, (pf.organization_id = $1) AS is_owner FROM properties p
        JOIN portfolios pf ON pf.id = p.portfolio_id
        WHERE ${facilityAccessPredicate(1)}
        ORDER BY p.name`,
