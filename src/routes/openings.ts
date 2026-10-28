@@ -12,7 +12,7 @@ import { computeHealthScore } from "../services/healthScore";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { buildingsForOrgSubquery, openingsForOrgSubquery } from "../db/tenantScope";
+import { buildingsForOrgSubquery, openingsForOrgSubquery, photoVisibleSql, serviceEventVisibleSql } from "../db/tenantScope";
 
 export const openingsRouter = Router();
 openingsRouter.use(requireAuth);
@@ -28,15 +28,15 @@ function forbidden(res: Response) {
 // and dashboard detail views expect. by-qr and by-code (the field app's scan
 // and manual-entry entry points) previously returned only the bare opening row,
 // so a scanned/looked-up opening showed no photos, hardware, or history at all.
-async function hydrateOpening(openingRow: any) {
+async function hydrateOpening(openingRow: any, orgId: string) {
   const openingId = openingRow.id;
   const [frame, leaves, hardware, serviceEvents, inspections, photos, retiredHardware] = await Promise.all([
     pool.query("SELECT * FROM opening_frames WHERE opening_id = $1", [openingId]),
     pool.query("SELECT * FROM door_leaves WHERE opening_id = $1 ORDER BY CASE leaf_role WHEN 'single' THEN 0 WHEN 'active' THEN 1 ELSE 2 END", [openingId]),
     pool.query("SELECT * FROM current_hardware_components WHERE opening_id = $1 ORDER BY install_date", [openingId]),
-    pool.query("SELECT * FROM service_events WHERE opening_id = $1 ORDER BY event_date DESC", [openingId]),
+    pool.query(`SELECT * FROM service_events WHERE opening_id = $1 AND ${serviceEventVisibleSql("service_events", 2)} ORDER BY event_date DESC`, [openingId, orgId]),
     pool.query("SELECT * FROM inspection_events WHERE opening_id = $1 ORDER BY event_date DESC", [openingId]),
-    pool.query("SELECT * FROM photos WHERE opening_id = $1 ORDER BY created_at DESC", [openingId]),
+    pool.query(`SELECT * FROM photos WHERE opening_id = $1 AND ${photoVisibleSql("photos", 2)} ORDER BY created_at DESC`, [openingId, orgId]),
     pool.query("SELECT * FROM hardware_components WHERE opening_id=$1 AND lifecycle_state='retired' ORDER BY id", [openingId]),
   ]);
   return {
@@ -387,7 +387,7 @@ openingsRouter.get("/:id", async (req: AuthedRequest, res) => {
     );
     if (opening.rows.length === 0) return res.status(404).json({ error: "not_found" });
 
-    res.json(await hydrateOpening(opening.rows[0]));
+    res.json(await hydrateOpening(opening.rows[0], orgId));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
@@ -405,7 +405,7 @@ openingsRouter.get("/by-qr/:qrToken", async (req: AuthedRequest, res) => {
       [qrToken, orgId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: "not_found" });
-    res.json(await hydrateOpening(result.rows[0]));
+    res.json(await hydrateOpening(result.rows[0], orgId));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
@@ -425,7 +425,7 @@ openingsRouter.get("/by-code/:openingCode", async (req: AuthedRequest, res) => {
       [openingCode, orgId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: "not_found" });
-    res.json(await hydrateOpening(result.rows[0]));
+    res.json(await hydrateOpening(result.rows[0], orgId));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal_error" });

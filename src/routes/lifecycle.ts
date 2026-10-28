@@ -3,7 +3,7 @@ import {downtimeSummary} from '../services/lifecycleRecords';
 import {Router} from 'express';
 import {z} from 'zod';
 import {pool} from '../db/pool';
-import {openingsForOrgSubquery} from '../db/tenantScope';
+import {openingsForOrgSubquery,serviceEventVisibleSql} from '../db/tenantScope';
 import {requireAuth,AuthedRequest} from '../middleware/auth';
 import {enforceRolePermissions} from '../middleware/permissions';
 import {installationFactSchema} from '../services/installationFacts';
@@ -33,7 +33,7 @@ lifecycleRouter.get('/:openingId',async(req:AuthedRequest,res)=>{
   const records=(await c.query('SELECT r.*,NOT EXISTS(SELECT 1 FROM lifecycle_records n WHERE n.correction_of=r.id) AS is_current FROM lifecycle_records r WHERE opening_id=$1 ORDER BY recorded_at,id',[o.id])).rows;
   const replacements=(await c.query('SELECT * FROM component_replacements WHERE opening_id=$1 ORDER BY recorded_at,id',[o.id])).rows;
   const positions=(await c.query('SELECT * FROM component_positions WHERE opening_id=$1 ORDER BY position_key',[o.id])).rows;
-  const services=(await c.query('SELECT * FROM service_events WHERE opening_id=$1 ORDER BY event_date,id',[o.id])).rows;
+  const services=(await c.query(`SELECT * FROM service_events WHERE opening_id=$1 AND ${serviceEventVisibleSql('service_events',2)} ORDER BY event_date,id`,[o.id,req.auth!.organizationId])).rows;
   await c.query('COMMIT');res.json({opening_id:o.id,opening_code:o.opening_code,status:o.status,revision:Number(o.revision),installation_facts:facts,legacy_installation_dates:legacy,frames,door_leaves:leaves,hardware_components:components,service_events:services,replacements,positions,records,downtime: downtimeSummary(records)});
  }catch(e){await c.query('ROLLBACK');console.error(e);res.status(500).json({error:'lifecycle_unavailable'});}finally{c.release();}
 });

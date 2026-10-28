@@ -6,7 +6,7 @@ export const isQrDetailsPath = (path: unknown): path is string => typeof path ==
 export const isQrLogin = (path: string, from: unknown) => path === '/login' && isQrDetailsPath(from);
 export const validQrToken = (token: string) => new RegExp(`^${tokenPattern}$`, 'i').test(token);
 
-export interface PublicOpeningSummary { facility_name: string; building_name: string; opening_code: string }
+export interface PublicOpeningSummary { facility_name: string; building_name: string }
 export type QrFailureKind = 'site_access' | 'service' | 'network' | 'unavailable';
 export class QrInformationError extends Error {
   readonly kind: QrFailureKind;
@@ -48,8 +48,8 @@ export async function fetchPublicOpening(token: string, signal: AbortSignal): Pr
   if (response.status === 429 || response.status === 503) throw new QrInformationError('service');
   if (!response.ok || !type.toLowerCase().startsWith('application/json')) throw new QrInformationError('unavailable');
   const value = await response.json();
-  const keys = ['facility_name', 'building_name', 'opening_code'];
+  const keys = ['facility_name', 'building_name'];
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || Object.keys(value).length !== 3 || !keys.every(key => typeof value[key] === 'string')) throw new Error('unavailable');
-  return { facility_name: value.facility_name, building_name: value.building_name, opening_code: value.opening_code };
+    || Object.keys(value).length !== keys.length || !keys.every(key => typeof value[key] === 'string')) throw new Error('unavailable');
+  return { facility_name: value.facility_name, building_name: value.building_name };
 }

@@ -9,11 +9,13 @@ import { createPublicQrRouter } from '../src/routes/publicQr';
 import { openingsRouter } from '../src/routes/openings';
 
 const token = '11111111-1111-4111-8111-111111111111';
-const names = {facility_name:'Synthetic Facility',building_name:'Synthetic Building',opening_code:'SYN-A-PAIR-002'};
+// t97: outsiders get only facility and building names; the opening code is withheld.
+const names = {facility_name:'Synthetic Facility',building_name:'Synthetic Building'};
+const storedRow = {...names,opening_code:'SYN-A-PAIR-002'};
 const app = (options = {}) => express().use('/api/qr', createPublicQrRouter(options));
 beforeEach(() => { mocks.query.mockReset(); });
 it.each([false,true])('returns exactly the public allowlist with authenticated=%s',async authenticated=>{
-  mocks.query.mockResolvedValue({rows:[{...names,id:'private',organization_id:'private-org',photos:[{url:'private-url'}],budget:123,qr_token:token}]});
+  mocks.query.mockResolvedValue({rows:[{...storedRow,id:'private',organization_id:'private-org',photos:[{url:'private-url'}],budget:123,qr_token:token}]});
   const call=request(app()).get('/api/qr/'+token);
   if(authenticated)call.set('Authorization','Bearer synthetic-ignored').set('Cookie','synthetic=ignored');
   const res=await call;expect(res.status).toBe(200);expect(res.body).toEqual(names);
@@ -73,7 +75,7 @@ it('executes the exact public projection against local PostgreSQL semantics and 
       INSERT INTO buildings VALUES('${token}','${token}','Building');
       INSERT INTO openings VALUES('${token}','${token}','OPENING','complete','active','never-public');`);
     const server=app({query:(sql:string,values:string[])=>db.query(sql,values)});
-    expect((await request(server).get('/api/qr/'+token)).body).toEqual({facility_name:'Facility',building_name:'Building',opening_code:'OPENING'});
+    expect((await request(server).get('/api/qr/'+token)).body).toEqual({facility_name:'Facility',building_name:'Building'});
     for(const status of ['retired','decommissioned']){
       await db.query('UPDATE openings SET status=$1',[status]);expect((await request(server).get('/api/qr/'+token)).status).toBe(404);
     }

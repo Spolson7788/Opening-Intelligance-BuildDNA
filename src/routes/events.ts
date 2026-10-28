@@ -52,7 +52,8 @@ eventsRouter.post("/service-events", async (req: AuthedRequest, res) => {
         (opening_id, hardware_component_id, performed_by_org_id, performed_by_user_id, event_date, work_performed, parts_used, cost)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [
-        b.opening_id, b.hardware_component_id ?? null, b.performed_by_org_id ?? null,
+        // t97: the performing organization is the signed-in caller's, never a client claim.
+        b.opening_id, b.hardware_component_id ?? null, orgId,
         userId, b.event_date, b.work_performed, b.parts_used ?? [], b.cost ?? null,
       ]
     );

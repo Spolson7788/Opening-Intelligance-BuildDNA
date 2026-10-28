@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { fetchMe, fetchOpening, listFieldProperties, listOpenings } from "../lib/api";
+import { fetchMe, fetchOpening, listFieldProperties, listOpenings, searchFieldFacilities } from "../lib/api";
+import { ALL_AREAS, areaFilterKey, areaLabel, areaOptions, defaultAreaFilter, filterFacilitiesByArea, sameArea, type AreaFilter, type AreaPreferences } from "../lib/facilityArea";
 import { getOfflineSetting, putOfflineSetting } from "../lib/db";
 import { useAuth } from "../lib/AuthContext";
 import type { FacilityProperty } from "../lib/facilityOpenings";
@@ -8,6 +9,7 @@ import { chooseFacility, describeSync, facilitySyncKey, retryFailedOpenings, sel
 interface FacilitySyncValue {
   properties: FacilityProperty[] | null; selectedId: string | null; progress: FacilitySyncProgress | null; result: FacilitySyncResult | null;
   running: boolean; error: string | null; select(id: string): void; refresh(): void; retryFailed(): void;
+  area: AreaFilter; home: AreaFilter; setArea(a: AreaFilter): void;
 }
 const Ctx = createContext<FacilitySyncValue | null>(null);
 export const useFacilitySync = () => useContext(Ctx);
@@ -25,6 +27,9 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
   const [result, setResult] = useState<FacilitySyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  // t97 item 1: area filter narrows the authorized list only; default is the home area (branch default or home state).
+  const [area, setAreaState] = useState<AreaFilter>(ALL_AREAS);
+  const [home, setHome] = useState<AreaFilter>(ALL_AREAS);
   const abortRef = useRef<AbortController | null>(null);
   const resultRef = useRef<FacilitySyncResult | null>(null); resultRef.current = result;
   const deps = { listOpenings: (b: string) => listOpenings({ building_id: b }), fetchOpening: (id: string) => fetchOpening(id),
@@ -53,6 +58,14 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
       catch { const c = await getOfflineSetting(`facilities:${principal.userId}:${principal.organizationId}`).catch(() => null); list = (c?.value as FacilityProperty[]) ?? null; if (!list) setError("Couldn't load your facilities. Check your connection."); }
       if (stop || !list) return;
       setProperties(list);
+      let prefs: AreaPreferences | null = null;
+      const prefKey = `area-preferences:${principal.userId}:${principal.organizationId}`;
+      try { prefs = ((await searchFieldFacilities()) as any)?.preferences ?? null; await putOfflineSetting({ key: prefKey, value: prefs, updatedAt: new Date().toISOString() }); }
+      catch { prefs = ((await getOfflineSetting(prefKey).catch(() => null))?.value as AreaPreferences) ?? null; }
+      const storedArea = (await getOfflineSetting(areaFilterKey(principal)).catch(() => null))?.value as AreaFilter | undefined;
+      if (stop) return;
+      const homeArea = defaultAreaFilter(prefs, list); setHome(homeArea);
+      setAreaState(storedArea && (storedArea.kind === "all" || filterFacilitiesByArea(list, storedArea).length) ? storedArea : homeArea);
       // M5: with no saved choice on this device, fall back to the default facility the admin set.
       let preferred: string | null = (stored?.value as string) ?? null;
       if (!preferred) preferred = await fetchMe().then((m) => m.default_property_id).catch(() => null);
@@ -82,6 +95,10 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
     setResult(null);
     if (id === selectedId) run(id); else setSelectedId(id);
   };
+  const setArea = (a: AreaFilter) => {
+    setAreaState(a);
+    if (principal) void putOfflineSetting({ key: areaFilterKey(principal), value: a, updatedAt: new Date().toISOString() });
+  };
   const retryFailed = () => {
     if (!principal || !result) return;
     if (result.status === "failed" || result.buildingsFailed.length) { run(result.propertyId); return; }
@@ -89,7 +106,7 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
     retryFailedOpenings(deps, principal, result, { onProgress: (d, t) => setProgress({ phase: "downloading", buildingsDone: 0, buildingsTotal: 0, openingsDone: d, openingsTotal: t, failed: 0, attempt: 2 }) })
       .then((r) => { setResult(r); setProgress(null); }).finally(() => setRunning(false));
   };
-  return <Ctx.Provider value={{ properties, selectedId, progress, result, running, error, select, refresh: () => selectedId && run(selectedId), retryFailed }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ properties, selectedId, progress, result, running, error, select, refresh: () => selectedId && run(selectedId), retryFailed, area, home, setArea }}>{children}</Ctx.Provider>;
 }
 
 /** Facility selection step and download status (shown on the home screen after sign-in). */
@@ -98,14 +115,27 @@ export function FacilitySelector() {
   if (!s) return null;
   const { properties, selectedId, progress, result, running, error } = s;
   const needsChoice = properties && properties.length > 1 && !selectedId;
+  const shown = properties ? filterFacilitiesByArea(properties, s.area, selectedId) : [];
+  const options = properties ? areaOptions(properties) : { states: [], territories: [] };
+  const encode = (a: AreaFilter) => a.kind === "all" ? "all" : `${a.kind}:${a.value}`;
+  const decode = (v: string): AreaFilter => v === "all" ? ALL_AREAS : v.startsWith("territory:") ? { kind: "territory", value: v.slice(10) } : { kind: "state", value: v.slice(6) };
   return (
     <section className="card" aria-label="Facility" style={{ marginBottom: 12 }}>
       {properties === null && !error && <p>Loading your facilities...</p>}
       {properties && properties.length === 0 && <p>No facilities are assigned to your account yet.</p>}
+      {properties && properties.length > 1 && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+        <label>Area{" "}<select aria-label="Area filter" value={encode(s.area)} onChange={(e) => s.setArea(decode(e.target.value))}>
+          <option value="all">All authorized facilities</option>
+          {options.territories.length > 0 && <optgroup label="My Territory">{options.territories.map((t) => <option key={"t" + t} value={`territory:${t}`}>{t}{sameArea(s.home, { kind: "territory", value: t }) ? " (home)" : ""}</option>)}</optgroup>}
+          {options.states.length > 0 && <optgroup label="State">{options.states.map((v) => <option key={"s" + v} value={`state:${v}`}>{v}{sameArea(s.home, { kind: "state", value: v }) ? " (home)" : ""}</option>)}</optgroup>}
+        </select></label>
+        {s.area.kind !== "all" && <button type="button" className="btn btn-secondary" onClick={() => s.setArea(ALL_AREAS)}>Show all authorized</button>}
+        <span role="status" style={{ fontSize: 13 }}>{areaLabel(s.area)}: {shown.length} of {properties.length}</span>
+      </div>}
       {properties && properties.length > 0 && <label>{needsChoice ? <strong>Select your facility to download its openings</strong> : "Facility"}{" "}
         <select value={selectedId ?? ""} onChange={(e) => e.target.value && s.select(e.target.value)}>
           {!selectedId && <option value="">Choose a facility</option>}
-          {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          {shown.map((p) => <option key={p.id} value={p.id}>{p.name}{p.state ? ` (${p.state})` : ""}</option>)}
         </select>
       </label>}
       {error && <p role="alert">{error}</p>}

@@ -9,7 +9,7 @@ export interface FacilityOpening {
   completion_state?: string | null; status?: string | null; opening_configuration?: string | null; fire_rated?: boolean | null;
 }
 export interface FacilityBuilding { id: string; name: string }
-export interface FacilityProperty { id: string; name: string; city?: string | null; state?: string | null; buildings?: FacilityBuilding[] }
+export interface FacilityProperty { id: string; name: string; city?: string | null; state?: string | null; service_territory?: string | null; buildings?: FacilityBuilding[] }
 
 /** Loose search key: case, punctuation, spaces and leading zeros ignored ("Door 101-A" ~ "101a"). */
 export function searchKey(v: unknown): string {

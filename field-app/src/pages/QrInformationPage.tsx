@@ -29,9 +29,8 @@ export function QrInformationPage() {
       <dl>
         <dt>Facility</dt><dd>{current.value.facility_name}</dd>
         <dt>Building</dt><dd>{current.value.building_name}</dd>
-        <dt>Opening</dt><dd>{current.value.opening_code}</dd>
       </dl>
-      <p>Photos, component details and work records require authorized sign-in.</p>
+      <p>The opening, photos, component details and work records require authorized sign-in.</p>
       <Link className="btn btn-primary" to={`/opening/by-qr/${encodeURIComponent(qrToken)}/details`}>Sign in for protected details</Link>
     </>}
   </main>;

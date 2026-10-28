@@ -7,7 +7,7 @@ import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { openingsForOrgSubquery } from "../db/tenantScope";
+import { openingsForOrgSubquery, photoVisibleSql } from "../db/tenantScope";
 import {
   getPresignedUploadUrl,
   buildStorageKey,
@@ -431,7 +431,7 @@ photosRouter.post("/offline/confirm", databaseRoute(async (req: AuthedRequest, r
 
 photosRouter.get("/:id/access", databaseRoute(async (req: AuthedRequest, res) => {
   const photo = await pool.query(
-    `SELECT p.* FROM photos p WHERE p.id=$1 AND p.opening_id IN (${openingsForOrgSubquery(2)})`,
+    `SELECT p.* FROM photos p WHERE p.id=$1 AND p.opening_id IN (${openingsForOrgSubquery(2)}) AND ${photoVisibleSql("p", 2)}`,
     [req.params.id, req.auth!.organizationId],
   );
   if (!photo.rows[0]) return res.status(404).json({ error: "not_found" });
@@ -572,8 +572,8 @@ photosRouter.get("/by-opening/:openingId", async (req: AuthedRequest, res) => {
       return res.status(403).json({ error: "forbidden" });
     }
     const result = await pool.query(
-      "SELECT * FROM photos WHERE opening_id = $1 ORDER BY created_at DESC",
-      [openingId]
+      `SELECT * FROM photos WHERE opening_id = $1 AND ${photoVisibleSql("photos", 2)} ORDER BY created_at DESC`,
+      [openingId, orgId]
     );
     res.json(result.rows);
   } catch (err) {

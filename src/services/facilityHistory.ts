@@ -1,4 +1,4 @@
-import { openingsForOrgSubquery } from '../db/tenantScope';
+import { openingsForOrgSubquery, serviceEventVisibleSql } from '../db/tenantScope';
 import { conditionObservationView } from './conditionObservations';
 
 // Caller owns a repeatable-read, read-only transaction. No joins multiply evidence rows.
@@ -25,7 +25,8 @@ export async function facilityHistory(c: any, anchor: string, organizationId: st
   const records = await rows('lifecycle_records');
   const replacements = await rows('component_replacements');
   const positions = await rows('component_positions');
-  const services = await rows('service_events');
+  const services = (await c.query(`SELECT * FROM service_events WHERE opening_id=ANY($1::uuid[]) AND ${serviceEventVisibleSql('service_events', 2)} ORDER BY id LIMIT 10001`, [ids, organizationId])).rows;
+  if (services.length > 10000) throw Error('facility_history_too_large');
   const chain = (items: any[]) => {
     const corrected = new Set(items.map(r => r.correction_of).filter(Boolean));
     return items.map(r => ({ ...r, is_current: !corrected.has(r.id) }));

@@ -59,3 +59,20 @@ export async function facilityScheduleAccess(
   );
   return r.rows[0]?.access ?? null;
 }
+
+// t97 item 2: per-facility provider history sharing (properties.share_provider_service_history,
+// default false). The owning organization always sees every service event. An assigned provider
+// sees its own events, and other organizations' events only when the owner enabled sharing.
+// Legacy events with no performed_by_org_id are owner-only unless sharing is on.
+// Read through to_jsonb so this code is safe to deploy before the migration: a missing column means off.
+export function serviceEventVisibleSql(alias: string, orgParameter: number): string {
+ return `(${alias}.performed_by_org_id=$${orgParameter} OR EXISTS (
+ SELECT 1 FROM openings sv_o JOIN buildings sv_b ON sv_b.id=sv_o.building_id
+ JOIN properties sv_p ON sv_p.id=sv_b.property_id JOIN portfolios sv_pf ON sv_pf.id=sv_p.portfolio_id
+ WHERE sv_o.id=${alias}.opening_id AND (sv_pf.organization_id=$${orgParameter} OR COALESCE((to_jsonb(sv_p) ->> 'share_provider_service_history')::boolean, false))))`;
+}
+// Photos attached to a service event follow that event's visibility; other photos are unchanged.
+export function photoVisibleSql(alias: string, orgParameter: number): string {
+ return `(${alias}.related_entity_type IS DISTINCT FROM 'service_event' OR EXISTS (
+ SELECT 1 FROM service_events pv_e WHERE pv_e.id=${alias}.related_entity_id AND ${serviceEventVisibleSql('pv_e', orgParameter)}))`;
+}

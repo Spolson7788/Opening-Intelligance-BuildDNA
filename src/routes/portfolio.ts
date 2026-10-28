@@ -1,5 +1,5 @@
 import { databaseRoute } from '../db/databaseRoute';
-import { facilityAccessPredicate } from "../db/tenantScope";
+import { facilityAccessPredicate, photoVisibleSql, serviceEventVisibleSql } from "../db/tenantScope";
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
@@ -25,12 +25,12 @@ portfolioRouter.get("/facility-dashboard/:id", async (req: AuthedRequest, res) =
           'door_leaves', COALESCE((SELECT jsonb_agg(l ORDER BY l.leaf_role) FROM door_leaves l WHERE l.opening_id=o.id),'[]'::jsonb),
           'hardware_components', COALESCE((SELECT jsonb_agg(h ORDER BY h.id) FROM current_hardware_components h WHERE h.opening_id=o.id),'[]'::jsonb),
           'retired_hardware_components', COALESCE((SELECT jsonb_agg(h ORDER BY h.id) FROM hardware_components h WHERE h.opening_id=o.id AND h.lifecycle_state='retired'),'[]'::jsonb),
-          'service_events', COALESCE((SELECT jsonb_agg(e ORDER BY e.event_date DESC,e.id) FROM service_events e WHERE e.opening_id=o.id),'[]'::jsonb),
+          'service_events', COALESCE((SELECT jsonb_agg(e ORDER BY e.event_date DESC,e.id) FROM service_events e WHERE e.opening_id=o.id AND ${serviceEventVisibleSql('e', 2)}),'[]'::jsonb),
           'inspection_events', COALESCE((SELECT jsonb_agg(i ORDER BY i.event_date DESC,i.id) FROM inspection_events i WHERE i.opening_id=o.id),'[]'::jsonb),
           'photos', COALESCE((SELECT jsonb_agg(jsonb_build_object(
             'id', ph.id, 'related_entity_type', ph.related_entity_type,
             'related_entity_id', ph.related_entity_id, 'created_at', ph.created_at
-          ) ORDER BY ph.created_at,ph.id) FROM photos ph WHERE ph.opening_id=o.id),'[]'::jsonb)
+          ) ORDER BY ph.created_at,ph.id) FROM photos ph WHERE ph.opening_id=o.id AND ${photoVisibleSql('ph', 2)}),'[]'::jsonb)
         ) ORDER BY o.opening_code,o.id)
         FROM openings o JOIN buildings b ON b.id=o.building_id WHERE b.property_id=p.id
       ), '[]'::jsonb) AS openings
@@ -42,6 +42,22 @@ portfolioRouter.get("/facility-dashboard/:id", async (req: AuthedRequest, res) =
     console.error("Facility dashboard read failed", error);
     res.status(503).json({ error: "facility_dashboard_unavailable" });
   }
+});
+
+// t97 item 2: only the facility owner's administrator may let assigned providers see each
+// other's service history. Default is off (migration 20261029100000_provider_history_sharing).
+portfolioRouter.put("/properties/:id/provider-history-sharing", async (req: AuthedRequest, res) => {
+  if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_facility" });
+  const body = z.object({ enabled: z.boolean() }).strict().safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "invalid_setting" });
+  if (req.auth!.role !== "admin") return res.status(403).json({ error: "owner_admin_required" });
+  try {
+    const r = await pool.query(`UPDATE properties p SET share_provider_service_history=$3 FROM portfolios pf
+      WHERE pf.id=p.portfolio_id AND p.id=$1 AND pf.organization_id=$2 RETURNING p.id, p.share_provider_service_history`,
+      [req.params.id, req.auth!.organizationId, body.data.enabled]);
+    if (!r.rows.length) return res.status(403).json({ error: "owner_admin_required" });
+    res.set("Cache-Control", "no-store").json(r.rows[0]);
+  } catch { res.status(503).json({ error: "setting_unavailable" }); }
 });
 
 // Search scope is always the current server-verified company. State, territory

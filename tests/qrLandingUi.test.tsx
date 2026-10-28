@@ -11,7 +11,8 @@ import {fetchPublicOpening} from '../field-app/src/lib/qrLanding';
 import {assertSyncDispatchAllowed} from '../field-app/src/lib/syncNavigation';
 const token='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
 const path='/opening/by-qr/'+token;
-const names={facility_name:'Synthetic Facility',building_name:'Synthetic Building',opening_code:'SYN-A-PAIR-002'};
+// t97: the public response carries only facility and building names.
+const names={facility_name:'Synthetic Facility',building_name:'Synthetic Building'};
 let host:HTMLDivElement,root:ReturnType<typeof createRoot>,navigate:ReturnType<typeof useNavigate>;
 function Harness(){navigate=useNavigate();return <FieldApplication/>;}
 async function render(route=path){await act(async()=>root.render(<MemoryRouter initialEntries={[route]}><Harness/></MemoryRouter>));}
@@ -21,7 +22,7 @@ beforeEach(()=>{vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);vi.stubGlobal('fe
 afterEach(()=>{act(()=>root.unmount());host.remove();vi.unstubAllGlobals();});
 it.each([false,true])('landing exposes only names and never mounts account/sync lifecycle, signed in=%s',async signedIn=>{
   if(signedIn)state.auth={userId:'private-id',organizationId:'private-org',email:'private-email'};
-  await render();expect(host.textContent).toContain(names.opening_code);expect(host.textContent).toContain(names.facility_name);expect(host.textContent).toContain(names.building_name);
+  await render();expect(host.textContent).not.toContain('SYN-A-PAIR-002');expect(host.textContent).toContain(names.facility_name);expect(host.textContent).toContain(names.building_name);
   expect(host.textContent).not.toContain('private-');expect(state.provider).not.toHaveBeenCalled();expect(state.sync).not.toHaveBeenCalled();
   expect(fetch).toHaveBeenCalledWith('/api/qr/'+token,expect.objectContaining({cache:'no-store',credentials:'same-origin',redirect:'error'}));
   expect((fetch as any).mock.calls[0][1].headers).toBeUndefined();
@@ -30,7 +31,7 @@ it.each([false,true])('landing exposes only names and never mounts account/sync 
 it('preserves protected destination through sign-in without syncing on landing or interrupted sign-in',async()=>{
   await render();await act(async()=>host.querySelector('a')!.click());
   expect(host.textContent).toContain('Field Sign-In');expect(state.sync).not.toHaveBeenCalled();
-  await go(path);expect(host.textContent).toContain(names.opening_code);expect(state.sync).not.toHaveBeenCalled();
+  await go(path);expect(host.textContent).toContain(names.building_name);expect(state.sync).not.toHaveBeenCalled();
   await act(async()=>host.querySelector('a')!.click());
   (host.querySelector('#email') as HTMLInputElement).value='a@example.invalid';(host.querySelector('#password') as HTMLInputElement).value='fake-test-only';
   await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
@@ -45,7 +46,7 @@ it('does not show stale names when navigating to another QR or resolving a late 
   let resolveFirst!:(r:any)=>void;
   vi.mocked(fetch).mockImplementationOnce(()=>new Promise(r=>resolveFirst=r));
   await render();const firstSignal=(fetch as any).mock.calls[0][1].signal;
-  vi.mocked(fetch).mockResolvedValue(response({...names,opening_code:'SECOND'}) as any);
+  vi.mocked(fetch).mockResolvedValue(response({...names,building_name:'SECOND'}) as any);
   await go('/opening/by-qr/'+other);expect(firstSignal.aborted).toBe(true);expect(host.textContent).toContain('SECOND');
   await act(async()=>resolveFirst(response()));expect(host.textContent).not.toContain('SYN-A-PAIR-002');expect(state.sync).not.toHaveBeenCalled();
 });
@@ -96,6 +97,6 @@ it('shows network failure without raw details or automatic retry',async()=>{
 });
 it('does not carry a late gate failure into a different QR',async()=>{
  let resolveFirst!:(r:Response)=>void;vi.mocked(fetch).mockImplementationOnce(()=>new Promise(r=>resolveFirst=r));
- await render();vi.mocked(fetch).mockResolvedValue(response({...names,opening_code:'SECOND'}) as any);await go('/opening/by-qr/'+other);
+ await render();vi.mocked(fetch).mockResolvedValue(response({...names,building_name:'SECOND'}) as any);await go('/opening/by-qr/'+other);
  await act(async()=>resolveFirst(htmlResponse()));expect(host.textContent).toContain('SECOND');expect(host.textContent).not.toContain('renewal');expect(state.sync).not.toHaveBeenCalled();
 });
