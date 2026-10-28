@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { listOpenings, listProperties, downloadOpeningsCsv, downloadComplianceReport } from "../lib/api";
 import type { Opening, Property } from "../lib/api";
+import { facilitiesErrorMessage } from "../lib/scheduleUi";
 import { Sidebar } from "../components/Sidebar";
 import { HealthPill, healthBand } from "../components/HealthPill";
 import { HealthDistributionChart } from "../components/HealthDistributionChart";
@@ -32,6 +33,7 @@ export function DashboardPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [propertiesError, setPropertiesError] = useState<string | null>(null);
 
   const [propertyFilter, setPropertyFilter] = useState("");
   const [buildingFilter, setBuildingFilter] = useState("");
@@ -76,7 +78,9 @@ export function DashboardPage() {
   }
 
   useEffect(() => {
-    listProperties().catch(() => []).then((props) => setProperties(props ?? []));
+    // M3.1: failures are shown (a 401 goes to sign-in via authedFetch) instead of an empty list.
+    listProperties().then((props) => { setProperties(props ?? []); setPropertiesError(null); })
+      .catch((err) => setPropertiesError(facilitiesErrorMessage(err)));
   }, []);
 
   const buildingsForSelectedProperty = useMemo(() => {
@@ -309,6 +313,7 @@ export function DashboardPage() {
             </select>
           </div>
 
+          {propertiesError && <p className="error-text" role="alert">{propertiesError}</p>}
           {loading ? (
             <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>Loading…</p>
           ) : error ? (

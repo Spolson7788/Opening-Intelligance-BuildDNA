@@ -1,3 +1,5 @@
+import { handleUnauthorized } from "./session";
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
 export class ApiError extends Error {
@@ -26,6 +28,12 @@ async function authedFetch(path: string, options: RequestInit = {}) {
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  if (res.status === 401) {
+    // The app rejected the session (expired, revoked or invalid): clear it and go to sign-in.
+    handleUnauthorized(typeof localStorage !== "undefined" ? localStorage : null,
+      typeof window !== "undefined" ? { pathname: window.location.pathname, assign: (u) => window.location.assign(u) } : null,
+      import.meta.env.BASE_URL || "/");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, body.error || `request_failed_${res.status}`);

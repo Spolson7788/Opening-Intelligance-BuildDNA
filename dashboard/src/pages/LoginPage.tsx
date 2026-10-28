@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
+import { SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_PARAM } from "../lib/session";
 import { loginErrorMessage } from "../lib/scheduleUi";
 import { useAuth } from "../lib/AuthContext";
 
@@ -11,6 +12,8 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [params] = useSearchParams();
+  const expired = params.get(SESSION_EXPIRED_PARAM) === "1";
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -34,6 +37,7 @@ export function LoginPage() {
         <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 24 }}>
           Sign in to view your facilities.
         </p>
+        {expired && !error && <p className="error-text" role="status">{SESSION_EXPIRED_MESSAGE}</p>}
         <form onSubmit={onSubmit}>
           <div className="field">
             <label htmlFor="email">Email</label>

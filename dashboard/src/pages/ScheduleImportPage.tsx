@@ -5,7 +5,7 @@ import {
   confirmScheduleImport, createScheduleImport, fetchScheduleImport, listFacilitySchedules, listProperties, previewScheduleImport,
 } from "../lib/api";
 import { SchedulePage } from "../components/SchedulePage";
-import { NO_FACILITIES_MESSAGE, clearImportDraft, isEmptyResolutions, loadImportDraft, saveImportDraft } from "../lib/scheduleUi";
+import { NO_FACILITIES_MESSAGE, facilitiesErrorMessage, clearImportDraft, isEmptyResolutions, loadImportDraft, saveImportDraft } from "../lib/scheduleUi";
 
 // M2: parse a stored door schedule (plus optional hardware schedule) for one
 // building, review issues and the change plan, resolve, then confirm.
@@ -21,10 +21,16 @@ export function ScheduleImportStartPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [noFacilities, setNoFacilities] = useState(false);
+  const [facilitiesError, setFacilitiesError] = useState<string | null>(null);
+  const loadFacility = () => {
+    setFacilitiesError(null);
+    return listProperties().then((ps) => { setNoFacilities(ps.length === 0); const p = ps.find((x) => x.id === propertyId) ?? null; setProperty(p); if (p?.buildings[0]) setBuildingId((cur) => cur || p.buildings[0].id); })
+      .catch((err) => setFacilitiesError(facilitiesErrorMessage(err)));
+  };
   useEffect(() => {
-    listProperties().then((ps) => { setNoFacilities(ps.length === 0); const p = ps.find((x) => x.id === propertyId) ?? null; setProperty(p); if (p?.buildings[0]) setBuildingId(p.buildings[0].id); }).catch(() => setMessage("Could not load facility."));
+    loadFacility();
     if (propertyId) listFacilitySchedules(propertyId).then(setSchedules).catch(() => setMessage("Could not load schedules."));
-  }, [propertyId]);
+  }, [propertyId]); // eslint-disable-line react-hooks/exhaustive-deps
   const hardwareVersions = schedules.filter((s) => s.kind === "hardware").flatMap((s) => s.versions.map((v) => ({ ...v, title: s.title })));
   async function start() {
     setBusy(true); setMessage(null);
@@ -41,6 +47,8 @@ export function ScheduleImportStartPage() {
   return (
     <SchedulePage title="Import door schedule" subtitle={property ? property.name : "Facility"} back={{ to: "/facility-schedules", label: "Back to schedules" }}>
       {noFacilities && <p className="empty-state" role="status">{NO_FACILITIES_MESSAGE}</p>}
+      {facilitiesError && <p className="error-text" role="alert">{facilitiesError}{" "}
+        <button type="button" className="btn btn-secondary" onClick={() => loadFacility()}>Retry</button></p>}
       <section className="panel">
       <label>Building{" "}
         <select value={buildingId} onChange={(e) => setBuildingId(e.target.value)}>

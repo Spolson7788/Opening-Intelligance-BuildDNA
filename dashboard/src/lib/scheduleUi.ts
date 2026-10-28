@@ -53,3 +53,12 @@ export function loadImportDraft(importId: string, storage: DraftStorage | null =
 export function clearImportDraft(importId: string, storage: DraftStorage | null = browserStorage()): void {
   try { storage?.removeItem(importDraftKey(importId)); } catch { /* ignore */ }
 }
+
+/** M3.1: facilities failed to load. A 401 is handled by the session-expired redirect. */
+export function facilitiesErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 401) return "Your session expired. Sign in again.";
+    return `Could not load facilities (${err.status}${err.message ? " " + err.message : ""}). Try again.`;
+  }
+  return "Could not load facilities (network error). Try again.";
+}

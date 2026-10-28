@@ -1,6 +1,7 @@
 import { createContext, useContext, useState } from "react";
 import type { ReactNode } from "react";
 import { login as apiLogin, signup as apiSignup, setToken, decodeTokenPayload } from "./api";
+import { readValidToken } from "./session";
 
 interface AuthState {
   userId: string;
@@ -18,7 +19,8 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function readInitialAuth(): AuthState | null {
-  const token = localStorage.getItem("oi_token");
+  // Drop an expired token before any request is made.
+  const token = readValidToken(typeof localStorage !== "undefined" ? localStorage : null);
   if (!token) return null;
   try {
     return decodeTokenPayload(token);

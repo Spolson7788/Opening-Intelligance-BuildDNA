@@ -6,7 +6,7 @@ import {
   ApiError, FACILITY_SCHEDULE_MAX_BYTES, type FacilitySchedule, type Property, type ScheduleImportListItem,
   listFacilitySchedules, listProperties, listScheduleImports, uploadFacilitySchedule,
 } from "../lib/api";
-import { NO_FACILITIES_MESSAGE, kindForFilename } from "../lib/scheduleUi";
+import { NO_FACILITIES_MESSAGE, facilitiesErrorMessage, kindForFilename } from "../lib/scheduleUi";
 
 const ACCEPT = ".pdf,.csv,.xlsx,.xls,.docx";
 
@@ -25,10 +25,14 @@ export function FacilitySchedulesPage() {
   const [replaceId, setReplaceId] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [facilitiesError, setFacilitiesError] = useState<string | null>(null);
 
-  useEffect(() => {
-    listProperties().then((p) => { setProperties(p); setLoaded(true); if (p[0]) setPropertyId(p[0].id); }).catch(() => setMessage("Could not load facilities."));
-  }, []);
+  const loadFacilities = () => {
+    setFacilitiesError(null);
+    return listProperties().then((p) => { setProperties(p); setLoaded(true); if (p[0]) setPropertyId((cur) => cur || p[0].id); })
+      .catch((err) => setFacilitiesError(facilitiesErrorMessage(err)));
+  };
+  useEffect(() => { loadFacilities(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const refresh = (id: string) => Promise.all([
     listFacilitySchedules(id).then(setSchedules).catch(() => setMessage("Could not load schedules.")),
     listScheduleImports(id).then(setImports).catch(() => setImports([])),
@@ -65,6 +69,8 @@ export function FacilitySchedulesPage() {
     <SchedulePage title="Door & hardware schedules" back={{ to: "/", label: "Back to dashboard" }}
       subtitle="Upload door and hardware schedules, then import a door schedule into a building.">
       {noFacilities && <p className="empty-state" role="status">{NO_FACILITIES_MESSAGE}</p>}
+      {facilitiesError && <p className="error-text" role="alert">{facilitiesError}{" "}
+        <button type="button" className="btn btn-secondary" onClick={() => loadFacilities()}>Retry</button></p>}
       <section className="panel">
         <h2>Upload a schedule</h2>
         <label>Facility{" "}
