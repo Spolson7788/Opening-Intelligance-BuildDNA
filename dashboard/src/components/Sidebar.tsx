@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 
 export function Sidebar() {
@@ -10,6 +11,9 @@ export function Sidebar() {
       </div>
       <div className="sidebar-org">
         {auth?.role && <div style={{ textTransform: "capitalize", marginBottom: 8 }}>{auth.role.replace(/_/g, " ")}</div>}
+        <Link to="/change-password" style={{ display: "block", color: "#9aa4b2", fontSize: 12, marginBottom: 6 }}>
+          Change password
+        </Link>
         <button
           onClick={logout}
           style={{ background: "none", border: "none", color: "#9aa4b2", cursor: "pointer", padding: 0, fontSize: 12 }}

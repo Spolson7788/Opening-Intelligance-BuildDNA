@@ -109,6 +109,9 @@ export interface TeamMember {
   role: "admin" | "facilities_manager" | "technician" | "inspector" | "viewer";
   is_active: boolean;
   created_at: string;
+  must_change_password?: boolean;
+  is_test_account?: boolean;
+  default_property_id?: string | null;
 }
 
 export async function listTeamMembers(): Promise<TeamMember[]> {
@@ -620,9 +623,9 @@ export async function listOpenings(params: Record<string, string> = {}): Promise
   return authedFetch(`/openings${qs ? `?${qs}` : ""}`);
 }
 
-export function decodeTokenPayload(token: string): { userId: string; organizationId: string; role: string } {
-  const payload = JSON.parse(atob(token.split(".")[1]));
-  return { userId: payload.userId, organizationId: payload.organizationId, role: payload.role };
+export function decodeTokenPayload(token: string): { userId: string; organizationId: string; role: string; mustChangePassword: boolean } {
+  const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+  return { userId: payload.userId, organizationId: payload.organizationId, role: payload.role, mustChangePassword: payload.mustChangePassword === true };
 }
 
 export interface FacilityScheduleVersion {
@@ -773,4 +776,66 @@ export async function downloadComparisonCsv(id: string) {
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement("a"); a.href = url; a.download = name; a.click();
   URL.revokeObjectURL(url);
+}
+// ---- M5: add team member, email invites, change password ----
+export interface TeamInvite {
+  id: string;
+  email: string;
+  full_name: string;
+  role: TeamMember["role"];
+  default_property_id: string | null;
+  expires_at: string;
+  created_at: string;
+  last_sent_at: string | null;
+  email_status: "pending" | "sent" | "not_configured" | "failed";
+  expired?: boolean;
+}
+export interface InviteSendResult { invite: TeamInvite; email: { sent: boolean; status: TeamInvite["email_status"] } }
+
+export async function addTeamMember(payload: {
+  full_name: string; email: string; role: string; temporary_password: string; is_test_account: boolean; default_property_id?: string | null;
+}): Promise<TeamMember> {
+  return authedFetch("/members", { method: "POST", body: JSON.stringify(payload) });
+}
+export async function listTeamInvites(): Promise<{ invites: TeamInvite[]; email_configured: boolean }> {
+  return authedFetch("/members/invites");
+}
+export async function createTeamInvite(payload: { full_name: string; email: string; role: string; default_property_id?: string | null }): Promise<InviteSendResult> {
+  return authedFetch("/members/invites", { method: "POST", body: JSON.stringify(payload) });
+}
+export async function resendTeamInvite(id: string): Promise<InviteSendResult> {
+  return authedFetch(`/members/invites/${id}/resend`, { method: "POST", body: "{}" });
+}
+export async function revokeTeamInvite(id: string): Promise<TeamInvite> {
+  return authedFetch(`/members/invites/${id}/revoke`, { method: "POST", body: "{}" });
+}
+export async function fetchMe(): Promise<{ id: string; email: string; full_name: string; role: string; must_change_password: boolean; is_test_account: boolean; default_property_id: string | null }> {
+  return authedFetch("/auth/me");
+}
+export async function changePassword(current_password: string, new_password: string): Promise<{ token: string }> {
+  return authedFetch("/auth/change-password", { method: "POST", body: JSON.stringify({ current_password, new_password }) });
+}
+async function publicPost(path: string, body: unknown) {
+  const res = await fetch(`${API_BASE}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, json.error || `request_failed_${res.status}`);
+  return json;
+}
+export async function previewInvite(token: string): Promise<{ email: string; full_name: string; role: string; organization_name: string; expires_at: string }> {
+  return publicPost("/invites/preview", { token });
+}
+export async function acceptInvite(token: string, password: string): Promise<{ token: string }> {
+  return publicPost("/invites/accept", { token, password });
+}
+export const PASSWORD_RULE = "12 to 72 characters.";
+export function passwordErrorMessage(code: string | undefined): string {
+  switch (code) {
+    case "password_too_short": return "Use at least 12 characters.";
+    case "password_too_long": return "Use at most 72 characters.";
+    case "password_unchanged": return "Choose a password different from the current one.";
+    case "current_password_incorrect": return "Your current password isn't right.";
+    case "invite_invalid_or_expired": return "This invite link is invalid, used, revoked or expired. Ask your admin to resend it.";
+    case "email_already_registered": return "That email is already registered.";
+    default: return "Something went wrong. Check your connection and try again.";
+  }
 }

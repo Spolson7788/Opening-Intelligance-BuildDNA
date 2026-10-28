@@ -24,6 +24,7 @@ import { FacilitySchedulesPage } from './pages/FacilitySchedulesPage';
 import { InstallationLifecyclePage } from './pages/InstallationLifecyclePage';
 import { LifecycleOperationsPage } from './pages/LifecycleOperationsPage';
 import { SyncIssuesPage } from "./pages/SyncIssuesPage";
+import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { QrInformationPage } from './pages/QrInformationPage';
 import { isQrLandingPath, isQrLogin, isQrDetailsPath } from './lib/qrLanding';
 import { setSyncReadOnly } from './lib/syncNavigation';
@@ -34,6 +35,8 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
   const location = useLocation();
   if (loading) return null;
   if (!auth) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  // M5: a required password change comes before anything else.
+  if (auth.mustChangePassword && location.pathname !== "/change-password") return <Navigate to="/change-password" replace />;
   return <AccountScope>{children}</AccountScope>;
 }
 
@@ -41,18 +44,22 @@ function AppRoutes() {
   const location=useLocation();
   const diagnostic=location.pathname==='/diagnostics/photo-isolation'||(location.pathname==='/login'&&location.state?.from==='/diagnostics/photo-isolation');
   const qrReadOnly = isQrDetailsPath(location.pathname) || isQrLogin(location.pathname, location.state?.from);
+  // M5: no sync or facility download while the account must change its password.
+  const { auth } = useAuth();
+  const passwordGate = auth?.mustChangePassword === true;
   useEffect(() => {
-    if(diagnostic || qrReadOnly)return;
+    if(diagnostic || qrReadOnly || passwordGate)return;
     const cleanup = initSync();
     return cleanup;
-  }, [diagnostic, qrReadOnly]);
+  }, [diagnostic, qrReadOnly, passwordGate]);
 
   return (
-    <FacilitySyncProvider enabled={!diagnostic && !qrReadOnly}>
+    <FacilitySyncProvider enabled={!diagnostic && !qrReadOnly && !passwordGate}>
     <Routes>
       {PhotoIsolationPage&&<Route path="/diagnostics/photo-isolation" element={<RequireAuth><Suspense fallback={<p>Loading check.</p>}><PhotoIsolationPage/></Suspense></RequireAuth>}/>}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/account-recovery" element={<AccountRecoveryPage />} />
+      <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
       <Route path="/branches" element={<RequireAuth><BranchesPage /></RequireAuth>} />
       <Route path="/setup-opening" element={<RequireAuth><SetupOpeningPage /></RequireAuth>} />
       <Route path="/opening/:id/label" element={<RequireAuth><QrLabelPage /></RequireAuth>} />

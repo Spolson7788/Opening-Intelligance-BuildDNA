@@ -12,9 +12,10 @@ export const authRouter = Router();
 const JWT_SECRET = process.env.JWT_SECRET as string;
 const TOKEN_EXPIRY = "12h";
 
-function issueToken(user: { id: string; organization_id: string; role: string; session_version?: number }) {
+export function issueToken(user: { id: string; organization_id: string; role: string; session_version?: number; must_change_password?: boolean }) {
+  // mustChangePassword is a UI hint only; requireAuth enforces the flag from the database.
   return jwt.sign(
-    { userId: user.id, organizationId: user.organization_id, role: user.role, sessionVersion: user.session_version ?? 0 },
+    { userId: user.id, organizationId: user.organization_id, role: user.role, sessionVersion: user.session_version ?? 0, ...(user.must_change_password ? { mustChangePassword: true } : {}) },
     JWT_SECRET,
     { expiresIn: TOKEN_EXPIRY }
   );
@@ -139,7 +140,7 @@ authRouter.post("/login", async (req, res) => {
   const { email, password } = parsed.data;
   try {
     const result = await pool.query(
-      "SELECT id, organization_id, role, password_hash, is_active, session_version FROM public.users WHERE email = $1",
+      "SELECT id, organization_id, role, password_hash, is_active, session_version, (to_jsonb(users) ->> 'must_change_password')::boolean AS must_change_password FROM public.users WHERE email = $1",
       [email.toLowerCase()]
     );
     if (result.rows.length === 0) {
@@ -158,7 +159,7 @@ authRouter.post("/login", async (req, res) => {
     }
     const token = issueToken(user);
     report("success");
-    res.json({ token, expiresIn: TOKEN_EXPIRY });
+    res.json({ token, expiresIn: TOKEN_EXPIRY, must_change_password: user.must_change_password === true });
   } catch {
     report("service_error");
     res.status(503).json({ error: "authentication_service_unavailable", reference });
@@ -171,7 +172,10 @@ authRouter.post("/login", async (req, res) => {
 authRouter.get("/users", requireAuth, async (req: AuthedRequest, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, email, full_name, role, is_active, created_at FROM users
+      `SELECT id, email, full_name, role, is_active, created_at,
+              (to_jsonb(users) ->> 'must_change_password')::boolean AS must_change_password,
+              (to_jsonb(users) ->> 'is_test_account')::boolean AS is_test_account,
+              (to_jsonb(users) ->> 'default_property_id') AS default_property_id FROM users
        WHERE organization_id = $1 ORDER BY created_at`,
       [req.auth!.organizationId]
     );
@@ -249,5 +253,55 @@ authRouter.patch("/users/:id", requireAuth, requireRole("admin"), auditLog, asyn
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// M5: the signed-in user's own profile (allowed even while a password change is required).
+authRouter.get("/me", requireAuth, async (req: AuthedRequest, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const r = await pool.query(
+      `SELECT id, organization_id, email, full_name, role, must_change_password, is_test_account, default_property_id, password_changed_at
+       FROM users WHERE id = $1 AND organization_id = $2`,
+      [req.auth!.userId, req.auth!.organizationId]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: "not_found" });
+    res.json(r.rows[0]);
+  } catch {
+    res.status(503).json({ error: "authentication_service_unavailable" });
+  }
+});
+
+const changePasswordSchema = z.object({ current_password: z.string().min(1).max(200), new_password: z.string() }).strict();
+
+// M5: everyone can change their own password. Clears a forced change, records when it
+// happened, signs out every other session (session_version bump) and returns a new token.
+authRouter.post("/change-password", requireAuth, async (req: AuthedRequest, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "invalid_change_password_request" });
+  const { current_password, new_password } = parsed.data;
+  const bytes = Buffer.byteLength(new_password, "utf8");
+  if (bytes < 12) return res.status(400).json({ error: "password_too_short" });
+  if (bytes > 72) return res.status(400).json({ error: "password_too_long" });
+  if (new_password === current_password) return res.status(400).json({ error: "password_unchanged" });
+  try {
+    const r = await pool.query("SELECT password_hash FROM users WHERE id = $1 AND organization_id = $2", [req.auth!.userId, req.auth!.organizationId]);
+    if (!r.rows.length || !(await bcrypt.compare(current_password, r.rows[0].password_hash))) {
+      return res.status(401).json({ error: "current_password_incorrect" });
+    }
+    const hash = await bcrypt.hash(new_password, 12);
+    const u = await pool.query(
+      `UPDATE users SET password_hash = $3, must_change_password = false, password_changed_at = now(), session_version = session_version + 1
+       WHERE id = $1 AND organization_id = $2 RETURNING id, organization_id, role, session_version`,
+      [req.auth!.userId, req.auth!.organizationId, hash]
+    );
+    await pool.query(
+      `INSERT INTO audit_log (organization_id, user_id, action, method, path, request_body, status_code) VALUES ($1,$2,'Changed own password','POST','/api/auth/change-password',$3,200)`,
+      [req.auth!.organizationId, req.auth!.userId, JSON.stringify({ current_password: "[redacted]", new_password: "[redacted]" })]
+    );
+    res.json({ token: issueToken(u.rows[0]), expiresIn: TOKEN_EXPIRY });
+  } catch {
+    res.status(503).json({ error: "authentication_service_unavailable" });
   }
 });

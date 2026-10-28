@@ -63,6 +63,7 @@ export function LoginPage() {
           Sign in to scan openings and log service.
         </p>
       </div>
+      {location.state?.passwordChanged === true && !error && <p role="status">Password changed. Sign in with your new password.</p>}
       <form onSubmit={onSubmit}>
         <div className="field">
           <label htmlFor="email">Email</label>

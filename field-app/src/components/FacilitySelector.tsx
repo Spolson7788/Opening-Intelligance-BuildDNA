@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { fetchOpening, listFieldProperties, listOpenings } from "../lib/api";
+import { fetchMe, fetchOpening, listFieldProperties, listOpenings } from "../lib/api";
 import { getOfflineSetting, putOfflineSetting } from "../lib/db";
 import { useAuth } from "../lib/AuthContext";
 import type { FacilityProperty } from "../lib/facilityOpenings";
@@ -53,7 +53,11 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
       catch { const c = await getOfflineSetting(`facilities:${principal.userId}:${principal.organizationId}`).catch(() => null); list = (c?.value as FacilityProperty[]) ?? null; if (!list) setError("Couldn't load your facilities. Check your connection."); }
       if (stop || !list) return;
       setProperties(list);
-      const id = chooseFacility(list, (stored?.value as string) ?? null);
+      // M5: with no saved choice on this device, fall back to the default facility the admin set.
+      let preferred: string | null = (stored?.value as string) ?? null;
+      if (!preferred) preferred = await fetchMe().then((m) => m.default_property_id).catch(() => null);
+      if (stop) return;
+      const id = chooseFacility(list, preferred);
       if (id) { setSelectedId(id); const last = await getOfflineSetting(facilitySyncKey(principal, id)).catch(() => null); if (!stop && last?.value) setResult(last.value as FacilitySyncResult); }
     })();
     return () => { stop = true; abortRef.current?.abort(); };

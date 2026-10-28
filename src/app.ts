@@ -18,6 +18,7 @@ import cors from "cors";
 import { openingsRouter } from "./routes/openings";
 import { eventsRouter } from "./routes/events";
 import { authRouter } from "./routes/auth";
+import { membersRouter, invitesPublicRouter } from "./routes/members";
 import { hardwareRouter } from "./routes/hardware";
 import { photosRouter } from "./routes/photos";
 import { portfolioRouter } from "./routes/portfolio";
@@ -105,6 +106,8 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   app.use('/api/planning',planningRouter);
   app.use('/api/sandbox-finance',sandboxFinanceRouter);
   app.use("/api/auth", authRouter);
+  app.use("/api/members", membersRouter);
+  app.use("/api/invites", invitesPublicRouter);
   app.use("/api/recognition", recognitionRouter);
   if (options.accountRecoveryEnabled) app.use("/api/account-recovery", accountRecoveryRouter);
   app.use("/api/provider-assignments",providerAssignmentsRouter);

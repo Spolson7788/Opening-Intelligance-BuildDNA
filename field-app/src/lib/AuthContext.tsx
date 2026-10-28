@@ -10,6 +10,8 @@ interface AuthState {
   organizationId: string;
   role: string;
   email?: string;
+  /** M5: from the token claim; the server enforces it. */
+  mustChangePassword?: boolean;
 }
 
 interface AuthContextValue {
@@ -20,6 +22,11 @@ interface AuthContextValue {
   logoutError: string | null;
   login: (email: string, password: string, resumeQueued?: boolean) => Promise<void>;
   logout: () => Promise<void>;
+}
+
+/** M5: UI hint only (the API enforces it). Local so it never depends on the api module. */
+function tokenRequiresPasswordChange(token: string | null | undefined): boolean {
+  try { return !!token && JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).mustChangePassword === true; } catch { return false; }
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -41,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const stored = await loadAuth();
         if (!active || read !== revision.current || changing.current) return;
-        const next = stored ? { token: stored.token, userId: stored.userId, organizationId: stored.organizationId, role: stored.role, email: stored.email } : null;
+        const next = stored ? { token: stored.token, userId: stored.userId, organizationId: stored.organizationId, role: stored.role, email: stored.email, mustChangePassword: tokenRequiresPasswordChange(stored.token) } : null;
         setAuth(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
         setLoading(false);
         setIdentityChecking(false);
@@ -65,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Display only; authorization continues to use the server-issued principal.
     const next = { token, userId, organizationId, role, email: email.trim() };
     await recordFreshSignIn(next, resumeQueued, resumeQueued);
-    setAuth(next);
+    setAuth({ ...next, mustChangePassword: tokenRequiresPasswordChange(token) });
     } finally { changing.current = false; setLoading(false); setIdentityChecking(false); }
   }
 

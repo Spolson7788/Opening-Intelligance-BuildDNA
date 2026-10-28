@@ -100,9 +100,32 @@ export async function login(email: string, password: string) {
 
 // Decode the JWT payload client-side just to read organizationId/role for local
 // storage - this is NOT a security boundary, the server verifies the signature.
-export function decodeTokenPayload(token: string): { userId: string; organizationId: string; role: string } {
-  const payload = JSON.parse(atob(token.split(".")[1]));
-  return { userId: payload.userId, organizationId: payload.organizationId, role: payload.role };
+export function decodeTokenPayload(token: string): { userId: string; organizationId: string; role: string; mustChangePassword: boolean } {
+  const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+  return { userId: payload.userId, organizationId: payload.organizationId, role: payload.role, mustChangePassword: payload.mustChangePassword === true };
+}
+
+/** M5: UI hint only; the API enforces a required password change from the database. */
+export function tokenRequiresPasswordChange(token: string | null | undefined): boolean {
+  if (!token) return false;
+  try { return decodeTokenPayload(token).mustChangePassword; } catch { return false; }
+}
+
+// M5: own profile (default facility) and password change.
+export async function fetchMe(): Promise<{ id: string; role: string; must_change_password: boolean; default_property_id: string | null }> {
+  return authedFetch("/auth/me", { method: "GET", cache: "no-store" });
+}
+export async function changePassword(current_password: string, new_password: string): Promise<{ token: string }> {
+  return authedFetch("/auth/change-password", { method: "POST", body: JSON.stringify({ current_password, new_password }) });
+}
+export function changePasswordErrorMessage(code: string | undefined): string {
+  switch (code) {
+    case "password_too_short": return "Use at least 12 characters.";
+    case "password_too_long": return "Use at most 72 characters.";
+    case "password_unchanged": return "Choose a password different from the current one.";
+    case "current_password_incorrect": return "Your current password isn't right.";
+    default: return "Couldn't change the password. Check your connection and try again.";
+  }
 }
 
 // Resolve a scanned/entered QR token to its opening. Falls back to cache if offline.

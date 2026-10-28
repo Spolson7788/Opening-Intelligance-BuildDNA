@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/AuthContext";
 import { LoginPage } from "./pages/LoginPage";
 import { SignupPage } from "./pages/SignupPage";
@@ -19,10 +19,15 @@ import { TeamPage } from "./pages/TeamPage";
 import { AuditLogPage } from "./pages/AuditLogPage";
 import { WorkOrdersPage } from "./pages/WorkOrdersPage";
 import { MaintenanceSchedulesPage } from "./pages/MaintenanceSchedulesPage";
+import { ChangePasswordPage } from "./pages/ChangePasswordPage";
+import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { auth } = useAuth();
+  const location = useLocation();
   if (!auth) return <Navigate to="/login" replace />;
+  // M5: a forced password change comes first (the API enforces it too).
+  if (auth.mustChangePassword && location.pathname !== "/change-password") return <Navigate to="/change-password" replace />;
   return children;
 }
 
@@ -31,6 +36,8 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
+      <Route path="/accept-invite" element={<AcceptInvitePage />} />
+      <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
       <Route path="/" element={<RequireAuth><DashboardPage /></RequireAuth>} />
       <Route path="/properties/new" element={<RequireAuth><NewPropertyPage /></RequireAuth>} />
       <Route path="/openings/new" element={<RequireAuth><NewOpeningPage /></RequireAuth>} />

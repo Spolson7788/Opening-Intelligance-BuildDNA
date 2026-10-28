@@ -41,7 +41,8 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
   }
   try {
     const current = await pool.query(
-      `SELECT id, organization_id, role, is_active, session_version
+      `SELECT id, organization_id, role, is_active, session_version,
+              (to_jsonb(users) ->> 'must_change_password')::boolean AS must_change_password
        FROM users WHERE id=$1 AND organization_id=$2`,
       [payload.userId, payload.organizationId],
     );
@@ -54,6 +55,13 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     // The database is authoritative on every request. A role change or account
     // deactivation therefore takes effect immediately instead of waiting for a
     // previously issued JWT to expire.
+    // M5: a forced password change blocks everything except reading your own profile
+    // and changing the password. Enforced from the database, not the token claim.
+    if (user.must_change_password === true) {
+      const path = (req.originalUrl || req.url || "").split("?")[0].replace(/\/+$/, "");
+      if (!path.endsWith("/auth/change-password") && !path.endsWith("/auth/me")) return deny(403, "password_change_required");
+    }
+
     req.auth = {
       userId: user.id,
       organizationId: user.organization_id,

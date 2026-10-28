@@ -7,6 +7,7 @@ interface AuthState {
   userId: string;
   organizationId: string;
   role: string;
+  mustChangePassword: boolean;
 }
 
 interface AuthContextValue {
@@ -14,6 +15,8 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   signup: (payload: { organization_name: string; email: string; password: string; full_name: string }) => Promise<void>;
   logout: () => void;
+  /** M5: adopt a token issued by change-password or invite acceptance. */
+  adoptToken: (token: string) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -44,12 +47,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuth(decodeTokenPayload(token));
   }
 
+  function adoptToken(token: string) {
+    setToken(token);
+    setAuth(decodeTokenPayload(token));
+  }
+
   function logout() {
     setToken(null);
     setAuth(null);
   }
 
-  return <AuthContext.Provider value={{ auth, login, signup, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ auth, login, signup, logout, adoptToken }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
