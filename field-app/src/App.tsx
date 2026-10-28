@@ -15,6 +15,7 @@ import { LogHardwarePage } from "./pages/LogHardwarePage";
 import { EditHardwarePage } from "./pages/EditHardwarePage";
 import { MyWorkOrdersPage } from "./pages/MyWorkOrdersPage";
 import { FacilityOpeningsPage } from "./pages/FacilityOpeningsPage";
+import { FacilitySyncProvider } from "./components/FacilitySelector";
 import { OpeningStructurePage } from "./pages/OpeningStructurePage";
 import { SetupOpeningPage } from "./pages/SetupOpeningPage";
 import { QrLabelPage } from "./pages/QrLabelPage";
@@ -47,6 +48,7 @@ function AppRoutes() {
   }, [diagnostic, qrReadOnly]);
 
   return (
+    <FacilitySyncProvider enabled={!diagnostic && !qrReadOnly}>
     <Routes>
       {PhotoIsolationPage&&<Route path="/diagnostics/photo-isolation" element={<RequireAuth><Suspense fallback={<p>Loading check.</p>}><PhotoIsolationPage/></Suspense></RequireAuth>}/>}
       <Route path="/login" element={<LoginPage />} />
@@ -71,6 +73,7 @@ function AppRoutes() {
       <Route path="/opening/:id/edit-hardware/:hardwareId" element={<RequireAuth><EditHardwarePage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/scan" replace />} />
     </Routes>
+    </FacilitySyncProvider>
   );
 }
 

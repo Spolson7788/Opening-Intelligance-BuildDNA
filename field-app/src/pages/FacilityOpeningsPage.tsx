@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchOpening, listFieldProperties, listOpenings } from "../lib/api";
+import { listFieldProperties, listOpenings } from "../lib/api";
+import { FacilitySelector, useFacilitySync } from "../components/FacilitySelector";
 import { getOfflineSetting, putOfflineSetting } from "../lib/db";
 import { useAuth } from "../lib/AuthContext";
 import { SyncBadge } from "../components/SyncBadge";
-import { COMPARISON_REPORT_ROLES, comparisonReportHref, type FacilityOpening, type FacilityProperty, facilityOpeningsCacheKey, filterFacilityOpenings, prefetchOpenings, sortFacilityOpenings } from "../lib/facilityOpenings";
+import { COMPARISON_REPORT_ROLES, comparisonReportHref, type FacilityOpening, type FacilityProperty, facilityOpeningsCacheKey, filterFacilityOpenings, sortFacilityOpenings } from "../lib/facilityOpenings";
 
 // M4 v2: a technician picks a facility and building they can reach and gets every opening
-// in it, including openings created by a confirmed schedule import. Opening the list also
-// saves each opening on the device so the building can be surveyed offline.
+// in it, including openings created by a confirmed schedule import. Browsing only: the
+// offline download happens when the facility is selected (FacilitySelector).
 export function FacilityOpeningsPage() {
   const navigate = useNavigate();
   const { auth } = useAuth();
+  const sync = useFacilitySync();
   const [properties, setProperties] = useState<FacilityProperty[] | null>(null);
   const [buildingId, setBuildingId] = useState<string>(() => sessionStorage.getItem("oi-field-building") ?? "");
   const [openings, setOpenings] = useState<FacilityOpening[] | null>(null);
@@ -20,6 +22,7 @@ export function FacilityOpeningsPage() {
   const [onlyToSurvey, setOnlyToSurvey] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => { if (!buildingId && sync?.selectedId) { const p = sync.properties?.find((x) => x.id === sync.selectedId); if (p?.buildings?.length === 1) setBuildingId(p.buildings[0].id); } }, [sync?.selectedId, sync?.properties]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { listFieldProperties().then(setProperties).catch(() => setError("Couldn't load your facilities. Check your connection.")); }, []);
   useEffect(() => {
     if (!buildingId || !auth) return;
@@ -31,8 +34,6 @@ export function FacilityOpeningsPage() {
       if (stop) return;
       setOpenings(rows); setFromCache(false);
       await putOfflineSetting({ key, value: rows, updatedAt: new Date().toISOString() });
-      const r = await prefetchOpenings(rows.map((o) => o.id), (id) => fetchOpening(id), 3, (d, t) => { if (!stop) setProgress(`Saving openings for offline use: ${d} of ${t}`); });
-      if (!stop) setProgress(`${r.saved} opening(s) saved on this device${r.failed ? `, ${r.failed} could not be saved` : ""}.`);
     }).catch(async () => {
       const cached = await getOfflineSetting(key);
       if (stop) return;
@@ -42,7 +43,9 @@ export function FacilityOpeningsPage() {
     return () => { stop = true; };
   }, [buildingId, auth?.userId, auth?.organizationId]); // eslint-disable-line react-hooks/exhaustive-deps
   const shown = useMemo(() => (openings ? sortFacilityOpenings(filterFacilityOpenings(openings, q, onlyToSurvey)) : []), [openings, q, onlyToSurvey]);
-  const buildings = (properties ?? []).flatMap((p) => (p.buildings ?? []).map((b) => ({ id: b.id, label: `${p.name} - ${b.name}` })));
+  // The selected facility (downloaded for offline use on selection) is listed first.
+  const ordered = [...(sync?.properties ?? properties ?? [])].sort((a, b) => Number(b.id === sync?.selectedId) - Number(a.id === sync?.selectedId));
+  const buildings = ordered.flatMap((p) => (p.buildings ?? []).map((b) => ({ id: b.id, label: `${p.name} - ${b.name}` })));
   return (
     <div className="app-shell">
       <div className="top-bar">
@@ -61,6 +64,7 @@ export function FacilityOpeningsPage() {
         </label>
         {fromCache && <p role="status">Offline: showing the openings saved on this device.</p>}
         {progress && <p role="status">{progress}</p>}
+        <FacilitySelector />
         {openings && <>
           <label>Search <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Mark or code, e.g. 101-A" /></label>
           <label><input type="checkbox" checked={onlyToSurvey} onChange={(e) => setOnlyToSurvey(e.target.checked)} /> Only openings not yet complete</label>

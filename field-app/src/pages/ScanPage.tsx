@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
 import { SyncBadge } from "../components/SyncBadge";
+import { FacilitySelector } from "../components/FacilitySelector";
 import { useAuth } from "../lib/AuthContext";
 import { parseOpeningQr } from "../lib/qrPayload";
 import { fetchLabelConfig } from '../lib/api';
@@ -73,6 +74,7 @@ export function ScanPage() {
         </div>
       </div>
       <div className="screen">
+        <FacilitySelector />
         <p>Opening lookup requires a connection. A QR label does not grant access.</p>
         <div className="card" style={{ overflow: "hidden", padding: 0 }}>
           <div id={SCANNER_ELEMENT_ID} style={{ width: "100%" }} />
