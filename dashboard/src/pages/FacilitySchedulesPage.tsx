@@ -4,9 +4,9 @@ import { ScheduleFollowUps } from "./ScheduleFollowUps";
 import { SchedulePage } from "../components/SchedulePage";
 import {
   ApiError, FACILITY_SCHEDULE_MAX_BYTES, type FacilitySchedule, type Property, type ScheduleImportListItem,
-  listFacilitySchedules, listProperties, listScheduleImports, uploadFacilitySchedule,
+  archiveSchedule, changeScheduleKind, listFacilitySchedules, listProperties, listScheduleImports, unarchiveSchedule, uploadFacilitySchedule,
 } from "../lib/api";
-import { NO_FACILITIES_MESSAGE, facilitiesErrorMessage, kindForFilename } from "../lib/scheduleUi";
+import { NO_FACILITIES_MESSAGE, facilitiesErrorMessage, kindChangeWarning, kindForFilename, scheduleChangeErrorMessage } from "../lib/scheduleUi";
 
 const ACCEPT = ".pdf,.csv,.xlsx,.xls,.docx";
 
@@ -26,6 +26,8 @@ export function FacilitySchedulesPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [facilitiesError, setFacilitiesError] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [changeMessage, setChangeMessage] = useState<string | null>(null);
 
   const loadFacilities = () => {
     setFacilitiesError(null);
@@ -34,10 +36,10 @@ export function FacilitySchedulesPage() {
   };
   useEffect(() => { loadFacilities(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const refresh = (id: string) => Promise.all([
-    listFacilitySchedules(id).then(setSchedules).catch(() => setMessage("Could not load schedules.")),
+    listFacilitySchedules(id, showArchived).then(setSchedules).catch(() => setMessage("Could not load schedules.")),
     listScheduleImports(id).then(setImports).catch(() => setImports([])),
   ]);
-  useEffect(() => { if (propertyId) refresh(propertyId); }, [propertyId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (propertyId) refresh(propertyId); }, [propertyId, showArchived]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function pickFile(f: File | null) {
     setFile(f);
@@ -63,7 +65,32 @@ export function FacilitySchedulesPage() {
     } finally { setBusy(false); }
   }
 
-  const sameKind = schedules.filter((s) => s.kind === kind);
+  // M3B: correct a type (warning if the file looks like the other type) and archive / unarchive.
+  async function changeType(s: FacilitySchedule) {
+    const target = s.kind === "door" ? "hardware" : "door";
+    const head = s.versions.find((v) => v.version === s.head_version);
+    const warning = kindChangeWarning(target, head?.original_filename);
+    if (!window.confirm(warning ?? `Change "${s.title}" to a ${target} schedule? Draft imports using it must be started again.`)) return;
+    const reason = window.prompt("Reason for the type change", "Uploaded with the wrong type");
+    if (!reason || !reason.trim()) return;
+    setChangeMessage(null);
+    try {
+      const r = await changeScheduleKind(s.id, { kind: target, reason: reason.trim(), ...(warning ? { acknowledge_mismatch: true } : {}) });
+      setChangeMessage(`Type changed to ${target}.` + (r.stale_draft_import_ids.length ? ` ${r.stale_draft_import_ids.length} draft import(s) must be started again.` : ""));
+      await refresh(propertyId);
+    } catch (err) { setChangeMessage(scheduleChangeErrorMessage(err)); }
+  }
+  async function toggleArchive(s: FacilitySchedule) {
+    if (!s.archived_at && !window.confirm(`Archive "${s.title}"? It is hidden from lists; its files and history are kept and you can unarchive it.`)) return;
+    setChangeMessage(null);
+    try {
+      if (s.archived_at) await unarchiveSchedule(s.id); else await archiveSchedule(s.id);
+      setChangeMessage(s.archived_at ? "Schedule unarchived." : "Schedule archived.");
+      await refresh(propertyId);
+    } catch (err) { setChangeMessage(scheduleChangeErrorMessage(err)); }
+  }
+
+  const sameKind = schedules.filter((s) => s.kind === kind && !s.archived_at);
   const noFacilities = loaded && properties.length === 0;
   return (
     <SchedulePage title="Door & hardware schedules" back={{ to: "/", label: "Back to dashboard" }}
@@ -99,17 +126,22 @@ export function FacilitySchedulesPage() {
       </section>
       <section className="panel">
         <h2>Stored schedules</h2>
+        <label><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived</label>
+        {changeMessage && <p role="status">{changeMessage}</p>}
         <table>
           <thead><tr><th>Title</th><th>Type</th><th>Version</th><th>File</th><th>Size</th><th>Uploaded</th><th>SHA-256</th><th></th></tr></thead>
           <tbody>
             {schedules.flatMap((s) => s.versions.map((v) => (
               <tr key={v.id}>
-                <td>{s.title}</td><td>{s.kind === "door" ? "Door" : "Hardware"}</td>
+                <td>{s.title}{s.archived_at ? " (archived)" : ""}</td><td>{s.kind === "door" ? "Door" : "Hardware"}</td>
                 <td>v{v.version}{v.version === s.head_version ? " (current)" : ""}</td>
                 <td>{v.original_filename}</td><td>{Math.ceil(v.byte_size / 1024)} KB</td>
                 <td>{new Date(v.uploaded_at).toLocaleString()}</td><td><code>{v.sha256.slice(0, 12)}</code></td>
                 <td>{s.kind === "door" && /(sheet|csv)/.test(v.content_type) && !v.content_type.includes("ms-excel")
-                  ? <Link to={`/schedule-imports/new?property=${propertyId}&version=${v.id}`}>Import to building</Link> : null}</td>
+                  && !s.archived_at ? <Link to={`/schedule-imports/new?property=${propertyId}&version=${v.id}`}>Import to building</Link> : null}
+                  {v.version === s.head_version && <span className="schedule-actions">{" "}
+                    {!s.archived_at && <button type="button" className="btn btn-secondary" onClick={() => changeType(s)}>Change type</button>}{" "}
+                    <button type="button" className="btn btn-secondary" onClick={() => toggleArchive(s)}>{s.archived_at ? "Unarchive" : "Archive"}</button></span>}</td>
               </tr>
             )))}
             {schedules.length === 0 && <tr><td colSpan={8}>No schedules uploaded for this facility.</td></tr>}
@@ -123,7 +155,7 @@ export function FacilitySchedulesPage() {
           <tbody>
             {imports.map((i) => (
               <tr key={i.id}>
-                <td>{i.building_name}</td><td>{i.status === "confirmed" ? "Confirmed" : "Draft"}</td>
+                <td>{i.building_name}</td><td>{i.status === "confirmed" ? "Confirmed" : i.stale ? "Draft (schedule type changed - start again)" : "Draft"}</td>
                 <td>{new Date(i.created_at).toLocaleString()}</td><td>{i.confirmed_at ? new Date(i.confirmed_at).toLocaleString() : ""}</td>
                 <td><Link to={`/schedule-imports/${i.id}`}>{i.status === "confirmed" ? "View result" : "Open review"}</Link></td>
               </tr>

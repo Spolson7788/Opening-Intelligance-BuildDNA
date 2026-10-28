@@ -642,18 +642,31 @@ export interface FacilitySchedule {
   title: string;
   head_version: number;
   created_at: string;
+  archived_at?: string | null;
   versions: FacilityScheduleVersion[];
 }
 
 export const FACILITY_SCHEDULE_MAX_BYTES = 25 * 1024 * 1024;
 
-export async function listFacilitySchedules(propertyId: string): Promise<FacilitySchedule[]> {
-  return authedFetch(`/facility-schedules/by-property/${propertyId}`);
+export async function listFacilitySchedules(propertyId: string, includeArchived = false): Promise<FacilitySchedule[]> {
+  return authedFetch(`/facility-schedules/by-property/${propertyId}${includeArchived ? "?include_archived=1" : ""}`);
+}
+
+// M3B: correct a schedule's type, archive / unarchive it.
+export async function changeScheduleKind(id: string, body: { kind: "door" | "hardware"; reason: string; acknowledge_mismatch?: boolean }):
+  Promise<{ id: string; kind: string; previous_kind: string; stale_draft_import_ids: string[] }> {
+  return authedFetch(`/facility-schedules/${id}/kind`, { method: "POST", body: JSON.stringify(body) });
+}
+export async function archiveSchedule(id: string, reason?: string) {
+  return authedFetch(`/facility-schedules/${id}/archive`, { method: "POST", body: JSON.stringify(reason ? { reason } : {}) });
+}
+export async function unarchiveSchedule(id: string) {
+  return authedFetch(`/facility-schedules/${id}/unarchive`, { method: "POST", body: JSON.stringify({}) });
 }
 
 export interface ScheduleImportListItem {
   id: string; building_id: string; building_name: string; door_version_id: string; hardware_version_id: string | null;
-  status: string; created_at: string; confirmed_at: string | null;
+  status: string; created_at: string; confirmed_at: string | null; stale?: boolean;
 }
 
 export async function listScheduleImports(propertyId: string): Promise<ScheduleImportListItem[]> {
@@ -702,7 +715,7 @@ export interface ScheduleOpeningPlan { row_id: string; source_row: number; mark:
   variant_choice: { group: string; options: string[]; chosen: string | null; pending: boolean } | null;
   follow_up: { reason: string; detail: string | null } | null }
 export interface ScheduleImportPreview {
-  import: { id: string; status: "draft" | "confirmed"; building_id: string; property_id: string };
+  import: { id: string; status: "draft" | "confirmed"; building_id: string; property_id: string; stale?: boolean };
   rows?: { id: string; source_row: number; room_name: string | null; door_mark: string | null }[];
   sets?: { set_key: string; items: { id: string; description: string; catalog_raw: string | null; manufacturer_raw: string | null; review_reasons: string[] }[] }[];
   plan?: { issues: ScheduleImportIssue[]; openings: ScheduleOpeningPlan[]; summary: Record<string, number>; blocked: boolean };

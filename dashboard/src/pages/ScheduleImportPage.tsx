@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ApiError, type FacilitySchedule, type Property, type ScheduleImportPreview, type ScheduleImportResolutions,
   confirmScheduleImport, createScheduleImport, fetchScheduleImport, listFacilitySchedules, listProperties, previewScheduleImport,
 } from "../lib/api";
 import { SchedulePage } from "../components/SchedulePage";
-import { NO_FACILITIES_MESSAGE, facilitiesErrorMessage, clearImportDraft, isEmptyResolutions, loadImportDraft, saveImportDraft } from "../lib/scheduleUi";
+import { NO_FACILITIES_MESSAGE, facilitiesErrorMessage, clearImportDraft, isEmptyResolutions, loadImportDraft, saveImportDraft, STALE_IMPORT_MESSAGE } from "../lib/scheduleUi";
 
 // M2: parse a stored door schedule (plus optional hardware schedule) for one
 // building, review issues and the change plan, resolve, then confirm.
@@ -106,6 +106,7 @@ export function ScheduleImportPage() {
   };
   const toggle = (list: string[] | undefined, v: string) => (list ?? []).includes(v) ? (list ?? []).filter((x) => x !== v) : [...(list ?? []), v];
   async function doConfirm() {
+    if (data?.import.stale) { setMessage(STALE_IMPORT_MESSAGE); return; }
     setBusy(true); setMessage(null);
     try { await confirmScheduleImport(id, res); clearImportDraft(id); setData(await fetchScheduleImport(id)); }
     catch (err) { setMessage(confirmErrorMessage(err)); }
@@ -114,6 +115,8 @@ export function ScheduleImportPage() {
   return (
     <SchedulePage title="Review schedule import" back={{ to: "/facility-schedules", label: "Back to schedules" }}
       subtitle="Resolve the issues, check the change preview, then use Confirm import at the bottom of the page.">
+      {data.import.stale && <p role="alert" className="error-text">{STALE_IMPORT_MESSAGE}{" "}
+        <Link to={`/schedule-imports/new?property=${data.import.property_id}`}>Start again</Link></p>}
       {restored && !isEmptyResolutions(restored) && <p role="note" className="schedule-note">Restored your unsaved choices from this device.</p>}
       <section className="panel">
       <h2>Issues</h2>
@@ -185,7 +188,7 @@ export function ScheduleImportPage() {
       </section>
       <div className="schedule-confirm-bar">
       {message && <p role="status">{message}</p>}
-      <button className="btn btn-primary" disabled={plan.blocked || busy} onClick={doConfirm}>{busy ? "Applying..." : plan.blocked ? "Resolve blocking issues to confirm" : "Confirm import"}</button>
+      <button className="btn btn-primary" disabled={plan.blocked || busy || !!data.import.stale} onClick={doConfirm}>{busy ? "Applying..." : data.import.stale ? "Start the import again to confirm" : plan.blocked ? "Resolve blocking issues to confirm" : "Confirm import"}</button>
       </div>
     </SchedulePage>
   );
@@ -194,6 +197,7 @@ export function ScheduleImportPage() {
 /** Confirm failure text; a gateway timeout (502/504) rolls the whole transaction back. */
 export function confirmErrorMessage(err: unknown): string {
   if (err instanceof ApiError && err.message === "unresolved_blockers") return "Resolve the blocking issues first.";
+  if (err instanceof ApiError && err.message === "import_stale_schedule_type_changed") return STALE_IMPORT_MESSAGE;
   if (err instanceof ApiError && (err.status === 502 || err.status === 504)) return "Import timed out. Nothing was changed. Try again.";
   return "Confirm failed. Nothing was changed.";
 }

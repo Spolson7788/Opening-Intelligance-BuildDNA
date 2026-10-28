@@ -9,6 +9,7 @@ import { readScheduleFile } from "../services/scheduleFileReader";
 import { parseDoorScheduleFile, parseHardwareScheduleFile, UnsupportedScheduleFormat } from "../services/scheduleParsing";
 import { applyPlan, loadImport, planImport, Resolutions } from "../services/scheduleImport";
 import { MAX_SCHEDULE_BYTES } from "./facilitySchedules";
+import { correctionsEnabled, isImportStale, STALE_IMPORT_SQL } from "../services/scheduleKind";
 
 // M2: parse a stored schedule version for one building, preview, confirm.
 // Same audience as M1 uploads: admin / facilities_manager of the facility owner
@@ -101,7 +102,8 @@ scheduleImportsRouter.post("/", async (req: AuthedRequest, res: Response) => {
 scheduleImportsRouter.get("/by-property/:propertyId", async (req: AuthedRequest, res: Response) => {
   if (!requireRole(req, res)) return;
   if (!uuid.safeParse(req.params.propertyId).success || !(await facilityScheduleAccess(pool, req.params.propertyId, req.auth!.organizationId))) return res.status(404).json({ error: "not_found" });
-  const r = await pool.query(`SELECT i.id, i.building_id, b.name AS building_name, i.door_version_id, i.hardware_version_id, i.status, i.created_at, i.confirmed_at
+  const r = await pool.query(`SELECT i.id, i.building_id, b.name AS building_name, i.door_version_id, i.hardware_version_id, i.status, i.created_at, i.confirmed_at,
+    ${(await correctionsEnabled(pool)) ? `(i.status='draft' AND ${STALE_IMPORT_SQL})` : "false"} AS stale
     FROM schedule_imports i JOIN buildings b ON b.id=i.building_id WHERE i.property_id=$1 ORDER BY i.created_at DESC`, [req.params.propertyId]);
   return res.json(r.rows);
 });
@@ -112,7 +114,8 @@ async function preview(req: AuthedRequest, res: Response, resolutions: Resolutio
   const loaded = (await loadImport(pool, req.params.id))!;
   if (loaded.imp.status === "confirmed") return res.json({ import: summaryOf(loaded), result: loaded.imp.result, resolutions: loaded.imp.resolutions });
   const plan = await planImport(pool, loaded, resolutions);
-  return res.json({ import: summaryOf(loaded), rows: loaded.rows, sets: loaded.sets.map((s: any) => ({ ...s, items: loaded.items.filter((i: any) => i.set_id === s.id) })), plan });
+  const stale = await isImportStale(pool, req.params.id);
+  return res.json({ import: { ...summaryOf(loaded), stale }, rows: loaded.rows, sets: loaded.sets.map((s: any) => ({ ...s, items: loaded.items.filter((i: any) => i.set_id === s.id) })), plan });
 }
 function summaryOf(l: any) {
   const { imp } = l;
@@ -143,6 +146,8 @@ scheduleImportsRouter.post("/:id/confirm", async (req: AuthedRequest, res: Respo
     if (!facilityLock.rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "not_found" }); }
     const locked = (await client.query("SELECT * FROM schedule_imports WHERE id=$1 FOR UPDATE", [req.params.id])).rows[0];
     if (locked.status === "confirmed") { await client.query("ROLLBACK"); return res.status(200).json({ already_confirmed: true, result: locked.result }); }
+    // M3B: a schedule used by this draft changed type after it was started; restart the import.
+    if (await isImportStale(client, locked.id)) { await client.query("ROLLBACK"); return res.status(409).json({ error: "import_stale_schedule_type_changed" }); }
     const loaded = (await loadImport(client, req.params.id))!;
     const plan = await planImport(client, loaded, p.data.resolutions);
     if (plan.blocked) { await client.query("ROLLBACK"); return res.status(409).json({ error: "unresolved_blockers", issues: plan.issues.filter((i) => i.severity === "blocker") }); }

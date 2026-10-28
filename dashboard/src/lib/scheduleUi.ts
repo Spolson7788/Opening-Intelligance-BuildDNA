@@ -62,3 +62,22 @@ export function facilitiesErrorMessage(err: unknown): string {
   }
   return "Could not load facilities (network error). Try again.";
 }
+
+/** M3B: warning shown before changing a schedule's type when the current file looks like the other type. */
+export function kindChangeWarning(target: ScheduleKind, filename: string | undefined): string | null {
+  const guess = filename ? kindForFilename(filename) : null;
+  if (!guess || guess === target) return null;
+  return `The current file (${filename}) looks like a ${guess === "door" ? "door" : "hardware"} schedule, not a ${target} schedule. Change the type anyway?`;
+}
+
+/** M3B: friendly text for the type-change / archive API errors. */
+export function scheduleChangeErrorMessage(err: unknown): string {
+  const code = err instanceof ApiError ? err.message : "";
+  if (code === "schedule_used_by_confirmed_import") return "This schedule was used by a confirmed import, so its type can't be changed.";
+  if (code === "insufficient_role_for_action") return "Your role cannot change schedules.";
+  if (code === "schedule_archived") return "Unarchive the schedule first.";
+  if (code === "kind_unchanged") return "The schedule already has that type.";
+  return "The change failed. Nothing was changed.";
+}
+
+export const STALE_IMPORT_MESSAGE = "A schedule used by this draft changed type after it was started. Start the import again to continue.";
