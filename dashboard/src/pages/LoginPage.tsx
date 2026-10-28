@@ -4,6 +4,7 @@ import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_PARAM } from "../lib/session";
 import { loginErrorMessage } from "../lib/scheduleUi";
 import { useAuth } from "../lib/AuthContext";
+import { isSiteAccessLoginError, siteAccessRenewalUrl, SITE_ACCESS_LOGIN_MESSAGE } from "../lib/siteAccess";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -12,17 +13,21 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [siteAccess, setSiteAccess] = useState(false);
+  const renewalUrl = siteAccessRenewalUrl(window.location.origin);
   const [params] = useSearchParams();
   const expired = params.get(SESSION_EXPIRED_PARAM) === "1";
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSiteAccess(false);
     setSubmitting(true);
     try {
       await login(email, password);
       navigate("/");
     } catch (err) {
+      setSiteAccess(isSiteAccessLoginError(err));
       setError(loginErrorMessage(err));
     } finally {
       setSubmitting(false);
@@ -48,6 +53,8 @@ export function LoginPage() {
             <input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </div>
           {error && <p className="error-text">{error}</p>}
+          {error && siteAccess && <p className="error-text" role="alert">{SITE_ACCESS_LOGIN_MESSAGE}</p>}
+          {error && siteAccess && renewalUrl && <a className="btn btn-primary" href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a>}
           <button type="submit" className="btn btn-primary" disabled={submitting}>
             {submitting ? "Signing in…" : "Sign In"}
           </button>
@@ -55,6 +62,7 @@ export function LoginPage() {
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 16, textAlign: "center" }}>
           New here? <Link to="/signup">Create an organization</Link>
         </p>
+        {renewalUrl && <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 8, textAlign: "center" }}><a href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a> if this private preview asks for access again.</p>}
       </div>
     </div>
   );

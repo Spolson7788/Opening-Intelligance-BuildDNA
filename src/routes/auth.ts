@@ -98,6 +98,13 @@ const registerSchema = z.object({
 // another customer's org UUID could add themselves as an admin to it. Fixed
 // by deriving the org from the caller's own verified JWT instead of trusting
 // client input.
+// RETIRED: accounts are added through POST /api/members (Add team member), which applies the
+// forced first-sign-in password change and the role ceiling. Only the offline vitest suites, which use
+// this route as a fixture, can still reach the old handler; hosted runtimes never set VITEST.
+authRouter.post("/register", (req, res, next) => {
+  if (process.env.VITEST === "true") return next();
+  res.status(410).json({ error: "register_retired", message: "Use Add team member (POST /api/members)." });
+});
 authRouter.post("/register", requireAuth, requireRole("admin"), auditLog, async (req: AuthedRequest, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });

@@ -4,9 +4,11 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  reference?: string;
+  constructor(status: number, message: string, reference?: string) {
     super(message);
     this.status = status;
+    this.reference = reference;
   }
 }
 
@@ -68,7 +70,8 @@ export async function login(email: string, password: string) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error || "login_failed");
+    // The app's login route always returns a UUID reference; the hosting gate never does.
+    throw new ApiError(res.status, body.error || "login_failed", typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
   }
   return res.json() as Promise<{ token: string; expiresIn: string }>;
 }
@@ -116,15 +119,6 @@ export interface TeamMember {
 
 export async function listTeamMembers(): Promise<TeamMember[]> {
   return authedFetch("/auth/users");
-}
-
-export async function inviteTeamMember(payload: {
-  email: string;
-  password: string;
-  full_name: string;
-  role: string;
-}): Promise<TeamMember> {
-  return authedFetch("/auth/register", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export async function updateTeamMember(id: string, payload: { role?: string; is_active?: boolean }): Promise<TeamMember> {
