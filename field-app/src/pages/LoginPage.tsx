@@ -7,6 +7,8 @@ import { readLoginForm } from "../lib/loginForm";
 import { loginFailureMessage } from "../lib/authResponse";
 import { loginReturnPath } from "../lib/qrPayload";
 import { isQrDetailsPath } from '../lib/qrLanding';
+import { siteAccessRenewalUrl } from '../lib/siteAccess';
+import { isSiteAccessLoginFailure } from '../lib/authResponse';
 
 export function LoginPage() {
   const { auth, loading, identityChecking, login } = useAuth();
@@ -15,6 +17,8 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [reference, setReference] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Same allow-listed builder as the opening detail and QR pages; null on any other origin.
+  const renewalUrl = siteAccessRenewalUrl(window.location.origin);
 
   useEffect(() => { setError(null); setReference(null); }, [auth?.userId, auth?.organizationId]);
 
@@ -86,11 +90,13 @@ export function LoginPage() {
           />
         </div>
         {error && <p className="error-text">{error}</p>}
+        {error && isSiteAccessLoginFailure(error) && renewalUrl && <a className="btn btn-primary" href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a>}
         {reference && <p>Support reference: {reference}</p>}
         <button type="submit" className="btn btn-primary" disabled={submitting}>
           {submitting ? "Signing in…" : "Sign In"}
         </button>
       </form>
+      {renewalUrl && <p style={{ fontSize: 13, marginTop: 16 }}><a href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a> if this private preview asks for access again.</p>}
     </div>
   );
 }

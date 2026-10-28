@@ -14,6 +14,11 @@ export function loginFailureMessage(status: number, code: string, reference?: st
   return `Sign-in service is unavailable (HTTP ${status}). Your credentials have not been confirmed rejected.`;
 }
 
+export const SITE_ACCESS_LOGIN_PREFIX = 'Site access could not be verified';
+export function isSiteAccessLoginFailure(message: string): boolean {
+  return message.startsWith(SITE_ACCESS_LOGIN_PREFIX);
+}
+
 const savedMessage = 'Password saved. Sign in with the password you just chose.';
 export async function recoveryResponse(response: Response): Promise<{saved: boolean; message: string}> {
   const json = response.headers.get('content-type')?.split(';')[0].trim() === 'application/json';
