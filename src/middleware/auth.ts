@@ -6,16 +6,50 @@ import { pool } from "../db/pool";
 export interface AuthedRequest extends Request {
   auth?: {
     userId: string;
-    organizationId: string;
-    role: string;
+    organizationId: string; // the ACTIVE company for this request (token claim, re-checked every request)
+    role: string; // the role in the active company (view-only tree access reports 'viewer')
+    homeOrganizationId?: string;
+    access?: "member" | "tree_admin" | "tree_view";
+    // Companies whose data this request may READ: the active company plus, when the active
+    // membership is admin or facilities_manager, its descendant locations. Writes stay on organizationId.
+    allowedOrganizationIds?: string[];
   };
 }
+
+// Multi-company (milestone 1): the token names the active company; requireAuth re-checks on every
+// request that the person is active, the session is current, and they still hold an active
+// membership (or parent-tree access) in that company. Email domain never grants anything.
+export const AUTH_CONTEXT_SQL = `SELECT u.id, u.organization_id AS home_organization_id, u.is_active, u.session_version,
+       (to_jsonb(u) ->> 'must_change_password')::boolean AS must_change_password,
+       a.organization_id, a.role, a.access,
+       (SELECT array_agg(t.organization_id) FROM user_authorized_orgs(u.id) t WHERE t.via_organization_id = $2) AS allowed_organization_ids
+FROM users u LEFT JOIN LATERAL (SELECT x.organization_id, x.role, x.access FROM user_authorized_orgs(u.id) x WHERE x.organization_id = $2) a ON true
+WHERE u.id = $1`;
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
 if (!JWT_SECRET) {
   // Fail loudly at startup rather than silently signing tokens with an undefined secret.
   throw new Error("JWT_SECRET environment variable is required");
+}
+
+// Databases without the memberships migration (e.g. before it is applied) keep today's single-company
+// rule: the token company must be the person's own users.organization_id. Only "missing function/table"
+// errors fall back; any other failure still denies with 503.
+export const LEGACY_AUTH_SQL = `SELECT id, organization_id, organization_id AS home_organization_id, role, is_active, session_version,
+              (to_jsonb(users) ->> 'must_change_password')::boolean AS must_change_password
+       FROM users WHERE id=$1 AND organization_id=$2`;
+export function isMissingSchema(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  return code === "42883" || code === "42P01";
+}
+async function loadAuthContext(userId: string, organizationId: string) {
+  try {
+    return await pool.query(AUTH_CONTEXT_SQL, [userId, organizationId]);
+  } catch (error) {
+    if (!isMissingSchema(error)) throw error;
+    return pool.query(LEGACY_AUTH_SQL, [userId, organizationId]);
+  }
 }
 
 export async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
@@ -40,16 +74,12 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     return deny(401, "invalid_token", error instanceof jwt.TokenExpiredError ? "token_expired" : "invalid_token");
   }
   try {
-    const current = await pool.query(
-      `SELECT id, organization_id, role, is_active, session_version,
-              (to_jsonb(users) ->> 'must_change_password')::boolean AS must_change_password
-       FROM users WHERE id=$1 AND organization_id=$2`,
-      [payload.userId, payload.organizationId],
-    );
+    const current = await loadAuthContext(payload.userId, payload.organizationId);
     const user = current.rows[0];
     if (!user) return deny(401, "invalid_token_subject");
     if (!user.is_active) return deny(403, "account_deactivated");
 
+    if (!user.organization_id || !user.role || user.organization_id !== payload.organizationId) return deny(403, "membership_inactive");
     if ((payload.sessionVersion ?? 0) !== (user.session_version ?? 0)) return deny(401, "session_revoked");
 
     // The database is authoritative on every request. A role change or account
@@ -66,6 +96,9 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
       userId: user.id,
       organizationId: user.organization_id,
       role: user.role,
+      homeOrganizationId: user.home_organization_id ?? user.organization_id,
+      access: user.access ?? "member",
+      allowedOrganizationIds: Array.from(new Set([user.organization_id, ...((user.allowed_organization_ids as string[] | null) ?? [])])),
     };
     return next();
   } catch {

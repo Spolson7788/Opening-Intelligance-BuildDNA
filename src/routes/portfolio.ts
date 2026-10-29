@@ -1,5 +1,5 @@
 import { databaseRoute } from '../db/databaseRoute';
-import { facilityAccessPredicate, photoVisibleSql, serviceEventVisibleSql } from "../db/tenantScope";
+import { facilityAccessPredicate, photoVisibleSql, serviceEventVisibleSql, facilityAccessPredicateAny, allowedOrgIds } from "../db/tenantScope";
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
@@ -175,11 +175,18 @@ portfolioRouter.get("/properties", async (req: AuthedRequest, res) => {
   const orgId = req.auth!.organizationId;
   try {
     const propertiesRes = await pool.query(
-      `SELECT p.*, (pf.organization_id = $1) AS is_owner FROM properties p
+      // ?scope=tree (read only): also facilities owned by descendant locations the person may see
+      // through an admin or facilities_manager membership of the active company (multi-company M1).
+      req.query.scope === "tree"
+        ? `SELECT p.*, (pf.organization_id = $1) AS is_owner, (pf.organization_id <> $1 AND pf.organization_id = ANY($2::uuid[])) AS is_tree_location FROM properties p
+       JOIN portfolios pf ON pf.id = p.portfolio_id
+       WHERE ${facilityAccessPredicateAny(2)}
+       ORDER BY p.name`
+        : `SELECT p.*, (pf.organization_id = $1) AS is_owner FROM properties p
        JOIN portfolios pf ON pf.id = p.portfolio_id
        WHERE ${facilityAccessPredicate(1)}
        ORDER BY p.name`,
-      [orgId]
+      req.query.scope === "tree" ? [orgId, allowedOrgIds(req.auth!)] : [orgId]
     );
     const properties = propertiesRes.rows;
     if (properties.length === 0) return res.json([]);

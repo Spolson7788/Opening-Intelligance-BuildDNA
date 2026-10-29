@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { pool } from "../db/pool";
-import { requireAuth, requireRole, AuthedRequest } from "../middleware/auth";
+import { requireAuth, requireRole, AuthedRequest, isMissingSchema } from "../middleware/auth";
 import { auditLog } from "../middleware/auditLog";
 
 export const authRouter = Router();
@@ -19,6 +19,25 @@ export function issueToken(user: { id: string; organization_id: string; role: st
     JWT_SECRET,
     { expiresIn: TOKEN_EXPIRY }
   );
+}
+
+
+export type CompanyAccess = { organization_id: string; name: string | null; role: string; access: string; is_home: boolean; via_organization_id: string | null };
+
+// Active memberships plus parent-tree access (admin: tree_admin; facilities_manager: tree_view, view-only).
+// Databases without the memberships migration fall back to the legacy single company.
+export async function loadCompanies(userId: string, homeOrgId: string, homeRole: string): Promise<CompanyAccess[]> {
+  try {
+    const r = await pool.query(
+      `SELECT a.organization_id, o.name, a.role, a.access, a.via_organization_id, (a.organization_id = u.organization_id) AS is_home
+       FROM users u CROSS JOIN LATERAL user_authorized_orgs(u.id) a LEFT JOIN organizations o ON o.id = a.organization_id
+       WHERE u.id = $1 ORDER BY (a.organization_id = u.organization_id) DESC, o.name`,
+      [userId]
+    );
+    if (Array.isArray(r.rows) && r.rows.length && r.rows.every((x: any) => x && typeof x.access === "string")) return r.rows as CompanyAccess[];
+    if (Array.isArray(r.rows) && r.rows.length === 0) return [];
+  } catch { /* legacy schema */ }
+  return [{ organization_id: homeOrgId, name: null, role: homeRole, access: "member", is_home: true, via_organization_id: homeOrgId }];
 }
 
 const signupSchema = z.object({
@@ -172,9 +191,17 @@ authRouter.post("/login", async (req, res) => {
       report("account_deactivated");
       return res.status(403).json({ error: "account_deactivated", reference });
     }
-    const token = issueToken(user);
+    // Multi-company: list every company this person may act in; the home company is the default.
+    const companies = await loadCompanies(user.id, user.organization_id, user.role);
+    const active = companies.find((c) => c.is_home) ?? companies[0];
+    if (!active) {
+      report("no_active_membership");
+      return res.status(403).json({ error: "membership_inactive", reference });
+    }
+    const token = issueToken({ ...user, organization_id: active.organization_id, role: active.role });
     report("success");
-    res.json({ token, expiresIn: TOKEN_EXPIRY, must_change_password: user.must_change_password === true });
+    res.json({ token, expiresIn: TOKEN_EXPIRY, must_change_password: user.must_change_password === true,
+      active_organization_id: active.organization_id, companies });
   } catch {
     report("service_error");
     res.status(503).json({ error: "authentication_service_unavailable", reference });
@@ -279,11 +306,13 @@ authRouter.get("/me", requireAuth, async (req: AuthedRequest, res) => {
   try {
     const r = await pool.query(
       `SELECT id, organization_id, email, full_name, role, must_change_password, is_test_account, default_property_id, password_changed_at
-       FROM users WHERE id = $1 AND organization_id = $2`,
-      [req.auth!.userId, req.auth!.organizationId]
+       FROM users WHERE id = $1`,
+      [req.auth!.userId]
     );
     if (!r.rows.length) return res.status(404).json({ error: "not_found" });
-    res.json(r.rows[0]);
+    // organization_id / role describe the ACTIVE company; home_organization_id is the person's home.
+    res.json({ ...r.rows[0], home_organization_id: r.rows[0].organization_id, organization_id: req.auth!.organizationId,
+      role: req.auth!.role, access: req.auth!.access ?? "member" });
   } catch {
     res.status(503).json({ error: "authentication_service_unavailable" });
   }
@@ -303,7 +332,7 @@ authRouter.post("/change-password", requireAuth, async (req: AuthedRequest, res)
   if (bytes > 72) return res.status(400).json({ error: "password_too_long" });
   if (new_password === current_password) return res.status(400).json({ error: "password_unchanged" });
   try {
-    const r = await pool.query("SELECT password_hash FROM users WHERE id = $1 AND organization_id = $2", [req.auth!.userId, req.auth!.organizationId]);
+    const r = await pool.query("SELECT password_hash FROM users WHERE id = $1 AND organization_id = $2", [req.auth!.userId, req.auth!.homeOrganizationId ?? req.auth!.organizationId]);
     if (!r.rows.length || !(await bcrypt.compare(current_password, r.rows[0].password_hash))) {
       return res.status(401).json({ error: "current_password_incorrect" });
     }
@@ -311,13 +340,57 @@ authRouter.post("/change-password", requireAuth, async (req: AuthedRequest, res)
     const u = await pool.query(
       `UPDATE users SET password_hash = $3, must_change_password = false, password_changed_at = now(), session_version = session_version + 1
        WHERE id = $1 AND organization_id = $2 RETURNING id, organization_id, role, session_version`,
-      [req.auth!.userId, req.auth!.organizationId, hash]
+      [req.auth!.userId, req.auth!.homeOrganizationId ?? req.auth!.organizationId, hash]
     );
     await pool.query(
       `INSERT INTO audit_log (organization_id, user_id, action, method, path, request_body, status_code) VALUES ($1,$2,'Changed own password','POST','/api/auth/change-password',$3,200)`,
       [req.auth!.organizationId, req.auth!.userId, JSON.stringify({ current_password: "[redacted]", new_password: "[redacted]" })]
     );
-    res.json({ token: issueToken(u.rows[0]), expiresIn: TOKEN_EXPIRY });
+    // Stay in the company the person was working in.
+    res.json({ token: issueToken({ ...u.rows[0], organization_id: req.auth!.organizationId, role: req.auth!.role }), expiresIn: TOKEN_EXPIRY });
+  } catch {
+    res.status(503).json({ error: "authentication_service_unavailable" });
+  }
+});
+// Companies the signed-in person may switch to (fresh from the database).
+authRouter.get("/companies", requireAuth, async (req: AuthedRequest, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const companies = await loadCompanies(req.auth!.userId, req.auth!.homeOrganizationId ?? req.auth!.organizationId, req.auth!.role);
+    res.json({ active_organization_id: req.auth!.organizationId, companies });
+  } catch {
+    res.status(503).json({ error: "authentication_service_unavailable" });
+  }
+});
+
+const switchSchema = z.object({ organization_id: z.string().uuid() });
+
+// Switch the active company: re-checked against current memberships, then a new token is issued.
+// Same response for "no such company" and "not yours", so company ids are not disclosed.
+authRouter.post("/switch-company", requireAuth, async (req: AuthedRequest, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const parsed = switchSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "invalid_switch_request" });
+  try {
+    const r = await pool.query(
+      `SELECT u.id, u.session_version, (to_jsonb(u) ->> 'must_change_password')::boolean AS must_change_password, a.organization_id, a.role, a.access
+       FROM users u JOIN LATERAL user_authorized_orgs(u.id) a ON a.organization_id = $2 WHERE u.id = $1 AND u.is_active`,
+      [req.auth!.userId, parsed.data.organization_id]
+    ).catch(async (error) => {
+      if (!isMissingSchema(error)) throw error;
+      // Before the memberships migration: only the person's own company exists.
+      return pool.query(
+        `SELECT id, session_version, (to_jsonb(users) ->> 'must_change_password')::boolean AS must_change_password, organization_id, role, 'member' AS access
+         FROM users WHERE id = $1 AND organization_id = $2 AND is_active`, [req.auth!.userId, parsed.data.organization_id]);
+    });
+    const row = r.rows[0];
+    if (!row) return res.status(403).json({ error: "membership_inactive" });
+    await pool.query(
+      `INSERT INTO audit_log (organization_id, user_id, action, method, path, request_body, status_code) VALUES ($1,$2,'Switched company','POST','/api/auth/switch-company',$3,200)`,
+      [row.organization_id, req.auth!.userId, JSON.stringify({ from_organization_id: req.auth!.organizationId, to_organization_id: row.organization_id })]
+    ).catch(() => undefined);
+    res.json({ token: issueToken({ id: row.id, organization_id: row.organization_id, role: row.role, session_version: row.session_version, must_change_password: row.must_change_password }),
+      expiresIn: TOKEN_EXPIRY, active_organization_id: row.organization_id, role: row.role, access: row.access });
   } catch {
     res.status(503).json({ error: "authentication_service_unavailable" });
   }

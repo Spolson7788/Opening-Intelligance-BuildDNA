@@ -22,6 +22,7 @@ import { membersRouter, invitesPublicRouter } from "./routes/members";
 import { hardwareRouter } from "./routes/hardware";
 import { photosRouter } from "./routes/photos";
 import { portfolioRouter } from "./routes/portfolio";
+import { platformRouter } from "./routes/platform";
 import { exportRouter } from "./routes/export";
 import { auditLogRouter } from "./routes/auditLogRoute";
 import { documentsRouter } from "./routes/documents";
@@ -121,6 +122,7 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   app.use("/api/hardware", hardwareRouter);
   app.use("/api/photos", photosRouter);
   app.use("/api/portfolio", portfolioRouter);
+  app.use("/api/platform", platformRouter);
   app.use("/api/export", exportRouter);
   app.use("/api/audit-log", auditLogRouter);
   if (options.legacyDocumentsEnabled === false) {

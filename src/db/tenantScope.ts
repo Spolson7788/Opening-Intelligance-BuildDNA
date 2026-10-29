@@ -76,3 +76,47 @@ export function photoVisibleSql(alias: string, orgParameter: number): string {
  return `(${alias}.related_entity_type IS DISTINCT FROM 'service_event' OR EXISTS (
  SELECT 1 FROM service_events pv_e WHERE pv_e.id=${alias}.related_entity_id AND ${serviceEventVisibleSql('pv_e', orgParameter)}))`;
 }
+
+// ---- Multi-company (milestone 1): allowed-company lists, READ ONLY ----
+// `orgsParameter` is a uuid[] placeholder holding req.auth.allowedOrganizationIds: the active company
+// plus, for an admin or facilities_manager membership, its descendant locations (same-type trees only,
+// see user_authorized_orgs). Parent-tree visibility covers facilities OWNED by those companies.
+// Provider access stays assignment-only: a provider company sees a customer facility only through an
+// active facility_provider_assignments row naming that provider company (or one of its own branches),
+// never through a customer tree, email domain or another provider. Writes keep using the single
+// active-company helpers above.
+export function facilityAccessPredicateAny(orgsParameter: number): string {
+ return `(pf.organization_id = ANY($${orgsParameter}::uuid[]) OR EXISTS (
+ SELECT 1 FROM facility_provider_assignments fpa
+ WHERE fpa.property_id=p.id AND fpa.provider_organization_id = ANY($${orgsParameter}::uuid[])
+ AND fpa.revoked_at IS NULL))`;
+}
+export function propertiesForOrgsSubquery(orgsParameter: number): string {
+  return `
+    SELECT p.id FROM properties p
+    JOIN portfolios pf ON pf.id = p.portfolio_id
+    WHERE ${facilityAccessPredicateAny(orgsParameter)}
+  `;
+}
+export function buildingsForOrgsSubquery(orgsParameter: number): string {
+  return `
+    SELECT b.id FROM buildings b
+    JOIN properties p ON p.id = b.property_id
+    JOIN portfolios pf ON pf.id = p.portfolio_id
+    WHERE ${facilityAccessPredicateAny(orgsParameter)}
+  `;
+}
+export function openingsForOrgsSubquery(orgsParameter: number): string {
+  return `
+    SELECT o.id FROM openings o
+    JOIN buildings b ON b.id = o.building_id
+    JOIN properties p ON p.id = b.property_id
+    JOIN portfolios pf ON pf.id = p.portfolio_id
+    WHERE ${facilityAccessPredicateAny(orgsParameter)}
+  `;
+}
+// The read list for a request: never empty, always includes the active company.
+export function allowedOrgIds(auth: { organizationId: string; allowedOrganizationIds?: string[] }): string[] {
+  const list = auth.allowedOrganizationIds?.length ? auth.allowedOrganizationIds : [auth.organizationId];
+  return list.includes(auth.organizationId) ? list : [auth.organizationId, ...list];
+}
