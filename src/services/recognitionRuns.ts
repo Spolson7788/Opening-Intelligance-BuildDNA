@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-// Hosting plan step 1 (t130): recognition run records. Pure helpers, no I/O.
+// Hosting plan steps 1-2: recognition run records. Pure helpers, no I/O.
+// Identity thresholds (confirmed Oct 29): manufacturer 0.5, series 0.5, model 0.6 + marking + evidence.
 
 // The preserved engine (src/services/legacyVision.ts) is not modified. Its pinned source hash
 // identifies the exact prompts; tests assert the model id and the engine still match these values.
@@ -8,9 +9,10 @@ export const LEGACY_VISION_ENGINE_CONFIG = {
   model: 'claude-sonnet-4-5-20250929',
   prompt_version: 'legacyVision-source-sha256:9da330e98a2f1646',
 } as const;
-export const RECOGNITION_PREPROCESSING_VERSION = 'stored-original-none-v1'; // originals sent unmodified
-// Provider limit for one image (Anthropic: 5 MB). Larger originals fail explicitly; downsizing is a
-// later, versioned preprocessing step, never a silent client-side substitute.
+// v2: originals <= 5 MB are sent unmodified; larger ones get a tracked, versioned downscale copy
+// (see recognitionDownscale.ts). Recorded per run in processing_config and per photo.
+export const RECOGNITION_PREPROCESSING_VERSION = 'stored-original-tracked-downscale-v2';
+// Provider limit for one image (Anthropic: 5 MB).
 export const MAX_PROVIDER_IMAGE_BYTES = 5 * 1024 * 1024;
 export const IDENTITY_THRESHOLDS = { manufacturer: 0.5, series: 0.5, model: 0.6 } as const;
 

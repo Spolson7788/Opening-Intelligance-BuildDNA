@@ -8,8 +8,16 @@ import { assertSyncDispatchAllowed } from './syncNavigation';
 // both in local dev (via Vite proxy) and once deployed.
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
-export async function recognizeHardware(openingId:string,images:string[],mediaType:string) {
-  return authedFetch('/recognition',{method:'POST',body:JSON.stringify({opening_id:openingId,images,media_type:mediaType})});
+// The old /recognition route (client base64) is retired (410). Recognition runs on stored, verified
+// photographs only and every attempt is a recorded run (budget-guarded, tracked downscale).
+export type RecognitionRun = { id: string; status: string; failure_code: string | null; result: Record<string, unknown> | null;
+  result_level: string | null; manufacturer: string | null; series: string | null; model: string | null; downscale_used?: boolean };
+export async function startRecognitionRun(openingId: string, photoIds: string[], clientRequestId: string): Promise<{ run: RecognitionRun; replayed?: boolean }> {
+  return authedFetch('/recognition/runs', { method: 'POST', body: JSON.stringify({ opening_id: openingId, photo_ids: photoIds, client_request_id: clientRequestId }) });
+}
+export type StoredPhoto = { id: string; media_type: string; upload_state: string; content_type: string | null; byte_size: number | null; created_at: string; original_filename?: string | null };
+export async function listOpeningPhotos(openingId: string): Promise<StoredPhoto[]> {
+  return authedFetch(`/photos/by-opening/${encodeURIComponent(openingId)}`);
 }
 
 export class ApiError extends Error {

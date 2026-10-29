@@ -5,13 +5,17 @@ import { requireAuth, requireRole, AuthedRequest } from '../middleware/auth';
 import { openingsForOrgSubquery, photoVisibleSql } from '../db/tenantScope';
 import { legacyVisionHandler } from '../services/legacyVision';
 import { getObjectBytes } from '../services/storage';
+import { downscaleForRecognition, DownscaleError, MAX_ORIGINAL_READ_BYTES } from '../services/recognitionDownscale';
 import { LEGACY_VISION_ENGINE_CONFIG, buildCommit, conservativeIdentity, sha256Hex, MAX_PROVIDER_IMAGE_BYTES, RECOGNITION_PREPROCESSING_VERSION } from '../services/recognitionRuns';
 
 // Hosting plan step 1 (t130): every recognition attempt is a recognition_runs row linked to the
 // STORED original photo(s) by id + sha256. Off unless OI_RECOGNITION_ENABLED=true.
 // One provider call per run, never retried: a lost or unreadable response is recorded as
 // 'ambiguous' (it may have been billed) and a new run needs a new client_request_id.
-// TODO (hosting plan step 2): atomic paid-call budget reservation before the provider call.
+// Step 2: an atomic per-company budget reservation (recognition_budget_reserve, one conditional
+// UPDATE under the budget row lock) happens immediately before the provider call. A refusal is
+// recorded on the run as status 'refused' with the reason; the provider is not called.
+// Originals over 5 MB get a tracked downscale copy for recognition only; the original is untouched.
 const createSchema = z.object({
   opening_id: z.string().uuid(),
   photo_ids: z.array(z.string().uuid()).min(1).max(5),
@@ -21,8 +25,10 @@ const createSchema = z.object({
 const MEDIA = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const RUN_COLUMNS = `r.id,r.organization_id,r.property_id,r.opening_id,r.requested_by_user_id,r.client_request_id,r.repeat_of_run_id,
   r.mode,r.input_source,r.build_commit,r.processing_config,r.status,r.failure_code,r.result,r.result_level,r.manufacturer,r.series,r.model,
-  r.requires_technician_review,r.requested_at,r.started_at,r.finished_at,
-  COALESCE((SELECT json_agg(json_build_object('photo_id',rp.photo_id,'sha256_checksum',rp.sha256_checksum) ORDER BY rp.ordinal)
+  r.requires_technician_review,r.requested_at,r.started_at,r.finished_at,r.budget_cents,r.downscale_used,
+  COALESCE((SELECT json_agg(json_build_object('photo_id',rp.photo_id,'sha256_checksum',rp.sha256_checksum,'original_byte_size',rp.original_byte_size,
+    'downscaled',rp.downscaled,'derived_sha256_checksum',rp.derived_sha256_checksum,'derived_byte_size',rp.derived_byte_size,
+    'downscale_method_version',rp.downscale_method_version,'downscale_target',rp.downscale_target,'derived_width',rp.derived_width,'derived_height',rp.derived_height) ORDER BY rp.ordinal)
     FROM recognition_run_photos rp WHERE rp.run_id=r.id),'[]'::json) AS photos`;
 // A run is readable by the company that requested it, or by the facility owner, and only while the
 // caller can still reach the opening (owner or active provider assignment). Other providers: 404.
@@ -32,9 +38,9 @@ const runVisible = (org: number) => `r.opening_id IN (${openingsForOrgSubquery(o
 async function readRun(id: string, org: string) {
   return (await pool.query(`SELECT ${RUN_COLUMNS} FROM recognition_runs r WHERE r.id=$1 AND ${runVisible(2)}`, [id, org])).rows[0] ?? null;
 }
-async function finish(id: string, fields: { status: string; failure_code?: string | null; result?: unknown; level?: string | null; manufacturer?: string | null; series?: string | null; model?: string | null }) {
-  await pool.query(`UPDATE recognition_runs SET status=$2,failure_code=$3,result=$4,result_level=$5,manufacturer=$6,series=$7,model=$8,finished_at=now() WHERE id=$1 AND status='running'`,
-    [id, fields.status, fields.failure_code ?? null, fields.result === undefined ? null : JSON.stringify(fields.result), fields.level ?? null, fields.manufacturer ?? null, fields.series ?? null, fields.model ?? null]);
+async function finish(id: string, fields: { status: string; failure_code?: string | null; result?: unknown; level?: string | null; manufacturer?: string | null; series?: string | null; model?: string | null; downscale_used?: boolean }) {
+  await pool.query(`UPDATE recognition_runs SET status=$2,failure_code=$3,result=$4,result_level=$5,manufacturer=$6,series=$7,model=$8,downscale_used=$9,finished_at=now() WHERE id=$1 AND status='running'`,
+    [id, fields.status, fields.failure_code ?? null, fields.result === undefined ? null : JSON.stringify(fields.result), fields.level ?? null, fields.manufacturer ?? null, fields.series ?? null, fields.model ?? null, fields.downscale_used ?? false]);
 }
 
 export const recognitionRunsRouter = Router();
@@ -71,32 +77,42 @@ recognitionRunsRouter.post('/', async (req: AuthedRequest, res) => {
       [org, opening.property_id, b.opening_id, user, b.client_request_id, b.repeat_of_run_id ?? null, buildCommit(), JSON.stringify(config)])).rows[0];
     if (!inserted) return res.status(409).json({ error: 'client_request_id_in_use' });
     const ordered = b.photo_ids.map(id => photos.find((p: any) => p.id === id));
-    for (const [i, p] of ordered.entries()) await pool.query('INSERT INTO recognition_run_photos(run_id,photo_id,sha256_checksum,ordinal) VALUES($1,$2,$3,$4)', [inserted.id, p.id, p.sha256_checksum, i]);
+    const done = async (f: Parameters<typeof finish>[1], code = 200) => { await finish(inserted.id, f); return res.status(code).json({ run: await readRun(inserted.id, org) }); };
 
-    // Read the stored originals and prove they are the bytes the run claims.
-    const images: string[] = [];
-    for (const p of ordered) {
+    // Read each stored original, prove it is the bytes the run claims, then (only if > 5 MB) make a
+    // tracked smaller copy for the provider. Every photo is linked to the run with what was sent.
+    const images: string[] = []; let downscaleUsed = false;
+    for (const [i, p] of ordered.entries()) {
+      const link = (d?: Awaited<ReturnType<typeof downscaleForRecognition>>, size?: number) => pool.query(`INSERT INTO recognition_run_photos(run_id,photo_id,sha256_checksum,ordinal,original_byte_size,
+          downscaled,derived_sha256_checksum,derived_byte_size,downscale_method_version,downscale_target,derived_width,derived_height) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [inserted.id, p.id, p.sha256_checksum, i, size ?? null, !!d, d?.sha256 ?? null, d?.bytes.byteLength ?? null, d?.method_version ?? null, d ? JSON.stringify(d.target) : null, d?.width ?? null, d?.height ?? null]);
       let bytes: Uint8Array;
-      try { bytes = await getObjectBytes(p.storage_object_key, MAX_PROVIDER_IMAGE_BYTES); }
-      catch (e: any) { await finish(inserted.id, { status: 'failed', failure_code: e?.message === 'object_too_large' ? 'original_too_large_for_provider' : 'stored_original_unreadable' }); return res.status(200).json({ run: await readRun(inserted.id, org) }); }
-      if (sha256Hex(bytes) !== p.sha256_checksum) { await finish(inserted.id, { status: 'failed', failure_code: 'stored_original_checksum_mismatch' }); return res.status(200).json({ run: await readRun(inserted.id, org) }); }
-      images.push(Buffer.from(bytes).toString('base64'));
+      try { bytes = await getObjectBytes(p.storage_object_key, MAX_ORIGINAL_READ_BYTES); }
+      catch (e: any) { await link(); return done({ status: 'failed', failure_code: e?.message === 'object_too_large' ? 'original_too_large' : 'stored_original_unreadable' }); }
+      if (sha256Hex(bytes) !== p.sha256_checksum) { await link(); return done({ status: 'failed', failure_code: 'stored_original_checksum_mismatch' }); }
+      if (bytes.byteLength <= MAX_PROVIDER_IMAGE_BYTES) { await link(undefined, bytes.byteLength); images.push(Buffer.from(bytes).toString('base64')); continue; }
+      let d: Awaited<ReturnType<typeof downscaleForRecognition>>;
+      try { d = await downscaleForRecognition(bytes, p.content_type); }
+      catch (e) { await link(undefined, bytes.byteLength); return done({ status: 'failed', failure_code: e instanceof DownscaleError ? e.message : 'downscale_failed' }); }
+      await link(d, bytes.byteLength); downscaleUsed = true; images.push(Buffer.from(d.bytes).toString('base64'));
     }
+
+    // Atomic budget check-and-spend, immediately before the (paid) provider call.
+    const budget = (await pool.query('SELECT recognition_budget_reserve($1) AS outcome', [inserted.id])).rows[0]?.outcome;
+    if (budget !== 'reserved') return done({ status: 'refused', failure_code: budget === 'budget_exceeded' ? 'budget_exceeded' : 'budget_not_configured', downscale_used: downscaleUsed });
     let response: { statusCode: number; body: string };
     try { response = await legacyVisionHandler({ httpMethod: 'POST', body: JSON.stringify({ images, media_type: photos[0].content_type, mode: 'identify' }) }); }
-    catch { await finish(inserted.id, { status: 'ambiguous', failure_code: 'provider_call_outcome_unknown' }); return res.status(200).json({ run: await readRun(inserted.id, org) }); }
+    catch { return done({ status: 'ambiguous', failure_code: 'provider_call_outcome_unknown', downscale_used: downscaleUsed }); }
     if (response.statusCode !== 200) {
       // 5xx from the engine wrapper includes thrown fetch errors (e.g. timeout): the call may have been billed.
-      await finish(inserted.id, response.statusCode >= 500 && response.statusCode !== 502
-        ? { status: 'ambiguous', failure_code: 'provider_call_outcome_unknown' } : { status: 'failed', failure_code: 'provider_failed' });
-      return res.status(200).json({ run: await readRun(inserted.id, org) });
+      return done(response.statusCode >= 500 && response.statusCode !== 502
+        ? { status: 'ambiguous', failure_code: 'provider_call_outcome_unknown', downscale_used: downscaleUsed } : { status: 'failed', failure_code: 'provider_failed', downscale_used: downscaleUsed });
     }
     let result: any;
     try { result = JSON.parse(response.body); } catch { result = null; }
-    if (!result || typeof result !== 'object' || Array.isArray(result)) { await finish(inserted.id, { status: 'failed', failure_code: 'provider_result_unreadable' }); return res.status(200).json({ run: await readRun(inserted.id, org) }); }
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return done({ status: 'failed', failure_code: 'provider_result_unreadable', downscale_used: downscaleUsed });
     const id = conservativeIdentity(result);
-    await finish(inserted.id, { status: id.level === 'none' ? 'abstained' : 'succeeded', result, level: id.level, manufacturer: id.manufacturer, series: id.series, model: id.model });
-    return res.status(201).json({ run: await readRun(inserted.id, org) });
+    return done({ status: id.level === 'none' ? 'abstained' : 'succeeded', result, level: id.level, manufacturer: id.manufacturer, series: id.series, model: id.model, downscale_used: downscaleUsed }, 201);
   } catch { return res.status(503).json({ error: 'recognition_unavailable' }); }
 });
 

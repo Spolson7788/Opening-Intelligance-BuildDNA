@@ -60,12 +60,16 @@ beforeAll(async () => {
   await state.db.exec('BEGIN;' + script + ';COMMIT;');
   await state.db.exec(readFileSync('docs/rollback/20261030090700_recognition_runs_rollback.sql', 'utf8')); undoProven = !(await tableExists());
   await state.db.exec(script); await state.db.exec(script); // idempotent re-apply
+  // Step 2 (DRAFT 090800) adds the budget guard; these tests give both providers ample budget.
+  await state.db.exec(readFileSync('migrations/20261030090800_recognition_budget_guard.sql', 'utf8'));
   ids.owner = await org('Synthetic owner', 'customer');
   ids.V = await org('Synthetic Provider V', 'service_partner'); ids.D = await org('Synthetic Provider D', 'service_partner');
   const ownerAdmin = await user(ids.owner, 'admin'); tok.owner = ownerAdmin.auth;
   const v = await user(ids.V, 'technician'); tok.V = v.auth; ids.vUser = v.id;
   tok.D = (await user(ids.D, 'technician')).auth;
   tok.viewer = (await user(ids.owner, 'viewer')).auth;
+  for (const [o, by] of [[ids.V, v.id], [ids.D, v.id]]) await sql(`INSERT INTO recognition_budgets(organization_id,period_month,limit_cents,per_run_cents,set_by_user_id,set_reason)
+    VALUES($1,date_trunc('month',now())::date,1000000,1,$2,'synthetic ample budget')`, [o, by]);
   const fv = await facility(ids.owner, 'V-site'), fd = await facility(ids.owner, 'D-site');
   Object.assign(ids, { vProp: fv.p, vOpen: fv.o, dProp: fd.p, dOpen: fd.o });
   for (const [p, prov] of [[fv.p, ids.V], [fd.p, ids.D]]) await sql('INSERT INTO facility_provider_assignments(property_id,provider_organization_id,granted_by_user_id) VALUES($1,$2,$3)', [p, prov, ownerAdmin.id]);
@@ -92,8 +96,8 @@ describe('recognition run records (draft migration, not applied anywhere)', () =
     expect(r.status).toBe(201); const run = r.body.run;
     expect(run).toMatchObject({ status: 'succeeded', organization_id: ids.V, property_id: ids.vProp, opening_id: ids.vOpen, requested_by_user_id: ids.vUser,
       build_commit: 'abc1234', input_source: 'stored_original', result_level: 'model', manufacturer: 'Example Co', series: 'S100', model: 'S100-X', requires_technician_review: true, failure_code: null });
-    expect(run.photos).toEqual([{ photo_id: ids.vPhoto, sha256_checksum: sha(jpeg(1)) }, { photo_id: ids.vPhoto2, sha256_checksum: sha(jpeg(2)) }]);
-    expect(run.processing_config).toMatchObject({ engine: 'legacyVision', model: LEGACY_VISION_ENGINE_CONFIG.model, prompt_version: LEGACY_VISION_ENGINE_CONFIG.prompt_version, preprocessing_version: 'stored-original-none-v1' });
+    expect(run.photos.map((p: any) => ({ photo_id: p.photo_id, sha256_checksum: p.sha256_checksum }))).toEqual([{ photo_id: ids.vPhoto, sha256_checksum: sha(jpeg(1)) }, { photo_id: ids.vPhoto2, sha256_checksum: sha(jpeg(2)) }]);
+    expect(run.processing_config).toMatchObject({ engine: 'legacyVision', model: LEGACY_VISION_ENGINE_CONFIG.model, prompt_version: LEGACY_VISION_ENGINE_CONFIG.prompt_version, preprocessing_version: 'stored-original-tracked-downscale-v2' });
     expect(run.requested_at && run.started_at && run.finished_at).toBeTruthy();
     // The provider received the stored original bytes, not client-sent base64.
     const sent = JSON.parse(state.engine.mock.calls[0][0].body);

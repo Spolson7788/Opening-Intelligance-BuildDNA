@@ -1,0 +1,32 @@
+-- Rollback for DRAFT 20261030090800_recognition_budget_guard.sql (restores the 090700 shape).
+-- Fails by design if any run is 'refused' or holds budget fields; export and decide first.
+DROP FUNCTION IF EXISTS recognition_budget_reserve(UUID);
+DROP TRIGGER IF EXISTS recognition_runs_insert_guard ON recognition_runs;
+DROP FUNCTION IF EXISTS recognition_runs_insert_guard();
+DROP TABLE IF EXISTS recognition_budget_reservations;
+DROP FUNCTION IF EXISTS recognition_budget_reservations_guard();
+DROP TABLE IF EXISTS recognition_budgets;
+ALTER TABLE recognition_runs DROP CONSTRAINT IF EXISTS recognition_runs_refused_unbilled;
+ALTER TABLE recognition_runs DROP CONSTRAINT IF EXISTS recognition_runs_failure_explicit;
+ALTER TABLE recognition_runs DROP CONSTRAINT IF EXISTS recognition_runs_status_check;
+ALTER TABLE recognition_runs ADD CONSTRAINT recognition_runs_status_check CHECK (status IN ('running','succeeded','abstained','failed','ambiguous'));
+ALTER TABLE recognition_runs ADD CONSTRAINT recognition_runs_failure_explicit CHECK ((status IN ('failed','ambiguous')) = (failure_code IS NOT NULL));
+ALTER TABLE recognition_runs DROP COLUMN IF EXISTS budget_cents, DROP COLUMN IF EXISTS downscale_used;
+ALTER TABLE recognition_run_photos DROP CONSTRAINT IF EXISTS recognition_run_photos_downscale_complete;
+ALTER TABLE recognition_run_photos DROP COLUMN IF EXISTS downscaled, DROP COLUMN IF EXISTS original_byte_size, DROP COLUMN IF EXISTS derived_sha256_checksum,
+  DROP COLUMN IF EXISTS derived_byte_size, DROP COLUMN IF EXISTS downscale_method_version, DROP COLUMN IF EXISTS downscale_target,
+  DROP COLUMN IF EXISTS derived_width, DROP COLUMN IF EXISTS derived_height;
+CREATE OR REPLACE FUNCTION recognition_runs_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'recognition_runs_no_delete'; END IF;
+  IF OLD.status <> 'running' THEN RAISE EXCEPTION 'recognition_run_finished_is_immutable'; END IF;
+  IF NEW.id <> OLD.id OR NEW.organization_id <> OLD.organization_id OR NEW.property_id <> OLD.property_id
+     OR NEW.opening_id <> OLD.opening_id OR NEW.requested_by_user_id <> OLD.requested_by_user_id
+     OR NEW.client_request_id <> OLD.client_request_id OR NEW.repeat_of_run_id IS DISTINCT FROM OLD.repeat_of_run_id
+     OR NEW.mode <> OLD.mode OR NEW.input_source <> OLD.input_source OR NEW.build_commit <> OLD.build_commit
+     OR NEW.processing_config <> OLD.processing_config OR NEW.requested_at <> OLD.requested_at
+     OR NEW.started_at IS DISTINCT FROM OLD.started_at THEN
+    RAISE EXCEPTION 'recognition_run_immutable_fields';
+  END IF;
+  RETURN NEW;
+END $$;
