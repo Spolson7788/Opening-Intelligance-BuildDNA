@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { fetchAuditLog } from "../lib/api";
 import type { AuditLogEntry } from "../lib/api";
 import { Sidebar } from "../components/Sidebar";
+import { useLocations } from "../lib/LocationContext";
 
 export function AuditLogPage() {
   const navigate = useNavigate();
@@ -11,9 +12,11 @@ export function AuditLogPage() {
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  const loc = useLocations();
+  const [locSort, setLocSort] = useState(false);
   useEffect(() => {
     fetchAuditLog()
-      .then(setEntries)
+      .then((rows) => setEntries((rows ?? []).filter(loc.inFilter)))
       .catch(() => setError("Couldn't load the audit log. Check your connection and try again."))
       .finally(() => setLoading(false));
   }, []);
@@ -46,15 +49,16 @@ export function AuditLogPage() {
             ) : (
               <table>
                 <thead>
-                  <tr><th>When</th><th>Who</th><th>Action</th><th></th></tr>
+                  <tr><th>When</th><th onClick={() => setLocSort((v) => !v)} style={{ cursor: "pointer" }}>Location {locSort ? "↑" : ""}</th><th>Who</th><th>Action</th><th></th></tr>
                 </thead>
                 <tbody>
-                  {entries.map((e) => (
+                  {loc.sortRows(entries, locSort).map((e) => (
                     <Fragment key={e.id}>
                       <tr onClick={() => setExpandedId(expandedId === e.id ? null : e.id)} style={{ cursor: "pointer" }}>
                         <td style={{ whiteSpace: "nowrap", fontSize: 12.5, color: "var(--text-secondary)" }}>
                           {new Date(e.created_at).toLocaleString()}
                         </td>
+                        <td>{loc.label(e)}</td>
                         <td>
                           {e.user_full_name}
                           <div style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>{e.user_email}</div>
@@ -66,7 +70,7 @@ export function AuditLogPage() {
                       </tr>
                       {expandedId === e.id && (
                         <tr>
-                          <td colSpan={4} style={{ background: "var(--bg)", fontSize: 12 }}>
+                          <td colSpan={5} style={{ background: "var(--bg)", fontSize: 12 }}>
                             <div style={{ padding: "8px 4px" }}>
                               <div style={{ color: "var(--text-secondary)", marginBottom: 4 }}>
                                 {e.method} {e.path}

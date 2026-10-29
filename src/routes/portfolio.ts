@@ -438,7 +438,7 @@ portfolioRouter.get("/compliance-alerts", databaseRoute(async (req: AuthedReques
     conditions.push(`b.property_id = $${values.length}`);
   } else {
     values.push(orgId);
-    conditions.push(`pf.organization_id = $${values.length}`);
+    conditions.push(orgScope("pf.organization_id", values.length));
   }
 
   try {
@@ -520,7 +520,7 @@ portfolioRouter.get("/warranty-alerts", databaseRoute(async (req: AuthedRequest,
     conditions.push(`p.id = $${values.length}`);
   } else {
     values.push(orgId);
-    conditions.push(`pf.organization_id = $${values.length}`);
+    conditions.push(orgScope("pf.organization_id", values.length));
   }
 
   try {

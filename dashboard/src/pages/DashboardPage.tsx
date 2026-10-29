@@ -7,6 +7,9 @@ import { Sidebar } from "../components/Sidebar";
 import { HealthPill, healthBand } from "../components/HealthPill";
 import { HealthDistributionChart } from "../components/HealthDistributionChart";
 import { useAuth } from "../lib/AuthContext";
+import { useLocations } from "../lib/LocationContext";
+import { CreateLocationPicker, useCreateTarget } from "../components/LocationBar";
+import { groupByLocation, rollupByLocation } from "../lib/locationScope";
 
 const OPENING_TYPES = [
   { value: "", label: "All types" },
@@ -18,7 +21,7 @@ const OPENING_TYPES = [
   { value: "access_control_point", label: "Access Control" },
 ];
 
-type SortKey = "opening_code" | "opening_type" | "health_score";
+type SortKey = "opening_code" | "opening_type" | "health_score" | "location";
 type SortDir = "asc" | "desc";
 
 export function DashboardPage() {
@@ -31,6 +34,9 @@ export function DashboardPage() {
   const canManageSetup = auth?.role === "admin" || auth?.role === "facilities_manager";
   // M4 v2: comparison reports are open to admin, facilities manager, technician and inspector.
   const canViewComparisons = canManageSetup || auth?.role === "technician" || auth?.role === "inspector";
+  const loc = useLocations();
+  const createTarget = useCreateTarget();
+  const [groupBy, setGroupBy] = useState(false);
   const [openings, setOpenings] = useState<Opening[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,7 +110,7 @@ export function DashboardPage() {
     else if (propertyFilter) params.property_id = propertyFilter;
 
     listOpenings(params)
-      .then(setOpenings)
+      .then((rows) => setOpenings((rows ?? []).filter(loc.inFilter)))
       .catch(() => setError("Couldn't load openings. Check your connection and try again."))
       .finally(() => setLoading(false));
   }, [typeFilter, maxHealthFilter, propertyFilter, buildingFilter]);
@@ -112,8 +118,8 @@ export function DashboardPage() {
   const sorted = useMemo(() => {
     const copy = [...openings];
     copy.sort((a, b) => {
-      let av: string | number = a[sortKey] ?? (sortKey === "health_score" ? 999 : "");
-      let bv: string | number = b[sortKey] ?? (sortKey === "health_score" ? 999 : "");
+      let av: string | number = sortKey === "location" ? loc.label(a) : a[sortKey] ?? (sortKey === "health_score" ? 999 : "");
+      let bv: string | number = sortKey === "location" ? loc.label(b) : b[sortKey] ?? (sortKey === "health_score" ? 999 : "");
       if (typeof av === "string") av = av.toLowerCase();
       if (typeof bv === "string") bv = bv.toLowerCase();
       const cmp = av < bv ? -1 : av > bv ? 1 : 0;
@@ -214,7 +220,12 @@ export function DashboardPage() {
             >
               Print Labels
             </Link>
-            {canManageSetup && (
+            {canManageSetup && createTarget.mustChoose && (
+              <span title="New openings, properties and imports go to one specific location">
+                <CreateLocationPicker onChosen={() => {}} />
+              </span>
+            )}
+            {canManageSetup && !createTarget.mustChoose && (
               <>
                 <Link
                   to="/openings/new"
@@ -268,6 +279,22 @@ export function DashboardPage() {
           </div>
         </div>
 
+        {loc.combined && (
+          <div className="panel location-rollup">
+            <h2>By location</h2>
+            <table>
+              <thead><tr><th>Location</th><th>Openings</th><th>Avg health</th><th>Needs attention</th><th>Near term</th><th></th></tr></thead>
+              <tbody>
+                {(() => { const r = rollupByLocation(openings, loc.index); return [...r.locations, r.total].map((t) => (
+                  <tr key={t.facility_id ?? t.label} style={t.facility_id ? undefined : { fontWeight: 700 }}>
+                    <td>{t.label}</td><td>{t.openings}</td><td>{t.avg_health ?? "—"}</td><td>{t.urgent}</td><td>{t.near_term}</td>
+                    <td>{t.facility_id && <button className="btn" onClick={() => loc.setFilter({ kind: "facility", propertyId: t.facility_id! })}>Drill down</button>}</td>
+                  </tr>)); })()}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         <div className="panel">
           <h2>Health Score Distribution</h2>
           <HealthDistributionChart openings={openings} />
@@ -278,7 +305,8 @@ export function DashboardPage() {
             <h2 style={{ marginBottom: 0 }}>Openings</h2>
             <button
               onClick={onExport}
-              disabled={exporting || sorted.length === 0}
+              disabled={exporting || sorted.length === 0 || (loc.combined && !loc.index.canExportTree)}
+              title={loc.combined && !loc.index.canExportTree ? "Exports across several locations are for company admins only" : undefined}
               style={{
                 height: 32, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)",
                 fontSize: 12.5, fontWeight: 600, padding: "0 12px", cursor: "pointer",
@@ -300,6 +328,9 @@ export function DashboardPage() {
             </button>
           </div>
           <div className="filter-bar">
+            {loc.combined && (
+              <label style={{ fontSize: 12.5 }}><input type="checkbox" checked={groupBy} onChange={(e) => setGroupBy(e.target.checked)} /> Group by location</label>
+            )}
             <select value={propertyFilter} onChange={(e) => onPropertyChange(e.target.value)}>
               <option value="">All properties</option>
               {properties.map((p) => (
@@ -338,7 +369,10 @@ export function DashboardPage() {
                   <th onClick={() => toggleSort("opening_code")}>
                     Code {sortKey === "opening_code" && (sortDir === "asc" ? "↑" : "↓")}
                   </th>
-                  <th>Location</th>
+                  <th onClick={() => toggleSort("location")}>
+                    Location {sortKey === "location" && (sortDir === "asc" ? "↑" : "↓")}
+                  </th>
+                  <th>Area</th>
                   <th onClick={() => toggleSort("opening_type")}>
                     Type {sortKey === "opening_type" && (sortDir === "asc" ? "↑" : "↓")}
                   </th>
@@ -348,17 +382,20 @@ export function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((o) => (
+                {(groupBy ? groupByLocation(sorted, loc.index) : [["", sorted] as [string, Opening[]]]).flatMap(([group, rows]) => [
+                  ...(group ? [<tr key={"g:" + group} className="group-row"><td colSpan={5} style={{ fontWeight: 700 }}>{group} ({rows.length})</td></tr>] : []),
+                  ...rows.map((o) => (
                   <tr key={o.id} onClick={() => navigate(`/opening/${o.id}`)} style={{ cursor: "pointer" }}>
                     <td>
                       <span className="asset-plate">{o.opening_code}</span>
                       {o.fire_rated && <span className="badge-fire">FIRE</span>}
                     </td>
+                    <td>{loc.label(o)}</td>
                     <td>{o.location_description || `Floor ${o.floor_label || "—"}`}</td>
                     <td style={{ textTransform: "capitalize" }}>{o.opening_type.replace(/_/g, " ")}</td>
                     <td><HealthPill score={o.health_score} /></td>
                   </tr>
-                ))}
+                ))])}
               </tbody>
             </table>
           )}

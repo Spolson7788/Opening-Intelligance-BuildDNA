@@ -4,6 +4,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl } from "../lib/api";
 import type { OpeningDetail, DocumentEntry, PurchasingEligibility, HardwareComponent, OpeningPhoto } from "../lib/api";
 import { Sidebar } from "../components/Sidebar";
+import { useLocations } from "../lib/LocationContext";
 import { HealthPill } from "../components/HealthPill";
 import { carrierTrackingUrl, SHIPMENT_STATUS_LABELS } from "../lib/tracking";
 import { componentLabel, splitServiceHistory } from "../lib/serviceHistory";
@@ -83,6 +84,7 @@ function formatReason(reason: string) {
 export function OpeningDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const loc = useLocations();
   const [opening, setOpening] = useState<OpeningDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -164,6 +166,11 @@ export function OpeningDetailPage() {
               <div>
                 <span className="asset-plate" style={{ marginBottom: 8, display: "inline-flex" }}>{opening.opening_code}</span>
                 <h1 style={{ marginTop: 8 }}>{opening.location_description || opening.opening_type.replace(/_/g, " ")}</h1>
+                <div className="location-tag" style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>
+                  Location: {loc.label(opening)}
+                  {loc.writeState(opening) === "view_only" && " · view only"}
+                  {loc.writeState(opening) === "switch_to_edit" && " · switch to this company to make changes"}
+                </div>
                 <p style={{ textTransform: "capitalize" }}>
                   {opening.opening_type.replace(/_/g, " ")} · Floor {opening.floor_label || "—"}
                   {opening.fire_rated && <span className="badge-fire" style={{ marginLeft: 8 }}>FIRE RATED</span>}
@@ -232,6 +239,7 @@ export function OpeningDetailPage() {
                 <table>
                   <thead>
                     <tr>
+                      <th>Location</th>
                       <th>Tracker</th>
                       <th>Component</th>
                       <th>Placement</th>
@@ -251,6 +259,7 @@ export function OpeningDetailPage() {
                       const decision = purchasing?.decisions.find((d) => d.component_id === hw.id);
                       return (
                         <tr key={hw.id}>
+                        <td>{loc.label(opening)}</td>
                           <td>
                             {hw.tracker_id && <span className="asset-plate">{hw.tracker_id}</span>}
                             {hw.serial_number && (
@@ -369,9 +378,9 @@ export function OpeningDetailPage() {
             <div className="panel">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                 <h2 style={{ margin: 0 }}>Documents</h2>
-                <button className="btn btn-secondary" style={{ width: "auto", padding: "0 16px" }} onClick={() => setShowUploadForm((v) => !v)}>
+                {loc.writeState(opening) === "write" && <button className="btn btn-secondary" style={{ width: "auto", padding: "0 16px" }} onClick={() => setShowUploadForm((v) => !v)}>
                   {showUploadForm ? "Cancel" : "+ Upload Document"}
-                </button>
+                </button>}
               </div>
 
               {showUploadForm && (
@@ -421,13 +430,13 @@ export function OpeningDetailPage() {
                         <td style={{ textTransform: "capitalize" }}>{d.document_type.replace(/_/g, " ")}</td>
                         <td>{new Date(d.created_at).toLocaleDateString()}</td>
                         <td>
-                          <button
+                          {loc.writeState(opening) === "write" && <button
                             className="btn btn-secondary"
                             style={{ width: "auto", padding: "0 10px", height: 28, fontSize: 12 }}
                             onClick={() => onDeleteDocument(d.id)}
                           >
                             Delete
-                          </button>
+                          </button>}
                         </td>
                       </tr>
                     ))}

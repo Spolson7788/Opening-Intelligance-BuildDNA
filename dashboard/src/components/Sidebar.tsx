@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
+import { LocationBar } from "./LocationBar";
 
 export function Sidebar() {
   const { auth, logout } = useAuth();
@@ -9,6 +10,7 @@ export function Sidebar() {
       <div style={{ color: "#c7cdd6", fontSize: 13, padding: "8px 10px", borderRadius: 6, background: "#28384b" }}>
         Portfolio Overview
       </div>
+      <LocationBar />
       <div className="sidebar-org">
         {auth?.role && <div style={{ textTransform: "capitalize", marginBottom: 8 }}>{auth.role.replace(/_/g, " ")}</div>}
         <Link to="/change-password" style={{ display: "block", color: "#9aa4b2", fontSize: 12, marginBottom: 6 }}>

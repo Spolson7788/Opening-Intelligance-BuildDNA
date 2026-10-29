@@ -8,6 +8,9 @@ import {
 import type { Property, Opening, TeamMember, MaintenanceSchedule } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { Sidebar } from "../components/Sidebar";
+import { useLocations } from "../lib/LocationContext";
+import { CreateLocationPicker, useCreateTarget } from "../components/LocationBar";
+
 
 const PRIORITY_LABELS: Record<string, string> = { low: "Low", normal: "Normal", high: "High", urgent: "Urgent" };
 const INTERVAL_LABELS: Record<string, string> = { days: "day(s)", weeks: "week(s)", months: "month(s)", years: "year(s)" };
@@ -40,10 +43,14 @@ export function MaintenanceSchedulesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const loc = useLocations();
+  const createTarget = useCreateTarget();
+  const [locSort, setLocSort] = useState(false);
+
   function load() {
     setLoading(true);
     listMaintenanceSchedules()
-      .then(setSchedules)
+      .then((rows) => setSchedules((rows ?? []).filter(loc.inFilter)))
       .catch(() => setError("Couldn't load maintenance schedules. Check your connection and try again."))
       .finally(() => setLoading(false));
   }
@@ -131,7 +138,8 @@ export function MaintenanceSchedulesPage() {
             <h1>Maintenance Schedules</h1>
             <p>Recurring work — a schedule automatically creates a new work order each time it comes due.</p>
           </div>
-          {isManagement && (
+          {isManagement && createTarget.mustChoose && <CreateLocationPicker onChosen={() => setShowForm(true)} />}
+          {isManagement && !createTarget.mustChoose && (
             <div style={{ display: "flex", gap: 10 }}>
               <button className="btn btn-secondary" style={{ width: "auto", padding: "0 16px" }} onClick={onCheckNow} disabled={checking}>
                 {checking ? "Checking…" : "Check Now"}
@@ -219,15 +227,16 @@ export function MaintenanceSchedulesPage() {
             ) : (
               <table>
                 <thead>
-                  <tr><th>Title</th><th>Opening</th><th>Repeats</th><th>Assigned To</th><th>Next Due</th><th>Status</th>{isManagement && <th></th>}</tr>
+                  <tr><th>Title</th><th onClick={() => setLocSort((v) => !v)} style={{ cursor: "pointer" }}>Location {locSort ? "↑" : ""}</th><th>Opening</th><th>Repeats</th><th>Assigned To</th><th>Next Due</th><th>Status</th>{isManagement && <th></th>}</tr>
                 </thead>
                 <tbody>
-                  {schedules.map((s) => (
+                  {loc.sortRows(schedules, locSort).map((s) => (
                     <tr key={s.id} style={{ opacity: s.is_active ? 1 : 0.5 }}>
                       <td>
                         {s.title}
                         <div style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>{s.property_name} — {s.building_name}</div>
                       </td>
+                      <td>{loc.label(s)}</td>
                       <td><span className="asset-plate">{s.opening_code}</span></td>
                       <td>Every {s.interval_count} {INTERVAL_LABELS[s.interval_unit]}</td>
                       <td>{s.assigned_to_name || <span style={{ color: "var(--text-secondary)" }}>Unassigned</span>}</td>
@@ -239,14 +248,14 @@ export function MaintenanceSchedulesPage() {
                       </td>
                       {isManagement && (
                         <td>
-                          <button
+                          {loc.writeState(s) === "write" && <button
                             className="btn btn-secondary"
                             style={{ width: "auto", padding: "0 12px", height: 30, fontSize: 12.5 }}
                             onClick={() => onToggleActive(s)}
                             disabled={actioningId === s.id}
                           >
                             {actioningId === s.id ? "…" : s.is_active ? "Pause" : "Resume"}
-                          </button>
+                          </button>}
                         </td>
                       )}
                     </tr>

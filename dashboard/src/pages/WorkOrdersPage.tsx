@@ -8,6 +8,9 @@ import {
 import type { Property, Opening, TeamMember, WorkOrder } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { Sidebar } from "../components/Sidebar";
+import { useLocations } from "../lib/LocationContext";
+import { CreateLocationPicker, useCreateTarget } from "../components/LocationBar";
+
 
 const STATUS_LABELS: Record<string, string> = { open: "Open", in_progress: "In Progress", done: "Done", cancelled: "Cancelled" };
 const STATUS_CLASSES: Record<string, string> = { open: "health-fair", in_progress: "health-fair", done: "health-good", cancelled: "health-poor" };
@@ -39,10 +42,14 @@ export function WorkOrdersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const loc = useLocations();
+  const createTarget = useCreateTarget();
+  const [locSort, setLocSort] = useState(false);
+
   function load() {
     setLoading(true);
     listWorkOrders(statusFilter ? { status: statusFilter } : {})
-      .then(setWorkOrders)
+      .then((rows) => setWorkOrders((rows ?? []).filter(loc.inFilter)))
       .catch(() => setError("Couldn't load work orders. Check your connection and try again."))
       .finally(() => setLoading(false));
   }
@@ -120,7 +127,8 @@ export function WorkOrdersPage() {
             <h1>Work Orders</h1>
             <p>Assigned tasks tied to a specific opening — the next step after an alert flags something.</p>
           </div>
-          {isManagement && (
+          {isManagement && createTarget.mustChoose && <CreateLocationPicker onChosen={() => setShowForm(true)} />}
+          {isManagement && !createTarget.mustChoose && (
             <button className="btn btn-primary" style={{ width: "auto", padding: "0 16px" }} onClick={() => setShowForm((v) => !v)}>
               {showForm ? "Cancel" : "+ New Work Order"}
             </button>
@@ -201,21 +209,22 @@ export function WorkOrdersPage() {
             ) : (
               <table>
                 <thead>
-                  <tr><th>Title</th><th>Opening</th><th>Priority</th><th>Assigned To</th><th>Due</th><th>Status</th></tr>
+                  <tr><th>Title</th><th onClick={() => setLocSort((v) => !v)} style={{ cursor: "pointer" }}>Location {locSort ? "↑" : ""}</th><th>Opening</th><th>Priority</th><th>Assigned To</th><th>Due</th><th>Status</th></tr>
                 </thead>
                 <tbody>
-                  {workOrders.map((wo) => (
+                  {loc.sortRows(workOrders, locSort).map((wo) => (
                     <tr key={wo.id}>
                       <td>
                         {wo.title}
                         <div style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>{wo.property_name} — {wo.building_name}</div>
                       </td>
+                      <td>{loc.label(wo)}</td>
                       <td><span className="asset-plate">{wo.opening_code}</span></td>
                       <td>{PRIORITY_LABELS[wo.priority]}</td>
                       <td>{wo.assigned_to_name || <span style={{ color: "var(--text-secondary)" }}>Unassigned</span>}</td>
                       <td>{wo.due_date ? new Date(wo.due_date).toLocaleDateString() : "—"}</td>
                       <td>
-                        {canChangeStatus(wo) ? (
+                        {canChangeStatus(wo) && loc.writeState(wo) === "write" ? (
                           <select
                             value={wo.status}
                             onChange={(e) => onStatusChange(wo, e.target.value)}

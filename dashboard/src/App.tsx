@@ -1,5 +1,22 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/AuthContext";
+import { LocationProvider, useLocations } from "./lib/LocationContext";
+import { CreateLocationPicker } from "./components/LocationBar";
+import { Sidebar } from "./components/Sidebar";
+
+/** M3: create/import pages only open for ONE specific location (the active company). */
+function RequireOneLocation({ children }: { children: React.ReactElement }) {
+  const { combined, setFilter } = useLocations();
+  if (!combined) return children;
+  return (
+    <div className="app-shell"><Sidebar /><div className="main"><div className="panel">
+      <h2>Choose one location</h2>
+      <p>New records are always added to one specific location. Choose where this should go.</p>
+      <CreateLocationPicker onChosen={() => {}} />
+      <p><button className="btn btn-secondary" onClick={() => setFilter({ kind: "company" })}>Use the current company</button></p>
+    </div></div></div>
+  );
+}
 import { LoginPage } from "./pages/LoginPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { FacilitySchedulesPage } from "./pages/FacilitySchedulesPage";
@@ -31,16 +48,18 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
 }
 
 function AppRoutes() {
+  // M3: re-mount pages whenever the company or location scope changes so every list re-reads.
+  const { scopeKey } = useLocations();
   return (
-    <Routes>
+    <Routes key={scopeKey}>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/accept-invite" element={<AcceptInvitePage />} />
       <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
       <Route path="/" element={<RequireAuth><DashboardPage /></RequireAuth>} />
-      <Route path="/properties/new" element={<RequireAuth><NewPropertyPage /></RequireAuth>} />
-      <Route path="/openings/new" element={<RequireAuth><NewOpeningPage /></RequireAuth>} />
-      <Route path="/openings/import" element={<RequireAuth><ImportOpeningsPage /></RequireAuth>} />
-      <Route path="/hardware/import" element={<RequireAuth><ImportHardwarePage /></RequireAuth>} />
+      <Route path="/properties/new" element={<RequireAuth><RequireOneLocation><NewPropertyPage /></RequireOneLocation></RequireAuth>} />
+      <Route path="/openings/new" element={<RequireAuth><RequireOneLocation><NewOpeningPage /></RequireOneLocation></RequireAuth>} />
+      <Route path="/openings/import" element={<RequireAuth><RequireOneLocation><ImportOpeningsPage /></RequireOneLocation></RequireAuth>} />
+      <Route path="/hardware/import" element={<RequireAuth><RequireOneLocation><ImportHardwarePage /></RequireOneLocation></RequireAuth>} />
       <Route path="/openings/print-labels" element={<RequireAuth><PrintLabelsPage /></RequireAuth>} />
       <Route path="/capital-forecast" element={<RequireAuth><CapitalForecastPage /></RequireAuth>} />
       <Route path="/compliance-alerts" element={<RequireAuth><ComplianceAlertsPage /></RequireAuth>} />
@@ -48,7 +67,7 @@ function AppRoutes() {
       <Route path="/audit-log" element={<RequireAuth><AuditLogPage /></RequireAuth>} />
       <Route path="/work-orders" element={<RequireAuth><WorkOrdersPage /></RequireAuth>} />
       <Route path="/facility-schedules" element={<RequireAuth><FacilitySchedulesPage /></RequireAuth>} />
-      <Route path="/schedule-imports/new" element={<RequireAuth><ScheduleImportStartPage /></RequireAuth>} />
+      <Route path="/schedule-imports/new" element={<RequireAuth><RequireOneLocation><ScheduleImportStartPage /></RequireOneLocation></RequireAuth>} />
       <Route path="/schedule-imports/:id" element={<RequireAuth><ScheduleImportPage /></RequireAuth>} />
       <Route path="/schedule-comparisons" element={<RequireAuth><ScheduleComparisonsPage /></RequireAuth>} />
 <Route path="/schedule-imports/:id/comparison" element={<RequireAuth><ScheduleComparisonPage /></RequireAuth>} />
@@ -63,9 +82,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter basename={import.meta.env.BASE_URL}>
-        <AppRoutes />
-      </BrowserRouter>
+      <LocationProvider>
+        <BrowserRouter basename={import.meta.env.BASE_URL}>
+          <AppRoutes />
+        </BrowserRouter>
+      </LocationProvider>
     </AuthProvider>
   );
 }

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { listProperties, fetchComplianceAlerts, fetchWarrantyAlerts } from "../lib/api";
 import type { Property, ComplianceAlertsResult, WarrantyAlertsResult } from "../lib/api";
 import { Sidebar } from "../components/Sidebar";
+import { useLocations } from "../lib/LocationContext";
 
 const INSPECTION_LEVEL_STYLES: Record<string, { label: string; className: string }> = {
   never_inspected: { label: "Never Inspected", className: "health-poor" },
@@ -19,6 +20,8 @@ type Tab = "inspections" | "warranties";
 
 export function ComplianceAlertsPage() {
   const navigate = useNavigate();
+  const loc = useLocations();
+  const [locSort, setLocSort] = useState(false);
   const [tab, setTab] = useState<Tab>("inspections");
   const [properties, setProperties] = useState<Property[]>([]);
   const [propertyId, setPropertyId] = useState("");
@@ -123,16 +126,17 @@ export function ComplianceAlertsPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Status</th><th>Code</th><th>Property</th><th>Building</th><th>Location</th><th>Last Inspection</th>
+                      <th>Status</th><th>Code</th><th onClick={() => setLocSort((v) => !v)} style={{ cursor: "pointer" }}>Location {locSort ? "↑" : ""}</th><th>Property</th><th>Building</th><th>Location</th><th>Last Inspection</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {inspectionResult.alerts.map((a) => {
+                    {loc.sortRows(inspectionResult.alerts.filter(loc.inFilter), locSort).map((a) => {
                       const style = INSPECTION_LEVEL_STYLES[a.alert_level];
                       return (
                         <tr key={a.id} onClick={() => navigate(`/opening/${a.id}`)} style={{ cursor: "pointer" }}>
                           <td><span className={`health-pill ${style.className}`}>{style.label}</span></td>
                           <td><span className="asset-plate">{a.opening_code}</span></td>
+                          <td>{loc.label(a)}</td>
                           <td>{a.property_name}</td>
                           <td>{a.building_name}</td>
                           <td>{a.location_description || `Floor ${a.floor_label || "—"}`}</td>
@@ -172,11 +176,11 @@ export function ComplianceAlertsPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Status</th><th>Tracker</th><th>Component</th><th>Manufacturer / Model</th><th>Opening</th><th>Property</th><th>Warranty Expires</th>
+                      <th>Status</th><th>Tracker</th><th>Component</th><th>Manufacturer / Model</th><th onClick={() => setLocSort((v) => !v)} style={{ cursor: "pointer" }}>Location {locSort ? "↑" : ""}</th><th>Opening</th><th>Property</th><th>Warranty Expires</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {warrantyResult.alerts.map((a) => {
+                    {loc.sortRows(warrantyResult.alerts.filter(loc.inFilter), locSort).map((a) => {
                       const style = WARRANTY_LEVEL_STYLES[a.alert_level];
                       return (
                         <tr key={a.hardware_id} onClick={() => navigate(`/opening/${a.opening_id}`)} style={{ cursor: "pointer" }}>
@@ -184,6 +188,7 @@ export function ComplianceAlertsPage() {
                           <td><span className="asset-plate">{a.tracker_id}</span></td>
                           <td style={{ textTransform: "capitalize" }}>{a.component_type.replace(/_/g, " ")}</td>
                           <td>{[a.manufacturer, a.model_number].filter(Boolean).join(" ") || "—"}</td>
+                          <td>{loc.label(a)}</td>
                           <td>{a.opening_code}</td>
                           <td>{a.property_name}</td>
                           <td>{new Date(a.warranty_expiration).toLocaleDateString()}</td>

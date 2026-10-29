@@ -15,7 +15,7 @@ auditLogRouter.get("/", requireRole("admin", "facilities_manager"), async (req: 
 
   try {
     const result = await pool.query(
-      `SELECT al.id, al.action, al.method, al.path, al.request_body, al.status_code, al.created_at,
+      `SELECT al.id, al.action, al.method, al.path, al.request_body, al.status_code, al.created_at, al.organization_id,
               u.full_name AS user_full_name, u.email AS user_email, u.id AS user_id
        FROM audit_log al
        JOIN users u ON u.id = al.user_id

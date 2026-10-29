@@ -135,7 +135,7 @@ maintenanceSchedulesRouter.get("/", async (req: AuthedRequest, res) => {
   const orgId = req.auth!.organizationId;
   try {
     const result = await pool.query(
-      `SELECT ms.*, o.opening_code, b.name AS building_name, p.name AS property_name,
+      `SELECT ms.*, o.opening_code, b.name AS building_name, p.name AS property_name, p.id AS property_id,
               assignee.full_name AS assigned_to_name
        FROM maintenance_schedules ms
        JOIN openings o ON o.id = ms.opening_id

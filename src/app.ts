@@ -23,6 +23,7 @@ import { hardwareRouter } from "./routes/hardware";
 import { photosRouter } from "./routes/photos";
 import { portfolioRouter } from "./routes/portfolio";
 import { platformRouter } from "./routes/platform";
+import { locationsRouter } from "./routes/locations";
 import { exportRouter } from "./routes/export";
 import { auditLogRouter } from "./routes/auditLogRoute";
 import { documentsRouter } from "./routes/documents";
@@ -107,6 +108,7 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   app.use('/api/planning',planningRouter);
   app.use('/api/sandbox-finance',sandboxFinanceRouter);
   app.use("/api/auth", authRouter);
+  app.use("/api/locations", locationsRouter);
   app.use("/api/members", membersRouter);
   app.use("/api/invites", invitesPublicRouter);
   app.use("/api/recognition", recognitionRouter);

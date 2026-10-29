@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 import { listProperties, fetchCapitalForecast, fetchCapitalForecastRollup, downloadCapitalForecastPdf } from "../lib/api";
 import type { Property, CapitalForecastResult, CapitalForecastRollupProperty } from "../lib/api";
 import { Sidebar } from "../components/Sidebar";
+import { useLocations } from "../lib/LocationContext";
 
 const OPENING_TYPE_LABELS: Record<string, string> = {
   door: "Door",
@@ -54,6 +55,7 @@ function computeForecastTotals(forecast: CapitalForecastResult, costs: Record<st
 }
 
 export function CapitalForecastPage() {
+  const loc = useLocations();
   const navigate = useNavigate();
   const [properties, setProperties] = useState<Property[]>([]);
   const [propertyId, setPropertyId] = useState("");
@@ -198,16 +200,16 @@ export function CapitalForecastPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Property</th>
+                      <th>Location</th>
                       <th>Openings</th>
                       <th>Urgent + Near-Term</th>
                       <th>Total at Risk</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rankedRollup.map((p) => (
+                    {rankedRollup.filter(loc.inFilter).map((p) => (
                       <tr key={p.property_id} onClick={() => setPropertyId(p.property_id)} style={{ cursor: "pointer" }}>
-                        <td>{p.property_name}</td>
+                        <td>{loc.label(p)}</td>
                         <td>{p.total_openings}</td>
                         <td style={{ color: p.urgentPlusNearTerm > 0 ? "var(--danger)" : undefined }}>{currency(p.urgentPlusNearTerm)}</td>
                         <td style={{ fontWeight: 600 }}>{currency(p.grandTotal)}</td>

@@ -21,10 +21,20 @@ export function setToken(token: string | null) {
   else localStorage.removeItem("oi_token");
 }
 
+// M3: combined (parent company) view. When on, every READ asks the API for the company tree
+// (X-OI-Scope: tree). Writes never carry it: the API always writes to the one active company.
+let treeScope = false;
+export function setTreeScope(on: boolean) { treeScope = on; }
+export function isTreeScope() { return treeScope; }
+export function scopeHeaders(method = "GET"): Record<string, string> {
+  return treeScope && (method === "GET" || method === "HEAD") ? { "X-OI-Scope": "tree" } : {};
+}
+
 async function authedFetch(path: string, options: RequestInit = {}) {
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...scopeHeaders((options.method ?? "GET").toUpperCase()),
     ...(options.headers as Record<string, string> | undefined),
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -116,6 +126,7 @@ export async function updateTeamMember(id: string, payload: { role?: string; is_
 }
 
 export interface AuditLogEntry {
+  organization_id?: string;
   id: string;
   action: string;
   method: string;
@@ -270,7 +281,7 @@ export async function downloadOpeningsCsv(params: Record<string, string> = {}) {
   const qs = new URLSearchParams(params).toString();
   const token = getToken();
   const res = await fetch(`${API_BASE}/export/openings.csv${qs ? `?${qs}` : ""}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: { ...scopeHeaders(), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
   });
   if (!res.ok) throw new ApiError(res.status, "export_failed");
   const blob = await res.blob();
@@ -288,7 +299,7 @@ export async function downloadComplianceReport(propertyId: string, scope: "fire_
   const token = getToken();
   const params = scope === "all" ? "&scope=all" : "";
   const res = await fetch(`${API_BASE}/export/compliance-report.pdf?property_id=${propertyId}${params}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: { ...scopeHeaders(), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -311,7 +322,7 @@ export async function downloadCapitalForecastPdf(propertyId: string | null, cost
   if (propertyId) params.set("property_id", propertyId);
   params.set("costs", JSON.stringify(costs));
   const res = await fetch(`${API_BASE}/export/capital-forecast.pdf?${params.toString()}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: { ...scopeHeaders(), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -754,7 +765,7 @@ export async function fetchComparisonSnapshot(id: string): Promise<ComparisonSna
 }
 export async function downloadComparisonCsv(id: string) {
   const token = getToken();
-  const res = await fetch(`${API_BASE}/schedule-comparisons/${id}/csv`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  const res = await fetch(`${API_BASE}/schedule-comparisons/${id}/csv`, { headers: { ...scopeHeaders(), ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
   if (!res.ok) throw new ApiError(res.status, "export_failed");
   const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "schedule-comparison.csv";
   const url = URL.createObjectURL(await res.blob());
@@ -822,4 +833,20 @@ export function passwordErrorMessage(code: string | undefined): string {
     case "email_already_registered": return "That email is already registered.";
     default: return "Something went wrong. Check your connection and try again.";
   }
+}
+// ---- M3: companies and locations ----
+export interface CompanyChoice { organization_id: string; name: string; role: string; is_home: boolean; access?: string }
+export interface LocationCompany { id: string; name: string; parent_organization_id: string | null; access: "member" | "tree_admin" | "tree_view"; role: string }
+export interface LocationFacility { id: string; name: string; organization_id: string | null; building_ids: string[] }
+export interface LocationsResponse { active_organization_id: string; tree: boolean; can_export_tree: boolean; companies: LocationCompany[]; facilities: LocationFacility[] }
+export async function listCompanies(): Promise<CompanyChoice[]> {
+  const r = await authedFetch("/auth/companies");
+  return Array.isArray(r) ? r : (r?.companies ?? []);
+}
+export async function switchCompany(organizationId: string): Promise<{ token: string }> {
+  return authedFetch("/auth/switch-company", { method: "POST", body: JSON.stringify({ organization_id: organizationId }) });
+}
+export async function getLocations(): Promise<LocationsResponse> {
+  // Always the full visible tree, independent of the current filter.
+  return authedFetch("/locations", { headers: { "X-OI-Scope": "tree" } });
 }

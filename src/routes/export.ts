@@ -3,7 +3,8 @@ import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { openingsForOrgSubquery, orgScope } from "../db/tenantScope";
+import { openingsForOrgSubquery, orgScope, extraReadOrgs } from "../db/tenantScope";
+import { canExportTree } from "./locations";
 import { toCsv } from "../services/csv";
 import { generateComplianceReportPdf } from "../services/complianceReport";
 import { generateCapitalForecastPdf } from "../services/capitalForecastReport";
@@ -12,6 +13,17 @@ export const exportRouter = Router();
 exportRouter.use(requireAuth);
 exportRouter.use(enforceRolePermissions);
 exportRouter.use(auditLog);
+// M3: a tree-wide export (tree scope requested and reaching other companies) is admin / OI staff only,
+// checked in the database every time. Managers and everyone else are refused; single-company exports are unchanged.
+exportRouter.use(async (req: AuthedRequest, res, next) => {
+  if (extraReadOrgs().length === 0) return next();
+  try {
+    if (await canExportTree(req.auth!.userId, req.auth!.organizationId)) return next();
+    return res.status(403).json({ error: "tree_export_admin_only" });
+  } catch { return res.status(503).json({ error: "database_unavailable" }); }
+});
+const LOCATION_SQL = "(lo.name || ' / ' || p.name) AS location";
+const LOCATION_JOIN = "JOIN portfolios lpf ON lpf.id = p.portfolio_id JOIN organizations lo ON lo.id = lpf.organization_id";
 
 // Fire door / life-safety compliance PDF — the artifact a facilities manager
 // can actually hand to an auditor or fire marshal, unlike a CSV. Scoped to
@@ -29,7 +41,7 @@ exportRouter.get("/compliance-report.pdf", async (req: AuthedRequest, res) => {
 
   try {
     const propertyResult = await pool.query(
-      `SELECT p.name, p.address_line1, p.city, p.state, p.postal_code
+      `SELECT ((SELECT lo2.name FROM organizations lo2 WHERE lo2.id = pf.organization_id) || ' / ' || p.name) AS name, p.address_line1, p.city, p.state, p.postal_code
        FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id
        WHERE p.id = $1 AND ${orgScope("pf.organization_id", 2)}`,
       [property_id, orgId]
@@ -124,7 +136,7 @@ exportRouter.get("/capital-forecast.pdf", async (req: AuthedRequest, res) => {
   try {
     if (property_id && typeof property_id === "string") {
       const propertyResult = await pool.query(
-        `SELECT p.name FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id
+        `SELECT ((SELECT lo2.name FROM organizations lo2 WHERE lo2.id = pf.organization_id) || ' / ' || p.name) AS name FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id
          WHERE p.id = $1 AND ${orgScope("pf.organization_id", 2)}`,
         [property_id, orgId]
       );
@@ -182,7 +194,7 @@ exportRouter.get("/capital-forecast.pdf", async (req: AuthedRequest, res) => {
     } else {
       const result = await pool.query(
         `WITH opening_bucket AS (
-           SELECT o.id, o.opening_type, p.id AS property_id, p.name AS property_name,
+           SELECT o.id, o.opening_type, p.id AS property_id, ((SELECT lo2.name FROM organizations lo2 WHERE lo2.id = pf.organization_id) || ' / ' || p.name) AS property_name,
              CASE
                WHEN o.health_score IS NULL THEN 'unassessed'
                WHEN o.health_score < 50 THEN 'urgent'
@@ -244,7 +256,7 @@ exportRouter.get("/capital-forecast.pdf", async (req: AuthedRequest, res) => {
 });
 
 const OPENINGS_COLUMNS = [
-  "opening_code", "property_name", "building_name", "floor_label", "location_description",
+  "location", "opening_code", "property_name", "building_name", "floor_label", "location_description",
   "opening_type", "fire_rated", "life_safety_critical", "health_score",
   "install_date", "last_service_date", "status",
 ];
@@ -279,13 +291,14 @@ exportRouter.get("/openings.csv", async (req: AuthedRequest, res) => {
   try {
     const result = await pool.query(
       `SELECT
-         o.opening_code, p.name AS property_name, b.name AS building_name,
+         ${LOCATION_SQL}, o.opening_code, p.name AS property_name, b.name AS building_name,
          o.floor_label, o.location_description, o.opening_type,
          o.fire_rated, o.life_safety_critical, o.health_score,
          o.install_date, o.last_service_date, o.status
        FROM openings o
        JOIN buildings b ON b.id = o.building_id
        JOIN properties p ON p.id = b.property_id
+       ${LOCATION_JOIN}
        WHERE ${conditions.join(" AND ")}
        ORDER BY p.name, b.name, o.opening_code
        LIMIT 10000`,
@@ -303,7 +316,7 @@ exportRouter.get("/openings.csv", async (req: AuthedRequest, res) => {
 });
 
 const HARDWARE_COLUMNS = [
-  "opening_code", "property_name", "building_name", "component_type",
+  "location", "opening_code", "property_name", "building_name", "component_type",
   "manufacturer", "model_number", "finish", "install_date", "warranty_expiration",
 ];
 
@@ -334,13 +347,14 @@ exportRouter.get("/hardware.csv", async (req: AuthedRequest, res) => {
   try {
     const result = await pool.query(
       `SELECT
-         o.opening_code, p.name AS property_name, b.name AS building_name,
+         ${LOCATION_SQL}, o.opening_code, p.name AS property_name, b.name AS building_name,
          hc.component_type, hc.manufacturer, hc.model_number, hc.finish,
          hc.install_date, hc.warranty_expiration
        FROM current_hardware_components hc
        JOIN openings o ON o.id = hc.opening_id
        JOIN buildings b ON b.id = o.building_id
        JOIN properties p ON p.id = b.property_id
+       ${LOCATION_JOIN}
        WHERE ${conditions.join(" AND ")}
        ORDER BY p.name, b.name, o.opening_code
        LIMIT 10000`,
