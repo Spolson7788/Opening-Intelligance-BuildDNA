@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Sidebar } from "../components/Sidebar";
 import {
   createCompanyWithAdmin, createProviderFacility, grantMembership, platformMe, grantStaff, platformFacilities, platformOrganizations, platformOrgUsers, platformProviderRequests, platformProviders,
-  platformRecognitionUsage, platformStaff, reviewProviderRequest, revokeStaff, setOrganizationParent,
-  type PlatformFacility, type PlatformOrganization, type PlatformOrgUser, type PlatformProvider, type PlatformStaffRow, type ProviderRequest, type RecognitionUsageReport,
+  platformRecognitionUsage, platformUsageSettings, setSafetyCap, updateUsageSettings, platformStaff, reviewProviderRequest, revokeStaff, setOrganizationParent,
+  type PlatformFacility, type PlatformOrganization, type PlatformOrgUser, type PlatformProvider, type PlatformStaffRow, type ProviderRequest, type RecognitionUsageReport, type SafetyCapRow, type UsageSettings,
 } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { filterSort, needsProviderConfirmation, parentChoices, treeLines } from "../lib/staffTools";
@@ -187,12 +187,62 @@ function Staff({ me }: { me: string | undefined }) {
 
 const usd = (n: number | null) => n == null ? "not set" : "$" + n.toFixed(4);
 const cents = (n: number) => "$" + (n / 100).toFixed(2);
-export function RecognitionUsage() {
+// OI staff edit of price, recognition cost and safety caps. Each save needs a reason and is audited (old and new values).
+export function UsageSettingsEditor({ orgs, onSaved }: { orgs: PlatformOrganization[]; onSaved: () => void }) {
+  const [cur, setCur] = useState<UsageSettings | null>(null); const [caps, setCaps] = useState<SafetyCapRow[]>([]);
+  const [price, setPrice] = useState(""); const [cost, setCost] = useState(""); const [cap, setCap] = useState(""); const [ratio, setRatio] = useState(""); const [reason, setReason] = useState("");
+  const [capOrg, setCapOrg] = useState(""); const [capValue, setCapValue] = useState(""); const [capReason, setCapReason] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = () => platformUsageSettings().then((r) => { setCur(r.settings); setCaps(r.caps);
+    setPrice((r.settings.opening_price_cents_per_month / 100).toFixed(2)); setCost(r.settings.cost_per_photo_usd == null ? "" : String(r.settings.cost_per_photo_usd));
+    setCap(String(r.settings.default_monthly_photo_cap)); setRatio(String(Math.round(r.settings.cap_warning_ratio * 100))); }).catch((x) => setMsg(err(x)));
+  useEffect(() => { load(); }, []);
+  const save = async () => {
+    setMsg(null);
+    const cents = Math.round(Number(price) * 100), pct = Number(ratio), def = Number(cap);
+    if (!/^\d+(\.\d{1,2})?$/.test(price.trim()) || cents > 100000) return setMsg("Price must be between $0.00 and $1000.00.");
+    if (cost.trim() !== "" && (!/^\d+(\.\d{1,6})?$/.test(cost.trim()) || Number(cost) > 100)) return setMsg("Cost per photo must be blank (unknown) or $0 to $100 with up to 6 decimals.");
+    if (!Number.isInteger(def) || def < 1 || def > 10000000) return setMsg("Default cap must be a whole number from 1 to 10,000,000.");
+    if (!Number.isInteger(pct) || pct < 5 || pct > 100) return setMsg("Warning must be a whole percent from 5 to 100.");
+    if (!reason.trim()) return setMsg("A reason is required.");
+    try { await updateUsageSettings({ opening_price_cents_per_month: cents, cost_per_photo_usd: cost.trim() === "" ? null : Number(cost), default_monthly_photo_cap: def, cap_warning_ratio: pct / 100, reason: reason.trim() });
+      setReason(""); setMsg("Saved and audited."); load(); onSaved(); } catch (x) { setMsg(err(x)); }
+  };
+  const saveCap = async (remove: boolean) => {
+    setMsg(null); const v = Number(capValue);
+    if (!capOrg) return setMsg("Choose a company.");
+    if (!remove && (!Number.isInteger(v) || v < 1 || v > 10000000)) return setMsg("Cap must be a whole number from 1 to 10,000,000.");
+    if (!capReason.trim()) return setMsg("A reason is required.");
+    try { await setSafetyCap(capOrg, remove ? null : v, capReason.trim()); setCapReason(""); setCapValue(""); setMsg(remove ? "Override removed (default cap applies). Audited." : "Cap saved and audited."); load(); onSaved(); }
+    catch (x) { setMsg(err(x)); }
+  };
+  const companies = orgs.filter((o) => o.org_type === "customer" || o.org_type === "service_partner");
+  return <section className="panel"><h2>Price, recognition cost and safety caps</h2>
+    <p className="muted">OI staff only. Every change needs a reason and is recorded with its old and new values.{cur?.updated_reason && <> Last change: {cur.updated_reason}.</>}</p>
+    {msg && <p role="status">{msg}</p>}
+    <label>Price per billable opening per month ($) <input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} /></label>{" "}
+    <label>OI cost per photo recognized ($, blank = unknown) <input inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} /></label>{" "}
+    <label>Default monthly photo cap <input inputMode="numeric" value={cap} onChange={(e) => setCap(e.target.value)} /></label>{" "}
+    <label>Warn at (% of cap) <input inputMode="numeric" value={ratio} onChange={(e) => setRatio(e.target.value)} /></label>{" "}
+    <label>Reason <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} /></label>{" "}
+    <button className="btn" onClick={save}>Save settings</button>
+    <h3>Company safety caps</h3>
+    <table><thead><tr><th>Company</th><th>Monthly photo cap</th><th>Reason</th></tr></thead>
+      <tbody>{caps.length === 0 ? <tr><td colSpan={3}>No overrides; every company uses the default cap.</td></tr> : caps.map((c) => <tr key={c.organization_id}><td>{c.organization_name}</td><td>{c.monthly_photo_cap}</td><td>{c.set_reason}</td></tr>)}</tbody></table>
+    <label>Company <select value={capOrg} onChange={(e) => setCapOrg(e.target.value)}><option value="">Choose…</option>{companies.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>{" "}
+    <label>Cap <input inputMode="numeric" value={capValue} onChange={(e) => setCapValue(e.target.value)} /></label>{" "}
+    <label>Reason <input value={capReason} onChange={(e) => setCapReason(e.target.value)} maxLength={500} /></label>{" "}
+    <button className="btn" onClick={() => saveCap(false)}>Set cap</button>{" "}
+    <button className="btn btn-secondary" onClick={() => saveCap(true)}>Remove override</button>
+  </section>;
+}
+
+export function RecognitionUsage({ refresh = 0 }: { refresh?: number }) {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [rep, setRep] = useState<RecognitionUsageReport | null>(null); const [e, setE] = useState<string | null>(null);
-  useEffect(() => { let live = true; setE(null); platformRecognitionUsage(month).then((r) => { if (live) setRep(r); }).catch((x) => { if (live) { setRep(null); setE(err(x)); } }); return () => { live = false; }; }, [month]);
+  useEffect(() => { let live = true; setE(null); platformRecognitionUsage(month).then((r) => { if (live) setRep(r); }).catch((x) => { if (live) { setRep(null); setE(err(x)); } }); return () => { live = false; }; }, [month, refresh]);
   return <section className="panel"><h2>Usage and billing</h2>
-    <p>Billing: {rep ? cents(rep.settings.opening_price_cents_per_month) : "$0.75"} per billable opening per month (full month, no proration), whether or not recognition ran. An opening is billable while captured and active; uncaptured placeholders and decommissioned openings do not bill. The facility owner pays for each billable opening; each assigned provider pays only for openings billable while it was assigned. A provider's own facility is billed once.</p>
+    <p>Billing: {rep ? cents(rep.settings.opening_price_cents_per_month) : "$0.75"} per billable opening per month (full month, no proration), whether or not recognition ran. An opening is billable while captured and active; uncaptured placeholders and decommissioned openings do not bill. The facility owner pays for each billable opening (in a month when ownership moves, only the owner at month end pays); each assigned provider pays only for openings billable while it was assigned. A provider's own facility is billed once.</p>
     <p className="muted">OI recognition cost (internal, never billed): {usd(rep?.settings.cost_per_photo_usd ?? null)} per photo, counted for the company that ran it.</p>
     <label>Month <input type="month" value={month} onChange={(ev) => setMonth(ev.target.value)} /></label>
     {e && <p role="alert">{e}</p>}
@@ -210,6 +260,7 @@ export function StaffToolsPage() {
   const [orgs, setOrgs] = useState<PlatformOrganization[]>([]);
   const [facilities, setFacilities] = useState<PlatformFacility[]>([]);
   const [staff, setStaff] = useState<boolean | null>(null);
+  const [usageRefresh, setUsageRefresh] = useState(0);
   useEffect(() => { platformMe().then((m) => setStaff(m.staff)); }, []);
   const reload = () => { platformOrganizations().then(setOrgs).catch(() => setOrgs([])); };
   useEffect(() => { if (!staff) return; reload(); platformFacilities().then(setFacilities).catch(() => setFacilities([])); }, [staff]);
@@ -227,6 +278,6 @@ export function StaffToolsPage() {
     {tab === "requests" && <Requests />}
     {tab === "companies" && <Companies orgs={orgs} reload={reload} />}
     {tab === "staff" && <Staff me={auth?.userId} />}
-    {tab === "usage" && <RecognitionUsage />}
+    {tab === "usage" && <><UsageSettingsEditor orgs={orgs} onSaved={() => setUsageRefresh((n) => n + 1)} /><RecognitionUsage refresh={usageRefresh} /></>}
   </div></div>;
 }

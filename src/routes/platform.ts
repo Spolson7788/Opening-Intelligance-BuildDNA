@@ -45,6 +45,51 @@ platformRouter.get("/recognition-usage", async (req, res) => {
   catch { res.status(503).json({ error: "recognition_usage_unavailable" }); }
 });
 
+// OI-staff edit of price, recognition cost and safety caps (12:23). Validated here and again in the
+// SECURITY DEFINER functions, which re-check OI staff and write the audit row (old/new + reason).
+const usageSettingsSchema = z.object({
+  opening_price_cents_per_month: z.number().int().min(0).max(100000).optional(),
+  cost_per_photo_usd: z.number().min(0).max(100).multipleOf(0.000001).nullable().optional(),
+  default_monthly_photo_cap: z.number().int().min(1).max(10000000).optional(),
+  cap_warning_ratio: z.number().min(0.05).max(1).multipleOf(0.001).optional(),
+  reason: z.string().trim().min(1).max(500),
+}).strict().refine((b) => Object.keys(b).some((k) => k !== "reason"), { message: "nothing_to_change" });
+const safetyCapSchema = z.object({ monthly_photo_cap: z.number().int().min(1).max(10000000).nullable(), reason: z.string().trim().min(1).max(500) }).strict();
+
+platformRouter.get("/recognition-usage/settings", async (req, res) => {
+  try {
+    const s = (await pool.query(`SELECT opening_price_cents_per_month, cost_per_photo_usd, default_monthly_photo_cap, cap_warning_ratio, updated_at, updated_reason
+      FROM recognition_usage_settings WHERE id`)).rows[0] ?? null;
+    const caps = (await pool.query(`SELECT c.organization_id, o.name AS organization_name, c.monthly_photo_cap, c.set_reason, c.updated_at
+      FROM recognition_safety_caps c JOIN organizations o ON o.id = c.organization_id ORDER BY o.name LIMIT 1000`)).rows;
+    await auditRead(req as AuthedRequest, "platform_recognition_usage_settings_read");
+    res.json({ settings: s && { ...s, cost_per_photo_usd: s.cost_per_photo_usd == null ? null : Number(s.cost_per_photo_usd), cap_warning_ratio: Number(s.cap_warning_ratio) }, caps });
+  } catch { res.status(503).json({ error: "recognition_usage_unavailable" }); }
+});
+
+platformRouter.put("/recognition-usage/settings", async (req, res) => {
+  const p = usageSettingsSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: "invalid_usage_settings" });
+  const r = req as AuthedRequest; const b = p.data;
+  try {
+    const out = await tx(res, async (c) => (await c.query(`SELECT recognition_usage_settings_update($1::uuid,$2::uuid,$3::text,$4::int,$5::numeric,$6::boolean,$7::int,$8::numeric) AS v`,
+      [r.auth!.userId, r.auth!.organizationId, b.reason, b.opening_price_cents_per_month ?? null, b.cost_per_photo_usd ?? null,
+       b.cost_per_photo_usd !== undefined, b.default_monthly_photo_cap ?? null, b.cap_warning_ratio ?? null])).rows[0].v);
+    if (out !== undefined) res.json({ settings: out });
+  } catch (err) { fail(res, err, "usage_settings_update_failed"); }
+});
+
+platformRouter.put("/recognition-usage/caps/:orgId", async (req, res) => {
+  const id = uuid.safeParse(req.params.orgId); const p = safetyCapSchema.safeParse(req.body);
+  if (!id.success || !p.success) return res.status(400).json({ error: "invalid_safety_cap" });
+  const r = req as AuthedRequest;
+  try {
+    const out = await tx(res, async (c) => (await c.query(`SELECT recognition_safety_cap_set($1::uuid,$2::uuid,$3::uuid,$4::int,$5::text) AS v`,
+      [r.auth!.userId, r.auth!.organizationId, id.data, p.data.monthly_photo_cap, p.data.reason])).rows[0].v);
+    if (out !== undefined) res.json({ cap: out });
+  } catch (err) { fail(res, err, "safety_cap_update_failed"); }
+});
+
 platformRouter.get("/providers", async (_req, res) => {
   try {
     const r = await pool.query(`SELECT provider_organization_id, provider_name, active_facility_count::int, active_property_ids
@@ -82,7 +127,9 @@ class Refusal extends Error { status: number; code: string; constructor(status: 
 const DB_CODES = ["organization_hierarchy_same_type_only", "organization_provider_link_requires_confirmation", "organization_hierarchy_cycle",
   "organization_hierarchy_too_deep", "organization_parent_requires_reason", "organization_parent_requires_oi_staff", "organizations_parent_not_self",
   "platform_staff_must_be_internal", "provider_assignment_request_closed",
-  "platform_staff_regrant_requires_reason", "provider_facility_assignment_requires_oi_staff", "platform_staff_regrant_requires_oi_staff", "platform_staff_not_revoked", "cannot_change_own_staff_access"];
+  "platform_staff_regrant_requires_reason", "provider_facility_assignment_requires_oi_staff", "platform_staff_regrant_requires_oi_staff", "platform_staff_not_revoked", "cannot_change_own_staff_access",
+  "usage_settings_requires_oi_staff", "usage_settings_reason_required", "usage_settings_invalid_price", "usage_settings_invalid_cost",
+  "usage_settings_invalid_cap", "usage_settings_invalid_warning_ratio", "safety_cap_invalid_company"];
 function fail(res: any, err: any, fallback: string) {
   if (err instanceof Refusal) return res.status(err.status).json({ error: err.code });
   const msg = String(err?.message ?? "") + " " + String(err?.constraint ?? "");

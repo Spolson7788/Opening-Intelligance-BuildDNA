@@ -200,7 +200,8 @@ describe('OI staff usage and billing report', () => {
     await state.db.exec(mig.slice(mig.indexOf('-- BACKFILL-BEGIN'), mig.indexOf('-- BACKFILL-END')));
     expect((await sql('SELECT count(*)::int n FROM opening_billable_periods WHERE opening_id=$1', [g])).rows[0].n).toBe(1);
   });
-  it('a facility that changes owner bills the new owner from the move; the old owner keeps its history', async () => {
+  it('a facility that changes owner: history switches at the move; the move month bills only the month-end owner', async () => {
+    const custBefore = row((await report('oi')).body, 'cust').owned_openings;
     const c2 = randomUUID(), pf2 = randomUUID(), m = randomUUID(), mb = randomUUID();
     await sql("INSERT INTO organizations(id,name,org_type) VALUES($1,'Synthetic cust2','customer')", [c2]);
     await sql("INSERT INTO portfolios(id,organization_id,name) VALUES($1,$2,'Main')", [pf2, c2]);
@@ -213,9 +214,13 @@ describe('OI staff usage and billing report', () => {
     expect(h.rows).toEqual([{ owner_organization_id: id.cust, end_reason: 'owner_changed' }, { owner_organization_id: c2, end_reason: null }]);
     const r = await report('oi');
     expect(r.body.companies.find((c: any) => c.organization_id === c2)).toMatchObject({ owned_openings: 1, revenue_cents: 75 });
+    expect(row(r.body, 'cust').owned_openings).toBe(custBefore); // not billed to both owners
     // A building move to another owner's facility switches too; a move within the same owner does not.
     await sql('UPDATE buildings SET property_id=$1 WHERE id=$2', [id.prop, mb]);
     expect((await sql('SELECT owner_organization_id FROM opening_billable_periods WHERE opening_id=$1 AND ended_at IS NULL', [m1])).rows).toEqual([{ owner_organization_id: id.cust }]);
+    const back = await report('oi');
+    expect(row(back.body, 'cust').owned_openings).toBe(custBefore + 1);
+    expect(back.body.companies.find((c: any) => c.organization_id === c2)?.owned_openings ?? 0).toBe(0);
     const n = (await sql('SELECT count(*)::int n FROM opening_billable_periods WHERE opening_id=$1', [m1])).rows[0].n;
     await sql("UPDATE openings SET building_id=(SELECT id FROM buildings WHERE property_id=$1 AND id<>$2 LIMIT 1) WHERE id=$3", [id.prop, mb, m1]);
     expect((await sql('SELECT count(*)::int n FROM opening_billable_periods WHERE opening_id=$1', [m1])).rows[0].n).toBe(n);

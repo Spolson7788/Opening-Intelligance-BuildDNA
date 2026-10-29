@@ -10,9 +10,10 @@ import { pool } from '../db/pool';
 //    of its assignment periods for the facility INSIDE the month (not for openings added after it left).
 //  - A provider's own facility is billed once, to the owning provider; any other provider OI staff
 //    assigns there is NOT billed for those openings (12:10 decision).
-//  - Owner changes: the period closes at the move and a new one opens for the new owner, so each owner
-//    is billed for the months it owned the opening (both for the month of the move).
-//  - Go-live: openings active when migration 090800 is applied bill from that moment.
+//  - Owner changes: the period closes at the move and a new one opens for the new owner. In the month
+//    of a move only the owner at month end (the latest billable period in the month) is billed (12:23).
+//  - Go-live: openings active when migration 090800 is applied bill from that moment. Go-live (first
+//    invoiced month) should be the 1st of a month so the first month is not a partial month billed in full.
 // Recognition cost per photo is OI's INTERNAL cost (never billed), attributed to the company that
 // requested the counted run, so totals add up without double counting. Margin = revenue - cost.
 export type UsageCompanyRow = {
@@ -42,11 +43,12 @@ export async function recognitionUsageReport(month: string): Promise<UsageReport
   const q = (await pool.query(`
     WITH bounds AS (SELECT $1::date::timestamptz AS m0, ($1::date + interval '1 month')::timestamptz AS m1),
     op AS (  -- billable periods clipped to the month
-      SELECT bp.opening_id, bp.property_id, bp.owner_organization_id AS owner,
+      SELECT bp.id, bp.opening_id, bp.property_id, bp.owner_organization_id AS owner,
         greatest(bp.started_at, bounds.m0) AS s, least(COALESCE(bp.ended_at, bounds.m1), bounds.m1) AS e
       FROM opening_billable_periods bp CROSS JOIN bounds
       WHERE bp.started_at < bounds.m1 AND (bp.ended_at IS NULL OR bp.ended_at > bounds.m0)),
-    active AS (SELECT DISTINCT opening_id, owner FROM op),
+    -- One owner per opening per month: the owner at month end (latest billable period in the month).
+    active AS (SELECT DISTINCT ON (opening_id) opening_id, owner FROM op ORDER BY opening_id, e DESC, s DESC, id DESC),
     ap AS (
       SELECT a.property_id, a.provider_organization_id AS org,
         greatest(a.started_at, bounds.m0) AS s, least(COALESCE(a.ended_at, bounds.m1), bounds.m1) AS e

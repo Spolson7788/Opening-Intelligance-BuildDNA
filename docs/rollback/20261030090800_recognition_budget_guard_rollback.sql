@@ -1,3 +1,16 @@
+-- Staff edit functions (section 8). Audit rows for the new actions stay (append-only); the restored
+-- action check is NOT VALID so they are kept while new rows must use the old actions.
+DROP FUNCTION IF EXISTS recognition_usage_settings_update(UUID, UUID, TEXT, INTEGER, NUMERIC, BOOLEAN, INTEGER, NUMERIC);
+DROP FUNCTION IF EXISTS recognition_safety_cap_set(UUID, UUID, UUID, INTEGER, TEXT);
+ALTER TABLE platform_audit_events DROP CONSTRAINT IF EXISTS platform_audit_events_action_check;
+ALTER TABLE platform_audit_events ADD CONSTRAINT platform_audit_events_action_check CHECK (action IN (
+    'org_created','first_admin_invited','facility_created',
+    'staff_granted','staff_revoked',
+    'user_deactivated','user_reactivated','user_role_changed',
+    'provider_assignment_requested','provider_assignment_request_approved',
+    'provider_assignment_request_declined','provider_assignment_request_withdrawn',
+    'provider_assignment_set','provider_assignment_revoked',
+    'org_parent_changed','membership_added','membership_removed')) NOT VALID;
 -- Rollback for DRAFT 20261030090800_recognition_budget_guard.sql (restores the 090700 shape).
 -- Fails by design if any run is 'refused' (status check); export and decide first.
 DROP TRIGGER IF EXISTS facility_provider_assignments_provider_owned_guard ON facility_provider_assignments;

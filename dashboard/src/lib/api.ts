@@ -887,4 +887,9 @@ export interface RecognitionUsageCompany { organization_id: string; organization
 export interface RecognitionUsageReport { month: string; settings: { opening_price_cents_per_month: number; cost_per_photo_usd: number | null; default_monthly_photo_cap: number; cap_warning_ratio: number }; companies: RecognitionUsageCompany[]; totals: { active_openings: number; billable_openings: number; revenue_cents: number; photos_recognized: number; runs: number; oi_recognition_cost_usd: number | null; margin_usd: number | null } }
 export const platformRecognitionUsage = (month: string): Promise<RecognitionUsageReport> => authedFetch(`/platform/recognition-usage?month=${encodeURIComponent(month)}`);
 // OI staff: create a service provider's own facility (not tied to a customer facility).
+export type UsageSettings = { opening_price_cents_per_month: number; cost_per_photo_usd: number | null; default_monthly_photo_cap: number; cap_warning_ratio: number; updated_at?: string; updated_reason?: string };
+export type SafetyCapRow = { organization_id: string; organization_name: string; monthly_photo_cap: number; set_reason: string; updated_at: string };
+export const platformUsageSettings = (): Promise<{ settings: UsageSettings; caps: SafetyCapRow[] }> => authedFetch("/platform/recognition-usage/settings");
+export const updateUsageSettings = (change: Partial<Omit<UsageSettings, "updated_at" | "updated_reason">> & { reason: string }): Promise<{ settings: UsageSettings }> => post("/platform/recognition-usage/settings", change, "PUT");
+export const setSafetyCap = (orgId: string, monthly_photo_cap: number | null, reason: string): Promise<unknown> => post(`/platform/recognition-usage/caps/${orgId}`, { monthly_photo_cap, reason }, "PUT");
 export const createProviderFacility = (providerId: string, name: string, reason: string): Promise<{ facility: { id: string; name: string } }> => post(`/platform/providers/${providerId}/facilities`, { name, reason });

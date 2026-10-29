@@ -290,7 +290,10 @@ DROP TRIGGER IF EXISTS opening_billable_periods_move ON portfolios;
 CREATE TRIGGER opening_billable_periods_move AFTER UPDATE OF organization_id ON portfolios
   FOR EACH ROW WHEN (NEW.organization_id IS DISTINCT FROM OLD.organization_id) EXECUTE FUNCTION opening_billable_periods_on_move();
 
--- Go-live backfill (12:10 decision): billing starts when this migration is APPLIED. Openings that are
+-- Go-live backfill (12:10 decision): billing starts when this migration is APPLIED. Go-live (the first
+-- invoiced month) should be the 1st of a month (12:23 decision); an earlier apply only adds history.
+-- In a month where ownership moves, only the owner at month end is billed (report).
+-- Go-live backfill: billing starts when this migration is APPLIED. Openings that are
 -- 'active' at apply time start a billable period at now(); decommissioned and pending_capture openings
 -- get none. Active provider assignments start at now(); revoked ones are not billable history.
 -- BACKFILL-BEGIN
@@ -346,4 +349,87 @@ DO $$ BEGIN
     REVOKE ALL ON opening_billable_periods, facility_provider_assignment_periods FROM anon; END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
     REVOKE ALL ON opening_billable_periods, facility_provider_assignment_periods FROM authenticated; END IF;
+END $$;
+
+-- 8. OI-staff edit of price, recognition cost and safety caps (12:23 decision). Tables stay
+-- read-only for the API role; changes go only through these SECURITY DEFINER functions, which
+-- re-check that the actor is OI staff, validate, require a reason, and write platform_audit_events
+-- (old and new values) in the same transaction.
+ALTER TABLE recognition_safety_caps ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE recognition_usage_settings ADD COLUMN IF NOT EXISTS updated_by_user_id UUID REFERENCES users(id);
+ALTER TABLE platform_audit_events DROP CONSTRAINT IF EXISTS platform_audit_events_action_check;
+ALTER TABLE platform_audit_events ADD CONSTRAINT platform_audit_events_action_check CHECK (action IN (
+    'org_created','first_admin_invited','facility_created',
+    'staff_granted','staff_revoked',
+    'user_deactivated','user_reactivated','user_role_changed',
+    'provider_assignment_requested','provider_assignment_request_approved',
+    'provider_assignment_request_declined','provider_assignment_request_withdrawn',
+    'provider_assignment_set','provider_assignment_revoked',
+    'org_parent_changed','membership_added','membership_removed',
+    'usage_settings_changed','safety_cap_set','safety_cap_removed'));
+
+CREATE OR REPLACE FUNCTION recognition_usage_settings_update(p_actor UUID, p_actor_org UUID, p_reason TEXT, p_price_cents INTEGER,
+  p_cost_per_photo_usd NUMERIC, p_cost_set BOOLEAN, p_default_cap INTEGER, p_warning_ratio NUMERIC)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE o recognition_usage_settings%ROWTYPE; n recognition_usage_settings%ROWTYPE; actor_org UUID;
+BEGIN
+  IF p_actor IS NULL OR NOT is_platform_staff(p_actor) THEN RAISE EXCEPTION 'usage_settings_requires_oi_staff'; END IF;
+  IF p_reason IS NULL OR length(btrim(p_reason)) = 0 OR length(p_reason) > 500 THEN RAISE EXCEPTION 'usage_settings_reason_required'; END IF;
+  IF p_price_cents IS NOT NULL AND (p_price_cents < 0 OR p_price_cents > 100000) THEN RAISE EXCEPTION 'usage_settings_invalid_price'; END IF;
+  IF p_cost_set AND p_cost_per_photo_usd IS NOT NULL AND (p_cost_per_photo_usd < 0 OR p_cost_per_photo_usd > 100
+     OR p_cost_per_photo_usd <> round(p_cost_per_photo_usd, 6)) THEN RAISE EXCEPTION 'usage_settings_invalid_cost'; END IF;
+  IF p_default_cap IS NOT NULL AND (p_default_cap < 1 OR p_default_cap > 10000000) THEN RAISE EXCEPTION 'usage_settings_invalid_cap'; END IF;
+  IF p_warning_ratio IS NOT NULL AND (p_warning_ratio < 0.05 OR p_warning_ratio > 1 OR p_warning_ratio <> round(p_warning_ratio, 3)) THEN
+    RAISE EXCEPTION 'usage_settings_invalid_warning_ratio'; END IF;
+  SELECT * INTO o FROM recognition_usage_settings WHERE id FOR UPDATE;
+  UPDATE recognition_usage_settings SET
+    opening_price_cents_per_month = COALESCE(p_price_cents, opening_price_cents_per_month),
+    cost_per_photo_usd = CASE WHEN p_cost_set THEN p_cost_per_photo_usd ELSE cost_per_photo_usd END,
+    default_monthly_photo_cap = COALESCE(p_default_cap, default_monthly_photo_cap),
+    cap_warning_ratio = COALESCE(p_warning_ratio, cap_warning_ratio),
+    updated_at = now(), updated_reason = btrim(p_reason), updated_by_user_id = p_actor
+  WHERE id RETURNING * INTO n;
+  actor_org := COALESCE(p_actor_org, (SELECT organization_id FROM users WHERE id = p_actor));
+  INSERT INTO platform_audit_events(actor_user_id, actor_org_id, action, target_org_id, target_id, reason, before_state, after_state)
+  VALUES (p_actor, actor_org, 'usage_settings_changed', NULL, NULL, btrim(p_reason),
+    jsonb_build_object('opening_price_cents_per_month', o.opening_price_cents_per_month, 'cost_per_photo_usd', o.cost_per_photo_usd,
+      'default_monthly_photo_cap', o.default_monthly_photo_cap, 'cap_warning_ratio', o.cap_warning_ratio),
+    jsonb_build_object('opening_price_cents_per_month', n.opening_price_cents_per_month, 'cost_per_photo_usd', n.cost_per_photo_usd,
+      'default_monthly_photo_cap', n.default_monthly_photo_cap, 'cap_warning_ratio', n.cap_warning_ratio));
+  RETURN jsonb_build_object('opening_price_cents_per_month', n.opening_price_cents_per_month, 'cost_per_photo_usd', n.cost_per_photo_usd,
+      'default_monthly_photo_cap', n.default_monthly_photo_cap, 'cap_warning_ratio', n.cap_warning_ratio);
+END $$;
+
+-- p_cap NULL removes the company's override (it falls back to the default cap).
+CREATE OR REPLACE FUNCTION recognition_safety_cap_set(p_actor UUID, p_actor_org UUID, p_org UUID, p_cap INTEGER, p_reason TEXT)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE old_cap INTEGER; actor_org UUID; t TEXT;
+BEGIN
+  IF p_actor IS NULL OR NOT is_platform_staff(p_actor) THEN RAISE EXCEPTION 'usage_settings_requires_oi_staff'; END IF;
+  IF p_reason IS NULL OR length(btrim(p_reason)) = 0 OR length(p_reason) > 500 THEN RAISE EXCEPTION 'usage_settings_reason_required'; END IF;
+  SELECT org_type INTO t FROM organizations WHERE id = p_org;
+  IF t IS NULL OR t NOT IN ('customer','service_partner') THEN RAISE EXCEPTION 'safety_cap_invalid_company'; END IF;
+  IF p_cap IS NOT NULL AND (p_cap < 1 OR p_cap > 10000000) THEN RAISE EXCEPTION 'usage_settings_invalid_cap'; END IF;
+  SELECT monthly_photo_cap INTO old_cap FROM recognition_safety_caps WHERE organization_id = p_org FOR UPDATE;
+  IF p_cap IS NULL THEN
+    DELETE FROM recognition_safety_caps WHERE organization_id = p_org;
+  ELSE
+    INSERT INTO recognition_safety_caps(organization_id, monthly_photo_cap, set_by_user_id, set_reason)
+    VALUES (p_org, p_cap, p_actor, btrim(p_reason))
+    ON CONFLICT (organization_id) DO UPDATE SET monthly_photo_cap = EXCLUDED.monthly_photo_cap,
+      set_by_user_id = EXCLUDED.set_by_user_id, set_reason = EXCLUDED.set_reason, updated_at = now();
+  END IF;
+  actor_org := COALESCE(p_actor_org, (SELECT organization_id FROM users WHERE id = p_actor));
+  INSERT INTO platform_audit_events(actor_user_id, actor_org_id, action, target_org_id, target_id, reason, before_state, after_state)
+  VALUES (p_actor, actor_org, CASE WHEN p_cap IS NULL THEN 'safety_cap_removed' ELSE 'safety_cap_set' END, p_org, p_org, btrim(p_reason),
+    jsonb_build_object('monthly_photo_cap', old_cap), jsonb_build_object('monthly_photo_cap', p_cap));
+  RETURN jsonb_build_object('organization_id', p_org, 'monthly_photo_cap', p_cap, 'previous_monthly_photo_cap', old_cap);
+END $$;
+REVOKE ALL ON FUNCTION recognition_usage_settings_update(UUID, UUID, TEXT, INTEGER, NUMERIC, BOOLEAN, INTEGER, NUMERIC) FROM PUBLIC;
+REVOKE ALL ON FUNCTION recognition_safety_cap_set(UUID, UUID, UUID, INTEGER, TEXT) FROM PUBLIC;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'oi_pr2_api') THEN
+    GRANT EXECUTE ON FUNCTION recognition_usage_settings_update(UUID, UUID, TEXT, INTEGER, NUMERIC, BOOLEAN, INTEGER, NUMERIC) TO oi_pr2_api;
+    GRANT EXECUTE ON FUNCTION recognition_safety_cap_set(UUID, UUID, UUID, INTEGER, TEXT) TO oi_pr2_api;
+  END IF;
 END $$;
