@@ -174,7 +174,7 @@ CREATE TABLE IF NOT EXISTS opening_billable_periods (
   property_name TEXT NOT NULL,
   owner_organization_id UUID NOT NULL,   -- facility owner at period start (no FK)
   started_at TIMESTAMPTZ NOT NULL, ended_at TIMESTAMPTZ,
-  end_reason TEXT CHECK (end_reason IN ('status_changed','opening_deleted','backfill')),
+  end_reason TEXT CHECK (end_reason IN ('status_changed','opening_deleted','owner_changed','backfill')),
   CHECK (ended_at IS NULL OR ended_at >= started_at),
   CHECK ((ended_at IS NULL) = (end_reason IS NULL)));
 CREATE UNIQUE INDEX IF NOT EXISTS opening_billable_periods_one_open ON opening_billable_periods(opening_id) WHERE ended_at IS NULL;
@@ -243,22 +243,71 @@ DROP TRIGGER IF EXISTS facility_provider_assignment_periods_track ON facility_pr
 CREATE TRIGGER facility_provider_assignment_periods_track AFTER INSERT OR UPDATE OR DELETE ON facility_provider_assignments
   FOR EACH ROW EXECUTE FUNCTION facility_provider_assignment_periods_track();
 
--- Backfill from current rows (best available history). Active openings: billable from created_at
--- (capture time is not recorded). Decommissioned: assumed billable created_at..updated_at.
--- pending_capture: never billable. Revoked assignments cover granted_at..revoked_at.
-INSERT INTO opening_billable_periods(opening_id, opening_code, property_id, property_name, owner_organization_id, started_at, ended_at, end_reason)
-SELECT o.id, o.opening_code, p.id, p.name, pf.organization_id, o.created_at,
-  CASE WHEN o.status = 'decommissioned' THEN greatest(o.updated_at, o.created_at) END,
-  CASE WHEN o.status = 'decommissioned' THEN 'backfill' END
+-- 6a. Facility owner changes (12:10 decision): billing switches to the new owner FROM THE MOVE.
+-- Moving an opening (building_id), a building (property_id), a facility (portfolio_id) or a portfolio
+-- (organization_id) closes each affected open period ('owner_changed') and opens a new one with the
+-- new snapshot at now(). The old owner keeps its history (and is billed for the month of the move,
+-- since any part of a month bills a full month).
+CREATE OR REPLACE FUNCTION opening_billable_periods_rehome(p_openings UUID[]) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN SELECT bp.id, o.id AS opening_id, o.opening_code, p.id AS property_id, p.name AS property_name, pf.organization_id AS owner
+      FROM opening_billable_periods bp JOIN openings o ON o.id = bp.opening_id JOIN buildings b ON b.id = o.building_id
+      JOIN properties p ON p.id = b.property_id JOIN portfolios pf ON pf.id = p.portfolio_id
+      WHERE bp.ended_at IS NULL AND bp.opening_id = ANY(p_openings)
+        AND (bp.property_id, bp.owner_organization_id) IS DISTINCT FROM (p.id, pf.organization_id) LOOP
+    UPDATE opening_billable_periods SET ended_at = greatest(now(), started_at), end_reason = 'owner_changed' WHERE id = r.id;
+    INSERT INTO opening_billable_periods(opening_id, opening_code, property_id, property_name, owner_organization_id, started_at)
+      VALUES (r.opening_id, r.opening_code, r.property_id, r.property_name, r.owner, now());
+  END LOOP;
+END $$;
+CREATE OR REPLACE FUNCTION opening_billable_periods_on_move() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'openings' THEN
+    PERFORM opening_billable_periods_rehome(ARRAY[NEW.id]);
+  ELSIF TG_TABLE_NAME = 'buildings' THEN
+    PERFORM opening_billable_periods_rehome(ARRAY(SELECT id FROM openings WHERE building_id = NEW.id));
+  ELSIF TG_TABLE_NAME = 'properties' THEN
+    PERFORM opening_billable_periods_rehome(ARRAY(SELECT o.id FROM openings o JOIN buildings b ON b.id = o.building_id WHERE b.property_id = NEW.id));
+  ELSIF TG_TABLE_NAME = 'portfolios' THEN
+    PERFORM opening_billable_periods_rehome(ARRAY(SELECT o.id FROM openings o JOIN buildings b ON b.id = o.building_id
+      JOIN properties p ON p.id = b.property_id WHERE p.portfolio_id = NEW.id));
+  END IF;
+  RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS opening_billable_periods_move ON openings;
+CREATE TRIGGER opening_billable_periods_move AFTER UPDATE OF building_id ON openings
+  FOR EACH ROW WHEN (NEW.building_id IS DISTINCT FROM OLD.building_id) EXECUTE FUNCTION opening_billable_periods_on_move();
+DROP TRIGGER IF EXISTS opening_billable_periods_move ON buildings;
+CREATE TRIGGER opening_billable_periods_move AFTER UPDATE OF property_id ON buildings
+  FOR EACH ROW WHEN (NEW.property_id IS DISTINCT FROM OLD.property_id) EXECUTE FUNCTION opening_billable_periods_on_move();
+DROP TRIGGER IF EXISTS opening_billable_periods_move ON properties;
+CREATE TRIGGER opening_billable_periods_move AFTER UPDATE OF portfolio_id ON properties
+  FOR EACH ROW WHEN (NEW.portfolio_id IS DISTINCT FROM OLD.portfolio_id) EXECUTE FUNCTION opening_billable_periods_on_move();
+DROP TRIGGER IF EXISTS opening_billable_periods_move ON portfolios;
+CREATE TRIGGER opening_billable_periods_move AFTER UPDATE OF organization_id ON portfolios
+  FOR EACH ROW WHEN (NEW.organization_id IS DISTINCT FROM OLD.organization_id) EXECUTE FUNCTION opening_billable_periods_on_move();
+
+-- Go-live backfill (12:10 decision): billing starts when this migration is APPLIED. Openings that are
+-- 'active' at apply time start a billable period at now(); decommissioned and pending_capture openings
+-- get none. Active provider assignments start at now(); revoked ones are not billable history.
+-- BACKFILL-BEGIN
+INSERT INTO opening_billable_periods(opening_id, opening_code, property_id, property_name, owner_organization_id, started_at)
+SELECT o.id, o.opening_code, p.id, p.name, pf.organization_id, now()
 FROM openings o JOIN buildings b ON b.id = o.building_id JOIN properties p ON p.id = b.property_id JOIN portfolios pf ON pf.id = p.portfolio_id
-WHERE o.status IN ('active','decommissioned') AND NOT EXISTS (SELECT 1 FROM opening_billable_periods x WHERE x.opening_id = o.id);
-INSERT INTO facility_provider_assignment_periods(property_id, provider_organization_id, started_at, ended_at, end_reason)
-SELECT a.property_id, a.provider_organization_id, a.granted_at,
-  CASE WHEN a.revoked_at IS NOT NULL THEN greatest(a.revoked_at, a.granted_at) END, CASE WHEN a.revoked_at IS NOT NULL THEN 'backfill' END
+WHERE o.status = 'active' AND NOT EXISTS (SELECT 1 FROM opening_billable_periods x WHERE x.opening_id = o.id AND x.ended_at IS NULL);
+INSERT INTO facility_provider_assignment_periods(property_id, provider_organization_id, started_at)
+SELECT a.property_id, a.provider_organization_id, now()
 FROM facility_provider_assignments a
-WHERE NOT EXISTS (SELECT 1 FROM facility_provider_assignment_periods x WHERE x.property_id = a.property_id AND x.provider_organization_id = a.provider_organization_id);
+WHERE a.revoked_at IS NULL AND NOT EXISTS (SELECT 1 FROM facility_provider_assignment_periods x
+  WHERE x.property_id = a.property_id AND x.provider_organization_id = a.provider_organization_id AND x.ended_at IS NULL);
+-- BACKFILL-END
 
 -- 6b. Provider-owned facilities: only OI staff may ASSIGN a provider to them (revoking stays open).
+-- Billing (12:10 decision): only the owning provider is billed for their openings; any additional
+-- provider staff assigns there is NOT billed (see the report).
 -- Enforced in the database for every writer: the transaction must name an acting user
 -- (set_config('oi.actor_user_id', ..., true)) who is OI staff.
 CREATE OR REPLACE FUNCTION facility_provider_assignments_provider_owned_guard() RETURNS trigger
@@ -287,6 +336,8 @@ ALTER TABLE facility_provider_assignment_periods ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON FUNCTION opening_billable_periods_track() FROM PUBLIC;
 REVOKE ALL ON FUNCTION facility_provider_assignment_periods_track() FROM PUBLIC;
 REVOKE ALL ON FUNCTION facility_provider_assignments_provider_owned_guard() FROM PUBLIC;
+REVOKE ALL ON FUNCTION opening_billable_periods_rehome(UUID[]) FROM PUBLIC;
+REVOKE ALL ON FUNCTION opening_billable_periods_on_move() FROM PUBLIC;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'oi_pr2_api') THEN
     GRANT SELECT ON opening_billable_periods, facility_provider_assignment_periods TO oi_pr2_api;

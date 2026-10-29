@@ -172,11 +172,53 @@ describe('OI staff usage and billing report', () => {
     await sql('BEGIN'); await sql("SELECT set_config('oi.actor_user_id',$1,true)", [id.vortexUser]);
     await expect(sql(ins, [id.vprop, id.dhpace, id.vortexUser])).rejects.toThrow(/provider_facility_assignment_requires_oi_staff/); await sql('ROLLBACK');
     // OI staff may (inside a transaction naming the staff actor); revoking is open to the owner.
+    const before = row((await report('oi')).body, 'dhpace');
     await sql('BEGIN'); await sql("SELECT set_config('oi.actor_user_id',$1,true)", [id.oiUser]); await sql(ins, [id.vprop, id.dhpace, id.oiUser]); await sql('COMMIT');
+    // Billing: on a provider-owned facility only the owning provider pays; DH Pace is not billed for V1.
+    const during = await report('oi');
+    expect(row(during.body, 'dhpace').billable_openings).toBe(before.billable_openings);
+    expect(row(during.body, 'vortex')).toMatchObject({ owned_openings: 1 });
     expect((await put('vortex', 'dhpace', false)).status).toBe(200);
     expect((await sql('SELECT revoked_at FROM facility_provider_assignments WHERE property_id=$1 AND provider_organization_id=$2', [id.vprop, id.dhpace])).rows[0].revoked_at).not.toBeNull();
     // Customer facilities are unchanged: the owner admin can still assign providers.
     expect((await request(app).put(`/api/provider-assignments/${id.prop}/${id.vortex}`).set('Authorization', tok.cust).send({ active: true })).status).toBe(200);
+  });
+  it('go-live backfill: openings already active when 090800 is applied bill from apply time, not creation', async () => {
+    const t0 = Date.now() - 1000;
+    await sql('ALTER TABLE openings DISABLE TRIGGER opening_billable_periods_track');
+    const g = randomUUID(), pend = randomUUID(), dec = randomUUID();
+    for (const [o, st] of [[g, 'active'], [pend, 'pending_capture'], [dec, 'decommissioned']])
+      await sql("INSERT INTO openings(id,building_id,opening_code,qr_token,opening_type,status,created_at) VALUES($1,$2,$3,$4,'door',$5,'2020-01-05')", [o, custBuilding, 'G-' + o.slice(0, 8), 'qr-' + o, st]);
+    await sql('ALTER TABLE openings ENABLE TRIGGER opening_billable_periods_track');
+    const mig = readFileSync('migrations/20261030090800_recognition_budget_guard.sql', 'utf8');
+    await state.db.exec(mig.slice(mig.indexOf('-- BACKFILL-BEGIN'), mig.indexOf('-- BACKFILL-END')));
+    const p = await sql('SELECT opening_id, started_at FROM opening_billable_periods WHERE opening_id = ANY($1::uuid[])', [[g, pend, dec]]);
+    expect(p.rows.map((x: any) => x.opening_id)).toEqual([g]);
+    expect(new Date(p.rows[0].started_at).getTime()).toBeGreaterThanOrEqual(t0); // apply time, not 2020-01-05
+    expect((await report('oi', '2020-01')).body.companies.map((c: any) => c.organization_id)).toEqual([id.cust]); // still only O3 then
+    // Re-running the backfill adds nothing.
+    await state.db.exec(mig.slice(mig.indexOf('-- BACKFILL-BEGIN'), mig.indexOf('-- BACKFILL-END')));
+    expect((await sql('SELECT count(*)::int n FROM opening_billable_periods WHERE opening_id=$1', [g])).rows[0].n).toBe(1);
+  });
+  it('a facility that changes owner bills the new owner from the move; the old owner keeps its history', async () => {
+    const c2 = randomUUID(), pf2 = randomUUID(), m = randomUUID(), mb = randomUUID();
+    await sql("INSERT INTO organizations(id,name,org_type) VALUES($1,'Synthetic cust2','customer')", [c2]);
+    await sql("INSERT INTO portfolios(id,organization_id,name) VALUES($1,$2,'Main')", [pf2, c2]);
+    const pf = (await sql('SELECT portfolio_id FROM properties WHERE id=$1', [id.prop])).rows[0].portfolio_id;
+    await sql("INSERT INTO properties(id,portfolio_id,name) VALUES($1,$2,'Moving facility')", [m, pf]);
+    await sql("INSERT INTO buildings(id,property_id,name) VALUES($1,$2,'MB')", [mb, m]);
+    const m1 = await opening(mb, 'M1');
+    await sql('UPDATE properties SET portfolio_id=$1 WHERE id=$2', [pf2, m]);
+    const h = await sql('SELECT owner_organization_id, end_reason FROM opening_billable_periods WHERE opening_id=$1 ORDER BY id', [m1]);
+    expect(h.rows).toEqual([{ owner_organization_id: id.cust, end_reason: 'owner_changed' }, { owner_organization_id: c2, end_reason: null }]);
+    const r = await report('oi');
+    expect(r.body.companies.find((c: any) => c.organization_id === c2)).toMatchObject({ owned_openings: 1, revenue_cents: 75 });
+    // A building move to another owner's facility switches too; a move within the same owner does not.
+    await sql('UPDATE buildings SET property_id=$1 WHERE id=$2', [id.prop, mb]);
+    expect((await sql('SELECT owner_organization_id FROM opening_billable_periods WHERE opening_id=$1 AND ended_at IS NULL', [m1])).rows).toEqual([{ owner_organization_id: id.cust }]);
+    const n = (await sql('SELECT count(*)::int n FROM opening_billable_periods WHERE opening_id=$1', [m1])).rows[0].n;
+    await sql("UPDATE openings SET building_id=(SELECT id FROM buildings WHERE property_id=$1 AND id<>$2 LIMIT 1) WHERE id=$3", [id.prop, mb, m1]);
+    expect((await sql('SELECT count(*)::int n FROM opening_billable_periods WHERE opening_id=$1', [m1])).rows[0].n).toBe(n);
   });
   it('creating a provider company can create its own facility too (customers cannot)', async () => {
     const base = { org_type: 'service_partner', admin_full_name: 'Synthetic', reason: 'synthetic', create_provider_facility: true };

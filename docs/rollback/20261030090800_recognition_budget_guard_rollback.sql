@@ -2,6 +2,12 @@
 -- Fails by design if any run is 'refused' (status check); export and decide first.
 DROP TRIGGER IF EXISTS facility_provider_assignments_provider_owned_guard ON facility_provider_assignments;
 DROP FUNCTION IF EXISTS facility_provider_assignments_provider_owned_guard();
+DROP TRIGGER IF EXISTS opening_billable_periods_move ON openings;
+DROP TRIGGER IF EXISTS opening_billable_periods_move ON buildings;
+DROP TRIGGER IF EXISTS opening_billable_periods_move ON properties;
+DROP TRIGGER IF EXISTS opening_billable_periods_move ON portfolios;
+DROP FUNCTION IF EXISTS opening_billable_periods_on_move();
+DROP FUNCTION IF EXISTS opening_billable_periods_rehome(UUID[]);
 DROP TRIGGER IF EXISTS opening_billable_periods_track ON openings;
 DROP FUNCTION IF EXISTS opening_billable_periods_track();
 DROP TRIGGER IF EXISTS facility_provider_assignment_periods_track ON facility_provider_assignments;

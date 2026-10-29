@@ -8,7 +8,11 @@ import { pool } from '../db/pool';
 //  - The facility owner pays for each opening with a billable period overlapping the month.
 //  - Each assigned provider pays for an opening only if a billable period of the opening overlaps one
 //    of its assignment periods for the facility INSIDE the month (not for openings added after it left).
-//  - A provider's own facility is billed once, to the provider.
+//  - A provider's own facility is billed once, to the owning provider; any other provider OI staff
+//    assigns there is NOT billed for those openings (12:10 decision).
+//  - Owner changes: the period closes at the move and a new one opens for the new owner, so each owner
+//    is billed for the months it owned the opening (both for the month of the move).
+//  - Go-live: openings active when migration 090800 is applied bill from that moment.
 // Recognition cost per photo is OI's INTERNAL cost (never billed), attributed to the company that
 // requested the counted run, so totals add up without double counting. Margin = revenue - cost.
 export type UsageCompanyRow = {
@@ -52,7 +56,9 @@ export async function recognitionUsageReport(month: string): Promise<UsageReport
       SELECT owner AS org, opening_id, true AS owned FROM active
       UNION
       SELECT ap.org, op.opening_id, false FROM op JOIN ap ON ap.property_id = op.property_id
-       WHERE ap.org <> op.owner AND greatest(op.s, ap.s) < least(op.e, ap.e)),
+       JOIN organizations ow ON ow.id = op.owner
+       WHERE ap.org <> op.owner AND ow.org_type <> 'service_partner' -- provider-owned: only the owner pays
+         AND greatest(op.s, ap.s) < least(op.e, ap.e)),
     per_company AS (SELECT org, count(*) FILTER (WHERE owned)::int AS owned, count(*) FILTER (WHERE NOT owned)::int AS provided FROM billed GROUP BY org),
     requested AS (SELECT organization_id AS org, photos_counted, runs_counted FROM recognition_usage_monthly WHERE period_month = $1::date),
     orgs AS (SELECT org FROM per_company UNION SELECT org FROM requested)
