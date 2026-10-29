@@ -870,7 +870,7 @@ export const setOrganizationParent = (orgId: string, body: { parent_organization
   Promise<{ id: string; parent_organization_id: string | null; tree: PlatformOrganization[] }> => post(`/platform/organizations/${orgId}/parent`, body, "PUT");
 export const platformProviderRequests = (status = "pending"): Promise<ProviderRequest[]> => authedFetch(`/platform/provider-requests?status=${encodeURIComponent(status)}`);
 export const reviewProviderRequest = (id: string, decision: "approve" | "decline", reason: string) => post(`/platform/provider-requests/${id}/${decision}`, { reason });
-export const createCompanyWithAdmin = (body: { name: string; org_type: "customer" | "service_partner"; admin_email: string; admin_full_name: string; reason: string }):
+export const createCompanyWithAdmin = (body: { name: string; org_type: "customer" | "service_partner"; admin_email: string; admin_full_name: string; reason: string; create_provider_facility?: boolean }):
   Promise<{ organization: { id: string; name: string; org_type: string }; admin: { id: string; email: string }; temporary_password: string; temporary_password_notice: string }> => post("/platform/companies", body);
 export const grantMembership = (body: { email: string; role: string; organization_id: string; reason: string }) => post("/members/memberships", body);
 export const platformStaff = (): Promise<PlatformStaffRow[]> => authedFetch("/platform/staff");
@@ -883,6 +883,8 @@ export const requestProvider = (body: { property_id: string; provider_organizati
 export const withdrawProviderRequest = (id: string) => post(`/provider-requests/${id}/withdraw`, {});
 
 // OI staff only: recognition usage by company and month (billing $0.75/opening/month to provider AND facility).
-export interface RecognitionUsageCompany { organization_id: string; organization_name: string; org_type: string; billable_openings: number; revenue_cents: number; photos_recognized: number; runs: number; recognition_cost_usd: number | null; cost_per_opening_usd: number | null; requested_photos: number; requested_runs: number; safety_cap_photos: number; cap_used_ratio: number; cap_warning: boolean }
-export interface RecognitionUsageReport { month: string; settings: { opening_price_cents_per_month: number; cost_per_photo_usd: number | null; default_monthly_photo_cap: number; cap_warning_ratio: number }; companies: RecognitionUsageCompany[]; totals: { distinct_openings: number; photos_recognized: number; runs: number; recognition_cost_usd: number | null; revenue_cents: number; cost_per_opening_usd: number | null } }
+export interface RecognitionUsageCompany { organization_id: string; organization_name: string; org_type: string; owned_openings: number; provider_openings: number; billable_openings: number; revenue_cents: number; photos_recognized: number; runs: number; oi_recognition_cost_usd: number | null; margin_usd: number | null; safety_cap_photos: number; cap_used_ratio: number; cap_warning: boolean }
+export interface RecognitionUsageReport { month: string; settings: { opening_price_cents_per_month: number; cost_per_photo_usd: number | null; default_monthly_photo_cap: number; cap_warning_ratio: number }; companies: RecognitionUsageCompany[]; totals: { active_openings: number; billable_openings: number; revenue_cents: number; photos_recognized: number; runs: number; oi_recognition_cost_usd: number | null; margin_usd: number | null } }
 export const platformRecognitionUsage = (month: string): Promise<RecognitionUsageReport> => authedFetch(`/platform/recognition-usage?month=${encodeURIComponent(month)}`);
+// OI staff: create a service provider's own facility (not tied to a customer facility).
+export const createProviderFacility = (providerId: string, name: string, reason: string): Promise<{ facility: { id: string; name: string } }> => post(`/platform/providers/${providerId}/facilities`, { name, reason });

@@ -1,8 +1,12 @@
 -- DRAFT (Oct 29 2026; revised 11:17 approval). NOT APPLIED to any database. Apply only with its own
 -- approval, after 20261030090700_recognition_runs.sql.
--- Decisions: no customer budgets. Usage is tracked and reported to OI staff. OI bills $0.75 per
--- opening per month to BOTH the service provider and the facility. The atomic guard is only an
--- emergency SAFETY CAP per company (photos per month): a missing row never refuses.
+-- Decisions: no customer budgets. Usage is tracked and reported to OI staff. The atomic guard is only
+-- an emergency SAFETY CAP per company (photos per month): a missing row never refuses.
+-- Billing (11:42 decision): $0.75 per ACTIVE opening per month, whether or not recognition ran. The
+-- facility owner company pays for every active opening in its facilities, and every service provider
+-- assigned to that facility during the month pays for the same opening. A provider's own facility
+-- (owned by the provider company) is billed once, to the provider. Recognition cost per photo is OI's
+-- INTERNAL cost only (never billed). Sections 6-7 keep the history the monthly bill needs.
 -- 1. recognition_usage_settings: price per opening, configurable cost per photo (unknown -> NULL),
 --    default monthly photo cap, warning ratio.
 -- 2. recognition_safety_caps: optional per-company override of the default cap.
@@ -151,4 +155,82 @@ DO $$ BEGIN
     GRANT EXECUTE ON FUNCTION recognition_usage_reserve(UUID) TO oi_pr2_api;
     GRANT UPDATE (downscale_used) ON recognition_runs TO oi_pr2_api;
   END IF;
+END $$;
+
+-- 6. Billing history: when each opening was active, and when each provider was assigned.
+-- An opening is ACTIVE IN A MONTH when it existed (created before the month ended) and was not
+-- decommissioned for the whole month, i.e. some active period overlaps the month. 'active' and
+-- 'pending_capture' both count; only 'decommissioned' ends a period. The current
+-- facility_provider_assignments row is overwritten on re-grant, so periods are kept separately.
+CREATE TABLE IF NOT EXISTS opening_active_periods (
+  id BIGSERIAL PRIMARY KEY,
+  opening_id UUID NOT NULL REFERENCES openings(id) ON DELETE CASCADE,
+  started_at TIMESTAMPTZ NOT NULL, ended_at TIMESTAMPTZ,
+  CHECK (ended_at IS NULL OR ended_at >= started_at));
+CREATE UNIQUE INDEX IF NOT EXISTS opening_active_periods_one_open ON opening_active_periods(opening_id) WHERE ended_at IS NULL;
+CREATE TABLE IF NOT EXISTS facility_provider_assignment_periods (
+  id BIGSERIAL PRIMARY KEY,
+  property_id UUID NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+  provider_organization_id UUID NOT NULL REFERENCES organizations(id),
+  started_at TIMESTAMPTZ NOT NULL, ended_at TIMESTAMPTZ,
+  CHECK (ended_at IS NULL OR ended_at >= started_at));
+CREATE UNIQUE INDEX IF NOT EXISTS facility_provider_assignment_periods_one_open
+  ON facility_provider_assignment_periods(property_id, provider_organization_id) WHERE ended_at IS NULL;
+
+CREATE OR REPLACE FUNCTION opening_active_periods_track() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status <> 'decommissioned' THEN INSERT INTO opening_active_periods(opening_id, started_at) VALUES (NEW.id, NEW.created_at); END IF;
+  ELSIF NEW.status = 'decommissioned' AND OLD.status <> 'decommissioned' THEN
+    UPDATE opening_active_periods SET ended_at = greatest(now(), started_at) WHERE opening_id = NEW.id AND ended_at IS NULL;
+  ELSIF NEW.status <> 'decommissioned' AND OLD.status = 'decommissioned' THEN
+    INSERT INTO opening_active_periods(opening_id, started_at) VALUES (NEW.id, now()) ON CONFLICT DO NOTHING;
+  END IF;
+  RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS opening_active_periods_track ON openings;
+CREATE TRIGGER opening_active_periods_track AFTER INSERT OR UPDATE OF status ON openings
+  FOR EACH ROW EXECUTE FUNCTION opening_active_periods_track();
+
+CREATE OR REPLACE FUNCTION facility_provider_assignment_periods_track() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+  IF NEW.revoked_at IS NULL AND (TG_OP = 'INSERT' OR OLD.revoked_at IS NOT NULL) THEN
+    INSERT INTO facility_provider_assignment_periods(property_id, provider_organization_id, started_at)
+      VALUES (NEW.property_id, NEW.provider_organization_id, NEW.granted_at) ON CONFLICT DO NOTHING;
+  ELSIF NEW.revoked_at IS NOT NULL AND TG_OP = 'UPDATE' AND OLD.revoked_at IS NULL THEN
+    UPDATE facility_provider_assignment_periods SET ended_at = greatest(NEW.revoked_at, started_at)
+     WHERE property_id = NEW.property_id AND provider_organization_id = NEW.provider_organization_id AND ended_at IS NULL;
+  END IF;
+  RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS facility_provider_assignment_periods_track ON facility_provider_assignments;
+CREATE TRIGGER facility_provider_assignment_periods_track AFTER INSERT OR UPDATE ON facility_provider_assignments
+  FOR EACH ROW EXECUTE FUNCTION facility_provider_assignment_periods_track();
+
+-- Backfill from current rows (best available history: a decommissioned opening is taken to have
+-- ended at its last update; a revoked assignment covers granted_at..revoked_at).
+INSERT INTO opening_active_periods(opening_id, started_at, ended_at)
+SELECT o.id, o.created_at, CASE WHEN o.status = 'decommissioned' THEN greatest(o.updated_at, o.created_at) END FROM openings o
+WHERE NOT EXISTS (SELECT 1 FROM opening_active_periods x WHERE x.opening_id = o.id);
+INSERT INTO facility_provider_assignment_periods(property_id, provider_organization_id, started_at, ended_at)
+SELECT a.property_id, a.provider_organization_id, a.granted_at, CASE WHEN a.revoked_at IS NOT NULL THEN greatest(a.revoked_at, a.granted_at) END
+FROM facility_provider_assignments a
+WHERE NOT EXISTS (SELECT 1 FROM facility_provider_assignment_periods x WHERE x.property_id = a.property_id AND x.provider_organization_id = a.provider_organization_id);
+
+-- 7. Provider-owned facilities need no new table: a facility (property) in a portfolio owned by the
+-- service-provider company. Access stays owner-or-assignment, so other providers never see it.
+ALTER TABLE opening_active_periods ENABLE ROW LEVEL SECURITY;
+ALTER TABLE facility_provider_assignment_periods ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON FUNCTION opening_active_periods_track() FROM PUBLIC;
+REVOKE ALL ON FUNCTION facility_provider_assignment_periods_track() FROM PUBLIC;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'oi_pr2_api') THEN
+    GRANT SELECT ON opening_active_periods, facility_provider_assignment_periods TO oi_pr2_api;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    REVOKE ALL ON opening_active_periods, facility_provider_assignment_periods FROM anon; END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    REVOKE ALL ON opening_active_periods, facility_provider_assignment_periods FROM authenticated; END IF;
 END $$;

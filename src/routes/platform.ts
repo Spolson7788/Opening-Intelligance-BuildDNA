@@ -201,7 +201,30 @@ for (const decision of ["approve", "decline"] as const) {
 const companySchema = z.object({
   name: z.string().trim().min(1).max(200), org_type: z.enum(["customer", "service_partner"]),
   admin_email: z.string().trim().toLowerCase().email().max(320), admin_full_name: z.string().trim().min(1).max(200), reason: reasonSchema,
+  // Service providers only: also create the provider's own general facility (openings not tied to a customer facility).
+  create_provider_facility: z.boolean().optional(),
 }).strict();
+// A provider-owned facility: an ordinary facility in a portfolio owned by the provider company. Access
+// stays owner-or-assignment, so no other provider sees it; its openings are billed once, to the provider.
+async function createProviderFacility(c: any, req: AuthedRequest, orgId: string, name: string, reason: string) {
+  const org = (await c.query("SELECT id, org_type FROM organizations WHERE id=$1 FOR UPDATE", [orgId])).rows[0];
+  if (!org) throw new Refusal(404, "organization_not_found");
+  if (org.org_type !== "service_partner") throw new Refusal(400, "provider_facility_requires_provider");
+  let pf = (await c.query("SELECT id FROM portfolios WHERE organization_id=$1 ORDER BY created_at, id LIMIT 1", [orgId])).rows[0];
+  if (!pf) pf = (await c.query("INSERT INTO portfolios (organization_id, name) VALUES ($1,'Main Portfolio') RETURNING id", [orgId])).rows[0];
+  const p = (await c.query("INSERT INTO properties (portfolio_id, name) VALUES ($1,$2) RETURNING id, name, portfolio_id", [pf.id, name])).rows[0];
+  await platformEvent(c, req, { action: "facility_created", targetOrg: orgId, targetId: p.id, reason, after: { name: p.name, provider_owned: true } });
+  return p;
+}
+const providerFacilitySchema = z.object({ name: z.string().trim().min(1).max(200), reason: reasonSchema }).strict();
+platformRouter.post("/providers/:id/facilities", async (req: AuthedRequest, res) => {
+  const id = uuid.safeParse(req.params.id); const b = providerFacilitySchema.safeParse(req.body ?? {});
+  if (!id.success || !b.success) return res.status(400).json({ error: "invalid_provider_facility" });
+  try {
+    const out = await tx(res, (c) => createProviderFacility(c, req, id.data, b.data.name, b.data.reason));
+    if (out) res.status(201).json({ facility: out });
+  } catch (err) { fail(res, err, "provider_facility_create_failed"); }
+});
 export function generateTemporaryPassword() { return randomBytes(18).toString("base64url"); }
 platformRouter.post("/companies", async (req: AuthedRequest, res) => {
   const b = companySchema.safeParse(req.body ?? {});
@@ -217,7 +240,9 @@ platformRouter.post("/companies", async (req: AuthedRequest, res) => {
       await platformEvent(c, req, { action: "org_created", targetOrg: org.id, targetId: org.id, reason: b.data.reason, after: { name: org.name, org_type: org.org_type } });
       await platformEvent(c, req, { action: "first_admin_invited", targetOrg: org.id, targetId: u.id, reason: b.data.reason,
         after: { email: u.email, full_name: u.full_name, role: "admin", must_change_password: true, temporary_password: "[redacted]" } });
-      return { organization: org, admin: u };
+      if (b.data.create_provider_facility && org.org_type !== "service_partner") throw new Refusal(400, "provider_facility_requires_provider");
+      const facility = b.data.create_provider_facility ? await createProviderFacility(c, req, org.id, `${org.name} (own facility)`, b.data.reason) : undefined;
+      return { organization: org, admin: u, ...(facility ? { provider_facility: facility } : {}) };
     });
     if (out) res.status(201).json({ ...out, temporary_password: temporary, temporary_password_notice: "Shown once. Give it to the admin securely; they must change it at first sign-in." });
   } catch (err) { fail(res, err, "company_create_failed"); }

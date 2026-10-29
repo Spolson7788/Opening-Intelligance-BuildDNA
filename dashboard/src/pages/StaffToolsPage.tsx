@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Sidebar } from "../components/Sidebar";
 import {
-  createCompanyWithAdmin, grantMembership, platformMe, grantStaff, platformFacilities, platformOrganizations, platformOrgUsers, platformProviderRequests, platformProviders,
+  createCompanyWithAdmin, createProviderFacility, grantMembership, platformMe, grantStaff, platformFacilities, platformOrganizations, platformOrgUsers, platformProviderRequests, platformProviders,
   platformRecognitionUsage, platformStaff, reviewProviderRequest, revokeStaff, setOrganizationParent,
   type PlatformFacility, type PlatformOrganization, type PlatformOrgUser, type PlatformProvider, type PlatformStaffRow, type ProviderRequest, type RecognitionUsageReport,
 } from "../lib/api";
@@ -38,7 +38,27 @@ function Providers({ facilityName }: { facilityName: (id: string) => string }) {
     <input aria-label="Search providers" placeholder="Search" value={q} onChange={(x) => setQ(x.target.value)} />
     <table><thead><tr><SortHead<PlatformProvider> label="Provider" k="provider_name" sort={sort} setSort={setSort} />
       <SortHead<PlatformProvider> label="Facilities" k="active_facility_count" sort={sort} setSort={setSort} /><th>Assigned facilities</th></tr></thead>
-      <tbody>{shown.map((p) => <tr key={p.provider_organization_id}><td>{p.provider_name}</td><td>{p.active_facility_count}</td><td>{p.active_property_ids.map(facilityName).join(", ")}</td></tr>)}</tbody></table></section>;
+      <tbody>{shown.map((p) => <tr key={p.provider_organization_id}><td>{p.provider_name}</td><td>{p.active_facility_count}</td><td>{p.active_property_ids.map(facilityName).join(", ")}</td></tr>)}</tbody></table>
+    <ProviderOwnFacility providers={rows} /></section>;
+}
+
+// A provider's own facility for openings not tied to a customer facility. Only that provider sees it,
+// and its openings are billed once, to the provider.
+function ProviderOwnFacility({ providers }: { providers: PlatformProvider[] }) {
+  const [pid, setPid] = useState(""); const [name, setName] = useState(""); const [reason, setReason] = useState(""); const [msg, setMsg] = useState<string | null>(null);
+  async function create() {
+    if (!pid || !name.trim() || !reason.trim()) { setMsg("Choose a provider, a facility name and a reason."); return; }
+    setMsg(null);
+    try { const r = await createProviderFacility(pid, name.trim(), reason.trim()); setMsg(`Created ${r.facility.name}.`); setName(""); setReason(""); }
+    catch (x) { setMsg(err(x)); }
+  }
+  return <><h2>Create a provider's own facility</h2>
+    <p className="muted">For openings not tied to a customer facility. Only that provider sees it; its openings are billed once, to the provider.</p>
+    <select aria-label="Provider for own facility" value={pid} onChange={(e) => setPid(e.target.value)}><option value="">Choose a provider</option>
+      {providers.map((p) => <option key={p.provider_organization_id} value={p.provider_organization_id}>{p.provider_name}</option>)}</select>{" "}
+    <input aria-label="Own facility name" placeholder="Facility name" value={name} onChange={(e) => setName(e.target.value)} />{" "}
+    <input aria-label="Own facility reason" placeholder="Reason" value={reason} onChange={(e) => setReason(e.target.value)} />{" "}
+    <button className="btn" onClick={create}>Create facility</button>{msg && <p role="status">{msg}</p>}</>;
 }
 
 function Parents({ orgs, reload }: { orgs: PlatformOrganization[]; reload: () => void }) {
@@ -97,6 +117,7 @@ function Requests() {
 
 function Companies({ orgs, reload }: { orgs: PlatformOrganization[]; reload: () => void }) {
   const [f, setF] = useState({ name: "", org_type: "customer" as "customer" | "service_partner", admin_email: "", admin_full_name: "", reason: "" });
+  const [ownFacility, setOwnFacility] = useState(true);
   const [created, setCreated] = useState<{ org: string; email: string; password: string } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [m, setM] = useState({ email: "", role: "viewer", organization_id: "", reason: "" });
@@ -104,7 +125,7 @@ function Companies({ orgs, reload }: { orgs: PlatformOrganization[]; reload: () 
   useEffect(() => { if (usersOf) platformOrgUsers(usersOf).then(setUsers).catch(() => setUsers([])); else setUsers([]); }, [usersOf]);
   async function create() {
     setMsg(null); setCreated(null);
-    try { const r = await createCompanyWithAdmin({ ...f, name: f.name.trim(), reason: f.reason.trim() });
+    try { const r = await createCompanyWithAdmin({ ...f, name: f.name.trim(), reason: f.reason.trim(), ...(f.org_type === "service_partner" && ownFacility ? { create_provider_facility: true } : {}) });
       setCreated({ org: r.organization.name, email: r.admin.email, password: r.temporary_password });
       setF({ name: "", org_type: "customer", admin_email: "", admin_full_name: "", reason: "" }); reload(); }
     catch (x) { setMsg(err(x)); }
@@ -122,6 +143,7 @@ function Companies({ orgs, reload }: { orgs: PlatformOrganization[]; reload: () 
     <input aria-label="Admin name" placeholder="Admin full name" value={f.admin_full_name} onChange={(e) => setF({ ...f, admin_full_name: e.target.value })} />{" "}
     <input aria-label="Admin email" placeholder="Admin email (company's own account)" value={f.admin_email} onChange={(e) => setF({ ...f, admin_email: e.target.value })} />{" "}
     <input aria-label="Reason" placeholder="Reason" value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} />{" "}
+    {f.org_type === "service_partner" && <label><input type="checkbox" checked={ownFacility} onChange={(e) => setOwnFacility(e.target.checked)} /> Also create the provider's own facility</label>}{" "}
     <button className="btn" onClick={create}>Create</button>
     {created && <div role="alert" className="panel" style={{ border: "2px solid #c80" }}>
       <p>Created {created.org}. Temporary password for {created.email} (shown once; it is not stored or shown again):</p>
@@ -169,15 +191,16 @@ export function RecognitionUsage() {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [rep, setRep] = useState<RecognitionUsageReport | null>(null); const [e, setE] = useState<string | null>(null);
   useEffect(() => { let live = true; setE(null); platformRecognitionUsage(month).then((r) => { if (live) setRep(r); }).catch((x) => { if (live) { setRep(null); setE(err(x)); } }); return () => { live = false; }; }, [month]);
-  return <section className="panel"><h2>Recognition usage</h2>
-    <p>Billing: {rep ? cents(rep.settings.opening_price_cents_per_month) : "$0.75"} per opening per month to the service provider and to the facility. Cost per photo: {usd(rep?.settings.cost_per_photo_usd ?? null)}. Shared openings count once for cost.</p>
+  return <section className="panel"><h2>Usage and billing</h2>
+    <p>Billing: {rep ? cents(rep.settings.opening_price_cents_per_month) : "$0.75"} per active opening per month, whether or not recognition ran. The facility owner pays for each active opening, and each provider assigned to the facility that month pays for it too. A provider's own facility is billed once. An opening is active in a month if it existed and was not decommissioned for the whole month.</p>
+    <p className="muted">OI recognition cost (internal, never billed): {usd(rep?.settings.cost_per_photo_usd ?? null)} per photo, counted for the company that ran it.</p>
     <label>Month <input type="month" value={month} onChange={(ev) => setMonth(ev.target.value)} /></label>
     {e && <p role="alert">{e}</p>}
-    {rep && <table><thead><tr><th>Company</th><th>Type</th><th>Billable openings</th><th>Revenue</th><th>Photos recognized</th><th>Runs</th><th>Recognition cost</th><th>Cost per opening</th><th>Safety cap used</th></tr></thead>
-      <tbody>{rep.companies.map((c) => <tr key={c.organization_id}><td>{c.organization_name}</td><td>{c.org_type}</td><td>{c.billable_openings}</td><td>{cents(c.revenue_cents)}</td>
-        <td>{c.photos_recognized}</td><td>{c.runs}</td><td>{usd(c.recognition_cost_usd)}</td><td>{usd(c.cost_per_opening_usd)}</td>
+    {rep && <table><thead><tr><th>Company</th><th>Type</th><th>Own openings</th><th>Provider openings</th><th>Billable openings</th><th>Revenue</th><th>Photos recognized</th><th>Runs</th><th>OI recognition cost</th><th>Margin</th><th>Safety cap used</th></tr></thead>
+      <tbody>{rep.companies.map((c) => <tr key={c.organization_id}><td>{c.organization_name}</td><td>{c.org_type}</td><td>{c.owned_openings}</td><td>{c.provider_openings}</td><td>{c.billable_openings}</td><td>{cents(c.revenue_cents)}</td>
+        <td>{c.photos_recognized}</td><td>{c.runs}</td><td>{usd(c.oi_recognition_cost_usd)}</td><td>{usd(c.margin_usd)}</td>
         <td>{Math.round(c.cap_used_ratio * 100)}% of {c.safety_cap_photos}{c.cap_warning && <strong role="status"> Near safety cap</strong>}</td></tr>)}</tbody>
-      <tfoot><tr><td>Total (cost counted once)</td><td /><td>{rep.totals.distinct_openings}</td><td>{cents(rep.totals.revenue_cents)}</td><td>{rep.totals.photos_recognized}</td><td>{rep.totals.runs}</td><td>{usd(rep.totals.recognition_cost_usd)}</td><td>{usd(rep.totals.cost_per_opening_usd)}</td><td /></tr></tfoot></table>}
+      <tfoot><tr><td>Total ({rep.totals.active_openings} active openings)</td><td /><td /><td /><td>{rep.totals.billable_openings}</td><td>{cents(rep.totals.revenue_cents)}</td><td>{rep.totals.photos_recognized}</td><td>{rep.totals.runs}</td><td>{usd(rep.totals.oi_recognition_cost_usd)}</td><td>{usd(rep.totals.margin_usd)}</td><td /></tr></tfoot></table>}
   </section>;
 }
 
