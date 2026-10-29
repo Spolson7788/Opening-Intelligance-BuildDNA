@@ -5,7 +5,7 @@ import { pool } from "../db/pool";
 import { requireAuth, requireRole, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { openingsForOrgSubquery } from "../db/tenantScope";
+import { openingsForOrgSubquery, orgScope } from "../db/tenantScope";
 import { checkAndGenerateDueWorkOrders } from "./maintenanceSchedulesRoute";
 
 export const workOrdersRouter = Router();
@@ -93,7 +93,7 @@ workOrdersRouter.get("/", databaseRoute(async (req: AuthedRequest, res) => {
 
   const { status, assigned_to_user_id, property_id } = req.query;
 
-  const conditions = [`pf.organization_id = $1`];
+  const conditions = [`${orgScope("pf.organization_id", 1)}`];
   const values: any[] = [orgId];
 
   if (status && typeof status === "string") {
@@ -130,7 +130,7 @@ workOrdersRouter.get("/", databaseRoute(async (req: AuthedRequest, res) => {
 
 async function fetchWorkOrderInOrg(id: string, orgId: string) {
   const result = await pool.query(
-    `${WORK_ORDER_SELECT} JOIN portfolios pf ON pf.id = p.portfolio_id WHERE wo.id = $1 AND pf.organization_id = $2`,
+    `${WORK_ORDER_SELECT} JOIN portfolios pf ON pf.id = p.portfolio_id WHERE wo.id = $1 AND ${orgScope("pf.organization_id", 2)}`,
     [id, orgId]
   );
   return result.rows[0] ?? null;

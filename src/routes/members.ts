@@ -9,6 +9,7 @@ import { canCreateRole, INVITE_LIMITS, INVITE_TTL_DAYS, passwordProblem, ROLES }
 import { emailSettings, getEmailProvider } from "../services/email";
 import { acceptInviteUrl, inviteEmail } from "../services/inviteEmail";
 import { issueToken } from "./auth";
+import { membershipOf, activeAdminCount, record } from "../services/teamMemberships";
 
 // M5: add team members directly (temporary password) or by email invite.
 // Never logged, returned or stored in plain text: passwords and invite tokens.
@@ -223,5 +224,78 @@ invitesPublicRouter.post("/accept", async (req, res) => {
     if (err?.code === "23505") return res.status(409).json({ error: "email_already_registered" });
     console.error("OI invite accept", { outcome: "error", code: String(err?.code ?? "unknown") });
     return res.status(500).json({ error: "internal_error" });
+  } finally { client.release(); }
+});
+// Multi-company milestone 2: add an EXISTING person to the active company, or remove them from it.
+// The target company is always the caller's active company (one stated location). Email domain
+// never grants membership. The response never says whether an unknown email has an account elsewhere.
+const membershipAddSchema = z.object({ email: base.email, role: z.enum(ROLES), reason: z.string().trim().min(1).max(500).optional() }).strict();
+const membershipRemoveSchema = z.object({ reason: z.string().trim().min(1).max(500).optional() }).strict();
+
+membersRouter.post("/memberships", async (req: AuthedRequest, res) => {
+  const parsed = membershipAddSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: "invalid_request" });
+  const g = gate(req, parsed.data.role);
+  if (!g.ok) return res.status(403).json({ error: g.error });
+  const orgId = req.auth!.organizationId, actor = req.auth!.userId;
+  const reason = parsed.data.reason ?? "Added by company admin";
+  let client;
+  try { client = await pool.connect(); } catch { return res.status(503).json({ error: "database_unavailable" }); }
+  try {
+    await client.query("BEGIN");
+    const u = (await client.query("SELECT id, is_active FROM users WHERE lower(email) = $1", [parsed.data.email])).rows[0];
+    if (!u || !u.is_active) { await client.query("ROLLBACK"); return res.status(404).json({ error: "person_not_found_or_inactive" }); }
+    const existing = await membershipOf(client, u.id, orgId, true);
+    if (existing?.is_active) { await client.query("ROLLBACK"); return res.status(409).json({ error: "already_member" }); }
+    if (existing?.is_home) { await client.query("ROLLBACK"); return res.status(409).json({ error: "home_membership_use_reactivate" }); }
+    await client.query(`INSERT INTO organization_memberships (user_id, organization_id, role, is_active, is_home, created_by_user_id)
+      VALUES ($1,$2,$3,true,false,$4)
+      ON CONFLICT (user_id, organization_id) DO UPDATE SET role=EXCLUDED.role, is_active=true, deactivated_at=NULL, deactivated_by_user_id=NULL, deactivation_reason=NULL`,
+      [u.id, orgId, parsed.data.role, actor]);
+    await client.query("UPDATE users SET session_version = session_version + 1 WHERE id=$1", [u.id]);
+    const before = existing ? { organization_id: orgId, role: existing.role, is_active: false } : { organization_id: orgId, member: false };
+    const after = { organization_id: orgId, role: parsed.data.role, is_active: true };
+    if (existing) await record(client, { actor, orgId, target: u.id, change: "reactivate", action: "membership_added", reason, before, after, path: "/api/members/memberships", method: "POST" });
+    else {
+      await client.query(`INSERT INTO platform_audit_events (actor_user_id, actor_org_id, action, target_org_id, target_id, reason, before_state, after_state)
+        VALUES ($1,$2,'membership_added',$2,$3,$4,$5,$6)`, [actor, orgId, u.id, reason, JSON.stringify(before), JSON.stringify(after)]);
+      await audit(client, orgId, actor, "membership_added", "POST", "/api/members/memberships", { user_id: u.id, role: parsed.data.role, reason }, 201);
+    }
+    await client.query("COMMIT");
+    res.status(201).json({ user_id: u.id, organization_id: orgId, role: parsed.data.role, is_active: true });
+  } catch (err: any) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("OI membership add", { outcome: "error", code: String(err?.code ?? "unknown") });
+    res.status(500).json({ error: "internal_error" });
+  } finally { client.release(); }
+});
+
+membersRouter.delete("/memberships/:userId", async (req: AuthedRequest, res) => {
+  const parsed = membershipRemoveSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: "invalid_request" });
+  if (req.auth!.role !== "admin") return res.status(403).json({ error: "forbidden" });
+  const orgId = req.auth!.organizationId, actor = req.auth!.userId, id = req.params.userId;
+  if (!z.string().uuid().safeParse(id).success) return res.status(404).json({ error: "not_found" });
+  if (id === actor) return res.status(400).json({ error: "cannot_modify_own_admin_status" });
+  const reason = parsed.data.reason ?? "Removed by company admin";
+  let client;
+  try { client = await pool.connect(); } catch { return res.status(503).json({ error: "database_unavailable" }); }
+  try {
+    await client.query("BEGIN");
+    const m = await membershipOf(client, id, orgId, true);
+    if (!m || !m.is_active) { await client.query("ROLLBACK"); return res.status(404).json({ error: "not_found" }); }
+    if (m.is_home) { await client.query("ROLLBACK"); return res.status(409).json({ error: "home_membership_use_deactivate" }); }
+    if (m.role === "admin" && (await activeAdminCount(client, orgId)) <= 1) { await client.query("ROLLBACK"); return res.status(400).json({ error: "cannot_remove_last_admin" }); }
+    await client.query(`UPDATE organization_memberships SET is_active=false, deactivated_at=now(), deactivated_by_user_id=$3, deactivation_reason=$4
+      WHERE user_id=$1 AND organization_id=$2`, [id, orgId, actor, reason]);
+    await client.query("UPDATE users SET session_version = session_version + 1 WHERE id=$1", [id]);
+    const before = { organization_id: orgId, role: m.role, is_active: true };
+    await record(client, { actor, orgId, target: id, change: "deactivate", action: "membership_removed", reason, before, after: { ...before, is_active: false, scope: "this_company" }, path: "/api/members/memberships/" + id, method: "DELETE" });
+    await client.query("COMMIT");
+    res.json({ user_id: id, organization_id: orgId, is_active: false });
+  } catch (err: any) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("OI membership remove", { outcome: "error", code: String(err?.code ?? "unknown") });
+    res.status(500).json({ error: "internal_error" });
   } finally { client.release(); }
 });

@@ -1,5 +1,5 @@
 import { databaseRoute } from '../db/databaseRoute';
-import { facilityAccessPredicate, photoVisibleSql, serviceEventVisibleSql, facilityAccessPredicateAny, allowedOrgIds } from "../db/tenantScope";
+import { facilityAccessPredicate, photoVisibleSql, serviceEventVisibleSql, facilityAccessPredicateAny, allowedOrgIds, orgScope } from "../db/tenantScope";
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
@@ -79,7 +79,7 @@ portfolioRouter.get("/portfolios", async (req: AuthedRequest, res) => {
   const orgId = req.auth!.organizationId;
   try {
     const result = await pool.query(
-      "SELECT * FROM portfolios WHERE organization_id = $1 ORDER BY name",
+      `SELECT * FROM portfolios WHERE ${orgScope("organization_id", 1)} ORDER BY name`,
       [orgId]
     );
     res.json(result.rows);
@@ -249,7 +249,7 @@ portfolioRouter.get("/capital-forecast", async (req: AuthedRequest, res) => {
   try {
     const propertyResult = await pool.query(
       `SELECT p.name FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id
-       WHERE p.id = $1 AND pf.organization_id = $2`,
+       WHERE p.id = $1 AND ${orgScope("pf.organization_id", 2)}`,
       [property_id, orgId]
     );
     if (propertyResult.rows.length === 0) return res.status(403).json({ error: "forbidden" });
@@ -338,7 +338,7 @@ portfolioRouter.get("/capital-forecast/rollup", async (req: AuthedRequest, res) 
          JOIN buildings b ON b.id = o.building_id
          JOIN properties p ON p.id = b.property_id
          JOIN portfolios pf ON pf.id = p.portfolio_id
-         WHERE pf.organization_id = $1
+         WHERE ${orgScope("pf.organization_id", 1)}
        ),
        opening_known_cost AS (
          SELECT ob.id, ob.opening_type, ob.property_id, ob.property_name, ob.bucket,
@@ -391,7 +391,7 @@ portfolioRouter.get("/capital-forecast/rollup", async (req: AuthedRequest, res) 
     // to group on) — include them anyway so a brand-new property doesn't just
     // silently vanish from the rollup.
     const allProperties = await pool.query(
-      `SELECT p.id, p.name FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id WHERE pf.organization_id = $1`,
+      `SELECT p.id, p.name FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id WHERE ${orgScope("pf.organization_id", 1)}`,
       [orgId]
     );
     for (const p of allProperties.rows) {
@@ -430,7 +430,7 @@ portfolioRouter.get("/compliance-alerts", databaseRoute(async (req: AuthedReques
   if (property_id && typeof property_id === "string") {
     const propertyResult = await pool.query(
       `SELECT p.name FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id
-       WHERE p.id = $1 AND pf.organization_id = $2`,
+       WHERE p.id = $1 AND ${orgScope("pf.organization_id", 2)}`,
       [property_id, orgId]
     );
     if (propertyResult.rows.length === 0) return res.status(403).json({ error: "forbidden" });
@@ -512,7 +512,7 @@ portfolioRouter.get("/warranty-alerts", databaseRoute(async (req: AuthedRequest,
   if (property_id && typeof property_id === "string") {
     const propertyResult = await pool.query(
       `SELECT p.name FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id
-       WHERE p.id = $1 AND pf.organization_id = $2`,
+       WHERE p.id = $1 AND ${orgScope("pf.organization_id", 2)}`,
       [property_id, orgId]
     );
     if (propertyResult.rows.length === 0) return res.status(403).json({ error: "forbidden" });

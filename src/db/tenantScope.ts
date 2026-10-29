@@ -1,9 +1,29 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
+// ---- Multi-company milestone 2: request read scope ----
+// requireAuth runs each request inside this store. For a READ (GET/HEAD) that asks for the company
+// tree (?scope=tree or header X-OI-Scope: tree), `extra` holds the other companies the person may read
+// through the active membership (descendant locations of an admin / facilities_manager membership;
+// same-type trees only). Everything else, and EVERY write, sees only the single active company.
+// Ids are validated UUIDs from the database and are inlined as typed literals, so call sites keep their
+// existing single-company parameter and need no change.
+export const readScopeStore = new AsyncLocalStorage<{ extra: string[] }>();
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function extraReadOrgs(): string[] {
+  const extra = readScopeStore.getStore()?.extra ?? [];
+  return extra.filter((id) => UUID_RE.test(id));
+}
+// `${col} = $n`, widened to the tree only for tree reads.
+export function orgScope(column: string, parameter: number): string {
+  const extra = extraReadOrgs();
+  return extra.length ? `(${column}=$${parameter} OR ${column} IN (${extra.map((id) => `'${id.toLowerCase()}'::uuid`).join(",")}))` : `${column}=$${parameter}`;
+}
 // Shared facility access: canonical owner or explicit current provider assignment.
 // Membership comes from requireAuth's fresh database lookup, never email suffix.
 export function facilityAccessPredicate(orgParameter: number): string {
- return `(pf.organization_id=$${orgParameter} OR EXISTS (
+ return `(${orgScope("pf.organization_id", orgParameter)} OR EXISTS (
  SELECT 1 FROM facility_provider_assignments fpa
- WHERE fpa.property_id=p.id AND fpa.provider_organization_id=$${orgParameter}
+ WHERE fpa.property_id=p.id AND ${orgScope("fpa.provider_organization_id", orgParameter)}
  AND fpa.revoked_at IS NULL))`;
 }
 
@@ -52,7 +72,7 @@ export async function facilityScheduleAccess(
   orgId: string,
 ): Promise<"owner" | "provider" | null> {
   const r = await db.query(
-    `SELECT CASE WHEN pf.organization_id=$2 THEN 'owner' ELSE 'provider' END AS access
+    `SELECT CASE WHEN ${orgScope('pf.organization_id', 2)} THEN 'owner' ELSE 'provider' END AS access
      FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id
      WHERE p.id=$1 AND ${facilityAccessPredicate(2)}`,
     [propertyId, orgId],
@@ -66,10 +86,10 @@ export async function facilityScheduleAccess(
 // Legacy events with no performed_by_org_id are owner-only unless sharing is on.
 // Read through to_jsonb so this code is safe to deploy before the migration: a missing column means off.
 export function serviceEventVisibleSql(alias: string, orgParameter: number): string {
- return `(${alias}.performed_by_org_id=$${orgParameter} OR EXISTS (
+ return `(${orgScope(`${alias}.performed_by_org_id`, orgParameter)} OR EXISTS (
  SELECT 1 FROM openings sv_o JOIN buildings sv_b ON sv_b.id=sv_o.building_id
  JOIN properties sv_p ON sv_p.id=sv_b.property_id JOIN portfolios sv_pf ON sv_pf.id=sv_p.portfolio_id
- WHERE sv_o.id=${alias}.opening_id AND (sv_pf.organization_id=$${orgParameter} OR COALESCE((to_jsonb(sv_p) ->> 'share_provider_service_history')::boolean, false))))`;
+ WHERE sv_o.id=${alias}.opening_id AND (${orgScope("sv_pf.organization_id", orgParameter)} OR COALESCE((to_jsonb(sv_p) ->> 'share_provider_service_history')::boolean, false))))`;
 }
 // Photos attached to a service event follow that event's visibility; other photos are unchanged.
 export function photoVisibleSql(alias: string, orgParameter: number): string {

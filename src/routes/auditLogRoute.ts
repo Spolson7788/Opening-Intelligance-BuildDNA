@@ -1,3 +1,4 @@
+import { orgScope } from "../db/tenantScope";
 import { Router } from "express";
 import { pool } from "../db/pool";
 import { requireAuth, requireRole, AuthedRequest } from "../middleware/auth";
@@ -18,7 +19,7 @@ auditLogRouter.get("/", requireRole("admin", "facilities_manager"), async (req: 
               u.full_name AS user_full_name, u.email AS user_email, u.id AS user_id
        FROM audit_log al
        JOIN users u ON u.id = al.user_id
-       WHERE al.organization_id = $1
+       WHERE ${orgScope("al.organization_id", 1)}
        ORDER BY al.created_at DESC
        LIMIT $2`,
       [orgId, limit]

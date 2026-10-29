@@ -5,7 +5,7 @@ import { pool } from "../db/pool";
 import { requireAuth, requireRole, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { openingsForOrgSubquery } from "../db/tenantScope";
+import { openingsForOrgSubquery, orgScope } from "../db/tenantScope";
 
 export const maintenanceSchedulesRouter = Router();
 maintenanceSchedulesRouter.use(requireAuth);
@@ -143,7 +143,7 @@ maintenanceSchedulesRouter.get("/", async (req: AuthedRequest, res) => {
        JOIN properties p ON p.id = b.property_id
        JOIN portfolios pf ON pf.id = p.portfolio_id
        LEFT JOIN users assignee ON assignee.id = ms.assigned_to_user_id
-       WHERE pf.organization_id = $1
+       WHERE ${orgScope("pf.organization_id", 1)}
        ORDER BY ms.next_due_date ASC`,
       [orgId]
     );

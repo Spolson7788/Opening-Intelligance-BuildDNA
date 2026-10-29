@@ -3,7 +3,7 @@ import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { openingsForOrgSubquery } from "../db/tenantScope";
+import { openingsForOrgSubquery, orgScope } from "../db/tenantScope";
 import { toCsv } from "../services/csv";
 import { generateComplianceReportPdf } from "../services/complianceReport";
 import { generateCapitalForecastPdf } from "../services/capitalForecastReport";
@@ -31,7 +31,7 @@ exportRouter.get("/compliance-report.pdf", async (req: AuthedRequest, res) => {
     const propertyResult = await pool.query(
       `SELECT p.name, p.address_line1, p.city, p.state, p.postal_code
        FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id
-       WHERE p.id = $1 AND pf.organization_id = $2`,
+       WHERE p.id = $1 AND ${orgScope("pf.organization_id", 2)}`,
       [property_id, orgId]
     );
     if (propertyResult.rows.length === 0) return res.status(403).json({ error: "forbidden" });
@@ -125,7 +125,7 @@ exportRouter.get("/capital-forecast.pdf", async (req: AuthedRequest, res) => {
     if (property_id && typeof property_id === "string") {
       const propertyResult = await pool.query(
         `SELECT p.name FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id
-         WHERE p.id = $1 AND pf.organization_id = $2`,
+         WHERE p.id = $1 AND ${orgScope("pf.organization_id", 2)}`,
         [property_id, orgId]
       );
       if (propertyResult.rows.length === 0) return res.status(403).json({ error: "forbidden" });
@@ -193,7 +193,7 @@ exportRouter.get("/capital-forecast.pdf", async (req: AuthedRequest, res) => {
            JOIN buildings b ON b.id = o.building_id
            JOIN properties p ON p.id = b.property_id
            JOIN portfolios pf ON pf.id = p.portfolio_id
-           WHERE pf.organization_id = $1
+           WHERE ${orgScope("pf.organization_id", 1)}
          ),
          opening_known_cost AS (
            SELECT ob.id, ob.opening_type, ob.property_id, ob.property_name, ob.bucket,

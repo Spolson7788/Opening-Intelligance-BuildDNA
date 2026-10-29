@@ -6,6 +6,7 @@ import { z } from "zod";
 import { pool } from "../db/pool";
 import { requireAuth, requireRole, AuthedRequest, isMissingSchema } from "../middleware/auth";
 import { auditLog } from "../middleware/auditLog";
+import { membershipOf, activeAdminCount, record, HISTORY_DEFAULT_REASON } from "../services/teamMemberships";
 
 export const authRouter = Router();
 
@@ -212,15 +213,26 @@ authRouter.post("/login", async (req, res) => {
 // team roster (needed for things like assigning a work order to a
 // colleague), but nothing sensitive like password hashes ever leaves here.
 authRouter.get("/users", requireAuth, async (req: AuthedRequest, res) => {
+  // People in the ACTIVE company (memberships), with their role there. Removed members of a
+  // non-home company are not listed; deactivated people stay visible to their home company.
   try {
     const result = await pool.query(
-      `SELECT id, email, full_name, role, is_active, created_at,
+      `SELECT u.id, u.email, u.full_name, m.role, (m.is_active AND u.is_active) AS is_active, u.created_at, m.is_home,
+              (to_jsonb(u) ->> 'must_change_password')::boolean AS must_change_password,
+              (to_jsonb(u) ->> 'is_test_account')::boolean AS is_test_account,
+              (to_jsonb(u) ->> 'default_property_id') AS default_property_id
+       FROM organization_memberships m JOIN users u ON u.id = m.user_id
+       WHERE m.organization_id = $1 AND (m.is_active OR m.is_home) ORDER BY u.created_at`,
+      [req.auth!.organizationId]
+    ).catch(async (error) => {
+      if (!isMissingSchema(error)) throw error;
+      return pool.query(
+        `SELECT id, email, full_name, role, is_active, created_at,
               (to_jsonb(users) ->> 'must_change_password')::boolean AS must_change_password,
               (to_jsonb(users) ->> 'is_test_account')::boolean AS is_test_account,
               (to_jsonb(users) ->> 'default_property_id') AS default_property_id FROM users
-       WHERE organization_id = $1 ORDER BY created_at`,
-      [req.auth!.organizationId]
-    );
+         WHERE organization_id = $1 ORDER BY created_at`, [req.auth!.organizationId]);
+    });
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -231,6 +243,7 @@ authRouter.get("/users", requireAuth, async (req: AuthedRequest, res) => {
 const updateUserSchema = z.object({
   role: z.enum(["admin", "facilities_manager", "technician", "inspector", "viewer"]).optional(),
   is_active: z.boolean().optional(),
+  reason: z.string().trim().min(1).max(500).optional(),
 });
 
 // Admin-only: change a team member's role, or deactivate/reactivate them.
@@ -244,6 +257,62 @@ const updateUserSchema = z.object({
 // role or is_active made here also bumps session_version, so previously issued tokens are refused
 // (401 session_revoked) and the person must sign in again. The field app wipes all on-device OI
 // data when it receives either response.
+authRouter.patch("/users/:id", requireAuth, requireRole("admin"), auditLog, async (req: AuthedRequest, res, next) => {
+  // Multi-company: change the person's membership in the ACTIVE company only.
+  const parsed = updateUserSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const b = parsed.data, orgId = req.auth!.organizationId, callerId = req.auth!.userId, id = req.params.id;
+  if (b.role === undefined && b.is_active === undefined) return res.status(400).json({ error: "no_fields_to_update" });
+  if (id === callerId && (b.is_active === false || (b.role !== undefined && b.role !== "admin"))) return res.status(400).json({ error: "cannot_modify_own_admin_status" });
+  if (!z.string().uuid().safeParse(id).success) return res.status(404).json({ error: "not_found" });
+  let client;
+  try { client = await pool.connect(); } catch { return res.status(503).json({ error: "database_unavailable" }); }
+  try {
+    await client.query("BEGIN");
+    const m = await membershipOf(client, id, orgId, true).catch(async (error) => { if (isMissingSchema(error)) throw Object.assign(new Error("legacy"), { legacy: true }); throw error; });
+    if (!m || (!m.is_active && !m.is_home)) { await client.query("ROLLBACK"); return res.status(404).json({ error: "not_found" }); }
+    const nowActive = m.is_active && m.person_active;
+    const demoting = b.role !== undefined && b.role !== "admin";
+    if (m.role === "admin" && nowActive && (b.is_active === false || demoting) && (await activeAdminCount(client, orgId)) <= 1) {
+      await client.query("ROLLBACK"); return res.status(400).json({ error: "cannot_remove_last_admin" });
+    }
+    const reason = b.reason ?? HISTORY_DEFAULT_REASON, path = "/api/auth/users/" + id;
+    const before = { organization_id: orgId, role: m.role, is_active: nowActive, is_home: m.is_home };
+    let role = m.role, active = nowActive, changed = false;
+    if (b.role !== undefined && b.role !== m.role) {
+      if (m.is_home) await client.query("UPDATE users SET role=$2 WHERE id=$1", [id, b.role]);
+      else await client.query("UPDATE organization_memberships SET role=$3 WHERE user_id=$1 AND organization_id=$2", [id, orgId, b.role]);
+      role = b.role; changed = true;
+      await record(client, { actor: callerId, orgId, target: id, change: "role_change", action: "user_role_changed", reason, before, after: { ...before, role }, path, method: "PATCH" });
+    }
+    if (b.is_active !== undefined && b.is_active !== nowActive) {
+      const snap = { ...before, role };
+      if (m.is_home) {
+        // Home company: deactivate the person everywhere / reactivate (home membership only).
+        await client.query("UPDATE users SET is_active=$2 WHERE id=$1", [id, b.is_active]);
+        await record(client, { actor: callerId, orgId, target: id, change: b.is_active ? "reactivate" : "deactivate", action: b.is_active ? "user_reactivated" : "user_deactivated",
+          reason, before: snap, after: { ...snap, is_active: b.is_active, scope: b.is_active ? "home_membership_only" : "all_companies" }, path, method: "PATCH" });
+      } else {
+        await client.query(`UPDATE organization_memberships SET is_active=$3, deactivated_at=CASE WHEN $3 THEN NULL ELSE now() END,
+          deactivated_by_user_id=CASE WHEN $3 THEN NULL ELSE $4::uuid END, deactivation_reason=CASE WHEN $3 THEN NULL ELSE $5 END
+          WHERE user_id=$1 AND organization_id=$2`, [id, orgId, b.is_active, callerId, reason]);
+        await record(client, { actor: callerId, orgId, target: id, change: b.is_active ? "reactivate" : "deactivate", action: b.is_active ? "membership_added" : "membership_removed",
+          reason, before: snap, after: { ...snap, is_active: b.is_active, scope: "this_company" }, path, method: "PATCH" });
+      }
+      active = b.is_active; changed = true;
+    }
+    if (changed) await client.query("UPDATE users SET session_version = session_version + 1 WHERE id=$1", [id]);
+    const u = (await client.query("SELECT id, email, full_name, created_at FROM users WHERE id=$1", [id])).rows[0];
+    await client.query("COMMIT");
+    res.json({ ...u, role, is_active: active, is_home: m.is_home });
+  } catch (err: any) {
+    await client.query("ROLLBACK").catch(() => {});
+    if (err?.legacy) return next();
+    console.error("OI team change", { outcome: "error", code: String(err?.code ?? "unknown") });
+    res.status(500).json({ error: "internal_error" });
+  } finally { client.release(); }
+});
+// Legacy single-company path (databases without the memberships migration).
 authRouter.patch("/users/:id", requireAuth, requireRole("admin"), auditLog, async (req: AuthedRequest, res) => {
   const parsed = updateUserSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "node:crypto";
 import { pool } from "../db/pool";
+import { readScopeStore } from "../db/tenantScope";
 
 export interface AuthedRequest extends Request {
   auth?: {
@@ -100,7 +101,11 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
       access: user.access ?? "member",
       allowedOrganizationIds: Array.from(new Set([user.organization_id, ...((user.allowed_organization_ids as string[] | null) ?? [])])),
     };
-    return next();
+    const method = (req.method || "GET").toUpperCase();
+    const wantsTree = req.query?.scope === "tree" || String(req.headers["x-oi-scope"] ?? "").toLowerCase() === "tree";
+    const extra = (method === "GET" || method === "HEAD") && wantsTree
+      ? req.auth.allowedOrganizationIds!.filter((id) => id !== req.auth!.organizationId) : [];
+    return readScopeStore.run({ extra }, () => next());
   } catch {
     // Failure to check current authority must deny the request without claiming
     // a valid credential is invalid or prompting unnecessary password changes.
