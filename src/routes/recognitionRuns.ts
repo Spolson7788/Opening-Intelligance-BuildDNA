@@ -6,6 +6,7 @@ import { openingsForOrgSubquery, photoVisibleSql } from '../db/tenantScope';
 import { legacyVisionHandler } from '../services/legacyVision';
 import { getObjectBytes } from '../services/storage';
 import { downscaleForRecognition, DownscaleError, MAX_ORIGINAL_READ_BYTES } from '../services/recognitionDownscale';
+import { buildReferenceContext, validateCitations, REFERENCE_CONTEXT_VERSION, type ReferenceContext } from '../services/referenceRetrieval';
 import { LEGACY_VISION_ENGINE_CONFIG, buildCommit, conservativeIdentity, sha256Hex, MAX_PROVIDER_IMAGE_BYTES, RECOGNITION_PREPROCESSING_VERSION } from '../services/recognitionRuns';
 
 // Hosting plan step 1 (t130): every recognition attempt is a recognition_runs row linked to the
@@ -37,7 +38,12 @@ const runVisible = (org: number) => `r.opening_id IN (${openingsForOrgSubquery(o
   SELECT 1 FROM properties rv_p JOIN portfolios rv_pf ON rv_pf.id=rv_p.portfolio_id WHERE rv_p.id=r.property_id AND rv_pf.organization_id=$${org}))`;
 
 async function readRun(id: string, org: string) {
-  return (await pool.query(`SELECT ${RUN_COLUMNS} FROM recognition_runs r WHERE r.id=$1 AND ${runVisible(2)}`, [id, org])).rows[0] ?? null;
+  const run = (await pool.query(`SELECT ${RUN_COLUMNS} FROM recognition_runs r WHERE r.id=$1 AND ${runVisible(2)}`, [id, org])).rows[0] ?? null;
+  if (!run) return null;
+  // Reference columns exist once 20261030091000 is applied; before that a run simply has none.
+  try { const x = (await pool.query('SELECT reference_release_id, reference_citations FROM recognition_runs WHERE id=$1', [id])).rows[0];
+    if (x) { run.reference_release_id = x.reference_release_id; run.reference_citations = x.reference_citations; } } catch { /* library not migrated */ }
+  return run;
 }
 async function finish(id: string, fields: { status: string; failure_code?: string | null; result?: unknown; level?: string | null; manufacturer?: string | null; series?: string | null; model?: string | null; downscale_used?: boolean }) {
   await pool.query(`UPDATE recognition_runs SET status=$2,failure_code=$3,result=$4,result_level=$5,manufacturer=$6,series=$7,model=$8,downscale_used=$9,finished_at=now() WHERE id=$1 AND status='running'`,
@@ -72,11 +78,22 @@ recognitionRunsRouter.post('/', async (req: AuthedRequest, res) => {
     // Explicit release switch: no run row and no provider call while disabled.
     if (process.env.OI_RECOGNITION_ENABLED !== 'true' || !process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'recognition_unavailable' });
 
-    const config = { ...LEGACY_VISION_ENGINE_CONFIG, mode: 'identify', preprocessing_version: RECOGNITION_PREPROCESSING_VERSION };
+    // Reference library: approved facts from the single active release only. Hints come from the opening's
+    // recorded hardware. No release (or no library yet) -> null: the run proceeds and cites nothing.
+    let ref: ReferenceContext | null = null;
+    try {
+      const hints = (await pool.query('SELECT manufacturer, model_number FROM hardware_components WHERE opening_id=$1 LIMIT 50', [b.opening_id])).rows
+        .flatMap((h: any) => [h.manufacturer, h.model_number]).filter(Boolean);
+      ref = await buildReferenceContext(pool, hints);
+    } catch { ref = null; }
+    const config = { ...LEGACY_VISION_ENGINE_CONFIG, mode: 'identify', preprocessing_version: RECOGNITION_PREPROCESSING_VERSION,
+      ...(ref ? { reference_context_version: REFERENCE_CONTEXT_VERSION, reference_release_version: ref.version, reference_fact_count: ref.facts.length } : {}) };
     const inserted = (await pool.query(`INSERT INTO recognition_runs(organization_id,property_id,opening_id,requested_by_user_id,client_request_id,repeat_of_run_id,mode,build_commit,processing_config,status,started_at,photo_count)
       VALUES($1,$2,$3,$4,$5,$6,'identify',$7,$8,'running',now(),$9) ON CONFLICT (requested_by_user_id,client_request_id) DO NOTHING RETURNING id`,
       [org, opening.property_id, b.opening_id, user, b.client_request_id, b.repeat_of_run_id ?? null, buildCommit(), JSON.stringify(config), b.photo_ids.length])).rows[0];
     if (!inserted) return res.status(409).json({ error: 'client_request_id_in_use' });
+    // Every run that used a release records it, whatever the outcome.
+    if (ref) await pool.query('UPDATE recognition_runs SET reference_release_id=$2 WHERE id=$1', [inserted.id, ref.release_id]);
     const ordered = b.photo_ids.map(id => photos.find((p: any) => p.id === id));
     const done = async (f: Parameters<typeof finish>[1], code = 200) => { await finish(inserted.id, f); return res.status(code).json({ run: await readRun(inserted.id, org) }); };
 
@@ -105,7 +122,7 @@ recognitionRunsRouter.post('/', async (req: AuthedRequest, res) => {
     // Never call the provider uncounted.
     if (usage !== 'reserved') return done({ status: 'failed', failure_code: 'usage_tracking_unavailable', downscale_used: downscaleUsed });
     let response: { statusCode: number; body: string };
-    try { response = await legacyVisionHandler({ httpMethod: 'POST', body: JSON.stringify({ images, media_type: photos[0].content_type, mode: 'identify' }) }); }
+    try { response = await legacyVisionHandler({ httpMethod: 'POST', body: JSON.stringify({ images, media_type: photos[0].content_type, mode: 'identify', ...(ref?.prompt ? { reference_context: ref.prompt } : {}) }) }); }
     catch { return done({ status: 'ambiguous', failure_code: 'provider_call_outcome_unknown', downscale_used: downscaleUsed }); }
     if (response.statusCode !== 200) {
       // 5xx from the engine wrapper includes thrown fetch errors (e.g. timeout): the call may have been billed.
@@ -116,6 +133,7 @@ recognitionRunsRouter.post('/', async (req: AuthedRequest, res) => {
     try { result = JSON.parse(response.body); } catch { result = null; }
     if (!result || typeof result !== 'object' || Array.isArray(result)) return done({ status: 'failed', failure_code: 'provider_result_unreadable', downscale_used: downscaleUsed });
     const id = conservativeIdentity(result);
+    if (ref) await pool.query('UPDATE recognition_runs SET reference_citations=$2 WHERE id=$1', [inserted.id, JSON.stringify(validateCitations(result, ref))]);
     return done({ status: id.level === 'none' ? 'abstained' : 'succeeded', result, level: id.level, manufacturer: id.manufacturer, series: id.series, model: id.model, downscale_used: downscaleUsed }, 201);
   } catch { return res.status(503).json({ error: 'recognition_unavailable' }); }
 });

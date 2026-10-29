@@ -428,6 +428,8 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
     const hardwareMode = body.mode === "hardware_regions";
     // focus_features present -> targeted feature pass instead of identification
     const focus = Array.isArray(body.focus_features) ? body.focus_features : null;
+    // Approved reference facts from the active reference release (identify mode only); empty = unchanged prompt.
+    const referenceContext = typeof body.reference_context === "string" ? body.reference_context.slice(0, 14000) : "";
     const multi = imgs.length > 1
       ? "You are given " + imgs.length + " photographs of the SAME piece of hardware from a short sweep. Examine ALL of them together before answering. A stamp, label or distinguishing feature may be legible in only one frame; transcribe it from whichever frame shows it. Do not treat the frames as separate products. "
       : "";
@@ -443,7 +445,7 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
           { type: "text", text: hardwareMode ? HARDWARE_PROMPT
                                 : markingMode ? MARKING_PROMPT
                                 : (labelBlind ? (multi + PHYSICAL_PROMPT)
-                                : (focus ? (multi + focusPrompt(focus)) : (multi + PROMPT))) }
+                                : (focus ? (multi + focusPrompt(focus)) : (multi + PROMPT + referenceContext))) }
         ]}]
       })
     });
