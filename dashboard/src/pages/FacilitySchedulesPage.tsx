@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ScheduleFollowUps } from "./ScheduleFollowUps";
 import { SchedulePage } from "../components/SchedulePage";
 import { ProviderHistorySharingToggle } from "../components/ProviderHistorySharingToggle";
+import { RequestProviderPanel } from "../components/RequestProviderPanel";
 import { useAuth } from "../lib/AuthContext";
 import {
   ApiError, FACILITY_SCHEDULE_MAX_BYTES, type FacilitySchedule, type Property, type ScheduleImportListItem,
@@ -110,6 +111,7 @@ export function FacilitySchedulesPage() {
         </label>
         <ProviderHistorySharingToggle property={properties.find((p) => p.id === propertyId)} role={auth?.role}
           onChanged={(on) => setProperties((ps) => ps.map((p) => p.id === propertyId ? { ...p, share_provider_service_history: on } : p))} />
+        <RequestProviderPanel property={properties.find((p) => p.id === propertyId)} role={auth?.role} />
         <form onSubmit={submit} aria-label="Upload schedule">
           <label>File <input type="file" accept={ACCEPT} onChange={(e) => pickFile(e.target.files?.[0] ?? null)} /></label>
           <label>Type{" "}

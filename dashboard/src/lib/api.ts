@@ -850,3 +850,34 @@ export async function getLocations(): Promise<LocationsResponse> {
   // Always the full visible tree, independent of the current filter.
   return authedFetch("/locations", { headers: { "X-OI-Scope": "tree" } });
 }
+
+// ---- M5: OI staff tools (the server re-checks staff status on every request) ----
+export interface PlatformFacility { property_id: string; property_name: string; state: string | null; owner_organization_id: string; owner_name: string; top_organization_id: string | null; active_provider_ids: string[]; building_count: number; opening_count: number }
+export interface PlatformProvider { provider_organization_id: string; provider_name: string; active_facility_count: number; active_property_ids: string[] }
+export interface PlatformOrganization { id: string; name: string; org_type: "customer" | "service_partner" | "internal"; parent_organization_id: string | null; active_users: number }
+export interface PlatformOrgUser { id: string; email: string; full_name: string; role: string; is_active: boolean; is_home: boolean }
+export interface ProviderRequest { id: string; property_id: string; property_name: string; provider_organization_id: string; provider_name: string; action: "assign" | "unassign"; reason: string; status: string; requested_at: string; requested_by_user_id: string; requested_by_name?: string; facility_organization_name?: string; reviewed_at?: string | null; review_note?: string | null }
+export interface PlatformStaffRow { user_id: string; email: string; full_name: string; granted_at: string; grant_reason: string; revoked_at: string | null; revoke_reason: string | null; active: boolean }
+const post = (path: string, body: unknown, method = "POST") => authedFetch(path, { method, body: JSON.stringify(body) });
+export async function platformMe(): Promise<{ staff: boolean; user_id?: string }> {
+  try { return await authedFetch("/platform/me"); } catch { return { staff: false }; }
+}
+export const platformFacilities = (): Promise<PlatformFacility[]> => authedFetch("/platform/facilities");
+export const platformProviders = (): Promise<PlatformProvider[]> => authedFetch("/platform/providers");
+export const platformOrganizations = (): Promise<PlatformOrganization[]> => authedFetch("/platform/organizations");
+export const platformOrgUsers = (orgId: string): Promise<PlatformOrgUser[]> => authedFetch(`/platform/organizations/${orgId}/users`);
+export const setOrganizationParent = (orgId: string, body: { parent_organization_id: string | null; reason: string; confirm_provider_link?: true }):
+  Promise<{ id: string; parent_organization_id: string | null; tree: PlatformOrganization[] }> => post(`/platform/organizations/${orgId}/parent`, body, "PUT");
+export const platformProviderRequests = (status = "pending"): Promise<ProviderRequest[]> => authedFetch(`/platform/provider-requests?status=${encodeURIComponent(status)}`);
+export const reviewProviderRequest = (id: string, decision: "approve" | "decline", reason: string) => post(`/platform/provider-requests/${id}/${decision}`, { reason });
+export const createCompanyWithAdmin = (body: { name: string; org_type: "customer" | "service_partner"; admin_email: string; admin_full_name: string; reason: string }):
+  Promise<{ organization: { id: string; name: string; org_type: string }; admin: { id: string; email: string }; temporary_password: string; temporary_password_notice: string }> => post("/platform/companies", body);
+export const grantMembership = (body: { email: string; role: string; organization_id: string; reason: string }) => post("/members/memberships", body);
+export const platformStaff = (): Promise<PlatformStaffRow[]> => authedFetch("/platform/staff");
+export const grantStaff = (email: string, reason: string) => post("/platform/staff", { email, reason });
+export const revokeStaff = (userId: string, reason: string) => post(`/platform/staff/${userId}`, { reason }, "DELETE");
+// Facility admins: request a provider (OI staff decide).
+export const providerRequestOptions = (): Promise<{ providers: { id: string; name: string }[]; assigned: { property_id: string; provider_organization_id: string }[] }> => authedFetch("/provider-requests/options");
+export const myProviderRequests = (): Promise<ProviderRequest[]> => authedFetch("/provider-requests");
+export const requestProvider = (body: { property_id: string; provider_organization_id: string; action: "assign" | "unassign"; reason: string }) => post("/provider-requests", body);
+export const withdrawProviderRequest = (id: string) => post(`/provider-requests/${id}/withdraw`, {});

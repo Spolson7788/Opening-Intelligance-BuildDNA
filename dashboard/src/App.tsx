@@ -33,6 +33,7 @@ import { CapitalForecastPage } from "./pages/CapitalForecastPage";
 import { ComplianceAlertsPage } from "./pages/ComplianceAlertsPage";
 import { TeamPage } from "./pages/TeamPage";
 import { AuditLogPage } from "./pages/AuditLogPage";
+import { StaffToolsPage } from "./pages/StaffToolsPage";
 import { WorkOrdersPage } from "./pages/WorkOrdersPage";
 import { MaintenanceSchedulesPage } from "./pages/MaintenanceSchedulesPage";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
@@ -63,6 +64,7 @@ function AppRoutes() {
       <Route path="/openings/print-labels" element={<RequireAuth><PrintLabelsPage /></RequireAuth>} />
       <Route path="/capital-forecast" element={<RequireAuth><CapitalForecastPage /></RequireAuth>} />
       <Route path="/compliance-alerts" element={<RequireAuth><ComplianceAlertsPage /></RequireAuth>} />
+      <Route path="/staff-tools" element={<RequireAuth><StaffToolsPage /></RequireAuth>} />
       <Route path="/team" element={<RequireAuth><TeamPage /></RequireAuth>} />
       <Route path="/audit-log" element={<RequireAuth><AuditLogPage /></RequireAuth>} />
       <Route path="/work-orders" element={<RequireAuth><WorkOrdersPage /></RequireAuth>} />
