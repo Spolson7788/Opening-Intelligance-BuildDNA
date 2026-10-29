@@ -229,20 +229,30 @@ invitesPublicRouter.post("/accept", async (req, res) => {
 // Multi-company milestone 2: add an EXISTING person to the active company, or remove them from it.
 // The target company is always the caller's active company (one stated location). Email domain
 // never grants membership. The response never says whether an unknown email has an account elsewhere.
-const membershipAddSchema = z.object({ email: base.email, role: z.enum(ROLES), reason: z.string().trim().min(1).max(500).optional() }).strict();
+// Accounts are set up through each company's own email account, so a company admin can NEVER add an
+// existing account to their company (refused with membership_grant_oi_staff_only). Only OI platform
+// staff (database check) may grant an additional membership, e.g. an OI staff membership; audited.
+const membershipAddSchema = z.object({ email: base.email, role: z.enum(ROLES), organization_id: z.string().uuid().optional(), reason: z.string().trim().min(1).max(500).optional() }).strict();
+async function isPlatformStaff(userId: string) {
+  const r = await pool.query("SELECT is_platform_staff($1) AS s", [userId]);
+  return r.rows[0]?.s === true;
+}
 const membershipRemoveSchema = z.object({ reason: z.string().trim().min(1).max(500).optional() }).strict();
 
 membersRouter.post("/memberships", async (req: AuthedRequest, res) => {
   const parsed = membershipAddSchema.safeParse(req.body ?? {});
   if (!parsed.success) return res.status(400).json({ error: "invalid_request" });
-  const g = gate(req, parsed.data.role);
-  if (!g.ok) return res.status(403).json({ error: g.error });
-  const orgId = req.auth!.organizationId, actor = req.auth!.userId;
-  const reason = parsed.data.reason ?? "Added by company admin";
+  const actor = req.auth!.userId, actorOrg = req.auth!.organizationId;
+  let staff = false;
+  try { staff = await isPlatformStaff(actor); } catch { return res.status(503).json({ error: "database_unavailable" }); }
+  if (!staff) return res.status(403).json({ error: "membership_grant_oi_staff_only", message: "Accounts are set up through each company's own email account. Only OI staff can add an existing account to another company." });
+  const orgId = parsed.data.organization_id ?? actorOrg;
+  const reason = parsed.data.reason ?? "Granted by OI staff";
   let client;
   try { client = await pool.connect(); } catch { return res.status(503).json({ error: "database_unavailable" }); }
   try {
     await client.query("BEGIN");
+    if (!(await client.query("SELECT 1 FROM organizations WHERE id=$1", [orgId])).rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "organization_not_found" }); }
     const u = (await client.query("SELECT id, is_active FROM users WHERE lower(email) = $1", [parsed.data.email])).rows[0];
     if (!u || !u.is_active) { await client.query("ROLLBACK"); return res.status(404).json({ error: "person_not_found_or_inactive" }); }
     const existing = await membershipOf(client, u.id, orgId, true);
@@ -258,7 +268,7 @@ membersRouter.post("/memberships", async (req: AuthedRequest, res) => {
     if (existing) await record(client, { actor, orgId, target: u.id, change: "reactivate", action: "membership_added", reason, before, after, path: "/api/members/memberships", method: "POST" });
     else {
       await client.query(`INSERT INTO platform_audit_events (actor_user_id, actor_org_id, action, target_org_id, target_id, reason, before_state, after_state)
-        VALUES ($1,$2,'membership_added',$2,$3,$4,$5,$6)`, [actor, orgId, u.id, reason, JSON.stringify(before), JSON.stringify(after)]);
+        VALUES ($1,$2,'membership_added',$3,$4,$5,$6,$7)`, [actor, actorOrg, orgId, u.id, reason, JSON.stringify(before), JSON.stringify(after)]);
       await audit(client, orgId, actor, "membership_added", "POST", "/api/members/memberships", { user_id: u.id, role: parsed.data.role, reason }, 201);
     }
     await client.query("COMMIT");

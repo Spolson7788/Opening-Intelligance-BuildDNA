@@ -92,14 +92,28 @@ describe('tree reads on converted routes', () => {
 });
 
 describe('team management on memberships', () => {
-  it('adds an existing person to the active company with audit, and never to another company', async () => {
-    const r = await request(app).post('/api/members/memberships').set('Authorization', tok('adminA', 'custA')).send({ email: id.personB + '@example.invalid', role: 'viewer' });
+  it('company admins can never add an existing account to their company (membership_grant_oi_staff_only)', async () => {
+    for (const [u, o, r] of [['adminA', 'custA', 'admin'], ['adminB', 'custB', 'admin'], ['mgrA', 'custA', 'facilities_manager'], ['techA', 'custA', 'technician'], ['vortexAdmin', 'vortex', 'admin']]) {
+      const res = await request(app).post('/api/members/memberships').set('Authorization', tok(u, o, r)).send({ email: id.personB + '@example.invalid', role: 'viewer' });
+      expect(res.status).toBe(403); expect(res.body.error).toBe('membership_grant_oi_staff_only');
+    }
+    // A forged admin role claim or an explicit target company changes nothing.
+    expect((await request(app).post('/api/members/memberships').set('Authorization', tok('mgrA', 'custA', 'admin')).send({ email: id.personB + '@example.invalid', role: 'viewer', organization_id: id.custA })).body.error).toBe('membership_grant_oi_staff_only');
+    expect((await sql('SELECT count(*)::int n FROM organization_memberships WHERE user_id=$1 AND organization_id=$2', [id.personB, id.custA])).rows[0].n).toBe(0);
+    expect((await sql("SELECT count(*)::int n FROM platform_audit_events WHERE action='membership_added'")).rows[0].n).toBe(0);
+  });
+  it('OI staff can grant an additional membership, audited with the staff actor', async () => {
+    const r = await request(app).post('/api/members/memberships').set('Authorization', tok('staff', 'oi')).send({ email: id.personB + '@example.invalid', role: 'viewer', organization_id: id.custA, reason: 'synthetic staff grant' });
     expect(r.status).toBe(201); expect(r.body.organization_id).toBe(id.custA);
     expect((await get('/api/auth/users', tok('adminA', 'custA'))).body.map((u: any) => u.id)).toContain(id.personB);
-    expect((await sql("SELECT count(*)::int n FROM platform_audit_events WHERE action='membership_added' AND target_id=$1 AND target_org_id=$2", [id.personB, id.custA])).rows[0].n).toBe(1);
-    expect((await request(app).post('/api/members/memberships').set('Authorization', tok('adminA', 'custA')).send({ email: 'nobody-' + randomUUID() + '@example.invalid', role: 'viewer' })).body).toEqual({ error: 'person_not_found_or_inactive' });
-    expect((await request(app).post('/api/members/memberships').set('Authorization', tok('techA', 'custA', 'technician')).send({ email: id.adminB + '@example.invalid', role: 'admin' })).status).toBe(403);
-    expect((await sql('SELECT count(*)::int n FROM organization_memberships WHERE user_id=$1 AND organization_id=$2', [id.adminB, id.custA])).rows[0].n).toBe(0);
+    expect((await sql("SELECT count(*)::int n FROM platform_audit_events WHERE action='membership_added' AND target_id=$1 AND target_org_id=$2 AND actor_user_id=$3 AND actor_org_id=$4", [id.personB, id.custA, id.staff, id.oi])).rows[0].n).toBe(1);
+    expect((await request(app).post('/api/members/memberships').set('Authorization', tok('staff', 'oi')).send({ email: 'nobody-' + randomUUID() + '@example.invalid', role: 'viewer', organization_id: id.custA })).body).toEqual({ error: 'person_not_found_or_inactive' });
+    expect((await request(app).post('/api/members/memberships').set('Authorization', tok('staff', 'oi')).send({ email: id.personB + '@example.invalid', role: 'viewer', organization_id: randomUUID() })).body).toEqual({ error: 'organization_not_found' });
+    // Staff grant into the OI organization itself (an OI staff membership).
+    id.oiHire = randomUUID();
+    await sql("INSERT INTO users(id,organization_id,email,full_name,role,password_hash) VALUES($1,$2,$3,'Synthetic','technician','synthetic-not-a-hash')", [id.oiHire, id.custB, id.oiHire + '@example.invalid']);
+    const oi = await request(app).post('/api/members/memberships').set('Authorization', tok('staff', 'oi')).send({ email: id.oiHire + '@example.invalid', role: 'viewer' });
+    expect(oi.status).toBe(201); expect(oi.body.organization_id).toBe(id.oi);
   });
   it('a role change in a non-home company changes only that membership, and is recorded', async () => {
     const before = await sv('personB');
@@ -117,7 +131,7 @@ describe('team management on memberships', () => {
     expect((await sql("SELECT count(*)::int n FROM platform_audit_events WHERE action='membership_removed' AND target_id=$1", [id.personB])).rows[0].n).toBe(1);
   });
   it('remove via DELETE /api/members/memberships works for non-home members and refuses home membership', async () => {
-    await request(app).post('/api/members/memberships').set('Authorization', tok('adminA', 'custA')).send({ email: id.personB + '@example.invalid', role: 'viewer' });
+    await request(app).post('/api/members/memberships').set('Authorization', tok('staff', 'oi')).send({ email: id.personB + '@example.invalid', role: 'viewer', organization_id: id.custA });
     const d = await request(app).delete('/api/members/memberships/' + id.personB).set('Authorization', tok('adminA', 'custA')).send({ reason: 'synthetic' });
     expect(d.status).toBe(200);
     expect((await sql('SELECT is_active FROM organization_memberships WHERE user_id=$1 AND organization_id=$2', [id.personB, id.custA])).rows[0].is_active).toBe(false);
@@ -125,7 +139,7 @@ describe('team management on memberships', () => {
     expect((await request(app).delete('/api/members/memberships/' + id.adminB).set('Authorization', tok('adminA', 'custA')).send({})).status).toBe(404);
   });
   it('home deactivation ends every membership; reactivation restores the home membership only', async () => {
-    await request(app).post('/api/members/memberships').set('Authorization', tok('adminA', 'custA')).send({ email: id.personB + '@example.invalid', role: 'viewer' });
+    await request(app).post('/api/members/memberships').set('Authorization', tok('staff', 'oi')).send({ email: id.personB + '@example.invalid', role: 'viewer', organization_id: id.custA });
     const off = await request(app).patch('/api/auth/users/' + id.personB).set('Authorization', tok('adminB', 'custB')).send({ is_active: false, reason: 'left the company' });
     expect(off.status).toBe(200);
     const rows = async () => (await sql('SELECT organization_id, is_active FROM organization_memberships WHERE user_id=$1 ORDER BY is_home DESC', [id.personB])).rows;
