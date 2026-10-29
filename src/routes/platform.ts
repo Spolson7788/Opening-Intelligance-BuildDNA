@@ -72,7 +72,8 @@ async function tx<T>(res: any, fn: (c: any) => Promise<T>): Promise<T | undefine
 class Refusal extends Error { status: number; code: string; constructor(status: number, code: string) { super(code); this.status = status; this.code = code; } }
 const DB_CODES = ["organization_hierarchy_same_type_only", "organization_provider_link_requires_confirmation", "organization_hierarchy_cycle",
   "organization_hierarchy_too_deep", "organization_parent_requires_reason", "organization_parent_requires_oi_staff", "organizations_parent_not_self",
-  "platform_staff_must_be_internal", "provider_assignment_request_closed"];
+  "platform_staff_must_be_internal", "provider_assignment_request_closed",
+  "platform_staff_regrant_requires_reason", "platform_staff_regrant_requires_oi_staff", "platform_staff_not_revoked", "cannot_change_own_staff_access"];
 function fail(res: any, err: any, fallback: string) {
   if (err instanceof Refusal) return res.status(err.status).json({ error: err.code });
   const msg = String(err?.message ?? "") + " " + String(err?.constraint ?? "");
@@ -233,7 +234,15 @@ platformRouter.post("/staff", async (req: AuthedRequest, res) => {
       if (u.org_type !== "internal") throw new Refusal(400, "platform_staff_must_be_internal");
       const existing = (await c.query("SELECT revoked_at FROM platform_staff WHERE user_id=$1", [u.id])).rows[0];
       if (existing && existing.revoked_at === null) throw new Refusal(409, "already_staff");
-      if (existing) throw new Refusal(409, "staff_previously_revoked");
+      if (existing) {
+        // Re-grant needs migration 20261030090600 (platform_staff_regrant). Without it, fall back to the old refusal.
+        const has = (await c.query("SELECT to_regprocedure('platform_staff_regrant(uuid,uuid,text)') IS NOT NULL AS ok")).rows[0]?.ok === true;
+        if (!has) throw new Refusal(409, "staff_previously_revoked");
+        await c.query("SELECT platform_staff_regrant($1,$2,$3)", [u.id, req.auth!.userId, b.data.reason]);
+        await platformEvent(c, req, { action: "staff_granted", targetOrg: u.organization_id, targetId: u.id, reason: b.data.reason,
+          before: { staff: false, previously_revoked_at: existing.revoked_at }, after: { staff: true, regrant: true } });
+        return { user_id: u.id, staff: true, regrant: true };
+      }
       await c.query("INSERT INTO platform_staff (user_id, granted_by_user_id, grant_reason) VALUES ($1,$2,$3)", [u.id, req.auth!.userId, b.data.reason]);
       await platformEvent(c, req, { action: "staff_granted", targetOrg: u.organization_id, targetId: u.id, reason: b.data.reason, before: { staff: false }, after: { staff: true } });
       return { user_id: u.id, staff: true };

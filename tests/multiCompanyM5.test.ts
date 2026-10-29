@@ -199,7 +199,7 @@ describe('M5 platform staff management', () => {
     expect(await sv('oiPlain')).toBe(before + 1);
     expect((await ev('staff_revoked', id.oiPlain)).length).toBe(1);
     expect((await get('/api/platform/me', tok('oiPlain', 'oi', 'admin', before + 1))).status).toBe(403);
-    expect((await add(id.oiPlain + '@example.invalid')).body.error).toBe('staff_previously_revoked');
+    // Re-grant after revoke is covered in tests/staffRegrant.test.ts (with and without migration 20261030090600).
   });
 });
 
