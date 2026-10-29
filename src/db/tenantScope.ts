@@ -84,12 +84,19 @@ export async function facilityScheduleAccess(
 // default false). The owning organization always sees every service event. An assigned provider
 // sees its own events, and other organizations' events only when the owner enabled sharing.
 // Legacy events with no performed_by_org_id are owner-only unless sharing is on.
+// t130 hardening: the filter ITSELF requires facility access (owner, or an ACTIVE provider
+// assignment for the event's facility), so it stays safe even if a caller forgets the separate
+// opening/facility scope check. Sharing never reaches a provider that is not assigned, and a
+// revoked provider no longer sees even its own past events through this filter.
 // Read through to_jsonb so this code is safe to deploy before the migration: a missing column means off.
 export function serviceEventVisibleSql(alias: string, orgParameter: number): string {
- return `(${orgScope(`${alias}.performed_by_org_id`, orgParameter)} OR EXISTS (
+ return `EXISTS (
  SELECT 1 FROM openings sv_o JOIN buildings sv_b ON sv_b.id=sv_o.building_id
  JOIN properties sv_p ON sv_p.id=sv_b.property_id JOIN portfolios sv_pf ON sv_pf.id=sv_p.portfolio_id
- WHERE sv_o.id=${alias}.opening_id AND (${orgScope("sv_pf.organization_id", orgParameter)} OR COALESCE((to_jsonb(sv_p) ->> 'share_provider_service_history')::boolean, false))))`;
+ WHERE sv_o.id=${alias}.opening_id AND (${orgScope("sv_pf.organization_id", orgParameter)} OR (EXISTS (
+ SELECT 1 FROM facility_provider_assignments sv_fpa WHERE sv_fpa.property_id=sv_p.id
+ AND ${orgScope("sv_fpa.provider_organization_id", orgParameter)} AND sv_fpa.revoked_at IS NULL)
+ AND (${orgScope(`${alias}.performed_by_org_id`, orgParameter)} OR COALESCE((to_jsonb(sv_p) ->> 'share_provider_service_history')::boolean, false)))))`;
 }
 // Photos attached to a service event follow that event's visibility; other photos are unchanged.
 export function photoVisibleSql(alias: string, orgParameter: number): string {
