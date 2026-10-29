@@ -1,13 +1,18 @@
 -- Rollback for DRAFT 20261030090800_recognition_budget_guard.sql (restores the 090700 shape).
 -- Fails by design if any run is 'refused' (status check); export and decide first.
-DROP TRIGGER IF EXISTS opening_active_periods_track ON openings;
-DROP FUNCTION IF EXISTS opening_active_periods_track();
+DROP TRIGGER IF EXISTS facility_provider_assignments_provider_owned_guard ON facility_provider_assignments;
+DROP FUNCTION IF EXISTS facility_provider_assignments_provider_owned_guard();
+DROP TRIGGER IF EXISTS opening_billable_periods_track ON openings;
+DROP FUNCTION IF EXISTS opening_billable_periods_track();
 DROP TRIGGER IF EXISTS facility_provider_assignment_periods_track ON facility_provider_assignments;
 DROP FUNCTION IF EXISTS facility_provider_assignment_periods_track();
--- Billing history is lost on rollback: export both tables first if any month is still unbilled.
-DROP TABLE IF EXISTS opening_active_periods;
+-- Billing history is lost on rollback: EXPORT both tables first (they are the only record of
+-- deleted openings/facilities and past assignments) and keep the export with the invoices.
+DROP TABLE IF EXISTS opening_billable_periods;
 DROP TABLE IF EXISTS facility_provider_assignment_periods;
+DROP FUNCTION IF EXISTS billing_periods_guard();
 -- Provider-owned facilities created by staff are ordinary properties and are NOT removed.
+-- facility_provider_assignments keeps RLS enabled (it was already enabled by 20260926175036).
 DROP FUNCTION IF EXISTS recognition_usage_reserve(UUID);
 DROP TRIGGER IF EXISTS recognition_runs_insert_guard ON recognition_runs;
 DROP FUNCTION IF EXISTS recognition_runs_insert_guard();

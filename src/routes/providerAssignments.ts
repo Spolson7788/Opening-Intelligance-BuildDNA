@@ -15,8 +15,10 @@ providerAssignmentsRouter.put('/:propertyId/:providerId',async(req:AuthedRequest
  const {propertyId,providerId}=parsed.data;
  const client = await acquireClient(res); if (!client) return;try{
  await client.query('BEGIN');
- const owner=await client.query(`SELECT p.id FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id WHERE p.id=$1 AND pf.organization_id=$2 FOR UPDATE OF p`,[propertyId,req.auth!.organizationId]);
+ const owner=await client.query(`SELECT p.id,o.org_type FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id JOIN organizations o ON o.id=pf.organization_id WHERE p.id=$1 AND pf.organization_id=$2 FOR UPDATE OF p`,[propertyId,req.auth!.organizationId]);
  if(!owner.rowCount){await client.query('ROLLBACK');return res.status(404).json({error:'not_found'});}
+ // A provider's own facility: only OI staff may assign another provider to it (the database enforces this too). Revoking stays allowed.
+ if(owner.rows[0].org_type==='service_partner'&&body.data.active){await client.query('ROLLBACK');return res.status(403).json({error:'provider_facility_assignment_requires_oi_staff'});}
  const provider=await client.query('SELECT id FROM organizations WHERE id=$1',[providerId]);
  if(!provider.rowCount||providerId===req.auth!.organizationId){await client.query('ROLLBACK');return res.status(400).json({error:'invalid_provider'});}
  const result=await client.query(`INSERT INTO facility_provider_assignments(property_id,provider_organization_id,granted_by_user_id,revoked_at)

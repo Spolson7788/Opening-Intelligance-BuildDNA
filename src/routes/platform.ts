@@ -82,12 +82,12 @@ class Refusal extends Error { status: number; code: string; constructor(status: 
 const DB_CODES = ["organization_hierarchy_same_type_only", "organization_provider_link_requires_confirmation", "organization_hierarchy_cycle",
   "organization_hierarchy_too_deep", "organization_parent_requires_reason", "organization_parent_requires_oi_staff", "organizations_parent_not_self",
   "platform_staff_must_be_internal", "provider_assignment_request_closed",
-  "platform_staff_regrant_requires_reason", "platform_staff_regrant_requires_oi_staff", "platform_staff_not_revoked", "cannot_change_own_staff_access"];
+  "platform_staff_regrant_requires_reason", "provider_facility_assignment_requires_oi_staff", "platform_staff_regrant_requires_oi_staff", "platform_staff_not_revoked", "cannot_change_own_staff_access"];
 function fail(res: any, err: any, fallback: string) {
   if (err instanceof Refusal) return res.status(err.status).json({ error: err.code });
   const msg = String(err?.message ?? "") + " " + String(err?.constraint ?? "");
   const code = DB_CODES.find((c) => msg.includes(c));
-  if (code) return res.status(code === "organization_parent_requires_oi_staff" ? 403 : 400).json({ error: code });
+  if (code) return res.status(code.endsWith("requires_oi_staff") ? 403 : 400).json({ error: code });
   if (err?.code === "23505") return res.status(409).json({ error: "already_exists" });
   console.error("OI platform", { outcome: "error", action: fallback, code: String(err?.code ?? "unknown") });
   return res.status(500).json({ error: fallback });
@@ -177,6 +177,8 @@ for (const decision of ["approve", "decline"] as const) {
         if (decision === "approve") {
           const before = (await c.query("SELECT revoked_at FROM facility_provider_assignments WHERE property_id=$1 AND provider_organization_id=$2 FOR UPDATE", [r.property_id, r.provider_organization_id])).rows[0];
           if (r.action === "assign") {
+            // Names the acting OI staff member for the provider-owned-facility guard in the database.
+            await c.query("SELECT set_config('oi.actor_user_id', $1, true)", [req.auth!.userId]);
             assignment = (await c.query(`INSERT INTO facility_provider_assignments(property_id,provider_organization_id,granted_by_user_id,revoked_at) VALUES($1,$2,$3,NULL)
               ON CONFLICT(property_id,provider_organization_id) DO UPDATE SET granted_by_user_id=$3, granted_at=now(), revoked_at=NULL RETURNING property_id, provider_organization_id, revoked_at`,
               [r.property_id, r.provider_organization_id, req.auth!.userId])).rows[0];

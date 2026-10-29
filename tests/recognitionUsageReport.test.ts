@@ -38,9 +38,10 @@ const report = (who: string, m = month) => request(app).get('/api/platform/recog
 const row = (body: any, k: string) => body.companies.find((c: any) => c.organization_id === id[k]);
 
 const staffPost = (path: string, body: unknown, who = 'oi') => request(app).post('/api/platform' + path).set('Authorization', tok[who]).send(body);
-async function opening(building: string, code: string) {
-  const o = randomUUID(); await sql("INSERT INTO openings(id,building_id,opening_code,qr_token,opening_type) VALUES($1,$2,$3,$4,'door')", [o, building, code, 'qr-' + o]); return o;
+async function opening(building: string, code: string, status = 'active') {
+  const o = randomUUID(); await sql("INSERT INTO openings(id,building_id,opening_code,qr_token,opening_type,status) VALUES($1,$2,$3,$4,'door',$5)", [o, building, code, 'qr-' + o, status]); return o;
 }
+let custBuilding = '';
 
 beforeAll(async () => {
   process.env.JWT_SECRET ||= 'synthetic-test-secret';
@@ -61,12 +62,18 @@ beforeAll(async () => {
   await sql("INSERT INTO portfolios(id,organization_id,name) VALUES($1,$2,'Main')", [pf, id.cust]);
   await sql("INSERT INTO properties(id,portfolio_id,name) VALUES($1,$2,'Synthetic facility')", [id.prop, pf]);
   await sql("INSERT INTO buildings(id,property_id,name) VALUES($1,$2,'B')", [b, id.prop]);
-  id.O1 = await opening(b, 'O1'); id.O2 = await opening(b, 'O2'); id.O3 = await opening(b, 'O3');
-  await sql("UPDATE openings SET status='decommissioned' WHERE id=$1", [id.O3]);
-  await sql("UPDATE opening_active_periods SET started_at='2020-01-10', ended_at='2020-01-20' WHERE opening_id=$1", [id.O3]);
+  custBuilding = b;
+  id.O1 = await opening(b, 'O1'); id.O2 = await opening(b, 'O2');
+  // O3: decommissioned now; its history says it was billable 10-20 Jan 2020 only.
+  id.O3 = await opening(b, 'O3', 'decommissioned');
+  await sql("INSERT INTO opening_billable_periods(opening_id,opening_code,property_id,property_name,owner_organization_id,started_at,ended_at,end_reason) VALUES($1,'O3',$2,'Synthetic facility',$3,'2020-01-10','2020-01-20','backfill')", [id.O3, id.prop, id.cust]);
+  // P1: uncaptured placeholder (pending_capture) - not billable.
+  id.P1 = await opening(b, 'P1', 'pending_capture');
   for (const p of ['vortex', 'dhpace']) await sql('INSERT INTO facility_provider_assignments(property_id,provider_organization_id,granted_by_user_id) VALUES($1,$2,$3)', [id.prop, id[p], id.custUser]);
-  // DH Pace is revoked during the month: it still pays for this month.
+  // DH Pace is revoked during the month: it still pays for O1, O2 this month, but not for O4 (added after it left).
   await sql('UPDATE facility_provider_assignments SET revoked_at=now() WHERE property_id=$1 AND provider_organization_id=$2', [id.prop, id.dhpace]);
+  await new Promise((r) => setTimeout(r, 5));
+  id.O4 = await opening(b, 'O4');
   // Vortex's own facility (created by OI staff) with one opening V1.
   const vf = await staffPost(`/providers/${id.vortex}/facilities`, { name: 'Vortex general', reason: 'synthetic provider facility' });
   expect(vf.status).toBe(201); id.vprop = vf.body.facility.id;
@@ -87,17 +94,17 @@ describe('OI staff usage and billing report', () => {
     expect((await request(app).get('/api/platform/recognition-usage')).status).toBe(401);
     expect((await report('oi', '2026-13')).status).toBe(400);
   });
-  it('bills $0.75 per active opening to the owner and to each provider assigned that month; own facility once', async () => {
+  it('bills $0.75 per billable opening to the owner, and to each provider only for openings billable while it was assigned', async () => {
     const r = await report('oi'); expect(r.status).toBe(200);
     expect(r.body.settings).toEqual({ opening_price_cents_per_month: 75, cost_per_photo_usd: null, default_monthly_photo_cap: 80000, cap_warning_ratio: 0.8 });
-    // Customer: O1+O2 (O3 decommissioned all month). No recognition needed to be billed.
-    expect(row(r.body, 'cust')).toMatchObject({ owned_openings: 2, provider_openings: 0, billable_openings: 2, revenue_cents: 150, photos_recognized: 1, runs: 1 });
-    // Vortex: its own V1 once + O1, O2 as assigned provider.
-    expect(row(r.body, 'vortex')).toMatchObject({ owned_openings: 1, provider_openings: 2, billable_openings: 3, revenue_cents: 225, photos_recognized: 2, runs: 1 });
-    // DH Pace: revoked this month, ran no recognition, still pays for O1, O2 this month.
+    // Customer: O1, O2, O4 (O3 decommissioned all month, P1 pending_capture). No recognition needed to be billed.
+    expect(row(r.body, 'cust')).toMatchObject({ owned_openings: 3, provider_openings: 0, billable_openings: 3, revenue_cents: 225, photos_recognized: 1, runs: 1 });
+    // Vortex: its own V1 once + O1, O2, O4 as assigned provider.
+    expect(row(r.body, 'vortex')).toMatchObject({ owned_openings: 1, provider_openings: 3, billable_openings: 4, revenue_cents: 300, photos_recognized: 2, runs: 1 });
+    // DH Pace: revoked this month, ran no recognition: pays for O1, O2 but not O4 (added after it left).
     expect(row(r.body, 'dhpace')).toMatchObject({ owned_openings: 0, provider_openings: 2, billable_openings: 2, revenue_cents: 150, photos_recognized: 0, runs: 0 });
     expect(row(r.body, 'oi')).toBeUndefined();
-    expect(r.body.totals).toEqual({ active_openings: 3, billable_openings: 7, revenue_cents: 525, photos_recognized: 3, runs: 2, oi_recognition_cost_usd: null, margin_usd: null });
+    expect(r.body.totals).toEqual({ active_openings: 4, billable_openings: 9, revenue_cents: 675, photos_recognized: 3, runs: 2, oi_recognition_cost_usd: null, margin_usd: null });
     for (const c of r.body.companies) expect([c.oi_recognition_cost_usd, c.margin_usd]).toEqual([null, null]);
   });
   it('uses history: Jan 2020 bills only O3 to its owner (providers were not assigned then)', async () => {
@@ -106,19 +113,39 @@ describe('OI staff usage and billing report', () => {
     expect(row(r.body, 'cust')).toMatchObject({ owned_openings: 1, billable_openings: 1, revenue_cents: 75, photos_recognized: 0 });
     expect((await report('oi', '2019-12')).body.companies).toEqual([]);
   });
-  it('a re-grant keeps the earlier assignment period (the current row is overwritten)', async () => {
-    await sql('UPDATE facility_provider_assignments SET revoked_at=NULL, granted_at=now() WHERE property_id=$1 AND provider_organization_id=$2', [id.prop, id.dhpace]);
-    const p = await sql('SELECT ended_at FROM facility_provider_assignment_periods WHERE property_id=$1 AND provider_organization_id=$2 ORDER BY id', [id.prop, id.dhpace]);
-    expect(p.rows.map((x: any) => x.ended_at === null)).toEqual([false, true]);
-    expect(row((await report('oi')).body, 'dhpace').billable_openings).toBe(2); // still once per opening
-  });
   it('OI recognition cost is internal: shown with margin, never added to revenue', async () => {
     await sql("UPDATE recognition_usage_settings SET cost_per_photo_usd=0.01, updated_reason='synthetic'");
     const r = await report('oi');
-    expect(row(r.body, 'vortex')).toMatchObject({ revenue_cents: 225, oi_recognition_cost_usd: 0.02, margin_usd: 2.23 });
+    expect(row(r.body, 'vortex')).toMatchObject({ revenue_cents: 300, oi_recognition_cost_usd: 0.02, margin_usd: 2.98 });
     expect(row(r.body, 'dhpace')).toMatchObject({ oi_recognition_cost_usd: 0, margin_usd: 1.5 });
-    expect(r.body.totals).toMatchObject({ revenue_cents: 525, oi_recognition_cost_usd: 0.03, margin_usd: 5.22 });
+    expect(r.body.totals).toMatchObject({ revenue_cents: 675, oi_recognition_cost_usd: 0.03, margin_usd: 6.72 });
     await sql("UPDATE recognition_usage_settings SET cost_per_photo_usd=NULL");
+  });
+  it('a re-grant keeps the earlier assignment period and bills openings billable during the new one', async () => {
+    await sql('UPDATE facility_provider_assignments SET revoked_at=NULL, granted_at=now() WHERE property_id=$1 AND provider_organization_id=$2', [id.prop, id.dhpace]);
+    const p = await sql('SELECT end_reason FROM facility_provider_assignment_periods WHERE property_id=$1 AND provider_organization_id=$2 ORDER BY id', [id.prop, id.dhpace]);
+    expect(p.rows.map((x: any) => x.end_reason)).toEqual(['revoked', null]);
+    expect(row((await report('oi')).body, 'dhpace').billable_openings).toBe(3); // O1, O2 once each + O4 now
+  });
+  it('pending_capture bills only once captured', async () => {
+    expect(row((await report('oi')).body, 'cust').owned_openings).toBe(3);
+    await sql("UPDATE openings SET status='active' WHERE id=$1", [id.P1]);
+    expect(row((await report('oi')).body, 'cust').owned_openings).toBe(4);
+  });
+  it('billing history survives deleting an opening or a facility, and cannot be edited or deleted', async () => {
+    const d = await opening(custBuilding, 'D1');
+    await sql('DELETE FROM openings WHERE id=$1', [d]);
+    const h = await sql('SELECT opening_code, owner_organization_id, end_reason FROM opening_billable_periods WHERE opening_id=$1', [d]);
+    expect(h.rows).toEqual([{ opening_code: 'D1', owner_organization_id: id.cust, end_reason: 'opening_deleted' }]);
+    expect(row((await report('oi')).body, 'cust').owned_openings).toBe(5); // still billed this month
+    const pf = (await sql('SELECT portfolio_id FROM properties WHERE id=$1', [id.prop])).rows[0].portfolio_id, x = randomUUID();
+    await sql("INSERT INTO properties(id,portfolio_id,name) VALUES($1,$2,'Short-lived')", [x, pf]);
+    await sql('INSERT INTO facility_provider_assignments(property_id,provider_organization_id,granted_by_user_id) VALUES($1,$2,$3)', [x, id.vortex, id.custUser]);
+    await sql('DELETE FROM properties WHERE id=$1', [x]);
+    expect((await sql('SELECT end_reason FROM facility_provider_assignment_periods WHERE property_id=$1', [x])).rows).toEqual([{ end_reason: 'assignment_deleted' }]);
+    await expect(sql('DELETE FROM opening_billable_periods WHERE opening_id=$1', [d])).rejects.toThrow(/billing_history_no_delete/);
+    await expect(sql("UPDATE opening_billable_periods SET ended_at=now() WHERE opening_id=$1", [d])).rejects.toThrow(/billing_history_immutable/);
+    await expect(sql('DELETE FROM facility_provider_assignment_periods WHERE property_id=$1', [x])).rejects.toThrow(/billing_history_no_delete/);
   });
   it('flags companies at or above the warning ratio (default 80%) of their safety cap', async () => {
     expect(row((await report('oi')).body, 'vortex')).toMatchObject({ safety_cap_photos: 3, cap_warning: false });
@@ -134,6 +161,22 @@ describe('OI staff usage and billing report', () => {
     for (const k of ['dhpace', 'cust']) expect((await request(app).get('/api/openings/' + id.V1).set('Authorization', tok[k])).status).toBe(404);
     const a = await sql("SELECT after_state FROM platform_audit_events WHERE action='facility_created' AND target_id=$1", [id.vprop]);
     expect(a.rows[0].after_state).toMatchObject({ provider_owned: true });
+  });
+  it('only OI staff can assign another provider to a provider-owned facility (API and database)', async () => {
+    const put = (who: string, provider: string, active: boolean) => request(app).put(`/api/provider-assignments/${id.vprop}/${id[provider]}`).set('Authorization', tok[who]).send({ active });
+    const r = await put('vortex', 'dhpace', true);
+    expect([r.status, r.body.error]).toEqual([403, 'provider_facility_assignment_requires_oi_staff']);
+    expect((await put('dhpace', 'dhpace', true)).status).toBe(404); // not its facility
+    const ins = 'INSERT INTO facility_provider_assignments(property_id,provider_organization_id,granted_by_user_id) VALUES($1,$2,$3)';
+    await expect(sql(ins, [id.vprop, id.dhpace, id.vortexUser])).rejects.toThrow(/provider_facility_assignment_requires_oi_staff/);
+    await sql('BEGIN'); await sql("SELECT set_config('oi.actor_user_id',$1,true)", [id.vortexUser]);
+    await expect(sql(ins, [id.vprop, id.dhpace, id.vortexUser])).rejects.toThrow(/provider_facility_assignment_requires_oi_staff/); await sql('ROLLBACK');
+    // OI staff may (inside a transaction naming the staff actor); revoking is open to the owner.
+    await sql('BEGIN'); await sql("SELECT set_config('oi.actor_user_id',$1,true)", [id.oiUser]); await sql(ins, [id.vprop, id.dhpace, id.oiUser]); await sql('COMMIT');
+    expect((await put('vortex', 'dhpace', false)).status).toBe(200);
+    expect((await sql('SELECT revoked_at FROM facility_provider_assignments WHERE property_id=$1 AND provider_organization_id=$2', [id.vprop, id.dhpace])).rows[0].revoked_at).not.toBeNull();
+    // Customer facilities are unchanged: the owner admin can still assign providers.
+    expect((await request(app).put(`/api/provider-assignments/${id.prop}/${id.vortex}`).set('Authorization', tok.cust).send({ active: true })).status).toBe(200);
   });
   it('creating a provider company can create its own facility too (customers cannot)', async () => {
     const base = { org_type: 'service_partner', admin_full_name: 'Synthetic', reason: 'synthetic', create_provider_facility: true };

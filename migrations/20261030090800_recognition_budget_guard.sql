@@ -4,8 +4,8 @@
 -- an emergency SAFETY CAP per company (photos per month): a missing row never refuses.
 -- Billing (11:42 decision): $0.75 per ACTIVE opening per month, whether or not recognition ran. The
 -- facility owner company pays for every active opening in its facilities, and every service provider
--- assigned to that facility during the month pays for the same opening. A provider's own facility
--- (owned by the provider company) is billed once, to the provider. Recognition cost per photo is OI's
+-- assigned to that facility pays for the same opening while assigned. A provider's own facility
+-- (owned by the provider company) is billed once, to the provider; only OI staff may assign others to it. Recognition cost per photo is OI's
 -- INTERNAL cost only (never billed). Sections 6-7 keep the history the monthly bill needs.
 -- 1. recognition_usage_settings: price per opening, configurable cost per photo (unknown -> NULL),
 --    default monthly photo cap, warning ratio.
@@ -157,80 +157,142 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- 6. Billing history: when each opening was active, and when each provider was assigned.
--- An opening is ACTIVE IN A MONTH when it existed (created before the month ended) and was not
--- decommissioned for the whole month, i.e. some active period overlaps the month. 'active' and
--- 'pending_capture' both count; only 'decommissioned' ends a period. The current
--- facility_provider_assignments row is overwritten on re-grant, so periods are kept separately.
-CREATE TABLE IF NOT EXISTS opening_active_periods (
+-- 6. Billing history, kept independently of openings/facilities (11:56 decision): no foreign keys
+-- to openings or properties and no cascading delete; each period stores the identifiers it needs.
+-- BILLABLE OPENING: an opening is billable while its status is 'active' (captured). 'pending_capture'
+-- (uncaptured placeholder) and 'decommissioned' are not billable. A billable period opens when the
+-- status becomes 'active' and closes when it leaves 'active' or the opening is deleted.
+-- An opening bills a FULL month (no proration) to the facility owner when a billable period overlaps
+-- the month; to an assigned provider only when a billable period overlaps one of that provider's
+-- assignment periods for the facility inside the month (not for openings added after it left).
+-- The current facility_provider_assignments row is overwritten on re-grant, so periods are kept here.
+CREATE TABLE IF NOT EXISTS opening_billable_periods (
   id BIGSERIAL PRIMARY KEY,
-  opening_id UUID NOT NULL REFERENCES openings(id) ON DELETE CASCADE,
+  opening_id UUID NOT NULL,              -- no FK: history survives deleting the opening
+  opening_code TEXT NOT NULL,
+  property_id UUID NOT NULL,             -- snapshot at period start (no FK)
+  property_name TEXT NOT NULL,
+  owner_organization_id UUID NOT NULL,   -- facility owner at period start (no FK)
   started_at TIMESTAMPTZ NOT NULL, ended_at TIMESTAMPTZ,
-  CHECK (ended_at IS NULL OR ended_at >= started_at));
-CREATE UNIQUE INDEX IF NOT EXISTS opening_active_periods_one_open ON opening_active_periods(opening_id) WHERE ended_at IS NULL;
+  end_reason TEXT CHECK (end_reason IN ('status_changed','opening_deleted','backfill')),
+  CHECK (ended_at IS NULL OR ended_at >= started_at),
+  CHECK ((ended_at IS NULL) = (end_reason IS NULL)));
+CREATE UNIQUE INDEX IF NOT EXISTS opening_billable_periods_one_open ON opening_billable_periods(opening_id) WHERE ended_at IS NULL;
+CREATE INDEX IF NOT EXISTS opening_billable_periods_property ON opening_billable_periods(property_id, started_at);
 CREATE TABLE IF NOT EXISTS facility_provider_assignment_periods (
   id BIGSERIAL PRIMARY KEY,
-  property_id UUID NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
-  provider_organization_id UUID NOT NULL REFERENCES organizations(id),
+  property_id UUID NOT NULL,             -- no FK: history survives deleting the facility
+  provider_organization_id UUID NOT NULL,
   started_at TIMESTAMPTZ NOT NULL, ended_at TIMESTAMPTZ,
-  CHECK (ended_at IS NULL OR ended_at >= started_at));
+  end_reason TEXT CHECK (end_reason IN ('revoked','assignment_deleted','backfill')),
+  CHECK (ended_at IS NULL OR ended_at >= started_at),
+  CHECK ((ended_at IS NULL) = (end_reason IS NULL)));
 CREATE UNIQUE INDEX IF NOT EXISTS facility_provider_assignment_periods_one_open
   ON facility_provider_assignment_periods(property_id, provider_organization_id) WHERE ended_at IS NULL;
 
-CREATE OR REPLACE FUNCTION opening_active_periods_track() RETURNS trigger
+-- History rows are only written by the tracking triggers: closed periods are immutable and never deleted.
+CREATE OR REPLACE FUNCTION billing_periods_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'billing_history_no_delete'; END IF;
+  IF OLD.ended_at IS NOT NULL OR NEW.started_at <> OLD.started_at OR NEW.id <> OLD.id
+     OR (to_jsonb(NEW) - 'ended_at' - 'end_reason') <> (to_jsonb(OLD) - 'ended_at' - 'end_reason') THEN
+    RAISE EXCEPTION 'billing_history_immutable'; END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS opening_billable_periods_guard ON opening_billable_periods;
+CREATE TRIGGER opening_billable_periods_guard BEFORE UPDATE OR DELETE ON opening_billable_periods FOR EACH ROW EXECUTE FUNCTION billing_periods_guard();
+DROP TRIGGER IF EXISTS facility_provider_assignment_periods_guard ON facility_provider_assignment_periods;
+CREATE TRIGGER facility_provider_assignment_periods_guard BEFORE UPDATE OR DELETE ON facility_provider_assignment_periods FOR EACH ROW EXECUTE FUNCTION billing_periods_guard();
+
+CREATE OR REPLACE FUNCTION opening_billable_periods_track() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-  IF TG_OP = 'INSERT' THEN
-    IF NEW.status <> 'decommissioned' THEN INSERT INTO opening_active_periods(opening_id, started_at) VALUES (NEW.id, NEW.created_at); END IF;
-  ELSIF NEW.status = 'decommissioned' AND OLD.status <> 'decommissioned' THEN
-    UPDATE opening_active_periods SET ended_at = greatest(now(), started_at) WHERE opening_id = NEW.id AND ended_at IS NULL;
-  ELSIF NEW.status <> 'decommissioned' AND OLD.status = 'decommissioned' THEN
-    INSERT INTO opening_active_periods(opening_id, started_at) VALUES (NEW.id, now()) ON CONFLICT DO NOTHING;
+  IF TG_OP IN ('UPDATE','DELETE') AND OLD.status = 'active' AND (TG_OP = 'DELETE' OR NEW.status <> 'active') THEN
+    UPDATE opening_billable_periods SET ended_at = greatest(now(), started_at),
+      end_reason = CASE WHEN TG_OP = 'DELETE' THEN 'opening_deleted' ELSE 'status_changed' END
+     WHERE opening_id = OLD.id AND ended_at IS NULL;
+  END IF;
+  IF TG_OP IN ('INSERT','UPDATE') AND NEW.status = 'active' AND (TG_OP = 'INSERT' OR OLD.status <> 'active') THEN
+    INSERT INTO opening_billable_periods(opening_id, opening_code, property_id, property_name, owner_organization_id, started_at)
+    SELECT NEW.id, NEW.opening_code, p.id, p.name, pf.organization_id, CASE WHEN TG_OP = 'INSERT' THEN NEW.created_at ELSE now() END
+      FROM buildings b JOIN properties p ON p.id = b.property_id JOIN portfolios pf ON pf.id = p.portfolio_id WHERE b.id = NEW.building_id
+    ON CONFLICT DO NOTHING;
   END IF;
   RETURN NULL;
 END $$;
-DROP TRIGGER IF EXISTS opening_active_periods_track ON openings;
-CREATE TRIGGER opening_active_periods_track AFTER INSERT OR UPDATE OF status ON openings
-  FOR EACH ROW EXECUTE FUNCTION opening_active_periods_track();
+DROP TRIGGER IF EXISTS opening_billable_periods_track ON openings;
+CREATE TRIGGER opening_billable_periods_track AFTER INSERT OR UPDATE OF status OR DELETE ON openings
+  FOR EACH ROW EXECUTE FUNCTION opening_billable_periods_track();
 
 CREATE OR REPLACE FUNCTION facility_provider_assignment_periods_track() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-  IF NEW.revoked_at IS NULL AND (TG_OP = 'INSERT' OR OLD.revoked_at IS NOT NULL) THEN
+  IF TG_OP = 'DELETE' THEN
+    UPDATE facility_provider_assignment_periods SET ended_at = greatest(now(), started_at), end_reason = 'assignment_deleted'
+     WHERE property_id = OLD.property_id AND provider_organization_id = OLD.provider_organization_id AND ended_at IS NULL;
+  ELSIF NEW.revoked_at IS NULL AND (TG_OP = 'INSERT' OR OLD.revoked_at IS NOT NULL) THEN
     INSERT INTO facility_provider_assignment_periods(property_id, provider_organization_id, started_at)
       VALUES (NEW.property_id, NEW.provider_organization_id, NEW.granted_at) ON CONFLICT DO NOTHING;
   ELSIF NEW.revoked_at IS NOT NULL AND TG_OP = 'UPDATE' AND OLD.revoked_at IS NULL THEN
-    UPDATE facility_provider_assignment_periods SET ended_at = greatest(NEW.revoked_at, started_at)
+    UPDATE facility_provider_assignment_periods SET ended_at = greatest(NEW.revoked_at, started_at), end_reason = 'revoked'
      WHERE property_id = NEW.property_id AND provider_organization_id = NEW.provider_organization_id AND ended_at IS NULL;
   END IF;
   RETURN NULL;
 END $$;
 DROP TRIGGER IF EXISTS facility_provider_assignment_periods_track ON facility_provider_assignments;
-CREATE TRIGGER facility_provider_assignment_periods_track AFTER INSERT OR UPDATE ON facility_provider_assignments
+CREATE TRIGGER facility_provider_assignment_periods_track AFTER INSERT OR UPDATE OR DELETE ON facility_provider_assignments
   FOR EACH ROW EXECUTE FUNCTION facility_provider_assignment_periods_track();
 
--- Backfill from current rows (best available history: a decommissioned opening is taken to have
--- ended at its last update; a revoked assignment covers granted_at..revoked_at).
-INSERT INTO opening_active_periods(opening_id, started_at, ended_at)
-SELECT o.id, o.created_at, CASE WHEN o.status = 'decommissioned' THEN greatest(o.updated_at, o.created_at) END FROM openings o
-WHERE NOT EXISTS (SELECT 1 FROM opening_active_periods x WHERE x.opening_id = o.id);
-INSERT INTO facility_provider_assignment_periods(property_id, provider_organization_id, started_at, ended_at)
-SELECT a.property_id, a.provider_organization_id, a.granted_at, CASE WHEN a.revoked_at IS NOT NULL THEN greatest(a.revoked_at, a.granted_at) END
+-- Backfill from current rows (best available history). Active openings: billable from created_at
+-- (capture time is not recorded). Decommissioned: assumed billable created_at..updated_at.
+-- pending_capture: never billable. Revoked assignments cover granted_at..revoked_at.
+INSERT INTO opening_billable_periods(opening_id, opening_code, property_id, property_name, owner_organization_id, started_at, ended_at, end_reason)
+SELECT o.id, o.opening_code, p.id, p.name, pf.organization_id, o.created_at,
+  CASE WHEN o.status = 'decommissioned' THEN greatest(o.updated_at, o.created_at) END,
+  CASE WHEN o.status = 'decommissioned' THEN 'backfill' END
+FROM openings o JOIN buildings b ON b.id = o.building_id JOIN properties p ON p.id = b.property_id JOIN portfolios pf ON pf.id = p.portfolio_id
+WHERE o.status IN ('active','decommissioned') AND NOT EXISTS (SELECT 1 FROM opening_billable_periods x WHERE x.opening_id = o.id);
+INSERT INTO facility_provider_assignment_periods(property_id, provider_organization_id, started_at, ended_at, end_reason)
+SELECT a.property_id, a.provider_organization_id, a.granted_at,
+  CASE WHEN a.revoked_at IS NOT NULL THEN greatest(a.revoked_at, a.granted_at) END, CASE WHEN a.revoked_at IS NOT NULL THEN 'backfill' END
 FROM facility_provider_assignments a
 WHERE NOT EXISTS (SELECT 1 FROM facility_provider_assignment_periods x WHERE x.property_id = a.property_id AND x.provider_organization_id = a.provider_organization_id);
 
+-- 6b. Provider-owned facilities: only OI staff may ASSIGN a provider to them (revoking stays open).
+-- Enforced in the database for every writer: the transaction must name an acting user
+-- (set_config('oi.actor_user_id', ..., true)) who is OI staff.
+CREATE OR REPLACE FUNCTION facility_provider_assignments_provider_owned_guard() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE actor TEXT := nullif(current_setting('oi.actor_user_id', true), '');
+BEGIN
+  IF NEW.revoked_at IS NULL AND (TG_OP = 'INSERT' OR OLD.revoked_at IS NOT NULL OR NEW.provider_organization_id <> OLD.provider_organization_id
+       OR NEW.property_id <> OLD.property_id)
+     AND EXISTS (SELECT 1 FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id JOIN organizations o ON o.id = pf.organization_id
+                 WHERE p.id = NEW.property_id AND o.org_type = 'service_partner')
+     AND (actor IS NULL OR NOT is_platform_staff(actor::uuid)) THEN
+    RAISE EXCEPTION 'provider_facility_assignment_requires_oi_staff';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS facility_provider_assignments_provider_owned_guard ON facility_provider_assignments;
+CREATE TRIGGER facility_provider_assignments_provider_owned_guard BEFORE INSERT OR UPDATE ON facility_provider_assignments
+  FOR EACH ROW EXECUTE FUNCTION facility_provider_assignments_provider_owned_guard();
+-- RLS: the Data API roles get no policy on the assignment table (deny), so only the server writes it.
+ALTER TABLE facility_provider_assignments ENABLE ROW LEVEL SECURITY;
+
 -- 7. Provider-owned facilities need no new table: a facility (property) in a portfolio owned by the
 -- service-provider company. Access stays owner-or-assignment, so other providers never see it.
-ALTER TABLE opening_active_periods ENABLE ROW LEVEL SECURITY;
+ALTER TABLE opening_billable_periods ENABLE ROW LEVEL SECURITY;
 ALTER TABLE facility_provider_assignment_periods ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON FUNCTION opening_active_periods_track() FROM PUBLIC;
+REVOKE ALL ON FUNCTION opening_billable_periods_track() FROM PUBLIC;
 REVOKE ALL ON FUNCTION facility_provider_assignment_periods_track() FROM PUBLIC;
+REVOKE ALL ON FUNCTION facility_provider_assignments_provider_owned_guard() FROM PUBLIC;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'oi_pr2_api') THEN
-    GRANT SELECT ON opening_active_periods, facility_provider_assignment_periods TO oi_pr2_api;
+    GRANT SELECT ON opening_billable_periods, facility_provider_assignment_periods TO oi_pr2_api;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-    REVOKE ALL ON opening_active_periods, facility_provider_assignment_periods FROM anon; END IF;
+    REVOKE ALL ON opening_billable_periods, facility_provider_assignment_periods FROM anon; END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
-    REVOKE ALL ON opening_active_periods, facility_provider_assignment_periods FROM authenticated; END IF;
+    REVOKE ALL ON opening_billable_periods, facility_provider_assignment_periods FROM authenticated; END IF;
 END $$;

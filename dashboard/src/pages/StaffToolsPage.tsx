@@ -192,7 +192,7 @@ export function RecognitionUsage() {
   const [rep, setRep] = useState<RecognitionUsageReport | null>(null); const [e, setE] = useState<string | null>(null);
   useEffect(() => { let live = true; setE(null); platformRecognitionUsage(month).then((r) => { if (live) setRep(r); }).catch((x) => { if (live) { setRep(null); setE(err(x)); } }); return () => { live = false; }; }, [month]);
   return <section className="panel"><h2>Usage and billing</h2>
-    <p>Billing: {rep ? cents(rep.settings.opening_price_cents_per_month) : "$0.75"} per active opening per month, whether or not recognition ran. The facility owner pays for each active opening, and each provider assigned to the facility that month pays for it too. A provider's own facility is billed once. An opening is active in a month if it existed and was not decommissioned for the whole month.</p>
+    <p>Billing: {rep ? cents(rep.settings.opening_price_cents_per_month) : "$0.75"} per billable opening per month (full month, no proration), whether or not recognition ran. An opening is billable while captured and active; uncaptured placeholders and decommissioned openings do not bill. The facility owner pays for each billable opening; each assigned provider pays only for openings billable while it was assigned. A provider's own facility is billed once.</p>
     <p className="muted">OI recognition cost (internal, never billed): {usd(rep?.settings.cost_per_photo_usd ?? null)} per photo, counted for the company that ran it.</p>
     <label>Month <input type="month" value={month} onChange={(ev) => setMonth(ev.target.value)} /></label>
     {e && <p role="alert">{e}</p>}

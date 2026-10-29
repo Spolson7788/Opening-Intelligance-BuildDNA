@@ -1,16 +1,16 @@
 import { pool } from '../db/pool';
 // OI-staff-only monthly usage and billing report (Oct 29 11:42 decision). Read-only.
-// Billing: settings.opening_price_cents_per_month ($0.75) per ACTIVE opening per month, whether or not
-// recognition ran:
-//  - the facility owner company pays for every active opening in its facilities;
-//  - every service provider assigned to that facility at any time in the month ALSO pays for each of
-//    those openings (both pay when a provider works in a customer facility);
-//  - a provider's own facility (owned by the provider company) is billed once, to the provider.
-// An opening is active in a month when one of its opening_active_periods overlaps the month (it existed
-// and was not decommissioned for the whole month). A provider counts when one of its
-// facility_provider_assignment_periods for the facility overlaps the month.
-// Recognition cost per photo is OI's INTERNAL cost (never billed). It is attributed to the company
-// that requested the counted run, so totals add up without double counting. Margin = revenue - cost.
+// Billing (11:42 + 11:56 decisions): settings.opening_price_cents_per_month ($0.75) per BILLABLE opening
+// per month, whether or not recognition ran. Full month for any overlap (no proration).
+//  - BILLABLE = status 'active' (captured). 'pending_capture' placeholders and decommissioned openings
+//    do not bill. History is opening_billable_periods (kept even after the opening/facility is deleted;
+//    owner and facility are the snapshot taken when the period started).
+//  - The facility owner pays for each opening with a billable period overlapping the month.
+//  - Each assigned provider pays for an opening only if a billable period of the opening overlaps one
+//    of its assignment periods for the facility INSIDE the month (not for openings added after it left).
+//  - A provider's own facility is billed once, to the provider.
+// Recognition cost per photo is OI's INTERNAL cost (never billed), attributed to the company that
+// requested the counted run, so totals add up without double counting. Margin = revenue - cost.
 export type UsageCompanyRow = {
   organization_id: string; organization_name: string; org_type: string;
   owned_openings: number; provider_openings: number; billable_openings: number; revenue_cents: number;
@@ -37,20 +37,22 @@ export async function recognitionUsageReport(month: string): Promise<UsageReport
   };
   const q = (await pool.query(`
     WITH bounds AS (SELECT $1::date::timestamptz AS m0, ($1::date + interval '1 month')::timestamptz AS m1),
-    active AS (
-      SELECT DISTINCT o.id AS opening_id, b.property_id, pf.organization_id AS owner
-      FROM opening_active_periods ap CROSS JOIN bounds
-      JOIN openings o ON o.id = ap.opening_id JOIN buildings b ON b.id = o.building_id
-      JOIN properties p ON p.id = b.property_id JOIN portfolios pf ON pf.id = p.portfolio_id
-      WHERE ap.started_at < bounds.m1 AND (ap.ended_at IS NULL OR ap.ended_at >= bounds.m0)),
-    providers AS (
-      SELECT DISTINCT ap.property_id, ap.provider_organization_id AS org
-      FROM facility_provider_assignment_periods ap CROSS JOIN bounds
-      WHERE ap.started_at < bounds.m1 AND (ap.ended_at IS NULL OR ap.ended_at >= bounds.m0)),
+    op AS (  -- billable periods clipped to the month
+      SELECT bp.opening_id, bp.property_id, bp.owner_organization_id AS owner,
+        greatest(bp.started_at, bounds.m0) AS s, least(COALESCE(bp.ended_at, bounds.m1), bounds.m1) AS e
+      FROM opening_billable_periods bp CROSS JOIN bounds
+      WHERE bp.started_at < bounds.m1 AND (bp.ended_at IS NULL OR bp.ended_at > bounds.m0)),
+    active AS (SELECT DISTINCT opening_id, owner FROM op),
+    ap AS (
+      SELECT a.property_id, a.provider_organization_id AS org,
+        greatest(a.started_at, bounds.m0) AS s, least(COALESCE(a.ended_at, bounds.m1), bounds.m1) AS e
+      FROM facility_provider_assignment_periods a CROSS JOIN bounds
+      WHERE a.started_at < bounds.m1 AND (a.ended_at IS NULL OR a.ended_at > bounds.m0)),
     billed AS (
       SELECT owner AS org, opening_id, true AS owned FROM active
       UNION
-      SELECT pr.org, a.opening_id, false FROM active a JOIN providers pr ON pr.property_id = a.property_id WHERE pr.org <> a.owner),
+      SELECT ap.org, op.opening_id, false FROM op JOIN ap ON ap.property_id = op.property_id
+       WHERE ap.org <> op.owner AND greatest(op.s, ap.s) < least(op.e, ap.e)),
     per_company AS (SELECT org, count(*) FILTER (WHERE owned)::int AS owned, count(*) FILTER (WHERE NOT owned)::int AS provided FROM billed GROUP BY org),
     requested AS (SELECT organization_id AS org, photos_counted, runs_counted FROM recognition_usage_monthly WHERE period_month = $1::date),
     orgs AS (SELECT org FROM per_company UNION SELECT org FROM requested)
@@ -58,7 +60,7 @@ export async function recognitionUsageReport(month: string): Promise<UsageReport
       COALESCE(pc.owned,0) AS owned_openings, COALESCE(pc.provided,0) AS provider_openings,
       COALESCE(rq.photos_counted,0) AS photos_recognized, COALESCE(rq.runs_counted,0) AS runs,
       COALESCE(c.monthly_photo_cap, $2::int) AS safety_cap_photos,
-      (SELECT count(*) FROM active)::int AS active_total
+      (SELECT count(DISTINCT opening_id) FROM active)::int AS active_total
     FROM orgs JOIN organizations o ON o.id = orgs.org AND o.org_type <> 'internal'
     LEFT JOIN per_company pc ON pc.org = o.id LEFT JOIN requested rq ON rq.org = o.id
     LEFT JOIN recognition_safety_caps c ON c.organization_id = o.id
