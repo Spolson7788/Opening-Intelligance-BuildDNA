@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { login as apiLogin, decodeTokenPayload } from "./api";
+import { login as apiLogin, decodeTokenPayload, requestCompanySwitch } from "./api";
+import { decideSwitch, pendingWorkFor } from "./companySwitch";
+import type { SwitchDecision } from "./companySwitch";
 import { loadAuth, clearAuth } from "./db";
 import { recordFreshSignIn } from "./freshSignIn";
 
@@ -22,7 +24,10 @@ interface AuthContextValue {
   logoutError: string | null;
   login: (email: string, password: string, resumeQueued?: boolean) => Promise<void>;
   logout: () => Promise<void>;
+  /** M4: never discards work; blocked while uploading, needs confirmation with unsynced work. */
+  switchCompany: (organizationId: string, acknowledgeUnsynced: boolean) => Promise<SwitchResult>;
 }
+export type SwitchResult = SwitchDecision | { kind: "switched" } | { kind: "failed"; message: string };
 
 /** M5: UI hint only (the API enforces it). Local so it never depends on the api module. */
 function tokenRequiresPasswordChange(token: string | null | undefined): boolean {
@@ -86,8 +91,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     finally { changing.current = false; setLogoutPending(false); setIdentityChecking(false); }
   }
 
+  async function switchCompany(organizationId: string, acknowledgeUnsynced: boolean): Promise<SwitchResult> {
+    if (changing.current || !auth) return { kind: "failed", message: "Please wait and try again." };
+    const current = { userId: auth.userId, organizationId: auth.organizationId };
+    const decision = decideSwitch(current, organizationId, await pendingWorkFor(current), acknowledgeUnsynced);
+    if (decision.kind !== "allowed") return decision;
+    changing.current = true; ++revision.current;
+    try {
+      const { token } = await requestCompanySwitch(organizationId);
+      const p = decodeTokenPayload(token);
+      if (p.userId !== auth.userId || p.organizationId !== organizationId) return { kind: "failed", message: "The company could not be switched." };
+      const next = { token, userId: p.userId, organizationId: p.organizationId, role: p.role, email: auth.email };
+      // A new sign-in event for the target company: its own stopped work resumes; nothing else changes.
+      await recordFreshSignIn(next, true, true);
+      setAuth({ ...next, mustChangePassword: tokenRequiresPasswordChange(token) });
+      return { kind: "switched" };
+    } catch {
+      return { kind: "failed", message: "The company could not be switched. Your saved work remains on this device." };
+    } finally { changing.current = false; }
+  }
+
   return (
-    <AuthContext.Provider value={{ auth, loading, identityChecking, logoutPending, logoutError, login, logout }}>
+    <AuthContext.Provider value={{ auth, loading, identityChecking, logoutPending, logoutError, login, logout, switchCompany }}>
       {children}
     </AuthContext.Provider>
   );

@@ -4,7 +4,7 @@ import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchP
 import { mediaAssociationLabel } from "../lib/mediaAssociationLabel";
 import { openingLoadFailure } from "../lib/openingLoadFailure";
 import { siteAccessRenewalUrl } from "../lib/siteAccess";
-import { getAllOfflineMedia, getSyncOperationsForOpening, updateCachedOpening } from "../lib/db";
+import { getAllOfflineMedia, getSyncOperationsForOpening, loadAuth, updateCachedOpening } from "../lib/db";
 import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
 import { SyncBadge } from "../components/SyncBadge";
@@ -96,9 +96,13 @@ export function OpeningDetailPage() {
   async function loadQueuedPhotos() {
     const openingId = openingIdRef.current;
     if (!openingId) return;
-    const items = (await getAllOfflineMedia()).filter((item) => item.openingId === openingId && item.uploadState !== "verified");
+    // M4: only the active company's (and person's) queued photos are shown.
+    const owner = await loadAuth();
+    if (!owner) return;
+    const items = (await getAllOfflineMedia()).filter((item) => item.openingId === openingId && item.uploadState !== "verified"
+      && item.capturedByUserId === owner.userId && item.organizationId === owner.organizationId);
     const rejected = new Set((await getSyncOperationsForOpening(openingId))
-      .filter((op) => op.entityType === "photo" && op.state === "permanent_failure" && op.lastErrorCode === "media_too_large")
+      .filter((op) => op.actorUserId === owner.userId && op.organizationId === owner.organizationId && op.entityType === "photo" && op.state === "permanent_failure" && op.lastErrorCode === "media_too_large")
       .map((op) => op.entityId));
     setQueuedPhotos((prev) => {
       prev.forEach((p) => URL.revokeObjectURL(p.previewUrl)); // avoid leaking object URLs

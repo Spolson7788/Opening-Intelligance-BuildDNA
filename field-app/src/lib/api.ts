@@ -124,6 +124,15 @@ export function decodeTokenPayload(token: string): { userId: string; organizatio
   return { userId: payload.userId, organizationId: payload.organizationId, role: payload.role, mustChangePassword: payload.mustChangePassword === true };
 }
 
+// M4: companies this person may work in, and switching the active company (new token from the server).
+export async function fetchCompanies(): Promise<{ active_organization_id: string; companies: import("./companySwitch").CompanyOption[] }> {
+  const r = await authedFetch("/auth/companies", { method: "GET", cache: "no-store" });
+  return { active_organization_id: r?.active_organization_id, companies: Array.isArray(r?.companies) ? r.companies : Array.isArray(r) ? r : [] };
+}
+export async function requestCompanySwitch(organizationId: string): Promise<{ token: string }> {
+  return authedFetch("/auth/switch-company", { method: "POST", body: JSON.stringify({ organization_id: organizationId }) });
+}
+
 /** M5: UI hint only; the API enforces a required password change from the database. */
 export function tokenRequiresPasswordChange(token: string | null | undefined): boolean {
   if (!token) return false;

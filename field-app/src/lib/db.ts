@@ -595,6 +595,9 @@ export async function updateCachedOpening(id: string, updater: (opening: any) =>
   assertNotWiped(); const db = await getDb();
   const current = await db.get("openings", id);
   if (!current) return;
+  // M4: never touch another company's (or person's) cached opening.
+  const auth = await loadAuth();
+  if (!auth || current._cacheUserId !== auth.userId || current._cacheOrganizationId !== auth.organizationId) return;
   await db.put("openings", updater(current));
 }
 

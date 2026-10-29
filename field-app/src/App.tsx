@@ -1,5 +1,6 @@
 import {AccountRecoveryPage} from "./pages/AccountRecoveryPage";
 import {AccountIdentity} from "./components/AccountIdentity";
+import {CompanySwitcher} from "./components/CompanySwitcher";
 import {AccountScope} from "./components/AccountScope";
 import {BranchesPage} from "./pages/BranchesPage";
 import { lazy, Suspense, useEffect, useLayoutEffect } from "react";
@@ -98,6 +99,7 @@ export function FieldApplication() {
   return (
     <AuthProvider>
         <AccountIdentity />
+        <CompanySwitcher />
         <AppRoutes />
     </AuthProvider>
   );
