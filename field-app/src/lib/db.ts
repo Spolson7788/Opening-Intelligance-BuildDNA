@@ -167,7 +167,7 @@ export async function saveEntityAndOperation(
   if (entity.organizationId !== operation.organizationId) {
     throw new Error("entity_operation_tenant_mismatch");
   }
-  const db = await getDb();
+  assertNotWiped(); const db = await getDb();
   const tx = db.transaction(["entities", "operations"], "readwrite");
   if(operation.entityType==='service_request'){
     const prior=await tx.objectStore('operations').get(operation.operationId);
@@ -192,7 +192,7 @@ export async function saveMediaAndOperation(media: OfflineMediaRecord, operation
   if (media.organizationId !== operation.organizationId) {
     throw new Error("media_operation_tenant_mismatch");
   }
-  const db = await getDb();
+  assertNotWiped(); const db = await getDb();
   const tx = db.transaction(["media", "operations"], "readwrite");
   await Promise.all([
     tx.objectStore("media").put({ ...media, operationId: operation.operationId }),
@@ -467,7 +467,7 @@ export async function reconcileRecoveredMediaOperationId(oldOperationId: string,
 }
 
 export async function putSyncOperation(operation: SyncOperation) {
-  const db = await getDb();
+  assertNotWiped(); const db = await getDb();
   await db.put("operations", operation);
 }
 
@@ -497,7 +497,7 @@ export async function removeVerifiedLocalOriginal(photoId: string) {
 }
 
 export async function putSyncReceipt(receipt: SyncReceipt) {
-  const db = await getDb();
+  assertNotWiped(); const db = await getDb();
   const tx = db.transaction(["syncReceipts", "operations", "entities", "media"], "readwrite");
   const operation = await tx.objectStore("operations").get(receipt.operationId);
   if (!operation) throw new Error("receipt_operation_not_found");
@@ -540,7 +540,7 @@ export async function putSyncReceipt(receipt: SyncReceipt) {
 }
 
 export async function putSyncConflict(conflict: SyncConflict, errorCode?: string) {
-  const db = await getDb();
+  assertNotWiped(); const db = await getDb();
   const tx = db.transaction(["conflicts", "operations", "entities", "media"], "readwrite");
   const operation = await tx.objectStore("operations").get(conflict.operationId);
   if (!operation) throw new Error("conflict_operation_not_found");
@@ -561,12 +561,12 @@ export async function putSyncConflict(conflict: SyncConflict, errorCode?: string
 }
 
 export async function putOpeningSnapshot(snapshot: OpeningSnapshot) {
-  const db = await getDb();
+  assertNotWiped(); const db = await getDb();
   await db.put("openingSnapshots", snapshot);
 }
 
 export async function putOfflineSetting(setting: OfflineSetting) {
-  const db = await getDb();
+  assertNotWiped(); const db = await getDb();
   await db.put("settings", setting);
 }
 
@@ -576,7 +576,7 @@ export async function getOfflineSetting(key: string) {
 }
 
 export async function cacheOpening(opening: any, principal?: {userId:string;organizationId:string}) {
-  const db = await getDb();
+  assertNotWiped(); const db = await getDb();
   const auth = await loadAuth();
   const owner=principal||auth;
   if(!owner||!auth||auth.userId!==owner.userId||auth.organizationId!==owner.organizationId)return;
@@ -592,14 +592,14 @@ export async function getCachedOpening(id: string) {
 }
 
 export async function updateCachedOpening(id: string, updater: (opening: any) => any) {
-  const db = await getDb();
+  assertNotWiped(); const db = await getDb();
   const current = await db.get("openings", id);
   if (!current) return;
   await db.put("openings", updater(current));
 }
 
 export async function enqueueOutboxItem(item: Omit<OutboxItem, "attempts" | "createdAt" | "status">) {
-  const db = await getDb();
+  assertNotWiped(); const db = await getDb();
   await db.put("outbox", { ...item, attempts: 0, status: "pending", createdAt: Date.now() });
 }
 
@@ -614,12 +614,12 @@ export async function removeOutboxItem(id: string) {
 }
 
 export async function updateOutboxItem(item: OutboxItem) {
-  const db = await getDb();
+  assertNotWiped(); const db = await getDb();
   await db.put("outbox", item);
 }
 
 export async function enqueuePhotoOutboxItem(item: Omit<PhotoOutboxItem, "attempts" | "createdAt" | "status">) {
-  const db = await getDb();
+  assertNotWiped(); const db = await getDb();
   await db.put("photoOutbox", { ...item, attempts: 0, status: "pending", createdAt: Date.now() });
 }
 
@@ -643,7 +643,7 @@ export async function removePhotoOutboxItem(id: string) {
 }
 
 export async function updatePhotoOutboxItem(item: PhotoOutboxItem) {
-  const db = await getDb();
+  assertNotWiped(); const db = await getDb();
   await db.put("photoOutbox", item);
 }
 
@@ -659,6 +659,7 @@ export async function retryOutboxItem(id: string, photo: boolean) {
 }
 
 export async function saveAuth(auth: { token: string; userId: string; organizationId: string; role: string; email?: string; signInEventId?: string }) {
+  oiDataWiped = false; // a fresh sign-in re-enables local storage after a wipe
   const db = await getDb();
   await db.put("auth", { ...auth, savedAt: Date.now() }, "current");
 }
@@ -698,4 +699,30 @@ export async function loadAuth() {
 export async function clearAuth() {
   const db = await getDb();
   await db.delete("auth", "current");
+}
+
+// C2 (Stephan, 2026-10-28): when the API ends this account's access (401 session_revoked or
+// 403 account_deactivated) the app deletes ALL Opening Intelligence data on this device: every store
+// in the OI IndexedDB, including auth, cached openings/snapshots/settings, the unsynced queue, pending
+// photo uploads and conflicts. Unsynced work is lost by design; the requesting provider or facility
+// retraces it. Only this app's own storage is touched. Until the next sign-in, writes are refused so
+// an in-flight request cannot put wiped records back.
+let oiDataWiped = false;
+export class OiDataWipedError extends Error {
+  constructor() { super("oi_data_wiped"); }
+}
+export function assertNotWiped() { if (oiDataWiped) throw new OiDataWipedError(); }
+export function oiDataWasWiped() { return oiDataWiped; }
+export async function wipeAllOiData() {
+  oiDataWiped = true;
+  const db = await getDb();
+  const names = Array.from(db.objectStoreNames);
+  const tx = db.transaction(names, "readwrite");
+  await Promise.all([...names.map((name) => tx.objectStore(name).clear()), tx.done]);
+  try {
+    for (const store of [globalThis.sessionStorage, globalThis.localStorage]) {
+      if (!store) continue;
+      for (let i = store.length - 1; i >= 0; i--) { const k = store.key(i); if (k && k.startsWith("oi-field")) store.removeItem(k); }
+    }
+  } catch { /* browser storage unavailable */ }
 }

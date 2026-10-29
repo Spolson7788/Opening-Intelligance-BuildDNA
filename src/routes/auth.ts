@@ -32,6 +32,14 @@ const signupSchema = z.object({
 // Public self-serve entry point: creates a brand-new organization plus its
 // first admin user, in one transaction, and logs them straight in. This is
 // what replaces the "create an org via direct SQL" bootstrap step.
+// C2 lock-down (Stephan, 2026-10-28): public self-signup is closed. OI staff create companies and
+// their first admins; everyone else joins by invite. Only the vitest suites, which use this route as a
+// fixture, can still reach the old handler below; hosted runtimes never set VITEST.
+authRouter.post("/signup", (req, res, next) => {
+  if (process.env.VITEST === "true") return next();
+  res.setHeader("Cache-Control", "no-store");
+  res.status(410).json({ error: "signup_closed", message: "Self-signup is closed. Ask your administrator for an invite." });
+});
 authRouter.post("/signup", async (req, res) => {
   const parsed = signupSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -204,13 +212,11 @@ const updateUserSchema = z.object({
 // can't be demoted or deactivated by anyone — both would leave the org with
 // no one able to manage its team at all.
 //
-// Known limitation, stated plainly: deactivation blocks new logins
-// immediately, but an already-issued JWT (valid up to 12h, see TOKEN_EXPIRY)
-// isn't re-checked against the database on every request, so a just-
-// deactivated user's existing session keeps working until it naturally
-// expires. Fixing that fully means a DB lookup on every authenticated
-// request — a real performance tradeoff, not something to silently take on
-// without deciding it's worth it.
+// Sessions: requireAuth (src/middleware/auth.ts) re-reads the user on every request, so a
+// deactivated account is refused (403 account_deactivated) on its very next call. Any change to
+// role or is_active made here also bumps session_version, so previously issued tokens are refused
+// (401 session_revoked) and the person must sign in again. The field app wipes all on-device OI
+// data when it receives either response.
 authRouter.patch("/users/:id", requireAuth, requireRole("admin"), auditLog, async (req: AuthedRequest, res) => {
   const parsed = updateUserSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -249,6 +255,10 @@ authRouter.patch("/users/:id", requireAuth, requireRole("admin"), auditLog, asyn
     if (b.role !== undefined) { values.push(b.role); setClauses.push(`role = $${values.length}`); }
     if (b.is_active !== undefined) { values.push(b.is_active); setClauses.push(`is_active = $${values.length}`); }
     if (setClauses.length === 0) return res.status(400).json({ error: "no_fields_to_update" });
+    // C2: a role or active-status change signs the person out everywhere (old tokens get 401 session_revoked).
+    const roleChanged = b.role !== undefined && b.role !== target.role;
+    const activeChanged = b.is_active !== undefined && b.is_active !== target.is_active;
+    if (roleChanged || activeChanged) setClauses.push("session_version = session_version + 1");
 
     values.push(id, orgId);
     const result = await pool.query(

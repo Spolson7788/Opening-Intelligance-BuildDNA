@@ -1,4 +1,4 @@
-import { loadAuth, cacheOpening, getCachedOpening } from "./db";
+import { loadAuth, cacheOpening, getCachedOpening, wipeAllOiData } from "./db";
 import { isNetlifyAccessResponse, SITE_ACCESS_REQUIRED } from "./siteAccess";
 import {diagnosticActor,diagnosticAvailable,PROBES,readBoundedProbe,runPhotoProbes} from './photoDiagnostic';
 import type {Principal,ProbeResponse} from './photoDiagnostic';
@@ -35,6 +35,15 @@ export function isClientPrincipalChange(error: unknown): error is PrincipalChang
   return error instanceof PrincipalChangedError;
 }
 
+// C2: raised after the server ended this account's access (401 session_revoked or 403
+// account_deactivated) and all OI data on this device was wiped. Nothing is retried or stored.
+export class SessionEndedError extends ApiError {
+  readonly sessionEnded = true as const;
+}
+export function isSessionEnded(error: unknown): error is SessionEndedError {
+  return error instanceof SessionEndedError;
+}
+
 export interface ExpectedPrincipal { userId: string; organizationId: string }
 
 async function authedFetch(path: string, options: RequestInit = {}, expectedPrincipal?: ExpectedPrincipal, diagnostic=false) {
@@ -63,6 +72,16 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
         ? SITE_ACCESS_REQUIRED : "unexpected_response");
     }
     const body = await res.json().catch(() => ({}));
+    const endedReference = typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined;
+    if (endedReference && ((res.status === 401 && body.error === "session_revoked") || (res.status === 403 && body.error === "account_deactivated"))) {
+      // C2: the API ended this account's access. Wipe all OI data on this device, but only while the
+      // same account is still the one signed in here (never another person's data).
+      const now = await loadAuth();
+      if (auth && now && now.userId === auth.userId && now.organizationId === auth.organizationId && now.token === auth.token) {
+        await wipeAllOiData();
+        throw new SessionEndedError(res.status, body.error, endedReference);
+      }
+    }
     throw new ApiError(res.status, body.error || `request_failed_${res.status}`, typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
   }
   const current=await loadAuth();

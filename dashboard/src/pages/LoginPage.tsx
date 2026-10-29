@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate, Link, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_PARAM } from "../lib/session";
 import { loginErrorMessage } from "../lib/scheduleUi";
 import { useAuth } from "../lib/AuthContext";
@@ -60,7 +60,7 @@ export function LoginPage() {
           </button>
         </form>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 16, textAlign: "center" }}>
-          New here? <Link to="/signup">Create an organization</Link>
+          Need access? Ask your administrator for an invite.
         </p>
         {renewalUrl && <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 8, textAlign: "center" }}><a href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a> if this private preview asks for access again.</p>}
       </div>

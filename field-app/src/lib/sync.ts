@@ -1,5 +1,5 @@
-import { claimSyncOperation, getAllSyncOperations, getOfflineMedia, getOfflineSetting, getSyncOperationsForPrincipal, loadAuth, putOfflineSetting, putSyncConflict, putSyncOperation, putSyncReceipt, reconcileRecoveredMediaOperationId, saveEntityAndOperation } from "./db";
-import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, submitServiceRequest, uploadPrivatePhoto, ApiError, PrincipalChangedError, isClientPrincipalChange } from "./api";
+import { claimSyncOperation, getAllSyncOperations, getOfflineMedia, getOfflineSetting, getSyncOperationsForPrincipal, loadAuth, putOfflineSetting, putSyncConflict, putSyncOperation, putSyncReceipt, reconcileRecoveredMediaOperationId, saveEntityAndOperation, OiDataWipedError } from "./db";
+import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, submitServiceRequest, uploadPrivatePhoto, ApiError, PrincipalChangedError, isClientPrincipalChange, isSessionEnded } from "./api";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
 import type { OfflineEntityEnvelope, OfflineEntityType, SyncConflict, SyncOperation, SyncOperationState, SyncReceipt } from "./offlineTypes";
 import { readyOperations, retryDelayMs } from "./offlineSyncModel";
@@ -206,6 +206,8 @@ export function isMediaSizeRejection(error: unknown): boolean {
   return error instanceof Error && (error.message === "upload_failed_413" || error.message === MEDIA_TOO_LARGE);
 }
 async function recordFailure(operation: SyncOperation, error: unknown) {
+  // C2: access ended and the device was wiped; never write the operation back.
+  if (isSessionEnded(error) || error instanceof OiDataWipedError) return;
   const tooLarge = isMediaSizeRejection(error);
   const conflict = !tooLarge && error instanceof ApiError && error.status === 409;
   // A change of signed-in account (raised by this app) stops the operation like an authorization

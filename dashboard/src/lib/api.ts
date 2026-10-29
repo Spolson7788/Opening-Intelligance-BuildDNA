@@ -44,24 +44,6 @@ async function authedFetch(path: string, options: RequestInit = {}) {
   return res.json();
 }
 
-export async function signup(payload: {
-  organization_name: string;
-  email: string;
-  password: string;
-  full_name: string;
-}) {
-  const res = await fetch(`${API_BASE}/auth/signup`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error || "signup_failed");
-  }
-  return res.json() as Promise<{ token: string; expiresIn: string; organizationId: string }>;
-}
-
 export async function login(email: string, password: string) {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: "POST",
