@@ -5,7 +5,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import express from 'express';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
-// Hosting plan step 2: atomic per-company recognition budget, refusals recorded on the run, tracked
+// Hosting plan step 2 (revised Oct 29 11:17): no customer budgets; usage is counted per company and
+// month and only an emergency safety cap refuses (atomic), refusals recorded on the run, tracked
 // downscale for originals > 5 MB, confirmed identity thresholds. Disposable in-process PGlite with
 // every migration (incl. the DRAFT 090800), synthetic data, mocked storage + provider: no paid call.
 const state = vi.hoisted(() => ({ db: null as any, objects: new Map<string, Uint8Array>(), engine: vi.fn() }));
@@ -24,7 +25,7 @@ const app = express(); app.use(express.json()); app.use('/api/recognition/runs',
 const MIG = '20261030090800_recognition_budget_guard.sql';
 const sql = (s: string, a?: unknown[]) => state.db.query(s, a);
 const fix = (s: string) => s.replace(/CREATE EXTENSION IF NOT EXISTS "uuid-ossp";/g, '').replace(/uuid_generate_v4\(\)/g, 'gen_random_uuid()');
-const tableExists = async () => (await sql("SELECT to_regclass('recognition_budgets') IS NOT NULL AS e")).rows[0].e;
+const tableExists = async () => (await sql("SELECT to_regclass('recognition_usage_monthly') IS NOT NULL AS e")).rows[0].e;
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const jpeg = (n: number) => { const b = new Uint8Array(16); b.set([255, 216, 255, n]); return b; };
 const ids: Record<string, any> = {}; const tok: Record<string, string> = {};
@@ -53,9 +54,9 @@ async function photo(opening: string, orgId: string, bytes: Uint8Array) {
 const good = { manufacturer: 'Example Co', series: 'S100', model: 'S100-X', visible_text: ['S100-X'], evidence: [{ observation: 'label', supports: 'model' }], confidence: { manufacturer: 0.9, series: 0.8, model: 0.7 } };
 const create = (auth: string, opening: string, photoIds: string[]) => request(app).post('/api/recognition/runs').set('Authorization', auth).send({ opening_id: opening, photo_ids: photoIds, client_request_id: randomUUID() });
 const month = "date_trunc('month', now())::date";
-const setBudget = (orgId: string, limit: number, perRun: number, by: string) =>
-  sql(`INSERT INTO recognition_budgets(organization_id,period_month,limit_cents,per_run_cents,set_by_user_id,set_reason) VALUES($1,${month},$2,$3,$4,'synthetic test budget')`, [orgId, limit, perRun, by]);
-const reserved = async (orgId: string) => (await sql(`SELECT reserved_cents FROM recognition_budgets WHERE organization_id=$1 AND period_month=${month}`, [orgId])).rows[0]?.reserved_cents;
+const setCap = (orgId: string, cap: number, by: string) =>
+  sql("INSERT INTO recognition_safety_caps(organization_id,monthly_photo_cap,set_by_user_id,set_reason) VALUES($1,$2,$3,'synthetic emergency cap')", [orgId, cap, by]);
+const reserved = async (orgId: string) => (await sql(`SELECT photos_counted FROM recognition_usage_monthly WHERE organization_id=$1 AND period_month=${month}`, [orgId])).rows[0]?.photos_counted ?? 0;
 
 beforeAll(async () => {
   process.env.JWT_SECRET ||= 'synthetic-test-secret';
@@ -74,7 +75,8 @@ beforeAll(async () => {
     const f = await facility(ids[k], k); ids[k + 'open'] = f.o;
     ids[k + 'photo'] = (await photo(f.o, ids[k], jpeg(k.charCodeAt(0)))).id;
   }
-  await setBudget(ids.A, 200, 100, ids.Auser); await setBudget(ids.B, 10000, 100, ids.Buser);
+  await setCap(ids.A, 2, ids.Auser); // B and N have no cap row: the default safety cap applies
+  ids.Nphoto2 = (await photo(ids.Nopen, ids.N, jpeg(200))).id;
   // A real >5 MB original: random-noise JPEG at quality 100 (does not compress).
   const w = 3400, h = 2600, raw = Buffer.alloc(w * h * 3); for (let i = 0; i < raw.length; i++) raw[i] = (Math.imul(i, 2654435761) >>> 13) & 255;
   big = new Uint8Array(await sharp(raw, { raw: { width: w, height: h, channels: 3 } }).jpeg({ quality: 100 }).toBuffer());
@@ -85,46 +87,49 @@ beforeEach(() => {
   process.env.OI_RECOGNITION_ENABLED = 'true'; process.env.ANTHROPIC_API_KEY = 'test-not-real'; process.env.OI_BUILD_COMMIT = 'abc1234';
 });
 
-describe('recognition budget guard (DRAFT 20261030090800, not applied anywhere)', () => {
+describe('recognition usage tracking and safety cap (DRAFT 20261030090800, not applied anywhere)', () => {
   it('migration rolls back cleanly, has a working undo script, and re-applies idempotently', () => { expect(rollbackProven).toBe(true); expect(undoProven).toBe(true); });
-  it('no budget configured: the run is refused and recorded with the reason; no provider call', async () => {
-    const r = await create(tok.N, ids.Nopen, [ids.Nphoto]);
-    expect(r.status).toBe(200);
-    expect(r.body.run).toMatchObject({ status: 'refused', failure_code: 'budget_not_configured', budget_cents: null, result_level: null });
-    expect(r.body.run.finished_at).toBeTruthy(); expect(r.body.run.photos[0].photo_id).toBe(ids.Nphoto);
-    expect(state.engine).not.toHaveBeenCalled();
+  it('no cap row and no budget: the run proceeds and is counted with its photo count', async () => {
+    const r = await create(tok.N, ids.Nopen, [ids.Nphoto, ids.Nphoto2]);
+    expect(r.status).toBe(201);
+    expect(r.body.run).toMatchObject({ status: 'succeeded', photo_count: 2, usage_photo_count: 2, failure_code: null });
+    expect(state.engine).toHaveBeenCalledTimes(1);
+    expect(await reserved(ids.N)).toBe(2);
+    expect((await sql(`SELECT runs_counted FROM recognition_usage_monthly WHERE organization_id=$1`, [ids.N])).rows[0].runs_counted).toBe(1);
+    expect((await sql('SELECT default_monthly_photo_cap c, cost_per_photo_usd p, opening_price_cents_per_month o FROM recognition_usage_settings')).rows[0]).toEqual({ c: 80000, p: null, o: 75 });
   });
-  it('concurrent requests cannot exceed the limit: 5 at once against room for 2 -> exactly 2 provider calls', async () => {
+  it('only the emergency safety cap refuses, atomically: 5 at once against a 2-photo cap -> exactly 2 provider calls', async () => {
     const rs = await Promise.all(Array.from({ length: 5 }, () => create(tok.A, ids.Aopen, [ids.Aphoto])));
-    const statuses = rs.map(r => r.body.run.status).sort();
-    expect(statuses).toEqual(['refused', 'refused', 'refused', 'succeeded', 'succeeded']);
-    for (const r of rs.filter(r => r.body.run.status === 'refused')) expect([r.body.run.failure_code, r.body.run.budget_cents]).toEqual(['budget_exceeded', null]);
-    for (const r of rs.filter(r => r.body.run.status === 'succeeded')) expect(r.body.run.budget_cents).toBe(100);
+    expect(rs.map(r => r.body.run.status).sort()).toEqual(['refused', 'refused', 'refused', 'succeeded', 'succeeded']);
+    for (const r of rs.filter(r => r.body.run.status === 'refused')) expect([r.body.run.failure_code, r.body.run.usage_photo_count]).toEqual(['safety_cap_exceeded', null]);
+    for (const r of rs.filter(r => r.body.run.status === 'succeeded')) expect(r.body.run.usage_photo_count).toBe(1);
     expect(state.engine).toHaveBeenCalledTimes(2);
-    expect(await reserved(ids.A)).toBe(200);
-    expect((await sql('SELECT count(*)::int c FROM recognition_budget_reservations WHERE organization_id=$1', [ids.A])).rows[0].c).toBe(2);
-    // Direct calls to the reserve function stay refused once full (one-statement check-and-spend).
-    const extra = (await sql(`INSERT INTO recognition_runs(organization_id,property_id,opening_id,requested_by_user_id,client_request_id,mode,build_commit,processing_config,started_at)
-      SELECT $1,b.property_id,o.id,$2,gen_random_uuid(),'identify','abc','{"engine":"e","model":"m","prompt_version":"p","preprocessing_version":"x"}',now()
+    expect(await reserved(ids.A)).toBe(2);
+    expect((await sql('SELECT count(*)::int c FROM recognition_usage_reservations WHERE organization_id=$1', [ids.A])).rows[0].c).toBe(2);
+    // A direct call to the reserve function stays refused once at the cap.
+    const extra = (await sql(`INSERT INTO recognition_runs(organization_id,property_id,opening_id,requested_by_user_id,client_request_id,mode,build_commit,processing_config,started_at,photo_count)
+      SELECT $1,b.property_id,o.id,$2,gen_random_uuid(),'identify','abc','{"engine":"e","model":"m","prompt_version":"p","preprocessing_version":"x"}',now(),1
       FROM openings o JOIN buildings b ON b.id=o.building_id WHERE o.id=$3 RETURNING id`, [ids.A, ids.Auser, ids.Aopen])).rows[0].id;
-    expect((await sql('SELECT recognition_budget_reserve($1) o', [extra])).rows[0].o).toBe('budget_exceeded');
-    expect(await reserved(ids.A)).toBe(200);
+    await sql('INSERT INTO recognition_run_photos(run_id,photo_id,sha256_checksum,ordinal) SELECT $1,id,sha256_checksum,0 FROM photos WHERE id=$2', [extra, ids.Aphoto]);
+    expect((await sql('SELECT recognition_usage_reserve($1) o', [extra])).rows[0].o).toBe('safety_cap_exceeded');
+    expect(await reserved(ids.A)).toBe(2);
   });
-  it('one company running out does not touch another company budget', async () => {
+  it('one company at its cap does not affect another company', async () => {
     const before = await reserved(ids.B);
     const r = await create(tok.B, ids.Bopen, [ids.Bphoto]);
-    expect(r.body.run.status).toBe('succeeded'); expect(await reserved(ids.B)).toBe(before + 100); expect(await reserved(ids.A)).toBe(200);
+    expect(r.body.run.status).toBe('succeeded'); expect(await reserved(ids.B)).toBe(before + 1); expect(await reserved(ids.A)).toBe(2);
   });
-  it('database guards: the limit cannot be exceeded, reservations are append-only, budget fields cannot be forged', async () => {
-    await expect(sql(`UPDATE recognition_budgets SET reserved_cents=limit_cents+1 WHERE organization_id=$1`, [ids.A])).rejects.toThrow(/within_limit/);
-    await expect(sql('DELETE FROM recognition_budget_reservations WHERE organization_id=$1', [ids.A])).rejects.toThrow(/append_only/);
-    await expect(sql(`INSERT INTO recognition_runs(organization_id,property_id,opening_id,requested_by_user_id,client_request_id,mode,build_commit,processing_config,started_at,budget_cents)
-      SELECT $1,b.property_id,o.id,$2,gen_random_uuid(),'identify','abc','{"engine":"e","model":"m","prompt_version":"p","preprocessing_version":"x"}',now(),100
+  it('database guards: usage is append-only and can only be counted by the reserve function', async () => {
+    await expect(sql('DELETE FROM recognition_usage_reservations WHERE organization_id=$1', [ids.A])).rejects.toThrow(/append_only/);
+    await expect(sql(`INSERT INTO recognition_runs(organization_id,property_id,opening_id,requested_by_user_id,client_request_id,mode,build_commit,processing_config,started_at,photo_count,usage_photo_count)
+      SELECT $1,b.property_id,o.id,$2,gen_random_uuid(),'identify','abc','{"engine":"e","model":"m","prompt_version":"p","preprocessing_version":"x"}',now(),1,1
       FROM openings o JOIN buildings b ON b.id=o.building_id WHERE o.id=$3`, [ids.A, ids.Auser, ids.Aopen])).rejects.toThrow(/insert_invalid/);
-    const running = (await sql("SELECT id FROM recognition_runs WHERE status='running' AND budget_cents IS NULL LIMIT 1")).rows[0].id;
-    await expect(sql('UPDATE recognition_runs SET budget_cents=1 WHERE id=$1', [running])).rejects.toThrow(/immutable_fields/);
-    const priv = (await sql("SELECT has_table_privilege('oi_pr2_api','recognition_budgets','UPDATE') u, has_function_privilege('oi_pr2_api','recognition_budget_reserve(uuid)','EXECUTE') x")).rows[0];
-    expect(priv).toEqual({ u: false, x: true });
+    const running = (await sql("SELECT id FROM recognition_runs WHERE status='running' AND usage_photo_count IS NULL LIMIT 1")).rows[0].id;
+    await expect(sql('UPDATE recognition_runs SET usage_photo_count=1 WHERE id=$1', [running])).rejects.toThrow(/immutable_fields/);
+    await expect(sql("UPDATE recognition_runs SET status='refused',failure_code='budget_exceeded',finished_at=now() WHERE id=$1", [running])).rejects.toThrow(/refused_uncounted/);
+    const priv = (await sql(`SELECT has_table_privilege('oi_pr2_api','recognition_usage_monthly','UPDATE') u, has_table_privilege('oi_pr2_api','recognition_safety_caps','INSERT') c,
+      has_table_privilege('oi_pr2_api','recognition_usage_settings','UPDATE') s, has_function_privilege('oi_pr2_api','recognition_usage_reserve(uuid)','EXECUTE') x`)).rows[0];
+    expect(priv).toEqual({ u: false, c: false, s: false, x: true });
   });
   it('originals over 5 MB: a tracked smaller copy goes to the provider; the stored original is untouched', async () => {
     expect(big.byteLength).toBeGreaterThan(MAX_PROVIDER_IMAGE_BYTES);
@@ -147,12 +152,12 @@ describe('recognition budget guard (DRAFT 20261030090800, not applied anywhere)'
     const s = (await create(tok.B, ids.Bopen, [ids.Bphoto])).body.run;
     expect(s.downscale_used).toBe(false); expect(s.photos[0]).toMatchObject({ downscaled: false, derived_sha256_checksum: null, original_byte_size: 16 });
   }, 120000);
-  it('if the image library is unavailable the run fails explicitly before the budget is spent', async () => {
+  it('if the image library is unavailable the run fails explicitly before any usage is counted', async () => {
     const before = await reserved(ids.B);
     setImageLibraryLoaderForTests(async () => { throw new Error('missing native module'); });
     try {
       const r = await create(tok.B, ids.Bopen, [ids.bigPhoto]);
-      expect([r.body.run.status, r.body.run.failure_code, r.body.run.budget_cents]).toEqual(['failed', 'downscale_unavailable', null]);
+      expect([r.body.run.status, r.body.run.failure_code, r.body.run.usage_photo_count]).toEqual(['failed', 'downscale_unavailable', null]);
     } finally { setImageLibraryLoaderForTests(async () => sharp as any); }
     expect(state.engine).not.toHaveBeenCalled(); expect(await reserved(ids.B)).toBe(before);
   }, 60000);

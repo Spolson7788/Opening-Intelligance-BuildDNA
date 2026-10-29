@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Sidebar } from "../components/Sidebar";
 import {
   createCompanyWithAdmin, grantMembership, platformMe, grantStaff, platformFacilities, platformOrganizations, platformOrgUsers, platformProviderRequests, platformProviders,
-  platformStaff, reviewProviderRequest, revokeStaff, setOrganizationParent,
-  type PlatformFacility, type PlatformOrganization, type PlatformOrgUser, type PlatformProvider, type PlatformStaffRow, type ProviderRequest,
+  platformRecognitionUsage, platformStaff, reviewProviderRequest, revokeStaff, setOrganizationParent,
+  type PlatformFacility, type PlatformOrganization, type PlatformOrgUser, type PlatformProvider, type PlatformStaffRow, type ProviderRequest, type RecognitionUsageReport,
 } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { filterSort, needsProviderConfirmation, parentChoices, treeLines } from "../lib/staffTools";
 
-type Tab = "facilities" | "providers" | "parents" | "requests" | "companies" | "staff";
+type Tab = "facilities" | "providers" | "parents" | "requests" | "companies" | "staff" | "usage";
 const err = (e: any) => String(e?.message ?? "request_failed").replace(/_/g, " ");
 
 function SortHead<T>({ label, k, sort, setSort }: { label: string; k: keyof T; sort: { k: keyof T; d: 1 | -1 }; setSort: (s: { k: keyof T; d: 1 | -1 }) => void }) {
@@ -163,6 +163,24 @@ function Staff({ me }: { me: string | undefined }) {
         <td>{!r.revoked_at && r.user_id !== me && <button className="btn btn-secondary" onClick={() => remove(r)}>Remove</button>}</td></tr>)}</tbody></table></section>;
 }
 
+const usd = (n: number | null) => n == null ? "not set" : "$" + n.toFixed(4);
+const cents = (n: number) => "$" + (n / 100).toFixed(2);
+export function RecognitionUsage() {
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [rep, setRep] = useState<RecognitionUsageReport | null>(null); const [e, setE] = useState<string | null>(null);
+  useEffect(() => { let live = true; setE(null); platformRecognitionUsage(month).then((r) => { if (live) setRep(r); }).catch((x) => { if (live) { setRep(null); setE(err(x)); } }); return () => { live = false; }; }, [month]);
+  return <section className="panel"><h2>Recognition usage</h2>
+    <p>Billing: {rep ? cents(rep.settings.opening_price_cents_per_month) : "$0.75"} per opening per month to the service provider and to the facility. Cost per photo: {usd(rep?.settings.cost_per_photo_usd ?? null)}. Shared openings count once for cost.</p>
+    <label>Month <input type="month" value={month} onChange={(ev) => setMonth(ev.target.value)} /></label>
+    {e && <p role="alert">{e}</p>}
+    {rep && <table><thead><tr><th>Company</th><th>Type</th><th>Billable openings</th><th>Revenue</th><th>Photos recognized</th><th>Runs</th><th>Recognition cost</th><th>Cost per opening</th><th>Safety cap used</th></tr></thead>
+      <tbody>{rep.companies.map((c) => <tr key={c.organization_id}><td>{c.organization_name}</td><td>{c.org_type}</td><td>{c.billable_openings}</td><td>{cents(c.revenue_cents)}</td>
+        <td>{c.photos_recognized}</td><td>{c.runs}</td><td>{usd(c.recognition_cost_usd)}</td><td>{usd(c.cost_per_opening_usd)}</td>
+        <td>{Math.round(c.cap_used_ratio * 100)}% of {c.safety_cap_photos}{c.cap_warning && <strong role="status"> Near safety cap</strong>}</td></tr>)}</tbody>
+      <tfoot><tr><td>Total (cost counted once)</td><td /><td>{rep.totals.distinct_openings}</td><td>{cents(rep.totals.revenue_cents)}</td><td>{rep.totals.photos_recognized}</td><td>{rep.totals.runs}</td><td>{usd(rep.totals.recognition_cost_usd)}</td><td>{usd(rep.totals.cost_per_opening_usd)}</td><td /></tr></tfoot></table>}
+  </section>;
+}
+
 export function StaffToolsPage() {
   const { auth } = useAuth();
   const [tab, setTab] = useState<Tab>("facilities");
@@ -174,7 +192,7 @@ export function StaffToolsPage() {
   useEffect(() => { if (!staff) return; reload(); platformFacilities().then(setFacilities).catch(() => setFacilities([])); }, [staff]);
   const orgName = useMemo(() => { const m = new Map(orgs.map((o) => [o.id, o.name])); return (id: string) => m.get(id) ?? id; }, [orgs]);
   const facilityName = useMemo(() => { const m = new Map(facilities.map((f) => [f.property_id, `${f.owner_name} / ${f.property_name}`])); return (id: string) => m.get(id) ?? id; }, [facilities]);
-  const tabs: [Tab, string][] = [["facilities", "By facility"], ["providers", "By provider"], ["parents", "Parent links"], ["requests", "Provider requests"], ["companies", "Companies & people"], ["staff", "OI staff"]];
+  const tabs: [Tab, string][] = [["facilities", "By facility"], ["providers", "By provider"], ["parents", "Parent links"], ["requests", "Provider requests"], ["companies", "Companies & people"], ["staff", "OI staff"], ["usage", "Recognition usage"]];
   if (staff !== true) return <div className="app-shell"><Sidebar /><div className="main">
     <p role="status">{staff === null ? "Checking access…" : "OI staff tools are only available to OI staff."}</p></div></div>;
   return <div className="app-shell"><Sidebar /><div className="main">
@@ -186,5 +204,6 @@ export function StaffToolsPage() {
     {tab === "requests" && <Requests />}
     {tab === "companies" && <Companies orgs={orgs} reload={reload} />}
     {tab === "staff" && <Staff me={auth?.userId} />}
+    {tab === "usage" && <RecognitionUsage />}
   </div></div>;
 }

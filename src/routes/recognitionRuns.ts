@@ -12,9 +12,10 @@ import { LEGACY_VISION_ENGINE_CONFIG, buildCommit, conservativeIdentity, sha256H
 // STORED original photo(s) by id + sha256. Off unless OI_RECOGNITION_ENABLED=true.
 // One provider call per run, never retried: a lost or unreadable response is recorded as
 // 'ambiguous' (it may have been billed) and a new run needs a new client_request_id.
-// Step 2: an atomic per-company budget reservation (recognition_budget_reserve, one conditional
-// UPDATE under the budget row lock) happens immediately before the provider call. A refusal is
-// recorded on the run as status 'refused' with the reason; the provider is not called.
+// Step 2 (revised Oct 29, 11:17): no customer budgets. Usage is counted per company per month
+// (photos + runs) by recognition_usage_reserve immediately before the provider call; one conditional
+// UPDATE under the monthly row lock. It only refuses at the emergency safety cap: the run is then
+// recorded as 'refused' / 'safety_cap_exceeded' and the provider is not called.
 // Originals over 5 MB get a tracked downscale copy for recognition only; the original is untouched.
 const createSchema = z.object({
   opening_id: z.string().uuid(),
@@ -25,7 +26,7 @@ const createSchema = z.object({
 const MEDIA = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const RUN_COLUMNS = `r.id,r.organization_id,r.property_id,r.opening_id,r.requested_by_user_id,r.client_request_id,r.repeat_of_run_id,
   r.mode,r.input_source,r.build_commit,r.processing_config,r.status,r.failure_code,r.result,r.result_level,r.manufacturer,r.series,r.model,
-  r.requires_technician_review,r.requested_at,r.started_at,r.finished_at,r.budget_cents,r.downscale_used,
+  r.requires_technician_review,r.requested_at,r.started_at,r.finished_at,r.photo_count,r.usage_photo_count,r.downscale_used,
   COALESCE((SELECT json_agg(json_build_object('photo_id',rp.photo_id,'sha256_checksum',rp.sha256_checksum,'original_byte_size',rp.original_byte_size,
     'downscaled',rp.downscaled,'derived_sha256_checksum',rp.derived_sha256_checksum,'derived_byte_size',rp.derived_byte_size,
     'downscale_method_version',rp.downscale_method_version,'downscale_target',rp.downscale_target,'derived_width',rp.derived_width,'derived_height',rp.derived_height) ORDER BY rp.ordinal)
@@ -72,9 +73,9 @@ recognitionRunsRouter.post('/', async (req: AuthedRequest, res) => {
     if (process.env.OI_RECOGNITION_ENABLED !== 'true' || !process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'recognition_unavailable' });
 
     const config = { ...LEGACY_VISION_ENGINE_CONFIG, mode: 'identify', preprocessing_version: RECOGNITION_PREPROCESSING_VERSION };
-    const inserted = (await pool.query(`INSERT INTO recognition_runs(organization_id,property_id,opening_id,requested_by_user_id,client_request_id,repeat_of_run_id,mode,build_commit,processing_config,status,started_at)
-      VALUES($1,$2,$3,$4,$5,$6,'identify',$7,$8,'running',now()) ON CONFLICT (requested_by_user_id,client_request_id) DO NOTHING RETURNING id`,
-      [org, opening.property_id, b.opening_id, user, b.client_request_id, b.repeat_of_run_id ?? null, buildCommit(), JSON.stringify(config)])).rows[0];
+    const inserted = (await pool.query(`INSERT INTO recognition_runs(organization_id,property_id,opening_id,requested_by_user_id,client_request_id,repeat_of_run_id,mode,build_commit,processing_config,status,started_at,photo_count)
+      VALUES($1,$2,$3,$4,$5,$6,'identify',$7,$8,'running',now(),$9) ON CONFLICT (requested_by_user_id,client_request_id) DO NOTHING RETURNING id`,
+      [org, opening.property_id, b.opening_id, user, b.client_request_id, b.repeat_of_run_id ?? null, buildCommit(), JSON.stringify(config), b.photo_ids.length])).rows[0];
     if (!inserted) return res.status(409).json({ error: 'client_request_id_in_use' });
     const ordered = b.photo_ids.map(id => photos.find((p: any) => p.id === id));
     const done = async (f: Parameters<typeof finish>[1], code = 200) => { await finish(inserted.id, f); return res.status(code).json({ run: await readRun(inserted.id, org) }); };
@@ -97,9 +98,12 @@ recognitionRunsRouter.post('/', async (req: AuthedRequest, res) => {
       await link(d, bytes.byteLength); downscaleUsed = true; images.push(Buffer.from(d.bytes).toString('base64'));
     }
 
-    // Atomic budget check-and-spend, immediately before the (paid) provider call.
-    const budget = (await pool.query('SELECT recognition_budget_reserve($1) AS outcome', [inserted.id])).rows[0]?.outcome;
-    if (budget !== 'reserved') return done({ status: 'refused', failure_code: budget === 'budget_exceeded' ? 'budget_exceeded' : 'budget_not_configured', downscale_used: downscaleUsed });
+    // Atomic usage count against the emergency safety cap, immediately before the (paid) provider call.
+    let usage: string | undefined;
+    try { usage = (await pool.query('SELECT recognition_usage_reserve($1) AS outcome', [inserted.id])).rows[0]?.outcome; } catch { usage = undefined; }
+    if (usage === 'safety_cap_exceeded') return done({ status: 'refused', failure_code: 'safety_cap_exceeded', downscale_used: downscaleUsed });
+    // Never call the provider uncounted.
+    if (usage !== 'reserved') return done({ status: 'failed', failure_code: 'usage_tracking_unavailable', downscale_used: downscaleUsed });
     let response: { statusCode: number; body: string };
     try { response = await legacyVisionHandler({ httpMethod: 'POST', body: JSON.stringify({ images, media_type: photos[0].content_type, mode: 'identify' }) }); }
     catch { return done({ status: 'ambiguous', failure_code: 'provider_call_outcome_unknown', downscale_used: downscaleUsed }); }

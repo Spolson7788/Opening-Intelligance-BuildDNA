@@ -4,6 +4,7 @@ import { z } from "zod";
 import { Router } from "express";
 import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
+import { recognitionUsageReport } from "../services/recognitionUsageReport";
 
 // OI staff read access (multi-company design, part B): READ ONLY overviews by facility and by
 // service-provider company. Staff status is re-checked in the database on every request
@@ -34,6 +35,14 @@ platformRouter.get("/facilities", async (_req, res) => {
       active_provider_ids, building_count::int, opening_count::int FROM platform_facility_overview ORDER BY owner_name, property_name LIMIT 1000`);
     res.json(r.rows);
   } catch { res.status(503).json({ error: "service_unavailable" }); }
+});
+
+// Recognition usage by company and month (staff only, read-only; behind the staff check above).
+platformRouter.get("/recognition-usage", async (req, res) => {
+  const month = typeof req.query.month === "string" && req.query.month ? req.query.month : new Date().toISOString().slice(0, 7);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: "invalid_month" });
+  try { res.json(await recognitionUsageReport(month)); }
+  catch { res.status(503).json({ error: "recognition_usage_unavailable" }); }
 });
 
 platformRouter.get("/providers", async (_req, res) => {

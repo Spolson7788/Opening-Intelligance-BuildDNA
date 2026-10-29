@@ -881,3 +881,8 @@ export const providerRequestOptions = (): Promise<{ providers: { id: string; nam
 export const myProviderRequests = (): Promise<ProviderRequest[]> => authedFetch("/provider-requests");
 export const requestProvider = (body: { property_id: string; provider_organization_id: string; action: "assign" | "unassign"; reason: string }) => post("/provider-requests", body);
 export const withdrawProviderRequest = (id: string) => post(`/provider-requests/${id}/withdraw`, {});
+
+// OI staff only: recognition usage by company and month (billing $0.75/opening/month to provider AND facility).
+export interface RecognitionUsageCompany { organization_id: string; organization_name: string; org_type: string; billable_openings: number; revenue_cents: number; photos_recognized: number; runs: number; recognition_cost_usd: number | null; cost_per_opening_usd: number | null; requested_photos: number; requested_runs: number; safety_cap_photos: number; cap_used_ratio: number; cap_warning: boolean }
+export interface RecognitionUsageReport { month: string; settings: { opening_price_cents_per_month: number; cost_per_photo_usd: number | null; default_monthly_photo_cap: number; cap_warning_ratio: number }; companies: RecognitionUsageCompany[]; totals: { distinct_openings: number; photos_recognized: number; runs: number; recognition_cost_usd: number | null; revenue_cents: number; cost_per_opening_usd: number | null } }
+export const platformRecognitionUsage = (month: string): Promise<RecognitionUsageReport> => authedFetch(`/platform/recognition-usage?month=${encodeURIComponent(month)}`);

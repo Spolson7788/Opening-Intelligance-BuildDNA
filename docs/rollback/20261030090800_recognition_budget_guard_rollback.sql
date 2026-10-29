@@ -1,17 +1,20 @@
 -- Rollback for DRAFT 20261030090800_recognition_budget_guard.sql (restores the 090700 shape).
--- Fails by design if any run is 'refused' or holds budget fields; export and decide first.
-DROP FUNCTION IF EXISTS recognition_budget_reserve(UUID);
+-- Fails by design if any run is 'refused' (status check); export and decide first.
+DROP FUNCTION IF EXISTS recognition_usage_reserve(UUID);
 DROP TRIGGER IF EXISTS recognition_runs_insert_guard ON recognition_runs;
 DROP FUNCTION IF EXISTS recognition_runs_insert_guard();
-DROP TABLE IF EXISTS recognition_budget_reservations;
-DROP FUNCTION IF EXISTS recognition_budget_reservations_guard();
-DROP TABLE IF EXISTS recognition_budgets;
-ALTER TABLE recognition_runs DROP CONSTRAINT IF EXISTS recognition_runs_refused_unbilled;
+DROP TABLE IF EXISTS recognition_usage_reservations;
+DROP FUNCTION IF EXISTS recognition_usage_reservations_guard();
+DROP TABLE IF EXISTS recognition_usage_monthly;
+DROP TABLE IF EXISTS recognition_safety_caps;
+DROP TABLE IF EXISTS recognition_usage_settings;
+ALTER TABLE recognition_runs DROP CONSTRAINT IF EXISTS recognition_runs_refused_uncounted;
+ALTER TABLE recognition_runs DROP CONSTRAINT IF EXISTS recognition_runs_usage_matches_photos;
 ALTER TABLE recognition_runs DROP CONSTRAINT IF EXISTS recognition_runs_failure_explicit;
 ALTER TABLE recognition_runs DROP CONSTRAINT IF EXISTS recognition_runs_status_check;
 ALTER TABLE recognition_runs ADD CONSTRAINT recognition_runs_status_check CHECK (status IN ('running','succeeded','abstained','failed','ambiguous'));
 ALTER TABLE recognition_runs ADD CONSTRAINT recognition_runs_failure_explicit CHECK ((status IN ('failed','ambiguous')) = (failure_code IS NOT NULL));
-ALTER TABLE recognition_runs DROP COLUMN IF EXISTS budget_cents, DROP COLUMN IF EXISTS downscale_used;
+ALTER TABLE recognition_runs DROP COLUMN IF EXISTS photo_count, DROP COLUMN IF EXISTS usage_photo_count, DROP COLUMN IF EXISTS downscale_used;
 ALTER TABLE recognition_run_photos DROP CONSTRAINT IF EXISTS recognition_run_photos_downscale_complete;
 ALTER TABLE recognition_run_photos DROP COLUMN IF EXISTS downscaled, DROP COLUMN IF EXISTS original_byte_size, DROP COLUMN IF EXISTS derived_sha256_checksum,
   DROP COLUMN IF EXISTS derived_byte_size, DROP COLUMN IF EXISTS downscale_method_version, DROP COLUMN IF EXISTS downscale_target,
