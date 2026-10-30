@@ -105,6 +105,7 @@ export async function handle(req: Request, d: Deps): Promise<Response> {
   };
   let form: FormData;
   try { form = await req.formData(); } catch { return reject(400, 'multipart_form_required'); }
+  if (form.get('mode') === 'page') return handlePage(form, d, reject);
   const file = form.get('file');
   if (!file || typeof file === 'string') return reject(400, 'file_required');
   const ct = (file.type || '').toLowerCase().split(';')[0].trim();
@@ -145,4 +146,86 @@ export async function handle(req: Request, d: Deps): Promise<Response> {
   if (!reg?.inserted) return json(409, { error: 'duplicate', sha256: sha, existing: reg?.existing ?? null });
   // No URL of any kind is returned: the object stays private.
   return json(201, { status: 'draft', sha256: sha, storage_key: key, bytes: bytes.byteLength, content_type: ct, page_count: pages, page_count_estimated: estimated });
+}
+
+// ---- Page mode (mode=page): link one rendered page image + page text to an existing DRAFT PDF. ----
+// Insert-only. The image folder is derived from the parent's STORED storage key (never guessed), the object is
+// written create-only, read back and re-hashed BEFORE the page row is recorded, and nothing is ever overwritten.
+export const PAGE_RATE_LIMIT_PER_HOUR = 300;
+export const MAX_PAGE_IMAGE_BYTES = 10 * 1024 * 1024;
+export const MAX_PAGE_TEXT_CHARS = 200_000;
+const PAGE_CLASSES = ['text', 'drawing', 'scan', 'photo', 'blank', 'mixed'];
+const HEX64 = /^[0-9a-f]{64}$/;
+export interface PageMeta { doc_sha256: string; page_no: number; text: string; text_sha256: string; page_class: string; image_sha256: string; image_key: string | null }
+
+export function parsePageMeta(raw: unknown): { ok: true; meta: PageMeta } | { ok: false; error: string } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, error: 'metadata_must_be_object' };
+  const r = raw as Record<string, unknown>;
+  const allowed = new Set(['doc_sha256', 'page_no', 'page_id', 'text', 'text_sha256', 'page_class', 'image_sha256', 'image_key']);
+  for (const k of Object.keys(r)) if (!allowed.has(k)) return { ok: false, error: 'unsupported_field:' + k.slice(0, 40) };
+  const h = (k: string) => (typeof r[k] === 'string' && HEX64.test((r[k] as string).toLowerCase()) ? (r[k] as string).toLowerCase() : null);
+  const doc = h('doc_sha256'), tsha = h('text_sha256'), isha = h('image_sha256');
+  if (!doc || !tsha || !isha) return { ok: false, error: 'invalid_sha256' };
+  if (!Number.isInteger(r.page_no) || (r.page_no as number) < 1 || (r.page_no as number) > 5000) return { ok: false, error: 'invalid_page_no' };
+  const page_no = r.page_no as number;
+  if (r.page_id !== undefined && r.page_id !== `sha256:${doc}#p${page_no}`) return { ok: false, error: 'page_id_mismatch' };
+  if (typeof r.text !== 'string' || r.text.length > MAX_PAGE_TEXT_CHARS) return { ok: false, error: 'invalid_text' };
+  if (typeof r.page_class !== 'string' || !PAGE_CLASSES.includes(r.page_class)) return { ok: false, error: 'invalid_page_class' };
+  if (r.image_key !== undefined && (typeof r.image_key !== 'string' || r.image_key.length > 400)) return { ok: false, error: 'invalid_image_key' };
+  // Approval/citation fields are not accepted at all: pages are always draft, non-citable, unverified.
+  return { ok: true, meta: { doc_sha256: doc, page_no, text: r.text, text_sha256: tsha, page_class: r.page_class, image_sha256: isha, image_key: (r.image_key as string) ?? null } };
+}
+
+export function pageImageKey(parentStorageKey: string, doc: string, pageNo: number, imageSha: string): string | null {
+  const m = parentStorageKey.match(/^reference\/([^/]+)\/([0-9a-f]{64})\.pdf$/);
+  if (!m || m[2] !== doc) return null;
+  return `reference/${m[1]}/${doc}/p${String(pageNo).padStart(3, '0')}.${imageSha}.png`;
+}
+
+type Reject = (status: number, error: string, extra?: Record<string, unknown>, sha?: string | null, size?: number | null, ct?: string | null) => Promise<Response>;
+export async function handlePage(form: FormData, d: Deps, reject: Reject): Promise<Response> {
+  const file = form.get('file');
+  if (!file || typeof file === 'string') return reject(400, 'file_required');
+  const ct = (file.type || '').toLowerCase().split(';')[0].trim();
+  if (ct !== 'image/png') return reject(415, 'page_image_must_be_png', {}, null, file.size, ct);
+  if (file.size <= 0) return reject(400, 'empty_file', {}, null, 0, ct);
+  if (file.size > MAX_PAGE_IMAGE_BYTES) return reject(413, 'file_too_large', { max_bytes: MAX_PAGE_IMAGE_BYTES }, null, file.size, ct);
+  let raw: unknown;
+  try { raw = JSON.parse(String(form.get('metadata') ?? '')); } catch { return reject(400, 'metadata_json_required', {}, null, file.size, ct); }
+  const pm = parsePageMeta(raw);
+  if (!pm.ok) return reject(400, pm.error, {}, null, file.size, ct);
+  const m = pm.meta;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!TYPES['image/png'].sniff(bytes)) return reject(415, 'content_does_not_match_type', {}, null, bytes.byteLength, ct);
+  const sha = await d.sha256(bytes);
+  if (sha !== m.image_sha256) return reject(422, 'image_sha256_mismatch', { sha256: sha }, sha, bytes.byteLength, ct);
+  if ((await d.sha256(new TextEncoder().encode(m.text))) !== m.text_sha256) return reject(422, 'text_sha256_mismatch', {}, sha, bytes.byteLength, ct);
+
+  const pre = await d.rpc('reference_page_check', { p_uploader: d.uploader, p_doc_sha256: m.doc_sha256, p_page_no: m.page_no, p_image_sha256: sha,
+    p_text_sha256: m.text_sha256, p_limit_per_hour: PAGE_RATE_LIMIT_PER_HOUR });
+  if (pre?.rate_limited) return json(429, { error: 'rate_limited', limit_per_hour: PAGE_RATE_LIMIT_PER_HOUR });
+  if (!pre?.parent) return reject(404, 'parent_not_found', {}, sha, bytes.byteLength, ct);
+  if (pre.parent.status !== 'draft') return reject(409, 'parent_not_draft', {}, sha, bytes.byteLength, ct);
+  if (Number.isInteger(pre.parent.page_count) && m.page_no > pre.parent.page_count) return reject(400, 'page_no_exceeds_parent_page_count', {}, sha, bytes.byteLength, ct);
+  if (pre.existing) {
+    if (pre.existing.identical) return json(409, { error: 'duplicate', doc_sha256: m.doc_sha256, page_no: m.page_no, image_key: pre.existing.image_key });
+    return reject(409, 'page_conflict', { doc_sha256: m.doc_sha256, page_no: m.page_no }, sha, bytes.byteLength, ct);
+  }
+  const key = pageImageKey(String(pre.parent.storage_key ?? ''), m.doc_sha256, m.page_no, sha);
+  if (!key) return reject(409, 'parent_storage_key_unexpected', {}, sha, bytes.byteLength, ct);
+  // Manufacturer-folder check: a caller-planned key must equal the key derived from the parent's stored path.
+  if (m.image_key !== null && m.image_key !== key) return reject(409, 'image_key_mismatch', { expected: key }, sha, bytes.byteLength, ct);
+
+  await d.putObject(key, bytes, 'image/png'); // create-only; 'exists' is fine only if the readback below is identical
+  const back = await d.getObject(key);
+  if (!back) return reject(502, 'readback_failed', {}, sha, bytes.byteLength, ct);
+  const backSha = await d.sha256(back);
+  if (backSha !== sha || back.byteLength !== bytes.byteLength) return reject(409, 'storage_key_conflict', {}, sha, bytes.byteLength, ct);
+
+  const reg = await d.rpc('reference_page_register', { p_uploader: d.uploader, p_doc_sha256: m.doc_sha256, p_page_no: m.page_no, p_text: m.text,
+    p_text_sha256: m.text_sha256, p_page_class: m.page_class, p_image_key: key, p_image_sha256: sha, p_byte_size: bytes.byteLength });
+  if (reg?.duplicate) return json(409, { error: 'duplicate', doc_sha256: m.doc_sha256, page_no: m.page_no, image_key: key });
+  if (!reg?.inserted) return json(409, { error: 'page_conflict', doc_sha256: m.doc_sha256, page_no: m.page_no });
+  return json(201, { status: 'draft', kind: 'page', doc_sha256: m.doc_sha256, page_no: m.page_no, page_id: reg.page_id, image_key: key, image_sha256: sha,
+    bytes: bytes.byteLength, readback_sha256: backSha, citable: false });
 }
