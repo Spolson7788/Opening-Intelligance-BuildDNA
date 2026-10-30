@@ -115,12 +115,14 @@ CREATE TABLE reference_documents (sha256 text PRIMARY KEY CHECK (sha256 ~ '^[0-9
   CHECK (status IN ('draft','approved','superseded','duplicate')), superseded_by text REFERENCES reference_documents(sha256), duplicate_of text REFERENCES reference_documents(sha256),
   approved_by uuid REFERENCES users(id), approved_at timestamptz, CHECK (status <> 'approved' OR (approved_by IS NOT NULL AND approved_at IS NOT NULL)));
 ALTER TABLE reference_documents ENABLE ROW LEVEL SECURITY;
--- ioqfd reference_pages shape (read-only inspection, Oct 30 2026); search_vector omitted.
-CREATE TABLE reference_pages (doc_sha256 text NOT NULL REFERENCES reference_documents(sha256), page_no integer NOT NULL CHECK (page_no > 0), page_id text UNIQUE,
+-- ioqfd reference_pages shape (read-only inspection, Oct 30 2026), incl. generated page_id/search_vector.
+CREATE TABLE reference_pages (doc_sha256 text NOT NULL REFERENCES reference_documents(sha256), page_no integer NOT NULL CHECK (page_no > 0),
+  page_id text GENERATED ALWAYS AS ('sha256:' || doc_sha256 || '#p' || page_no::text) STORED UNIQUE,
   text text NOT NULL, text_sha256 text NOT NULL CHECK (text_sha256 ~ '^[0-9a-f]{64}$'),
   page_class text NOT NULL CHECK (page_class IN ('text','drawing','scan','photo','blank','mixed')),
   transcription_status text NOT NULL CHECK (transcription_status IN ('none','queued','transcribed','verified')), citable boolean NOT NULL,
   fraction_unverified boolean NOT NULL DEFAULT false, image_key text, image_sha256 text CHECK (image_sha256 IS NULL OR image_sha256 ~ '^[a-f0-9]{64}$'),
+  search_vector tsvector GENERATED ALWAYS AS (to_tsvector('simple', text)) STORED,
   PRIMARY KEY (doc_sha256, page_no),
   CHECK (NOT citable OR (page_class <> 'blank' AND NOT fraction_unverified AND (page_class NOT IN ('scan','drawing','mixed') OR transcription_status = 'verified'))));
 ALTER TABLE reference_pages ENABLE ROW LEVEL SECURITY;
@@ -174,8 +176,8 @@ describe('page-link migration (PGlite copy of the ioqfd shape)', () => {
     await db.exec('SET ROLE oi_reference_uploader');
     await expect(q('UPDATE reference_pages SET citable=true')).rejects.toThrow(/permission/i);
     await expect(q('DELETE FROM reference_pages')).rejects.toThrow(/permission/i);
-    const ins = (doc: string, n: number, cit: boolean) => q(`INSERT INTO reference_pages(doc_sha256,page_no,page_id,text,text_sha256,page_class,transcription_status,citable,fraction_unverified,image_key,image_sha256)
-      VALUES ($1,$2,$3,'t',$4,'text','none',$5,true,$6,$7)`, [doc, n, `sha256:${doc}#p${n}`, TS, cit, key(doc, n, I), I]);
+    const ins = (doc: string, n: number, cit: boolean) => q(`INSERT INTO reference_pages(doc_sha256,page_no,text,text_sha256,page_class,transcription_status,citable,fraction_unverified,image_key,image_sha256)
+      VALUES ($1,$2,'t',$3,'text','none',$4,true,$5,$6)`, [doc, n, TS, cit, key(doc, n, I), I]);
     await expect(ins(D1, 2, true)).rejects.toThrow(/row-level security/i);
     await expect(ins(D2, 2, false)).rejects.toThrow(/row-level security/i);
     await db.exec('RESET ROLE');

@@ -60,8 +60,9 @@ BEGIN
   IF p_image_key <> 'reference/' || folder || '/' || p_doc_sha256 || '/p' || lpad(p_page_no::text, 3, '0') || '.' || p_image_sha256 || '.png' THEN
     RAISE EXCEPTION 'image_key_mismatch'; END IF;
   pid := 'sha256:' || p_doc_sha256 || '#p' || p_page_no;
-  INSERT INTO reference_pages(doc_sha256, page_no, page_id, text, text_sha256, page_class, transcription_status, citable, fraction_unverified, image_key, image_sha256)
-    VALUES (p_doc_sha256, p_page_no, pid, p_text, p_text_sha256, p_page_class, 'none', false, true, p_image_key, p_image_sha256)
+  -- page_id and search_vector are GENERATED ALWAYS columns on staging; never written here.
+  INSERT INTO reference_pages(doc_sha256, page_no, text, text_sha256, page_class, transcription_status, citable, fraction_unverified, image_key, image_sha256)
+    VALUES (p_doc_sha256, p_page_no, p_text, p_text_sha256, p_page_class, 'none', false, true, p_image_key, p_image_sha256)
     ON CONFLICT DO NOTHING RETURNING page_id INTO ins;
   IF ins IS NULL THEN
     SELECT image_sha256, text_sha256, image_key INTO p FROM reference_pages WHERE doc_sha256 = p_doc_sha256 AND page_no = p_page_no;
