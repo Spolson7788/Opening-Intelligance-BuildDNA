@@ -84,10 +84,13 @@ GRANT oi_reference_uploader TO CURRENT_USER; -- needed to hand ownership to the 
 ALTER FUNCTION public.reference_page_check(TEXT, TEXT, INTEGER, TEXT, TEXT, INTEGER) OWNER TO oi_reference_uploader;
 ALTER FUNCTION public.reference_page_register(TEXT, TEXT, INTEGER, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT) OWNER TO oi_reference_uploader;
 REVOKE CREATE ON SCHEMA public FROM oi_reference_uploader;
-REVOKE oi_reference_uploader FROM CURRENT_USER;
-
+-- After the ownership change, Supabase's default EXECUTE grants are held with the new owner as grantor, so they must be
+-- revoked AS the owner (a REVOKE by postgres is a silent no-op). Found on apply 2026-10-30 and fixed the same way on staging.
+SET ROLE oi_reference_uploader;
 REVOKE ALL ON FUNCTION public.reference_page_check(TEXT, TEXT, INTEGER, TEXT, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.reference_page_register(TEXT, TEXT, INTEGER, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT) FROM PUBLIC, anon, authenticated;
+RESET ROLE;
+REVOKE oi_reference_uploader FROM CURRENT_USER;
 GRANT EXECUTE ON FUNCTION public.reference_page_check(TEXT, TEXT, INTEGER, TEXT, TEXT, INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION public.reference_page_register(TEXT, TEXT, INTEGER, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT) TO service_role;
 
