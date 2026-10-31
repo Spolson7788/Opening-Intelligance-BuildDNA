@@ -20,6 +20,7 @@ vi.mock('../src/services/storage', async (orig) => ({ ...(await orig<any>()), ge
 import { createApp } from '../src/app';
 import { matchedLevels, recordStatus, RECORD_WRITE_RETRY } from '../src/services/recognitionRunRecords';
 import { conservativeIdentity } from '../src/services/recognitionRuns';
+import { flushAccessDenialWrites } from '../src/middleware/recognitionAccessDenials';
 const app = createApp();
 const MIG = '20261031090000_recognition_run_records.sql';
 const sql = (s: string, a?: unknown[]) => state.db.query(s, a);
@@ -141,7 +142,7 @@ describe('recognition run records (DRAFT 20261031090000, not applied anywhere)',
     expect(await records(blocked.body.run.id)).toMatchObject([{ organization_id: id.prov, status: 'blocked_by_cap', failure_code: 'safety_cap_exceeded', provider_called: false, manufacturer: null }]);
   });
 
-  it('every attempt that created a run has records; a replay writes nothing new', async () => {
+  it('every attempt that created a run has records; a replay adds only its own replayed row', async () => {
     const orphans = (await sql('SELECT count(*)::int c FROM recognition_runs r WHERE NOT EXISTS (SELECT 1 FROM recognition_run_records x WHERE x.run_id=r.id)')).rows[0].c;
     expect(orphans).toBe(0);
     const body = { opening_id: id.custOpen, photo_ids: [await photo(id.custOpen, 'cust')], client_request_id: randomUUID() };
@@ -149,7 +150,8 @@ describe('recognition run records (DRAFT 20261031090000, not applied anywhere)',
     const before = (await sql('SELECT count(*)::int c FROM recognition_run_records')).rows[0].c;
     const again = await request(app).post('/api/recognition/runs').set('Authorization', tok.cust).send(body);
     expect(again.body.replayed).toBe(true); expect(again.body.run.id).toBe(first.body.run.id);
-    expect((await sql('SELECT count(*)::int c FROM recognition_run_records')).rows[0].c).toBe(before);
+    expect((await sql('SELECT count(*)::int c FROM recognition_run_records')).rows[0].c).toBe(before + 1);
+    expect((await sql("SELECT count(*)::int c FROM recognition_run_records WHERE run_id=$1 AND status<>'replayed'", [first.body.run.id])).rows[0].c).toBe(1);
   });
 
   it('database guards: append-only, thresholds and status rules enforced', async () => {
@@ -210,7 +212,7 @@ describe('recognition run records (DRAFT 20261031090000, not applied anywhere)',
     expect(prov).toMatchObject({ runs: 2, photo_attempts: 2, succeeded_photos: 1, blocked_by_cap_photos: 1, failed_photos: 0, provider_photos: 1, model_matches: 1 });
     expect(Number(prov.oi_cost_usd)).toBe(0.0125);
     const cust = staff.find((r: any) => r.organization_id === id.cust);
-    const direct = (await sql("SELECT count(*)::int c, count(*) FILTER (WHERE provider_called)::int p, count(*) FILTER (WHERE status='failed')::int f FROM recognition_run_records WHERE organization_id=$1", [id.cust])).rows[0];
+    const direct = (await sql("SELECT count(*)::int c, count(*) FILTER (WHERE provider_called)::int p, count(*) FILTER (WHERE status='failed')::int f FROM recognition_run_records WHERE organization_id=$1 AND status NOT IN ('rejected','replayed')", [id.cust])).rows[0];
     expect([cust.photo_attempts, cust.provider_photos, cust.failed_photos]).toEqual([direct.c, direct.p, direct.f]);
     expect(Number(cust.oi_cost_usd)).toBeCloseTo(direct.p * 0.0125, 6);
     expect(await asActor(id.otherUser, 'SELECT * FROM recognition_run_records_monthly')).toEqual([]);
@@ -327,4 +329,111 @@ describe('follow-ups (Oct 31 10:28): rejected attempts, retries + outbox, mid-ru
     await failNext('recognition_run_photos', 0);
   });
 
+});
+describe('follow-ups (Oct 31 10:39): access denials, replays, scheduled outbox reprocessing', () => {
+  const failNext = async (tbl: string, n: number) => { await sql("SELECT setval('t_fail_seq', 1, false)"); await sql('INSERT INTO t_fail VALUES($1,$2) ON CONFLICT (tbl) DO UPDATE SET max_fail=EXCLUDED.max_fail', [tbl, n]); };
+  const denials = async () => { await flushAccessDenialWrites(); return (await sql('SELECT * FROM recognition_access_denials ORDER BY occurred_at, id')).rows; };
+  const monthly = async (org: string) => (await asActor(id.oiUser, 'SELECT * FROM recognition_run_records_monthly WHERE organization_id=$1', [org]))[0];
+
+  it('a replay is recorded as its own row without counting a run, a photo attempt or cost', async () => {
+    const p = await photo(id.custOpen, 'cust'), crid = randomUUID();
+    const send = () => request(app).post('/api/recognition/runs').set('Authorization', tok.cust).send({ opening_id: id.custOpen, photo_ids: [p], client_request_id: crid });
+    const first = await send(); expect(first.status).toBe(201);
+    const before = await monthly(id.cust);
+    const again = await send(); expect(again.status).toBe(200); expect(again.body.replayed).toBe(true);
+    expect(state.engine).toHaveBeenCalledTimes(1);
+    const rows = await records(first.body.run.id);
+    expect(rows.map((r: any) => r.status).sort()).toEqual(['replayed', 'succeeded']);
+    expect(rows.find((r: any) => r.status === 'replayed')).toMatchObject({ failure_code: 'replay_of_existing_run', photo_id: null, provider_called: false,
+      cost_per_photo_usd: null, opening_id: id.custOpen, property_id: id.custProp, requested_by_user_id: id.custUser });
+    const after = await monthly(id.cust);
+    expect([after.runs, after.photo_attempts, Number(after.oi_cost_usd), after.replayed_attempts])
+      .toEqual([before.runs, before.photo_attempts, Number(before.oi_cost_usd), before.replayed_attempts + 1]);
+    expect((await asActor(id.otherUser, "SELECT 1 FROM recognition_run_records WHERE status='replayed'"))).toEqual([]);
+    const ins = (s: string, run: string | null, extra = '') => sql(`INSERT INTO recognition_run_records(attempt_id,run_id,organization_id,requested_by_user_id,property_id,opening_id,photo_id,status,failure_code,provider_called${extra ? ',cost_per_photo_usd' : ''})
+      VALUES($1,$2,$3,$4,$5,$6,${s},'replayed','replay_of_existing_run',false${extra})`, [randomUUID(), run, id.cust, id.custUser, id.custProp, id.custOpen]);
+    await expect(ins('NULL', null)).rejects.toThrow(/rejected_no_run/);
+    await expect(ins(`'${p}'`, first.body.run.id)).rejects.toThrow(/replayed_shape/);
+    await expect(ins('NULL', first.body.run.id, ',0.01')).rejects.toThrow(/replayed_shape/);
+  });
+
+  it('401/403 on the recognition endpoints are recorded outside the handlers; anonymous ones for staff only', async () => {
+    const start = (await denials()).length;
+    const viewer = randomUUID();
+    await sql("INSERT INTO users(id,organization_id,email,full_name,role,password_hash) VALUES($1,$2,$3,'Synthetic viewer','viewer','not-a-real-password')", [viewer, id.cust, viewer + '@example.invalid']);
+    const vtok = 'Bearer ' + jwt.sign({ userId: viewer, organizationId: id.cust, role: 'viewer', sessionVersion: 0 }, process.env.JWT_SECRET!);
+    const r1 = await request(app).post('/api/recognition/runs').send({ opening_id: id.custOpen, photo_ids: [randomUUID()], client_request_id: randomUUID() });
+    const r2 = await request(app).get('/api/recognition/runs/' + randomUUID()).set('Authorization', 'Bearer not-a-token');
+    const r3 = await request(app).post('/api/recognition/runs').set('Authorization', vtok).send({});
+    const r4 = await request(app).get('/api/recognition/anything').set('Authorization', vtok);
+    expect([r1.status, r2.status, r3.status, r4.status]).toEqual([401, 401, 403, 403]);
+    expect(r1.body.error).toBe('missing_token'); expect(r3.body).toEqual({ error: 'forbidden' }); // responses unchanged
+    const rows = (await denials()).slice(start);
+    expect(rows.map((d: any) => [d.http_status, d.reason, d.endpoint, d.method, d.user_id, d.organization_id])).toEqual([
+      [401, 'missing_token', 'recognition_runs', 'POST', null, null],
+      [401, 'invalid_token', 'recognition_runs', 'GET', null, null],
+      [403, 'forbidden', 'recognition_runs', 'POST', viewer, id.cust],
+      [403, 'forbidden', 'recognition', 'GET', viewer, id.cust]]);
+    expect(rows[0].auth_reference).toBe(r1.headers['x-oi-auth-reference']);
+    expect(state.engine).not.toHaveBeenCalled();
+    // RLS: staff see everything; the company sees only its verified rows; others nothing; no actor nothing.
+    expect((await asActor(id.oiUser, 'SELECT count(*)::int n FROM recognition_access_denials'))[0].n).toBe(start + 4);
+    expect((await asActor(id.custUser, 'SELECT http_status, user_id FROM recognition_access_denials'))).toEqual([{ http_status: 403, user_id: viewer }, { http_status: 403, user_id: viewer }]);
+    expect(await asActor(id.otherUser, 'SELECT 1 FROM recognition_access_denials')).toEqual([]);
+    expect(await asActor(id.provUser, 'SELECT 1 FROM recognition_access_denials')).toEqual([]);
+    expect(await asActor(null, 'SELECT 1 FROM recognition_access_denials')).toEqual([]);
+    await expect(sql('DELETE FROM recognition_access_denials')).rejects.toThrow(/append_only/);
+    await expect(sql("UPDATE recognition_access_denials SET reason='x'")).rejects.toThrow(/append_only/);
+    await expect(sql("INSERT INTO recognition_access_denials(http_status,reason,endpoint,method,user_id) VALUES(401,'missing_token','recognition','GET',$1)", [viewer])).rejects.toThrow(/identity/);
+    const priv = (await sql(`SELECT has_table_privilege('anon','recognition_access_denials','SELECT') a, has_table_privilege('authenticated','recognition_access_denials','INSERT') b,
+      has_table_privilege('oi_pr2_api','recognition_access_denials','UPDATE') u`)).rows[0];
+    expect(priv).toEqual({ a: false, b: false, u: false });
+  });
+
+  it('a denial write that fails is retried', async () => {
+    await sql(`CREATE OR REPLACE FUNCTION t_deny_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+      IF nextval('t_fail_seq') <= 2 THEN RAISE EXCEPTION 'synthetic_write_failure'; END IF; RETURN NEW; END $$`);
+    await sql('CREATE TRIGGER t_deny_fail BEFORE INSERT ON recognition_access_denials FOR EACH ROW EXECUTE FUNCTION t_deny_fail()');
+    await sql("SELECT setval('t_fail_seq', 1, false)");
+    const start = (await denials()).length;
+    expect((await request(app).get('/api/recognition/runs')).status).toBe(401);
+    expect((await denials()).length).toBe(start + 1);
+    await sql('DROP TRIGGER t_deny_fail ON recognition_access_denials');
+  });
+
+  it('scheduled reprocessor: the SQL function drains the outbox (as the cron owner or the API role), SKIP LOCKED, idempotent', async () => {
+    await failNext('recognition_run_records', 1000);
+    const a = await run('cust', id.custOpen, [await photo(id.custOpen, 'cust')]);
+    const b = await run('cust', id.custOpen, [await photo(id.custOpen, 'cust')]);
+    await failNext('recognition_run_records', 0);
+    expect((await sql('SELECT count(*)::int n FROM recognition_run_record_outbox WHERE processed_at IS NULL')).rows[0].n).toBe(2);
+    // As the database owner (how pg_cron runs it), one entry per run.
+    expect((await sql('SELECT * FROM recognition_run_record_outbox_reprocess(1)')).rows[0]).toEqual({ processed: 1, failed: 0, pending: 1 });
+    await sql('GRANT SELECT ON t_fail TO oi_pr2_api; '.trim()); await sql('GRANT USAGE ON SEQUENCE t_fail_seq TO oi_pr2_api'); // test-only injection trigger
+    const viaApi = await asActor(null, 'SELECT * FROM recognition_run_record_outbox_reprocess(10)');
+    expect(viaApi).toEqual([{ processed: 1, failed: 0, pending: 0 }]);
+    // The API role (no acting user, so RLS shows it nothing) can still write idempotently via the write function.
+    const row = { ...(await records(a.body.run.id))[0] }; const attempt = randomUUID();
+    const payload = JSON.stringify([{ ...row, attempt_id: attempt, run_id: null, photo_id: null, status: 'rejected', failure_code: 'opening_not_found', provider_called: false,
+      manufacturer: null, manufacturer_confidence: null, series: null, series_confidence: null, model: null, model_confidence: null, model_marking_evidence: false }]);
+    expect(await asActor(null, 'SELECT recognition_run_records_write($1::jsonb) n', [payload])).toEqual([{ n: 1 }]);
+    expect(await asActor(null, 'SELECT recognition_run_records_write($1::jsonb) n', [payload])).toEqual([{ n: 0 }]);
+    await expect(asActor(null, "INSERT INTO recognition_run_records(attempt_id,organization_id,requested_by_user_id,status,failure_code,provider_called) VALUES($1,$2,$3,'rejected','x',false) ON CONFLICT (attempt_id, photo_slot) DO NOTHING", [attempt, id.cust, id.custUser])).rejects.toThrow(/row-level security/);
+    expect((await sql('SELECT * FROM recognition_run_record_outbox_reprocess(10)')).rows[0]).toEqual({ processed: 0, failed: 0, pending: 0 });
+    for (const r of [a, b]) expect(await records(r.body.run.id)).toMatchObject([{ status: 'succeeded' }]);
+    const def = (await sql("SELECT pg_get_functiondef('recognition_run_record_outbox_reprocess(integer)'::regprocedure) d")).rows[0].d;
+    expect(def).toMatch(/FOR UPDATE OF o SKIP LOCKED/);
+    expect((await sql("SELECT has_function_privilege('anon','recognition_run_record_outbox_reprocess(integer)','EXECUTE') a")).rows[0].a).toBe(false);
+    // Staff endpoint is kept and uses the same function.
+    expect((await request(app).post('/api/platform/recognition-run-records/outbox/reprocess').set('Authorization', tok.oi).send({})).body).toEqual({ processed: 0, failed: 0, pending: 0 });
+  });
+
+  it('the pg_cron job ships disabled: outside migrations/, documented, idempotent schedule and unschedule', () => {
+    expect(readdirSync('migrations').some(f => /cron/i.test(f))).toBe(false);
+    const cron = readFileSync('docs/scheduled/recognition_record_outbox_reprocess_cron.sql', 'utf8');
+    expect(cron).toMatch(/NOT APPLIED/); expect(cron).toMatch(/separate deploy approval/);
+    expect(cron).toMatch(/cron\.schedule\('oi-recognition-record-outbox-reprocess', '\*\/5 \* \* \* \*',\s*\$job\$SELECT \* FROM public\.recognition_run_record_outbox_reprocess\(200\)\$job\$\)/);
+    expect(cron).toMatch(/cron\.unschedule\('oi-recognition-record-outbox-reprocess'\)/);
+    expect(readFileSync('docs/rollback/20261031090000_recognition_run_records_rollback.sql', 'utf8')).toMatch(/cron\.unschedule/);
+  });
 });

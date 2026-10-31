@@ -8,6 +8,7 @@ import {conditionHistoryRouter} from './routes/conditionHistory';
 import {accountRecoveryRouter} from "./routes/accountRecovery";
 import {recognitionRouter} from "./routes/recognition";
 import {recognitionRunsRouter} from "./routes/recognitionRuns";
+import {recordRecognitionAccessDenials} from "./middleware/recognitionAccessDenials";
 import {branchesRouter} from "./routes/branches";
 import {providerAssignmentsRouter} from "./routes/providerAssignments";
 import { facilitySchedulesRouter } from "./routes/facilitySchedules";
@@ -113,6 +114,7 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   app.use("/api/locations", locationsRouter);
   app.use("/api/members", membersRouter);
   app.use("/api/invites", invitesPublicRouter);
+  app.use("/api/recognition", recordRecognitionAccessDenials); // 401/403 records, before auth
   app.use("/api/recognition/runs", recognitionRunsRouter);
   app.use("/api/recognition", recognitionRouter);
   if (options.accountRecoveryEnabled) app.use("/api/account-recovery", accountRecoveryRouter);

@@ -8,7 +8,7 @@ import { getObjectBytes } from '../services/storage';
 import { downscaleForRecognition, DownscaleError, MAX_ORIGINAL_READ_BYTES } from '../services/recognitionDownscale';
 import { buildReferenceContext, validateCitations, REFERENCE_CONTEXT_VERSION, type ReferenceContext } from '../services/referenceRetrieval';
 import { randomUUID } from 'node:crypto';
-import { recordRunAttempt, recordRejectedAttempt } from '../services/recognitionRunRecords';
+import { recordRunAttempt, recordRejectedAttempt, recordReplayedAttempt } from '../services/recognitionRunRecords';
 import { LEGACY_VISION_ENGINE_CONFIG, buildCommit, conservativeIdentity, sha256Hex, MAX_PROVIDER_IMAGE_BYTES, RECOGNITION_PREPROCESSING_VERSION } from '../services/recognitionRuns';
 
 // Hosting plan step 1 (t130): every recognition attempt is a recognition_runs row linked to the
@@ -78,7 +78,10 @@ recognitionRunsRouter.post('/', async (req: AuthedRequest, res) => {
     const prior = (await pool.query('SELECT id FROM recognition_runs WHERE requested_by_user_id=$1 AND client_request_id=$2', [user, b.client_request_id])).rows[0];
     if (prior) {
       const run = await readRun(prior.id, org);
-      return run ? res.status(200).json({ run, replayed: true }) : reject(409, 'client_request_id_in_use');
+      if (!run) return reject(409, 'client_request_id_in_use');
+      // Recorded as its own 'replayed' row (no photo attempt, no cost) pointing at the existing run.
+      await recordReplayedAttempt({ attemptId: randomUUID(), runId: prior.id, organizationId: org, requestedByUserId: user, propertyId: ctx.property_id, openingId: ctx.opening_id });
+      return res.status(200).json({ run, replayed: true });
     }
     const photos = (await pool.query(`SELECT p.id,p.sha256_checksum,p.storage_object_key,p.content_type FROM photos p
       WHERE p.id=ANY($1::uuid[]) AND p.opening_id=$3 AND p.media_type='photo' AND p.upload_state IN ('verified','legacy_confirmed')
