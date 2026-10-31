@@ -7,6 +7,7 @@ import { legacyVisionHandler } from '../services/legacyVision';
 import { getObjectBytes } from '../services/storage';
 import { downscaleForRecognition, DownscaleError, MAX_ORIGINAL_READ_BYTES } from '../services/recognitionDownscale';
 import { buildReferenceContext, validateCitations, REFERENCE_CONTEXT_VERSION, type ReferenceContext } from '../services/referenceRetrieval';
+import { writeRunRecords } from '../services/recognitionRunRecords';
 import { LEGACY_VISION_ENGINE_CONFIG, buildCommit, conservativeIdentity, sha256Hex, MAX_PROVIDER_IMAGE_BYTES, RECOGNITION_PREPROCESSING_VERSION } from '../services/recognitionRuns';
 
 // Hosting plan step 1 (t130): every recognition attempt is a recognition_runs row linked to the
@@ -95,7 +96,19 @@ recognitionRunsRouter.post('/', async (req: AuthedRequest, res) => {
     // Every run that used a release records it, whatever the outcome.
     if (ref) await pool.query('UPDATE recognition_runs SET reference_release_id=$2 WHERE id=$1', [inserted.id, ref.release_id]);
     const ordered = b.photo_ids.map(id => photos.find((p: any) => p.id === id));
-    const done = async (f: Parameters<typeof finish>[1], code = 200) => { await finish(inserted.id, f); return res.status(code).json({ run: await readRun(inserted.id, org) }); };
+    // Every attempt that created a run also writes one recognition_run_records row per photo
+    // (success, failure, or refusal by the safety cap). A record write failure never changes the
+    // run outcome shown to the caller; it is logged (run id only) for follow-up.
+    let providerCalled = false;
+    const done = async (f: Parameters<typeof finish>[1], code = 200) => {
+      await finish(inserted.id, f);
+      try {
+        await writeRunRecords({ runId: inserted.id, organizationId: org, propertyId: opening.property_id, openingId: b.opening_id, photoIds: b.photo_ids,
+          runStatus: f.status, failureCode: f.failure_code ?? null, result: f.result ?? null, providerCalled,
+          identity: f.level ? { level: f.level as any, manufacturer: f.manufacturer ?? null, series: f.series ?? null, model: f.model ?? null } : null });
+      } catch { console.error('recognition_run_record_write_failed', inserted.id); }
+      return res.status(code).json({ run: await readRun(inserted.id, org) });
+    };
 
     // Read each stored original, prove it is the bytes the run claims, then (only if > 5 MB) make a
     // tracked smaller copy for the provider. Every photo is linked to the run with what was sent.
@@ -122,6 +135,7 @@ recognitionRunsRouter.post('/', async (req: AuthedRequest, res) => {
     // Never call the provider uncounted.
     if (usage !== 'reserved') return done({ status: 'failed', failure_code: 'usage_tracking_unavailable', downscale_used: downscaleUsed });
     let response: { statusCode: number; body: string };
+    providerCalled = true;
     try { response = await legacyVisionHandler({ httpMethod: 'POST', body: JSON.stringify({ images, media_type: photos[0].content_type, mode: 'identify', ...(ref?.prompt ? { reference_context: ref.prompt } : {}) }) }); }
     catch { return done({ status: 'ambiguous', failure_code: 'provider_call_outcome_unknown', downscale_used: downscaleUsed }); }
     if (response.statusCode !== 200) {

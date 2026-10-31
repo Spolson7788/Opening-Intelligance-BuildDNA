@@ -5,6 +5,7 @@ import { Router } from "express";
 import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { recognitionUsageReport } from "../services/recognitionUsageReport";
+import { recognitionRunRecordsMonthly } from "../services/recognitionRunRecords";
 
 // OI staff read access (multi-company design, part B): READ ONLY overviews by facility and by
 // service-provider company. Staff status is re-checked in the database on every request
@@ -43,6 +44,15 @@ platformRouter.get("/recognition-usage", async (req, res) => {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: "invalid_month" });
   try { res.json(await recognitionUsageReport(month)); }
   catch { res.status(503).json({ error: "recognition_usage_unavailable" }); }
+});
+
+// Recognition run records by company and month (Oct 31 milestone; staff only, read-only). Optional
+// month=YYYY-MM; without it every month. Read through RLS as the acting staff user.
+platformRouter.get("/recognition-run-records/monthly", async (req: AuthedRequest, res) => {
+  const month = typeof req.query.month === "string" && req.query.month ? req.query.month : undefined;
+  if (month !== undefined && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: "invalid_month" });
+  try { res.json({ month: month ?? null, rows: await recognitionRunRecordsMonthly(req.auth!.userId, month) }); }
+  catch { res.status(503).json({ error: "recognition_run_records_unavailable" }); }
 });
 
 // OI-staff edit of price, recognition cost and safety caps (12:23). Validated here and again in the
