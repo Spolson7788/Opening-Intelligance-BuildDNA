@@ -55,6 +55,8 @@ beforeAll(async () => {
   process.env.JWT_SECRET ||= 'synthetic-test-secret';
   state.db = new PGlite();
   await state.db.exec('CREATE ROLE oi_pr2_api NOLOGIN; CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN;');
+  // Like Supabase: default privileges grant new sequences to anon/authenticated; the migration must revoke them.
+  await state.db.exec('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;');
   for (const f of readdirSync('migrations').filter(f => f.endsWith('.sql') && f < MIG).sort()) await state.db.exec(fix(readFileSync('migrations/' + f, 'utf8')));
   const script = readFileSync('migrations/' + MIG, 'utf8');
   await state.db.exec('BEGIN;' + script + ';ROLLBACK;'); rollbackProven = !(await exists());
@@ -314,6 +316,10 @@ describe('follow-ups (Oct 31 10:28): rejected attempts, retries + outbox, mid-ru
     await expect(sql('UPDATE recognition_run_record_outbox SET last_error=NULL')).rejects.toThrow(/immutable/);
     const priv = (await sql(`SELECT has_table_privilege('anon','recognition_run_record_outbox','SELECT') a, has_table_privilege('oi_pr2_api','recognition_run_record_outbox','DELETE') d`)).rows[0];
     expect(priv).toEqual({ a: false, d: false });
+    const seq = (await sql(`SELECT has_sequence_privilege('anon','recognition_run_record_outbox_id_seq','USAGE') a, has_sequence_privilege('authenticated','recognition_run_record_outbox_id_seq','UPDATE') b,
+      has_sequence_privilege('oi_pr2_api','recognition_run_record_outbox_id_seq','USAGE') api,
+      (SELECT relacl::text FROM pg_class WHERE relname='recognition_run_record_outbox_id_seq') !~ '(^|[{,])=' AS no_public`)).rows[0];
+    expect(seq).toEqual({ a: false, b: false, api: true, no_public: true });
   });
 
   it('an unexpected error mid-run marks the run failed (not running) and writes a failed record', async () => {

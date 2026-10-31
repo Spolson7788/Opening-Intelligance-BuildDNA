@@ -203,6 +203,8 @@ CREATE TRIGGER recognition_access_denials_guard BEFORE UPDATE OR DELETE ON recog
 REVOKE ALL ON FUNCTION recognition_run_record_outbox_reprocess(INTEGER) FROM PUBLIC;
 REVOKE ALL ON FUNCTION recognition_run_records_write(JSONB, BOOLEAN, NUMERIC) FROM PUBLIC;
 REVOKE ALL ON FUNCTION recognition_access_denials_guard() FROM PUBLIC;
+-- Default privileges also grant the outbox id sequence to anon/authenticated (seen on staging).
+REVOKE ALL ON SEQUENCE recognition_run_record_outbox_id_seq FROM PUBLIC;
 REVOKE ALL ON FUNCTION recognition_run_record_visible(UUID, UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION recognition_run_records_guard() FROM PUBLIC;
 REVOKE ALL ON FUNCTION recognition_run_record_outbox_guard() FROM PUBLIC;
@@ -235,10 +237,12 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
     REVOKE ALL ON recognition_run_records, recognition_run_record_outbox, recognition_access_denials FROM anon;
+    REVOKE ALL ON SEQUENCE recognition_run_record_outbox_id_seq FROM anon;
     REVOKE ALL ON FUNCTION recognition_run_record_outbox_reprocess(INTEGER), recognition_run_records_write(JSONB, BOOLEAN, NUMERIC), recognition_access_denials_guard() FROM anon;
     REVOKE ALL ON FUNCTION recognition_run_record_visible(UUID, UUID), recognition_run_records_guard(), recognition_run_record_outbox_guard() FROM anon; END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
     REVOKE ALL ON recognition_run_records, recognition_run_record_outbox, recognition_access_denials FROM authenticated;
+    REVOKE ALL ON SEQUENCE recognition_run_record_outbox_id_seq FROM authenticated;
     REVOKE ALL ON FUNCTION recognition_run_record_outbox_reprocess(INTEGER), recognition_run_records_write(JSONB, BOOLEAN, NUMERIC), recognition_access_denials_guard() FROM authenticated;
     REVOKE ALL ON FUNCTION recognition_run_record_visible(UUID, UUID), recognition_run_records_guard(), recognition_run_record_outbox_guard() FROM authenticated; END IF;
 END $$;
