@@ -18,7 +18,7 @@ vi.mock('../src/services/legacyVision', () => ({ legacyVisionHandler: state.engi
 vi.mock('../src/services/storage', async (orig) => ({ ...(await orig<any>()), getObjectBytes: async (key: string, max: number) => {
   const b = state.objects.get(key); if (!b) throw new Error('object_missing'); if (b.byteLength > max) throw new Error('object_too_large'); return b; } }));
 import { createApp } from '../src/app';
-import { matchedLevels, recordStatus } from '../src/services/recognitionRunRecords';
+import { matchedLevels, recordStatus, RECORD_WRITE_RETRY } from '../src/services/recognitionRunRecords';
 import { conservativeIdentity } from '../src/services/recognitionRuns';
 const app = createApp();
 const MIG = '20261031090000_recognition_run_records.sql';
@@ -160,9 +160,9 @@ describe('recognition run records (DRAFT 20261031090000, not applied anywhere)',
     const runId = randomUUID();
     await sql(`INSERT INTO recognition_runs(id,organization_id,property_id,opening_id,requested_by_user_id,client_request_id,mode,build_commit,processing_config,started_at,photo_count)
       VALUES($1,$2,$3,$4,$5,gen_random_uuid(),'identify','abc','{"engine":"e","model":"m","prompt_version":"p","preprocessing_version":"x"}',now(),1)`, [runId, id.cust, id.custProp, id.custOpen, id.custUser]);
-    const raw = (status: string, code: string | null, called: boolean, m: unknown[]) => sql(`INSERT INTO recognition_run_records(run_id,organization_id,property_id,opening_id,photo_id,status,failure_code,provider_called,
-      manufacturer,manufacturer_confidence,series,series_confidence,model,model_confidence,model_marking_evidence) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-      [runId, id.cust, id.custProp, id.custOpen, p, status, code, called, ...m]);
+    const raw = (status: string, code: string | null, called: boolean, m: unknown[], run: string | null = runId) => sql(`INSERT INTO recognition_run_records(attempt_id,run_id,organization_id,property_id,opening_id,photo_id,status,failure_code,provider_called,
+      manufacturer,manufacturer_confidence,series,series_confidence,model,model_confidence,model_marking_evidence,requested_by_user_id) VALUES($16,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$17)`,
+      [run, id.cust, id.custProp, id.custOpen, p, status, code, called, ...m, run ?? randomUUID(), id.custUser]);
     const none = [null, null, null, null, null, null, false];
     await expect(raw('succeeded', null, true, ['M', 0.9, 'S', 0.9, 'X', 0.59, true])).rejects.toThrow(/thresholds/);
     await expect(raw('succeeded', null, true, ['M', 0.9, 'S', 0.9, 'X', 0.7, false])).rejects.toThrow(/thresholds/);
@@ -172,6 +172,9 @@ describe('recognition run records (DRAFT 20261031090000, not applied anywhere)',
     await expect(raw('failed', null, false, none)).rejects.toThrow(/failure_explicit/);
     await expect(raw('failed', 'provider_failed', true, ['M', 0.9, null, null, null, null, false])).rejects.toThrow(/match_only_on_success/);
     await expect(raw('succeeded', null, false, none)).rejects.toThrow(/success_called/);
+    await expect(raw('rejected', 'opening_not_found', false, none)).rejects.toThrow(/rejected_no_run/);
+    await expect(raw('failed', 'provider_failed', false, none, null)).rejects.toThrow(/rejected_no_run/);
+    await expect(raw('rejected', 'opening_not_found', false, none, null)).rejects.toThrow(/rejected_shape/); // a rejected row has no photo
   });
 
   it('RLS: OI staff see all; owner members see their facility; providers see their own only while assigned; others nothing', async () => {
@@ -225,4 +228,103 @@ describe('recognition run records (DRAFT 20261031090000, not applied anywhere)',
     for (const who of ['cust', 'prov', 'other']) expect((await request(app).get('/api/platform/recognition-run-records/monthly').set('Authorization', tok[who])).status).toBe(403);
     expect((await request(app).get('/api/platform/recognition-run-records/monthly')).status).toBe(401);
   });
+});
+describe('follow-ups (Oct 31 10:28): rejected attempts, retries + outbox, mid-run errors', () => {
+  beforeAll(async () => {
+    RECORD_WRITE_RETRY.delaysMs = [1, 1, 1];
+    // Test-only failure injection: the next N inserts into a table fail (sequence survives the abort).
+    await state.db.exec(`CREATE SEQUENCE t_fail_seq; CREATE TABLE t_fail(tbl text PRIMARY KEY, max_fail int NOT NULL);
+      CREATE FUNCTION t_fail_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+        IF EXISTS (SELECT 1 FROM t_fail WHERE tbl = TG_TABLE_NAME AND max_fail > 0) AND nextval('t_fail_seq') <= (SELECT max_fail FROM t_fail WHERE tbl = TG_TABLE_NAME)
+        THEN RAISE EXCEPTION 'synthetic_write_failure'; END IF; RETURN NEW; END $$;
+      CREATE TRIGGER t_fail BEFORE INSERT ON recognition_run_records FOR EACH ROW EXECUTE FUNCTION t_fail_fn();
+      CREATE TRIGGER t_fail BEFORE INSERT ON recognition_run_photos FOR EACH ROW EXECUTE FUNCTION t_fail_fn();`);
+  });
+  const failNext = async (tbl: string, n: number) => { await sql("SELECT setval('t_fail_seq', 1, false)"); await sql('INSERT INTO t_fail VALUES($1,$2) ON CONFLICT (tbl) DO UPDATE SET max_fail=EXCLUDED.max_fail', [tbl, n]); };
+  const rejected = async (orgId: string) => (await sql("SELECT * FROM recognition_run_records WHERE status='rejected' AND organization_id=$1 ORDER BY recorded_at", [orgId])).rows;
+
+  it('attempts refused before a run are recorded as rejected with the reason; opening only when reachable', async () => {
+    const before = (await rejected(id.cust)).length;
+    const bad = await request(app).post('/api/recognition/runs').set('Authorization', tok.cust).send({ opening_id: 'nope' });
+    expect(bad.status).toBe(400);
+    process.env.OI_RECOGNITION_ENABLED = 'false';
+    const off = await run('cust', id.custOpen, [await photo(id.custOpen, 'cust')]);
+    expect(off.status).toBe(503);
+    process.env.OI_RECOGNITION_ENABLED = 'true';
+    const missing = await run('cust', id.custOpen, [randomUUID()]);
+    expect(missing.body.error).toBe('stored_original_not_found');
+    const rows = (await rejected(id.cust)).slice(before);
+    expect(rows.map((r: any) => [r.failure_code, r.opening_id, r.property_id, r.run_id, r.photo_id, r.provider_called, r.requested_by_user_id])).toEqual([
+      ['invalid_recognition_run_request', null, null, null, null, false, id.custUser],
+      ['recognition_unavailable', id.custOpen, id.custProp, null, null, false, id.custUser],
+      ['stored_original_not_found', id.custOpen, id.custProp, null, null, false, id.custUser]]);
+    expect(state.engine).not.toHaveBeenCalled();
+    // Another company probing the customer's opening: recorded for that company, without the opening.
+    const probe = await run('other', id.custOpen, [randomUUID()]);
+    expect(probe.status).toBe(404);
+    expect(await rejected(id.other)).toMatchObject([{ failure_code: 'opening_not_found', opening_id: null, property_id: null }]);
+  });
+
+  it('RLS for rejected rows: own company (and staff) only; never the facility owner for an unresolved opening', async () => {
+    const otherRows = await asActor(id.otherUser, "SELECT failure_code FROM recognition_run_records WHERE status='rejected'");
+    expect(otherRows).toEqual([{ failure_code: 'opening_not_found' }]);
+    const custSees = await asActor(id.custUser, "SELECT organization_id FROM recognition_run_records WHERE status='rejected'");
+    expect(custSees.every((r: any) => r.organization_id === id.cust)).toBe(true);
+    expect((await asActor(id.oiUser, "SELECT DISTINCT organization_id FROM recognition_run_records WHERE status='rejected'")).length).toBe(2);
+    const m = await asActor(id.oiUser, 'SELECT rejected_attempts FROM recognition_run_records_monthly WHERE organization_id=$1', [id.other]);
+    expect(m).toEqual([{ rejected_attempts: 1 }]);
+  });
+
+  it('a failing record write is retried with backoff and then succeeds', async () => {
+    await failNext('recognition_run_records', 2);
+    const r = await run('cust', id.custOpen, [await photo(id.custOpen, 'cust')]);
+    expect(r.status).toBe(201);
+    expect(await records(r.body.run.id)).toMatchObject([{ status: 'succeeded', model: 'S100-X' }]);
+    expect((await sql('SELECT count(*)::int n FROM recognition_run_record_outbox')).rows[0].n).toBe(0);
+  });
+
+  it('when retries are exhausted the record goes to the outbox and staff reprocessing writes it exactly once', async () => {
+    await failNext('recognition_run_records', 1000);
+    const r = await run('cust', id.custOpen, [await photo(id.custOpen, 'cust'), await photo(id.custOpen, 'cust')]);
+    expect(r.status).toBe(201); expect(r.body.run.status).toBe('succeeded'); // the caller's outcome is unchanged
+    expect(await records(r.body.run.id)).toEqual([]);
+    const box = (await sql('SELECT * FROM recognition_run_record_outbox')).rows;
+    expect(box).toHaveLength(1);
+    expect(box[0]).toMatchObject({ attempt_id: r.body.run.id, processed_at: null, attempts: 0 });
+    expect(box[0].first_error).toMatch(/synthetic_write_failure/);
+    expect(Number(box[0].cost_per_photo_usd)).toBe(0.0125);
+    expect((await request(app).get('/api/platform/recognition-run-records/outbox').set('Authorization', tok.oi)).body).toMatchObject({ pending: 1, processed: 0 });
+    // Still failing: reprocess keeps it pending and counts the attempt.
+    expect((await request(app).post('/api/platform/recognition-run-records/outbox/reprocess').set('Authorization', tok.oi).send({})).body).toEqual({ processed: 0, failed: 1, pending: 1 });
+    await failNext('recognition_run_records', 0);
+    for (const who of ['cust', 'prov']) expect((await request(app).post('/api/platform/recognition-run-records/outbox/reprocess').set('Authorization', tok[who]).send({})).status).toBe(403);
+    expect((await request(app).post('/api/platform/recognition-run-records/outbox/reprocess').set('Authorization', tok.oi).send({ limit: 0 })).status).toBe(400);
+    const ok = await request(app).post('/api/platform/recognition-run-records/outbox/reprocess').set('Authorization', tok.oi).send({ limit: 10 });
+    expect(ok.body).toEqual({ processed: 1, failed: 0, pending: 0 });
+    const rows = await records(r.body.run.id);
+    expect(rows).toHaveLength(2);
+    for (const x of rows) expect([x.status, Number(x.cost_per_photo_usd), new Date(x.recorded_at) < new Date(box[0].created_at)]).toEqual(['succeeded', 0.0125, true]);
+    expect((await request(app).post('/api/platform/recognition-run-records/outbox/reprocess').set('Authorization', tok.oi).send({})).body).toEqual({ processed: 0, failed: 0, pending: 0 });
+    expect(await records(r.body.run.id)).toHaveLength(2);
+    const kept = (await sql('SELECT attempts, processed_at FROM recognition_run_record_outbox')).rows[0];
+    expect(kept.attempts).toBe(2); expect(kept.processed_at).toBeInstanceOf(Date);
+    await expect(sql('DELETE FROM recognition_run_record_outbox')).rejects.toThrow(/no_delete/);
+    await expect(sql('UPDATE recognition_run_record_outbox SET last_error=NULL')).rejects.toThrow(/immutable/);
+    const priv = (await sql(`SELECT has_table_privilege('anon','recognition_run_record_outbox','SELECT') a, has_table_privilege('oi_pr2_api','recognition_run_record_outbox','DELETE') d`)).rows[0];
+    expect(priv).toEqual({ a: false, d: false });
+  });
+
+  it('an unexpected error mid-run marks the run failed (not running) and writes a failed record', async () => {
+    await failNext('recognition_run_photos', 1);
+    const p1 = await photo(id.custOpen, 'cust'), p2 = await photo(id.custOpen, 'cust');
+    const r = await run('cust', id.custOpen, [p1, p2]);
+    expect(r.status).toBe(503); expect(r.body.error).toBe('recognition_unavailable');
+    expect(state.engine).not.toHaveBeenCalled();
+    const runRow = (await sql("SELECT id, status, failure_code, finished_at FROM recognition_runs WHERE requested_by_user_id=$1 ORDER BY requested_at DESC LIMIT 1", [id.custUser])).rows[0];
+    expect(runRow).toMatchObject({ status: 'failed', failure_code: 'internal_error' }); expect(runRow.finished_at).toBeInstanceOf(Date);
+    const recs = await records(runRow.id);
+    expect(recs.map((x: any) => [x.photo_id, x.status, x.failure_code, x.provider_called]).sort()).toEqual([[p1, 'failed', 'internal_error', false], [p2, 'failed', 'internal_error', false]].sort());
+    await failNext('recognition_run_photos', 0);
+  });
+
 });

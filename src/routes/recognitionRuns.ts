@@ -7,7 +7,8 @@ import { legacyVisionHandler } from '../services/legacyVision';
 import { getObjectBytes } from '../services/storage';
 import { downscaleForRecognition, DownscaleError, MAX_ORIGINAL_READ_BYTES } from '../services/recognitionDownscale';
 import { buildReferenceContext, validateCitations, REFERENCE_CONTEXT_VERSION, type ReferenceContext } from '../services/referenceRetrieval';
-import { writeRunRecords } from '../services/recognitionRunRecords';
+import { randomUUID } from 'node:crypto';
+import { recordRunAttempt, recordRejectedAttempt } from '../services/recognitionRunRecords';
 import { LEGACY_VISION_ENGINE_CONFIG, buildCommit, conservativeIdentity, sha256Hex, MAX_PROVIDER_IMAGE_BYTES, RECOGNITION_PREPROCESSING_VERSION } from '../services/recognitionRuns';
 
 // Hosting plan step 1 (t130): every recognition attempt is a recognition_runs row linked to the
@@ -56,28 +57,38 @@ recognitionRunsRouter.use(requireAuth, requireRole('admin', 'technician', 'inspe
 recognitionRunsRouter.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 
 recognitionRunsRouter.post('/', async (req: AuthedRequest, res) => {
+  const org = req.auth!.organizationId, user = req.auth!.userId;
+  // Every attempt is recorded. Refusals before a run exists become a 'rejected' record with the
+  // reason (facility/opening only once the requester is known to reach the opening).
+  let ctx: { opening_id: string; property_id: string } | null = null;
+  const reject = async (code: number, error: string) => {
+    await recordRejectedAttempt({ attemptId: randomUUID(), organizationId: org, requestedByUserId: user, propertyId: ctx?.property_id ?? null, openingId: ctx?.opening_id ?? null, reason: error });
+    return res.status(code).json({ error });
+  };
   const parsed = createSchema.safeParse(req.body);
-  if (!parsed.success || new Set(parsed.data.photo_ids).size !== parsed.data.photo_ids.length) return res.status(400).json({ error: 'invalid_recognition_run_request' });
-  const b = parsed.data, org = req.auth!.organizationId, user = req.auth!.userId;
+  if (!parsed.success || new Set(parsed.data.photo_ids).size !== parsed.data.photo_ids.length) return reject(400, 'invalid_recognition_run_request');
+  const b = parsed.data;
+  let runId: string | null = null, finished = false, providerCalled = false;
   try {
     const opening = (await pool.query(`SELECT o.id, b.property_id FROM openings o JOIN buildings b ON b.id=o.building_id
       WHERE o.id=$1 AND o.id IN (${openingsForOrgSubquery(2)})`, [b.opening_id, org])).rows[0];
-    if (!opening) return res.status(404).json({ error: 'opening_not_found' });
+    if (!opening) return reject(404, 'opening_not_found');
+    ctx = { opening_id: opening.id, property_id: opening.property_id };
     // Replay of the same request returns the existing run; it never calls the provider again.
     const prior = (await pool.query('SELECT id FROM recognition_runs WHERE requested_by_user_id=$1 AND client_request_id=$2', [user, b.client_request_id])).rows[0];
     if (prior) {
       const run = await readRun(prior.id, org);
-      return run ? res.status(200).json({ run, replayed: true }) : res.status(409).json({ error: 'client_request_id_in_use' });
+      return run ? res.status(200).json({ run, replayed: true }) : reject(409, 'client_request_id_in_use');
     }
     const photos = (await pool.query(`SELECT p.id,p.sha256_checksum,p.storage_object_key,p.content_type FROM photos p
       WHERE p.id=ANY($1::uuid[]) AND p.opening_id=$3 AND p.media_type='photo' AND p.upload_state IN ('verified','legacy_confirmed')
       AND p.sha256_checksum IS NOT NULL AND p.storage_object_key IS NOT NULL AND ${photoVisibleSql('p', 2)}`, [b.photo_ids, org, b.opening_id])).rows;
-    if (photos.length !== b.photo_ids.length) return res.status(404).json({ error: 'stored_original_not_found' });
+    if (photos.length !== b.photo_ids.length) return reject(404, 'stored_original_not_found');
     const types = new Set(photos.map((p: any) => p.content_type));
-    if (types.size !== 1 || !MEDIA.has(photos[0].content_type)) return res.status(400).json({ error: 'unsupported_or_mixed_media_type' });
-    if (b.repeat_of_run_id && !(await readRun(b.repeat_of_run_id, org))) return res.status(404).json({ error: 'repeat_of_run_not_found' });
+    if (types.size !== 1 || !MEDIA.has(photos[0].content_type)) return reject(400, 'unsupported_or_mixed_media_type');
+    if (b.repeat_of_run_id && !(await readRun(b.repeat_of_run_id, org))) return reject(404, 'repeat_of_run_not_found');
     // Explicit release switch: no run row and no provider call while disabled.
-    if (process.env.OI_RECOGNITION_ENABLED !== 'true' || !process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'recognition_unavailable' });
+    if (process.env.OI_RECOGNITION_ENABLED !== 'true' || !process.env.ANTHROPIC_API_KEY) return reject(503, 'recognition_unavailable');
 
     // Reference library: approved facts from the single active release only. Hints come from the opening's
     // recorded hardware. No release (or no library yet) -> null: the run proceeds and cites nothing.
@@ -92,21 +103,18 @@ recognitionRunsRouter.post('/', async (req: AuthedRequest, res) => {
     const inserted = (await pool.query(`INSERT INTO recognition_runs(organization_id,property_id,opening_id,requested_by_user_id,client_request_id,repeat_of_run_id,mode,build_commit,processing_config,status,started_at,photo_count)
       VALUES($1,$2,$3,$4,$5,$6,'identify',$7,$8,'running',now(),$9) ON CONFLICT (requested_by_user_id,client_request_id) DO NOTHING RETURNING id`,
       [org, opening.property_id, b.opening_id, user, b.client_request_id, b.repeat_of_run_id ?? null, buildCommit(), JSON.stringify(config), b.photo_ids.length])).rows[0];
-    if (!inserted) return res.status(409).json({ error: 'client_request_id_in_use' });
+    if (!inserted) return reject(409, 'client_request_id_in_use');
+    runId = inserted.id;
     // Every run that used a release records it, whatever the outcome.
     if (ref) await pool.query('UPDATE recognition_runs SET reference_release_id=$2 WHERE id=$1', [inserted.id, ref.release_id]);
     const ordered = b.photo_ids.map(id => photos.find((p: any) => p.id === id));
-    // Every attempt that created a run also writes one recognition_run_records row per photo
-    // (success, failure, or refusal by the safety cap). A record write failure never changes the
-    // run outcome shown to the caller; it is logged (run id only) for follow-up.
-    let providerCalled = false;
+    // Every run writes one recognition_run_records row per photo (success, failure, or refusal by
+    // the safety cap), with retries and the outbox fallback; recording never changes the outcome.
     const done = async (f: Parameters<typeof finish>[1], code = 200) => {
-      await finish(inserted.id, f);
-      try {
-        await writeRunRecords({ runId: inserted.id, organizationId: org, propertyId: opening.property_id, openingId: b.opening_id, photoIds: b.photo_ids,
-          runStatus: f.status, failureCode: f.failure_code ?? null, result: f.result ?? null, providerCalled,
-          identity: f.level ? { level: f.level as any, manufacturer: f.manufacturer ?? null, series: f.series ?? null, model: f.model ?? null } : null });
-      } catch { console.error('recognition_run_record_write_failed', inserted.id); }
+      await finish(inserted.id, f); finished = true;
+      await recordRunAttempt({ runId: inserted.id, organizationId: org, requestedByUserId: user, propertyId: opening.property_id, openingId: b.opening_id, photoIds: b.photo_ids,
+        runStatus: f.status, failureCode: f.failure_code ?? null, result: f.result ?? null, providerCalled,
+        identity: f.level ? { level: f.level as any, manufacturer: f.manufacturer ?? null, series: f.series ?? null, model: f.model ?? null } : null });
       return res.status(code).json({ run: await readRun(inserted.id, org) });
     };
 
@@ -149,7 +157,19 @@ recognitionRunsRouter.post('/', async (req: AuthedRequest, res) => {
     const id = conservativeIdentity(result);
     if (ref) await pool.query('UPDATE recognition_runs SET reference_citations=$2 WHERE id=$1', [inserted.id, JSON.stringify(validateCitations(result, ref))]);
     return done({ status: id.level === 'none' ? 'abstained' : 'succeeded', result, level: id.level, manufacturer: id.manufacturer, series: id.series, model: id.model, downscale_used: downscaleUsed }, 201);
-  } catch { return res.status(503).json({ error: 'recognition_unavailable' }); }
+  } catch {
+    // Unexpected error. Mid-run: the run is marked failed ('internal_error') instead of staying
+    // 'running', and a failed record is written. Before a run: a 'rejected' record. After the run
+    // finished (e.g. the read-back failed): its records already exist.
+    if (runId && !finished) {
+      try { await finish(runId, { status: 'failed', failure_code: 'internal_error' }); } catch { console.error('recognition_run_finish_failed', runId); }
+      await recordRunAttempt({ runId, organizationId: org, requestedByUserId: user, propertyId: ctx!.property_id, openingId: ctx!.opening_id, photoIds: b.photo_ids,
+        runStatus: 'failed', failureCode: 'internal_error', result: null, identity: null, providerCalled });
+    } else if (!runId) {
+      await recordRejectedAttempt({ attemptId: randomUUID(), organizationId: org, requestedByUserId: user, propertyId: ctx?.property_id ?? null, openingId: ctx?.opening_id ?? null, reason: 'internal_error' });
+    }
+    return res.status(503).json({ error: 'recognition_unavailable' });
+  }
 });
 
 recognitionRunsRouter.get('/:id', async (req: AuthedRequest, res) => {

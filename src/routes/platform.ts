@@ -5,7 +5,7 @@ import { Router } from "express";
 import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { recognitionUsageReport } from "../services/recognitionUsageReport";
-import { recognitionRunRecordsMonthly } from "../services/recognitionRunRecords";
+import { recognitionRunRecordsMonthly, reprocessRecordOutbox, recordOutboxStatus } from "../services/recognitionRunRecords";
 
 // OI staff read access (multi-company design, part B): READ ONLY overviews by facility and by
 // service-provider company. Staff status is re-checked in the database on every request
@@ -53,6 +53,17 @@ platformRouter.get("/recognition-run-records/monthly", async (req: AuthedRequest
   if (month !== undefined && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: "invalid_month" });
   try { res.json({ month: month ?? null, rows: await recognitionRunRecordsMonthly(req.auth!.userId, month) }); }
   catch { res.status(503).json({ error: "recognition_run_records_unavailable" }); }
+});
+
+// Record outbox: record writes that failed after retries. Staff can see how many are pending and
+// reprocess them (idempotent; entries are kept and marked processed, never deleted).
+platformRouter.get("/recognition-run-records/outbox", async (_req, res) => {
+  try { res.json(await recordOutboxStatus()); } catch { res.status(503).json({ error: "recognition_run_records_unavailable" }); }
+});
+platformRouter.post("/recognition-run-records/outbox/reprocess", async (req: AuthedRequest, res) => {
+  const raw = req.body?.limit, limit = raw === undefined ? 100 : Number(raw);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) return res.status(400).json({ error: "invalid_limit" });
+  try { res.json(await reprocessRecordOutbox(limit)); } catch { res.status(503).json({ error: "recognition_run_records_unavailable" }); }
 });
 
 // OI-staff edit of price, recognition cost and safety caps (12:23). Validated here and again in the

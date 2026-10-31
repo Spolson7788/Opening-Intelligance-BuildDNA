@@ -3,6 +3,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
+    // PGlite suites are CPU-heavy: cap parallelism and allow slow setup so a plain run is reliable.
+    maxWorkers: 4,
+    hookTimeout: 60000,
+    testTimeout: 30000,
     env: {
       JWT_SECRET: "offline-hosting-smoke-test-only",
       CORS_ORIGINS: "",
