@@ -32,16 +32,21 @@ for (const [name, m] of [["dashboard", dashIntro], ["field-app", fieldIntro]] as
       expect(document.getElementById("app")).not.toBeNull();
     });
 
-    it("Safari-safe CSS: 3D animation on a wrapper div, not the img, with explicit deg units", () => {
+    it("iOS-robust CSS: main motion is a 2D rotate() on a wrapper div in <=90deg steps; 3D twist is extra", () => {
       m.playLoginIntro(env());
       const css = document.getElementById("oi-login-intro-style")!.textContent!;
-      expect(overlay()!.querySelector(".oi-intro-logo > img")).not.toBeNull();
-      expect(css).toMatch(/\.oi-intro-logo\{[^}]*transform-style:preserve-3d/);
-      expect(css).not.toMatch(/ img\{[^}]*(animation|preserve-3d)/);
+      expect(overlay()!.querySelector(".oi-intro-logo > .oi-intro-twist > img")).not.toBeNull();
+      expect(css).not.toMatch(/ img\{[^}]*animation/);
+      expect(css).not.toMatch(/preserve-3d|backface-visibility|will-change/);
       expect(css).not.toMatch(/rotate[XY]?\(0\)/);
+      const spin = css.match(/@keyframes oi-intro-spin\{(.*?)\}\n/)![1];
+      expect(spin).not.toMatch(/rotate[XYZ3]/); // 2D only
+      const degs = [...spin.matchAll(/rotate\((-?\d+)deg\)/g)].map(x => +x[1]);
+      expect(degs[0]).toBe(0); expect(degs[degs.length - 1]).toBe(720);
+      for (let i = 1; i < degs.length; i++) expect(Math.abs(degs[i] - degs[i - 1])).toBeLessThanOrEqual(90);
+      expect(css).toMatch(/\.oi-intro-run \.oi-intro-twist\{[^}]*animation:oi-intro-twist/);
       expect(css).toMatch(/@-webkit-keyframes oi-intro-spin/);
     });
-
     it("starts after img.decode() resolves and two animation frames, then spins the full 3s", async () => {
       (HTMLImageElement.prototype as any).decode = () => Promise.resolve();
       const frames: FrameRequestCallback[] = [];
@@ -93,7 +98,7 @@ for (const [name, m] of [["dashboard", dashIntro], ["field-app", fieldIntro]] as
       expect(overlay()!.classList.contains("oi-intro-still")).toBe(true);
       const css = document.getElementById("oi-login-intro-style")!.textContent!;
       expect(css).toMatch(/prefers-reduced-motion: reduce/);
-      expect(css).toMatch(/oi-intro-still \.oi-intro-logo\{opacity:1;-webkit-animation:none;animation:none\}/);
+      expect(css).toMatch(/oi-intro-still \.oi-intro-logo,#oi-login-intro\.oi-intro-still \.oi-intro-twist\{opacity:1;-webkit-animation:none;animation:none\}/);
       vi.advanceTimersByTime(m.INTRO_START_MAX_MS + 40 + m.INTRO_STILL_MS);
       expect(overlay()!.classList.contains("oi-intro-fading")).toBe(true);
       vi.advanceTimersByTime(m.INTRO_FADE_MS);
