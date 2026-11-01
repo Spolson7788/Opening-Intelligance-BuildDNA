@@ -27,7 +27,7 @@ for (const [name, m] of [["dashboard", dashIntro], ["field-app", fieldIntro]] as
       expect(overlay()!.parentElement).toBe(document.body); // outside the React root
       vi.advanceTimersByTime(m.INTRO_SPIN_MS);
       expect(overlay()!.classList.contains("oi-intro-fading")).toBe(true);
-      vi.advanceTimersByTime(m.INTRO_FADE_MS);
+      vi.advanceTimersByTime(m.INTRO_FADE_MS + 50);
       expect(overlay()).toBeNull();
       expect(document.getElementById("app")).not.toBeNull();
     });
@@ -73,6 +73,52 @@ for (const [name, m] of [["dashboard", dashIntro], ["field-app", fieldIntro]] as
       delete (HTMLImageElement.prototype as any).decode;
     });
 
+    it("overlay layout is inline (works even if the injected stylesheet is ignored on iOS)", () => {
+      m.playLoginIntro(env());
+      const s = overlay()!.style;
+      expect(s.position).toBe("fixed"); expect(s.top).toBe("0px"); expect(s.bottom).toBe("0px");
+      expect(s.zIndex).toBe("2147483000"); expect(s.background).toMatch(/#fff|rgb\(255, 255, 255\)/);
+      expect((overlay()!.querySelector(".oi-intro-logo") as HTMLElement).style.opacity).toBe("0"); // hidden until it moves
+    });
+
+    it("uses Web Animations when available: 2D spin, fade only after the spin actually finishes", async () => {
+      const calls: { el: Element; frames: any[]; opts: any; finish: () => void }[] = [];
+      (Element.prototype as any).animate = function (frames: any[], opts: any) {
+        let finish!: () => void; const finished = new Promise<void>(r => { finish = r; });
+        const a = { finished, ready: Promise.resolve(), cancel: vi.fn() };
+        calls.push({ el: this, frames, opts, finish }); return a;
+      };
+      try {
+        m.playLoginIntro(env());
+        vi.advanceTimersByTime(m.INTRO_START_MAX_MS + 40);
+        expect(overlay()!.dataset.engine).toBe("waapi");
+        const spin = calls.find(c => (c.el as HTMLElement).classList.contains("oi-intro-logo"))!;
+        expect(spin.opts.duration).toBe(m.INTRO_SPIN_MS);
+        expect(spin.frames[0].transform).toBe("rotate(0deg) scale(0.60)");
+        expect(spin.frames.at(-1).transform).toBe("rotate(720deg) scale(1.00)");
+        expect(spin.frames.every((f: any) => !/rotate[XYZ3]/.test(f.transform))).toBe(true);
+        vi.advanceTimersByTime(m.INTRO_SPIN_MS); // wall clock passes but iOS has not finished playing
+        expect(overlay()!.dataset.state).toBe("running");
+        spin.finish(); await Promise.resolve(); await Promise.resolve();
+        expect(overlay()!.dataset.state).toBe("fading");
+        const fadeAnim = calls.find(c => c.el === overlay())!;
+        expect(fadeAnim.opts.duration).toBe(m.INTRO_FADE_MS);
+        vi.advanceTimersByTime(m.INTRO_FADE_MS + 50);
+        expect(overlay()).toBeNull();
+      } finally { delete (Element.prototype as any).animate; }
+    });
+
+    it("Web Animations safety net fades even if finished never resolves", () => {
+      (Element.prototype as any).animate = () => ({ finished: new Promise(() => {}), ready: Promise.resolve(), cancel() {} });
+      try {
+        m.playLoginIntro(env());
+        vi.advanceTimersByTime(m.INTRO_START_MAX_MS + 40 + m.INTRO_SPIN_MS + 2500);
+        expect(overlay()!.dataset.state).toBe("fading");
+        vi.advanceTimersByTime(m.INTRO_FADE_MS + 50);
+        expect(overlay()).toBeNull();
+      } finally { delete (Element.prototype as any).animate; }
+    });
+
     it("a second call replaces rather than stacks overlays", () => {
       m.playLoginIntro(env()); m.playLoginIntro(env());
       expect(document.querySelectorAll(`#${m.INTRO_OVERLAY_ID}`)).toHaveLength(1);
@@ -101,7 +147,7 @@ for (const [name, m] of [["dashboard", dashIntro], ["field-app", fieldIntro]] as
       expect(css).toMatch(/oi-intro-still \.oi-intro-logo,#oi-login-intro\.oi-intro-still \.oi-intro-twist\{opacity:1;-webkit-animation:none;animation:none\}/);
       vi.advanceTimersByTime(m.INTRO_START_MAX_MS + 40 + m.INTRO_STILL_MS);
       expect(overlay()!.classList.contains("oi-intro-fading")).toBe(true);
-      vi.advanceTimersByTime(m.INTRO_FADE_MS);
+      vi.advanceTimersByTime(m.INTRO_FADE_MS + 50);
       expect(overlay()).toBeNull();
     });
   });

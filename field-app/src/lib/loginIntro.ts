@@ -72,9 +72,13 @@ export function playLoginIntro(env?: Partial<IntroEnv>): () => void {
     overlay.setAttribute("aria-hidden", "true");
     overlay.dataset.motion = reduced ? "reduced" : "full";
     overlay.dataset.state = "loading";
+    // Critical layout inline too, so the overlay is correct even if the injected stylesheet is
+    // ignored or late (e.g. iOS): fixed, full-screen (top/left/right/bottom, not `inset`), white.
+    overlay.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:#fff;cursor:pointer;opacity:1";
     if (reduced) overlay.classList.add("oi-intro-still");
     const logo = doc.createElement("div");
     logo.className = "oi-intro-logo";
+    logo.style.cssText = `width:${"min(60vw,320px)"};max-width:320px;opacity:${reduced ? 1 : 0}`;
     const img = doc.createElement("img");
     img.alt = ""; img.decoding = "sync"; img.src = logoUrl;
     const twist = doc.createElement("div");
@@ -86,17 +90,51 @@ export function playLoginIntro(env?: Partial<IntroEnv>): () => void {
     let done = false; let started = false; const timers: number[] = [];
     const clearAll = () => timers.forEach(t => win.clearTimeout(t));
     const remove = () => { overlay.remove(); };
+    const anims: Animation[] = [];
+    const canAnimate = (el: Element) => typeof (el as HTMLElement).animate === "function";
     const fade = () => {
       if (done) return; done = true;
       clearAll();
       overlay.classList.add("oi-intro-fading");
-      timers.push(win.setTimeout(remove, INTRO_FADE_MS) as unknown as number);
+      overlay.dataset.state = "fading";
+      if (canAnimate(overlay)) {
+        try {
+          const a = overlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: INTRO_FADE_MS, easing: "ease", fill: "forwards" });
+          a.finished.then(remove, remove);
+        } catch { /* CSS transition still applies */ }
+      }
+      timers.push(win.setTimeout(remove, INTRO_FADE_MS + 50) as unknown as number);
     };
-    const skip = () => { if (done) { remove(); return; } done = true; clearAll(); remove(); };
+    const skip = () => { if (done) { remove(); return; } done = true; clearAll(); anims.forEach(a => { try { a.cancel(); } catch { /* ignore */ } }); remove(); };
     const frame = (cb: () => void) => {
       const raf = win.requestAnimationFrame;
       if (typeof raf === "function") raf.call(win, () => cb());
       else timers.push(win.setTimeout(cb, 16) as unknown as number);
+    };
+    // Web Animations first (explicit, script-driven, works on iOS Safari 13.1+), CSS class fallback.
+    const runMotion = (): boolean => {
+      if (!canAnimate(logo)) return false;
+      try {
+        const steps = [0, 90, 180, 270, 360, 450, 540, 630, 720];
+        const spin = logo.animate(steps.map((deg, i) => ({
+          transform: `rotate(${deg}deg) scale(${(0.6 + 0.4 * Math.min(1, i / 4)).toFixed(2)})`,
+          opacity: i === 0 ? 0 : 1, offset: i / (steps.length - 1),
+        })), { duration: INTRO_SPIN_MS, easing: "cubic-bezier(.45,.05,.25,1)", fill: "both" });
+        anims.push(spin);
+        try {
+          anims.push(twist.animate([
+            { transform: "perspective(600px) rotateY(0deg)" }, { transform: "perspective(600px) rotateY(35deg)" },
+            { transform: "perspective(600px) rotateY(0deg)" }, { transform: "perspective(600px) rotateY(-35deg)" },
+            { transform: "perspective(600px) rotateY(0deg)" },
+          ], { duration: INTRO_SPIN_MS, easing: "ease-in-out", fill: "both" }));
+        } catch { /* twist is decoration only */ }
+        overlay.dataset.engine = "waapi";
+        // Fade when the spin really finished playing (not on a wall-clock guess that can expire
+        // while iOS is still busy mounting the app); a generous timer is only a safety net.
+        spin.finished.then(fade, fade);
+        timers.push(win.setTimeout(fade, INTRO_SPIN_MS + 2500) as unknown as number);
+        return true;
+      } catch { return false; }
     };
     // Start once, after the image is ready and two frames have painted the overlay.
     const begin = () => {
@@ -104,12 +142,15 @@ export function playLoginIntro(env?: Partial<IntroEnv>): () => void {
       frame(() => frame(() => {
         if (done) return;
         void logo.offsetWidth; // force style/layout so Safari registers the start state
-        logo.classList.add("oi-intro-run");
         overlay.dataset.state = "running";
-        timers.push(win.setTimeout(fade, reduced ? INTRO_STILL_MS : INTRO_SPIN_MS) as unknown as number);
+        if (reduced) { timers.push(win.setTimeout(fade, INTRO_STILL_MS) as unknown as number); return; }
+        if (runMotion()) return;
+        overlay.dataset.engine = "css";
+        logo.style.opacity = "";
+        logo.classList.add("oi-intro-run");
+        timers.push(win.setTimeout(fade, INTRO_SPIN_MS) as unknown as number);
       }));
-    };
-    timers.push(win.setTimeout(begin, INTRO_START_MAX_MS) as unknown as number); // decode never settles
+    };    timers.push(win.setTimeout(begin, INTRO_START_MAX_MS) as unknown as number); // decode never settles
     overlay.addEventListener("click", skip);
     overlay.addEventListener("touchstart", skip, { passive: true });
     doc.body.appendChild(overlay);
