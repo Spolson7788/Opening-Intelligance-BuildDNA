@@ -20,12 +20,52 @@ for (const [name, m] of [["dashboard", dashIntro], ["field-app", fieldIntro]] as
       expect(overlay()!.dataset.motion).toBe("full");
       expect(overlay()!.querySelector("img")!.getAttribute("src")).toMatch(/oi-logo-intro/);
       expect(document.getElementById("app")).not.toBeNull(); // app keeps rendering underneath
+      expect(overlay()!.querySelector(".oi-intro-logo")!.classList.contains("oi-intro-run")).toBe(false); // not before paint
+      vi.advanceTimersByTime(m.INTRO_START_MAX_MS + 40); // decode fallback + two frames
+      expect(overlay()!.dataset.state).toBe("running");
+      expect(overlay()!.querySelector(".oi-intro-logo")!.classList.contains("oi-intro-run")).toBe(true);
       expect(overlay()!.parentElement).toBe(document.body); // outside the React root
       vi.advanceTimersByTime(m.INTRO_SPIN_MS);
       expect(overlay()!.classList.contains("oi-intro-fading")).toBe(true);
       vi.advanceTimersByTime(m.INTRO_FADE_MS);
       expect(overlay()).toBeNull();
       expect(document.getElementById("app")).not.toBeNull();
+    });
+
+    it("Safari-safe CSS: 3D animation on a wrapper div, not the img, with explicit deg units", () => {
+      m.playLoginIntro(env());
+      const css = document.getElementById("oi-login-intro-style")!.textContent!;
+      expect(overlay()!.querySelector(".oi-intro-logo > img")).not.toBeNull();
+      expect(css).toMatch(/\.oi-intro-logo\{[^}]*transform-style:preserve-3d/);
+      expect(css).not.toMatch(/ img\{[^}]*(animation|preserve-3d)/);
+      expect(css).not.toMatch(/rotate[XY]?\(0\)/);
+      expect(css).toMatch(/@-webkit-keyframes oi-intro-spin/);
+    });
+
+    it("starts after img.decode() resolves and two animation frames, then spins the full 3s", async () => {
+      (HTMLImageElement.prototype as any).decode = () => Promise.resolve();
+      const frames: FrameRequestCallback[] = [];
+      const e = env(); e.window.requestAnimationFrame = (cb: FrameRequestCallback) => { frames.push(cb); return frames.length; };
+      m.playLoginIntro(e);
+      await Promise.resolve(); await Promise.resolve();
+      expect(frames).toHaveLength(1); frames.shift()!(0);
+      expect(overlay()!.dataset.state).toBe("loading");
+      frames.shift()!(16);
+      expect(overlay()!.dataset.state).toBe("running");
+      vi.advanceTimersByTime(m.INTRO_SPIN_MS - 1);
+      expect(overlay()!.classList.contains("oi-intro-fading")).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(overlay()!.classList.contains("oi-intro-fading")).toBe(true);
+      delete (HTMLImageElement.prototype as any).decode;
+    });
+
+    it("a failed decode still starts the intro", async () => {
+      (HTMLImageElement.prototype as any).decode = () => Promise.reject(new Error("bad"));
+      m.playLoginIntro(env());
+      await Promise.resolve(); await Promise.resolve();
+      vi.advanceTimersByTime(40);
+      expect(overlay()!.dataset.state).toBe("running");
+      delete (HTMLImageElement.prototype as any).decode;
     });
 
     it("a second call replaces rather than stacks overlays", () => {
@@ -53,8 +93,8 @@ for (const [name, m] of [["dashboard", dashIntro], ["field-app", fieldIntro]] as
       expect(overlay()!.classList.contains("oi-intro-still")).toBe(true);
       const css = document.getElementById("oi-login-intro-style")!.textContent!;
       expect(css).toMatch(/prefers-reduced-motion: reduce/);
-      expect(css).toMatch(/oi-intro-still img\{animation:none\}/);
-      vi.advanceTimersByTime(m.INTRO_STILL_MS);
+      expect(css).toMatch(/oi-intro-still \.oi-intro-logo\{opacity:1;-webkit-animation:none;animation:none\}/);
+      vi.advanceTimersByTime(m.INTRO_START_MAX_MS + 40 + m.INTRO_STILL_MS);
       expect(overlay()!.classList.contains("oi-intro-fading")).toBe(true);
       vi.advanceTimersByTime(m.INTRO_FADE_MS);
       expect(overlay()).toBeNull();
