@@ -6,9 +6,9 @@ import logoUrl from "../assets/oi-logo-intro.webp";
 // the logo still before fading.
 
 export const INTRO_OVERLAY_ID = "oi-login-intro";
-export const INTRO_SPIN_MS = 1700;
+export const INTRO_SPIN_MS = 3000;
 export const INTRO_STILL_MS = 900;
-export const INTRO_FADE_MS = 400;
+export const INTRO_FADE_MS = 600;
 
 const STYLE_ID = "oi-login-intro-style";
 const CSS = `

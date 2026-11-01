@@ -9,6 +9,7 @@ function env(reduce = false) { return { document, window: { matchMedia: mm(reduc
 
 for (const [name, m] of [["dashboard", dashIntro], ["field-app", fieldIntro]] as const) {
   describe(`${name}: login logo intro`, () => {
+    it("uses the longer timing (~3s spin, ~0.6s fade, ~0.9s still)", () => { expect(m.INTRO_SPIN_MS).toBe(3000); expect(m.INTRO_FADE_MS).toBe(600); expect(m.INTRO_STILL_MS).toBe(900); });
     beforeEach(() => { vi.useFakeTimers(); document.body.innerHTML = '<div id="root"><p id="app">app</p></div>'; });
     afterEach(() => { vi.useRealTimers(); });
     const overlay = () => document.getElementById(m.INTRO_OVERLAY_ID);
