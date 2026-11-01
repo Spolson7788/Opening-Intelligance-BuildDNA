@@ -48,6 +48,9 @@ beforeAll(async () => {
   process.env.OI_RECOGNITION_ENABLED = 'true'; process.env.ANTHROPIC_API_KEY = 'test-not-real';
   state.engine.mockResolvedValue({ statusCode: 200, body: JSON.stringify({ manufacturer: 'Example Co', confidence: { manufacturer: 0.9 } }) });
   state.db = new PGlite();
+  // Pin the session time zone to UTC (as on Supabase): PGlite otherwise inherits the host zone, so near a
+  // month boundary the DB's date_trunc('month', now()) and the UTC test month disagree.
+  await state.db.exec("SET TimeZone TO 'UTC'");
   await state.db.exec('CREATE ROLE oi_pr2_api NOLOGIN; CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN;');
   for (const f of readdirSync('migrations').filter(f => f.endsWith('.sql')).sort()) await state.db.exec(fix(readFileSync('migrations/' + f, 'utf8')));
   for (const [k, t] of [['oi', 'internal'], ['cust', 'customer'], ['vortex', 'service_partner'], ['dhpace', 'service_partner']]) {
