@@ -2,6 +2,7 @@ import { createContext, useContext, useState } from "react";
 import type { ReactNode } from "react";
 import { login as apiLogin, setToken, decodeTokenPayload } from "./api";
 import { readValidToken } from "./session";
+import { playLoginIntro } from "./loginIntro";
 
 interface AuthState {
   userId: string;
@@ -38,6 +39,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { token } = await apiLogin(email, password);
     setToken(token);
     setAuth(decodeTokenPayload(token));
+    // Fresh interactive sign-in only (never on reload/session restore).
+    playLoginIntro();
   }
 
   function adoptToken(token: string) {

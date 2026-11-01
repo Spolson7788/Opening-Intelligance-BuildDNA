@@ -5,6 +5,7 @@ import { decideSwitch, pendingWorkFor } from "./companySwitch";
 import type { SwitchDecision } from "./companySwitch";
 import { loadAuth, clearAuth } from "./db";
 import { recordFreshSignIn } from "./freshSignIn";
+import { playLoginIntro } from "./loginIntro";
 
 interface AuthState {
   token: string;
@@ -78,6 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const next = { token, userId, organizationId, role, email: email.trim() };
     await recordFreshSignIn(next, resumeQueued, resumeQueued);
     setAuth({ ...next, mustChangePassword: tokenRequiresPasswordChange(token) });
+    // Fresh interactive sign-in only (never on reload, session restore, or company switch).
+    playLoginIntro();
     } finally { changing.current = false; setLoading(false); setIdentityChecking(false); }
   }
 
