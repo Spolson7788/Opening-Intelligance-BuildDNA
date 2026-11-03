@@ -56,6 +56,23 @@ export function FacilityOpeningsPage() {
       <div className="screen">
         {error && <p role="alert">{error}</p>}
         {auth && COMPARISON_REPORT_ROLES.includes(auth.role) && <p><a href={comparisonReportHref()}>Schedule comparison report</a></p>}
+        {ordered.length > 0 && <div aria-label="Facilities by state and county">
+          {[...ordered.reduce((map, facility) => {
+            const key = `${facility.state_name ?? "State not set"} / ${facility.county_name ?? "County not set"}`;
+            map.set(key, [...(map.get(key) ?? []), facility]);
+            return map;
+          }, new Map<string, typeof ordered>())].sort((a, b) => a[0].localeCompare(b[0])).map(([label, facilities]) => (
+            <section key={label}>
+              <div className="section-label">{label}</div>
+              {facilities.map((facility) => (
+                <button key={facility.id} type="button" className="btn btn-secondary" style={{ textAlign: "left", marginBottom: 8 }}
+                  onClick={() => facility.buildings?.[0] && setBuildingId(facility.buildings[0].id)}>
+                  {facility.name}{facility.city ? `, ${facility.city}` : ""}
+                </button>
+              ))}
+            </section>
+          ))}
+        </div>}
         <label>Building{" "}
           <select value={buildingId} onChange={(e) => setBuildingId(e.target.value)}>
             <option value="">{properties ? "Choose a building" : "Loading facilities..."}</option>

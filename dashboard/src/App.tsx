@@ -38,6 +38,7 @@ import { WorkOrdersPage } from "./pages/WorkOrdersPage";
 import { MaintenanceSchedulesPage } from "./pages/MaintenanceSchedulesPage";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
+import { CoveragePage } from "./pages/CoveragePage";
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { auth } = useAuth();
@@ -66,6 +67,7 @@ function AppRoutes() {
       <Route path="/compliance-alerts" element={<RequireAuth><ComplianceAlertsPage /></RequireAuth>} />
       <Route path="/staff-tools" element={<RequireAuth><StaffToolsPage /></RequireAuth>} />
       <Route path="/team" element={<RequireAuth><TeamPage /></RequireAuth>} />
+      <Route path="/coverage" element={<RequireAuth><CoveragePage /></RequireAuth>} />
       <Route path="/audit-log" element={<RequireAuth><AuditLogPage /></RequireAuth>} />
       <Route path="/work-orders" element={<RequireAuth><WorkOrdersPage /></RequireAuth>} />
       <Route path="/facility-schedules" element={<RequireAuth><FacilitySchedulesPage /></RequireAuth>} />

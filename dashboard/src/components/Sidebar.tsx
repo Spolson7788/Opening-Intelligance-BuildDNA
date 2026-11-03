@@ -18,6 +18,9 @@ export function Sidebar() {
       <LocationBar />
       <div className="sidebar-org">
         {auth?.role && <div style={{ textTransform: "capitalize", marginBottom: 8 }}>{auth.role.replace(/_/g, " ")}</div>}
+        {(auth?.role === "admin" || auth?.role === "facilities_manager") && (
+          <Link to="/coverage" style={{ display: "block", color: "#9aa4b2", fontSize: 12, marginBottom: 6 }}>State and county</Link>
+        )}
         {staff && <Link to="/staff-tools" style={{ display: "block", color: "#9aa4b2", fontSize: 12, marginBottom: 6 }}>OI staff tools</Link>}
         <Link to="/change-password" style={{ display: "block", color: "#9aa4b2", fontSize: 12, marginBottom: 6 }}>
           Change password

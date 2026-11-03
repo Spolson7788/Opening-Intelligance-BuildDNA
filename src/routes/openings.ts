@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { pool } from "../db/pool";
 import { computeHealthScore } from "../services/healthScore";
-import { requireAuth, AuthedRequest } from "../middleware/auth";
+import { requireAuth, AuthedRequest, isMissingSchema } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
 import { buildingsForOrgSubquery, openingsForOrgSubquery, photoVisibleSql, serviceEventVisibleSql } from "../db/tenantScope";
@@ -529,13 +529,39 @@ openingsRouter.get("/", async (req: AuthedRequest, res) => {
   }
   values.push(orgId);
   conditions.push(`id IN (${openingsForOrgSubquery(values.length)})`);
+  const geoValues = [...values];
+  const geoConditions = [...conditions];
+  if (typeof req.query.state_code === "string" && req.query.state_code !== "") {
+    if (!/^[A-Za-z]{2}$/.test(req.query.state_code)) return res.status(400).json({ error: "invalid_state_code" });
+    geoValues.push(req.query.state_code.toUpperCase());
+    geoConditions.push(`building_id IN (SELECT b.id FROM buildings b JOIN properties p ON p.id = b.property_id WHERE p.state_code = $${geoValues.length})`);
+  }
+  if (typeof req.query.county_fips === "string" && req.query.county_fips !== "") {
+    if (!/^\d{5}$/.test(req.query.county_fips)) return res.status(400).json({ error: "invalid_county_fips" });
+    geoValues.push(req.query.county_fips);
+    geoConditions.push(`building_id IN (SELECT b.id FROM buildings b JOIN properties p ON p.id = b.property_id WHERE p.county_fips = $${geoValues.length})`);
+  }
+  geoValues.push(req.auth!.userId);
+  geoConditions.push(`id IN (
+    SELECT area_o.id FROM openings area_o
+    JOIN buildings area_b ON area_b.id = area_o.building_id
+    WHERE oi_private.caller_area_allows($${geoValues.length}::uuid, area_b.property_id)
+  )`);
 
-  const whereClause = `WHERE ${conditions.join(" AND ")}`;
   try {
-    const result = await pool.query(
-      `SELECT * FROM openings ${whereClause} ORDER BY health_score ASC NULLS LAST LIMIT 500`,
-      values
-    );
+    let result;
+    try {
+      result = await pool.query(
+        `SELECT * FROM openings WHERE ${geoConditions.join(" AND ")} ORDER BY health_score ASC NULLS LAST LIMIT 500`,
+        geoValues
+      );
+    } catch (error) {
+      if (!isMissingSchema(error)) throw error;
+      result = await pool.query(
+        `SELECT * FROM openings WHERE ${conditions.join(" AND ")} ORDER BY health_score ASC NULLS LAST LIMIT 500`,
+        values
+      );
+    }
     res.json(result.rows);
   } catch (err) {
     console.error(err);

@@ -10,6 +10,7 @@ import {recognitionRouter} from "./routes/recognition";
 import {recognitionRunsRouter} from "./routes/recognitionRuns";
 import {recordRecognitionAccessDenials} from "./middleware/recognitionAccessDenials";
 import {branchesRouter} from "./routes/branches";
+import { geoRouter } from "./routes/geo";
 import {providerAssignmentsRouter} from "./routes/providerAssignments";
 import { facilitySchedulesRouter } from "./routes/facilitySchedules";
 import { scheduleImportsRouter } from "./routes/scheduleImports";
@@ -112,6 +113,7 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   app.use('/api/sandbox-finance',sandboxFinanceRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/locations", locationsRouter);
+  app.use("/api/geo", geoRouter);
   app.use("/api/members", membersRouter);
   app.use("/api/invites", invitesPublicRouter);
   app.use("/api/recognition", recordRecognitionAccessDenials); // 401/403 records, before auth

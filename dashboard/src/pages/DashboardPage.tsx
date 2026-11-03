@@ -44,6 +44,9 @@ export function DashboardPage() {
   const [propertiesError, setPropertiesError] = useState<string | null>(null);
 
   const [propertyFilter, setPropertyFilter] = useState("");
+  const [stateFilter, setStateFilter] = useState("");
+  const [countyFilter, setCountyFilter] = useState("");
+  const [groupGeo, setGroupGeo] = useState(false);
   const [buildingFilter, setBuildingFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [maxHealthFilter, setMaxHealthFilter] = useState("");
@@ -95,6 +98,24 @@ export function DashboardPage() {
     return properties.find((p) => p.id === propertyFilter)?.buildings ?? [];
   }, [properties, propertyFilter]);
 
+  const stateOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of properties) if (p.state_code) map.set(p.state_code, p.state_name || p.state_code);
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [properties]);
+  const countyOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of properties) {
+      if (!p.county_fips) continue;
+      if (stateFilter && p.state_code !== stateFilter) continue;
+      map.set(p.county_fips, p.county_name || p.county_fips);
+    }
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [properties, stateFilter]);
+  function facilityOf(opening: Opening) {
+    return properties.find((p) => p.buildings?.some((b) => b.id === opening.building_id));
+  }
+
   function onPropertyChange(propertyId: string) {
     setPropertyFilter(propertyId);
     setBuildingFilter(""); // reset building filter — it no longer applies to the new property
@@ -108,12 +129,14 @@ export function DashboardPage() {
     if (maxHealthFilter) params.max_health_score = maxHealthFilter;
     if (buildingFilter) params.building_id = buildingFilter;
     else if (propertyFilter) params.property_id = propertyFilter;
+    if (stateFilter) params.state_code = stateFilter;
+    if (countyFilter) params.county_fips = countyFilter;
 
     listOpenings(params)
       .then((rows) => setOpenings((rows ?? []).filter(loc.inFilter)))
       .catch(() => setError("Couldn't load openings. Check your connection and try again."))
       .finally(() => setLoading(false));
-  }, [typeFilter, maxHealthFilter, propertyFilter, buildingFilter]);
+  }, [typeFilter, maxHealthFilter, propertyFilter, buildingFilter, stateFilter, countyFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...openings];
@@ -331,6 +354,15 @@ export function DashboardPage() {
             {loc.combined && (
               <label style={{ fontSize: 12.5 }}><input type="checkbox" checked={groupBy} onChange={(e) => setGroupBy(e.target.checked)} /> Group by location</label>
             )}
+            <label style={{ fontSize: 12.5 }}><input type="checkbox" checked={groupGeo} onChange={(e) => setGroupGeo(e.target.checked)} /> Group by state and county</label>
+            <select aria-label="State" value={stateFilter} onChange={(e) => { setStateFilter(e.target.value); setCountyFilter(""); }}>
+              <option value="">All states</option>
+              {stateOptions.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+            </select>
+            <select aria-label="County" value={countyFilter} onChange={(e) => setCountyFilter(e.target.value)}>
+              <option value="">All counties</option>
+              {countyOptions.map(([fips, name]) => <option key={fips} value={fips}>{name}</option>)}
+            </select>
             <select value={propertyFilter} onChange={(e) => onPropertyChange(e.target.value)}>
               <option value="">All properties</option>
               {properties.map((p) => (
@@ -372,6 +404,8 @@ export function DashboardPage() {
                   <th onClick={() => toggleSort("location")}>
                     Location {sortKey === "location" && (sortDir === "asc" ? "↑" : "↓")}
                   </th>
+                  <th>State</th>
+                  <th>County</th>
                   <th>Area</th>
                   <th onClick={() => toggleSort("opening_type")}>
                     Type {sortKey === "opening_type" && (sortDir === "asc" ? "↑" : "↓")}
@@ -382,8 +416,16 @@ export function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {(groupBy ? groupByLocation(sorted, loc.index) : [["", sorted] as [string, Opening[]]]).flatMap(([group, rows]) => [
-                  ...(group ? [<tr key={"g:" + group} className="group-row"><td colSpan={5} style={{ fontWeight: 700 }}>{group} ({rows.length})</td></tr>] : []),
+                {(groupGeo
+                  ? [...sorted.reduce((map, opening) => {
+                      const facility = facilityOf(opening);
+                      const key = `${facility?.state_name ?? "State not set"} / ${facility?.county_name ?? "County not set"}`;
+                      map.set(key, [...(map.get(key) ?? []), opening]);
+                      return map;
+                    }, new Map<string, Opening[]>())].sort((a, b) => a[0].localeCompare(b[0]))
+                  : groupBy ? groupByLocation(sorted, loc.index) : [["", sorted] as [string, Opening[]]]
+                ).flatMap(([group, rows]) => [
+                  ...(group ? [<tr key={"g:" + group} className="group-row"><td colSpan={7} style={{ fontWeight: 700 }}>{group} ({rows.length})</td></tr>] : []),
                   ...rows.map((o) => (
                   <tr key={o.id} onClick={() => navigate(`/opening/${o.id}`)} style={{ cursor: "pointer" }}>
                     <td>
@@ -391,6 +433,8 @@ export function DashboardPage() {
                       {o.fire_rated && <span className="badge-fire">FIRE</span>}
                     </td>
                     <td>{loc.label(o)}</td>
+                    <td>{facilityOf(o)?.state_name ?? "—"}</td>
+                    <td>{facilityOf(o)?.county_name ?? "—"}</td>
                     <td>{o.location_description || `Floor ${o.floor_label || "—"}`}</td>
                     <td style={{ textTransform: "capitalize" }}>{o.opening_type.replace(/_/g, " ")}</td>
                     <td><HealthPill score={o.health_score} /></td>
