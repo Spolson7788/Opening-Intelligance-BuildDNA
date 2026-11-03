@@ -4,19 +4,15 @@ import { pool } from "../db/pool";
 import { requireAuth, requireRole, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { openingsForOrgSubquery } from "../db/tenantScope";
+import { userCanWorkOpening } from "../db/areaAccess";
 
 export const maintenanceSchedulesRouter = Router();
 maintenanceSchedulesRouter.use(requireAuth);
 maintenanceSchedulesRouter.use(enforceRolePermissions);
 maintenanceSchedulesRouter.use(auditLog);
 
-async function assertOpeningInOrg(openingId: string, orgId: string): Promise<boolean> {
-  const result = await pool.query(
-    `SELECT 1 FROM (${openingsForOrgSubquery(2)}) allowed WHERE allowed.id = $1`,
-    [openingId, orgId]
-  );
-  return result.rows.length > 0;
+async function assertOpeningVisible(openingId: string, userId: string): Promise<boolean> {
+  return userCanWorkOpening(userId, openingId);
 }
 
 function advanceDate(date: Date, unit: string, count: number): Date {
@@ -108,7 +104,7 @@ maintenanceSchedulesRouter.post("/", requireRole("admin", "facilities_manager"),
   const userId = req.auth!.userId;
 
   try {
-    if (!(await assertOpeningInOrg(b.opening_id, orgId))) {
+    if (!(await assertOpeningVisible(b.opening_id, userId))) {
       return res.status(403).json({ error: "forbidden" });
     }
     if (b.assigned_to_user_id) {
@@ -131,7 +127,7 @@ maintenanceSchedulesRouter.post("/", requireRole("admin", "facilities_manager"),
 });
 
 maintenanceSchedulesRouter.get("/", async (req: AuthedRequest, res) => {
-  const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
   try {
     const result = await pool.query(
       `SELECT ms.*, o.opening_code, b.name AS building_name, p.name AS property_name,
@@ -140,11 +136,10 @@ maintenanceSchedulesRouter.get("/", async (req: AuthedRequest, res) => {
        JOIN openings o ON o.id = ms.opening_id
        JOIN buildings b ON b.id = o.building_id
        JOIN properties p ON p.id = b.property_id
-       JOIN portfolios pf ON pf.id = p.portfolio_id
        LEFT JOIN users assignee ON assignee.id = ms.assigned_to_user_id
-       WHERE pf.organization_id = $1
+       WHERE oi_private.can_work_opening($1::uuid, ms.opening_id)
        ORDER BY ms.next_due_date ASC`,
-      [orgId]
+      [userId]
     );
     res.json(result.rows);
   } catch (err) {
@@ -171,12 +166,8 @@ maintenanceSchedulesRouter.patch("/:id", requireRole("admin", "facilities_manage
 
   const existing = await pool.query(
     `SELECT ms.id FROM maintenance_schedules ms
-     JOIN openings o ON o.id = ms.opening_id
-     JOIN buildings bl ON bl.id = o.building_id
-     JOIN properties p ON p.id = bl.property_id
-     JOIN portfolios pf ON pf.id = p.portfolio_id
-     WHERE ms.id = $1 AND pf.organization_id = $2`,
-    [req.params.id, orgId]
+     WHERE ms.id = $1 AND oi_private.can_work_opening($2::uuid, ms.opening_id)`,
+    [req.params.id, req.auth!.userId]
   );
   if (existing.rows.length === 0) return res.status(404).json({ error: "not_found" });
 

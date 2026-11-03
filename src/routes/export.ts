@@ -3,7 +3,7 @@ import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { openingsVisibleToUserSubquery } from "../db/areaAccess";
+import { openingsVisibleToUserSubquery, userCanReadProperty } from "../db/areaAccess";
 import { toCsv } from "../services/csv";
 import { generateComplianceReportPdf } from "../services/complianceReport";
 import { generateCapitalForecastPdf } from "../services/capitalForecastReport";
@@ -21,18 +21,20 @@ exportRouter.use(auditLog);
 // ?scope=all includes everything.
 exportRouter.get("/compliance-report.pdf", async (req: AuthedRequest, res) => {
   const { property_id, scope } = req.query;
-  const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
 
   if (!property_id || typeof property_id !== "string") {
     return res.status(400).json({ error: "property_id is required" });
   }
 
   try {
+    if (!(await userCanReadProperty(userId, property_id))) {
+      return res.status(403).json({ error: "forbidden" });
+    }
     const propertyResult = await pool.query(
       `SELECT p.name, p.address_line1, p.city, p.state, p.postal_code
-       FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id
-       WHERE p.id = $1 AND pf.organization_id = $2`,
-      [property_id, orgId]
+       FROM properties p WHERE p.id = $1`,
+      [property_id]
     );
     if (propertyResult.rows.length === 0) return res.status(403).json({ error: "forbidden" });
     const property = propertyResult.rows[0];
