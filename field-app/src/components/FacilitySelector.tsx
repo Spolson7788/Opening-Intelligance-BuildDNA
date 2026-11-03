@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { fetchMe, fetchOpening, listFieldProperties, listOpenings, searchFieldFacilities } from "../lib/api";
-import { ALL_AREAS, areaFilterKey, areaLabel, areaOptions, defaultAreaFilter, filterFacilitiesByArea, sameArea, type AreaFilter, type AreaPreferences } from "../lib/facilityArea";
+import { ALL_AREAS, areaFilterKey, defaultAreaFilter, type AreaFilter, type AreaPreferences } from "../lib/facilityArea";
 import { getOfflineSetting, putOfflineSetting } from "../lib/db";
 import { useAuth } from "../lib/AuthContext";
 import type { FacilityProperty } from "../lib/facilityOpenings";
@@ -115,29 +115,27 @@ export function FacilitySelector() {
   if (!s) return null;
   const { properties, selectedId, progress, result, running, error } = s;
   const needsChoice = properties && properties.length > 1 && !selectedId;
-  const shown = properties ? filterFacilitiesByArea(properties, s.area, selectedId) : [];
-  const options = properties ? areaOptions(properties) : { states: [], territories: [] };
-  const encode = (a: AreaFilter) => a.kind === "all" ? "all" : `${a.kind}:${a.value}`;
-  const decode = (v: string): AreaFilter => v === "all" ? ALL_AREAS : v.startsWith("territory:") ? { kind: "territory", value: v.slice(10) } : { kind: "state", value: v.slice(6) };
+  const groups = [...(properties ?? []).reduce((map, facility) => {
+    const key = `${facility.state_name ?? "State not set"} / ${facility.county_name ?? "County not set"}`;
+    map.set(key, [...(map.get(key) ?? []), facility]);
+    return map;
+  }, new Map<string, NonNullable<typeof properties>>())].sort((a, b) => a[0].localeCompare(b[0]));
   return (
-    <section className="card" aria-label="Facility" style={{ marginBottom: 12 }}>
+    <section className="card" aria-label="Facilities by state and county" style={{ marginBottom: 12 }}>
       {properties === null && !error && <p>Loading your facilities...</p>}
       {properties && properties.length === 0 && <p>No facilities are assigned to your account yet.</p>}
-      {properties && properties.length > 1 && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
-        <label>Area{" "}<select aria-label="Area filter" value={encode(s.area)} onChange={(e) => s.setArea(decode(e.target.value))}>
-          <option value="all">All authorized facilities</option>
-          {options.territories.length > 0 && <optgroup label="My Territory">{options.territories.map((t) => <option key={"t" + t} value={`territory:${t}`}>{t}{sameArea(s.home, { kind: "territory", value: t }) ? " (home)" : ""}</option>)}</optgroup>}
-          {options.states.length > 0 && <optgroup label="State">{options.states.map((v) => <option key={"s" + v} value={`state:${v}`}>{v}{sameArea(s.home, { kind: "state", value: v }) ? " (home)" : ""}</option>)}</optgroup>}
-        </select></label>
-        {s.area.kind !== "all" && <button type="button" className="btn btn-secondary" onClick={() => s.setArea(ALL_AREAS)}>Show all authorized</button>}
-        <span role="status" style={{ fontSize: 13 }}>{areaLabel(s.area)}: {shown.length} of {properties.length}</span>
-      </div>}
-      {properties && properties.length > 0 && <label>{needsChoice ? <strong>Select your facility to download its openings</strong> : "Facility"}{" "}
-        <select value={selectedId ?? ""} onChange={(e) => e.target.value && s.select(e.target.value)}>
-          {!selectedId && <option value="">Choose a facility</option>}
-          {shown.map((p) => <option key={p.id} value={p.id}>{p.name}{p.state ? ` (${p.state})` : ""}</option>)}
-        </select>
-      </label>}
+      {needsChoice && <p><strong>Select your facility to download its openings</strong></p>}
+      {groups.map(([label, facilities]) => (
+        <div key={label}>
+          <div className="section-label">{label}</div>
+          {facilities.map((facility) => (
+            <button key={facility.id} type="button" className="btn btn-secondary" style={{ textAlign: "left", marginBottom: 8 }}
+              onClick={() => s.select(facility.id)} aria-current={facility.id === selectedId ? "true" : undefined}>
+              {facility.name}{facility.city ? `, ${facility.city}` : ""}
+            </button>
+          ))}
+        </div>
+      ))}
       {error && <p role="alert">{error}</p>}
       {(progress || result) && <p role="status">{describeSync(progress, result)}</p>}
       {progress && progress.openingsTotal > 0 && <progress max={progress.openingsTotal} value={progress.openingsDone} style={{ width: "100%" }} />}

@@ -6,6 +6,8 @@ import { requireAuth, requireRole, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
 import { openingsForOrgSubquery, orgScope } from "../db/tenantScope";
+import { areaAllowsOpening } from "../db/areaAccess";
+import { isMissingSchema } from "../middleware/auth";
 import { checkAndGenerateDueWorkOrders } from "./maintenanceSchedulesRoute";
 
 export const workOrdersRouter = Router();
@@ -54,7 +56,7 @@ workOrdersRouter.post("/", requireRole("admin", "facilities_manager"), async (re
   const userId = req.auth!.userId;
 
   try {
-    if (!(await assertOpeningInOrg(b.opening_id, orgId))) {
+    if (!(await assertOpeningInOrg(b.opening_id, orgId)) || !(await areaAllowsOpening(userId, b.opening_id))) {
       return res.status(403).json({ error: "forbidden" });
     }
     if (b.assigned_to_user_id) {
@@ -95,6 +97,7 @@ workOrdersRouter.get("/", databaseRoute(async (req: AuthedRequest, res) => {
 
   const conditions = [`${orgScope("pf.organization_id", 1)}`];
   const values: any[] = [orgId];
+  const userId = req.auth!.userId;
 
   if (status && typeof status === "string") {
     values.push(status);
@@ -110,17 +113,21 @@ workOrdersRouter.get("/", databaseRoute(async (req: AuthedRequest, res) => {
   }
 
   try {
-    const result = await pool.query(
-      `${WORK_ORDER_SELECT}
+    const sql = `${WORK_ORDER_SELECT}
        JOIN portfolios pf ON pf.id = p.portfolio_id
-       WHERE ${conditions.join(" AND ")}
-       ORDER BY
+       WHERE ${conditions.join(" AND ")}`;
+    const order = `ORDER BY
          CASE WHEN wo.status IN ('open','in_progress') THEN 0 ELSE 1 END,
          CASE wo.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
          wo.due_date ASC NULLS LAST,
-         wo.created_at DESC`,
-      values
-    );
+         wo.created_at DESC`;
+    let result;
+    try {
+      result = await pool.query(`${sql} AND oi_private.caller_area_allows($${values.length + 1}::uuid, p.id) ${order}`, [...values, userId]);
+    } catch (error) {
+      if (!isMissingSchema(error)) throw error;
+      result = await pool.query(`${sql} ${order}`, values);
+    }
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -128,16 +135,20 @@ workOrdersRouter.get("/", databaseRoute(async (req: AuthedRequest, res) => {
   }
 }));
 
-async function fetchWorkOrderInOrg(id: string, orgId: string) {
-  const result = await pool.query(
-    `${WORK_ORDER_SELECT} JOIN portfolios pf ON pf.id = p.portfolio_id WHERE wo.id = $1 AND ${orgScope("pf.organization_id", 2)}`,
-    [id, orgId]
-  );
-  return result.rows[0] ?? null;
+async function fetchWorkOrderInOrg(id: string, orgId: string, userId: string) {
+  const sql = `${WORK_ORDER_SELECT} JOIN portfolios pf ON pf.id = p.portfolio_id WHERE wo.id = $1 AND ${orgScope("pf.organization_id", 2)}`;
+  try {
+    const result = await pool.query(`${sql} AND oi_private.caller_area_allows($3::uuid, p.id)`, [id, orgId, userId]);
+    return result.rows[0] ?? null;
+  } catch (error) {
+    if (!isMissingSchema(error)) throw error;
+    const result = await pool.query(sql, [id, orgId]);
+    return result.rows[0] ?? null;
+  }
 }
 
 workOrdersRouter.get("/:id", databaseRoute(async (req: AuthedRequest, res) => {
-  const wo = await fetchWorkOrderInOrg(req.params.id, req.auth!.organizationId);
+  const wo = await fetchWorkOrderInOrg(req.params.id, req.auth!.organizationId, req.auth!.userId);
   if (!wo) return res.status(404).json({ error: "not_found" });
   res.json(wo);
 }));
@@ -159,7 +170,7 @@ workOrdersRouter.patch("/:id", requireRole("admin", "facilities_manager"), datab
   const b = parsed.data;
   const orgId = req.auth!.organizationId;
 
-  const existing = await fetchWorkOrderInOrg(req.params.id, orgId);
+  const existing = await fetchWorkOrderInOrg(req.params.id, orgId, req.auth!.userId);
   if (!existing) return res.status(404).json({ error: "not_found" });
 
   if (b.assigned_to_user_id) {
@@ -181,7 +192,7 @@ workOrdersRouter.patch("/:id", requireRole("admin", "facilities_manager"), datab
   values.push(req.params.id);
   try {
     await pool.query(`UPDATE work_orders SET ${setClauses.join(", ")} WHERE id = $${values.length}`, values);
-    const updated = await fetchWorkOrderInOrg(req.params.id, orgId);
+    const updated = await fetchWorkOrderInOrg(req.params.id, orgId, req.auth!.userId);
     res.json(updated);
   } catch (err) {
     console.error(err);
@@ -205,7 +216,7 @@ workOrdersRouter.post("/:id/status", databaseRoute(async (req: AuthedRequest, re
   const userId = req.auth!.userId;
   const role = req.auth!.role;
 
-  const existing = await fetchWorkOrderInOrg(req.params.id, orgId);
+  const existing = await fetchWorkOrderInOrg(req.params.id, orgId, userId);
   if (!existing) return res.status(404).json({ error: "not_found" });
 
   const isManagement = role === "admin" || role === "facilities_manager";
@@ -216,7 +227,7 @@ workOrdersRouter.post("/:id/status", databaseRoute(async (req: AuthedRequest, re
   const completedClause = parsed.data.status === "done" ? ", completed_at = now()" : ", completed_at = NULL";
   try {
     await pool.query(`UPDATE work_orders SET status = $1${completedClause} WHERE id = $2`, [parsed.data.status, req.params.id]);
-    const updated = await fetchWorkOrderInOrg(req.params.id, orgId);
+    const updated = await fetchWorkOrderInOrg(req.params.id, orgId, userId);
     res.json(updated);
   } catch (err) {
     console.error(err);

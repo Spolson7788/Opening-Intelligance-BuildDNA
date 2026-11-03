@@ -5,6 +5,7 @@ import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
 import { openingsForOrgSubquery, propertiesForOrgSubquery } from "../db/tenantScope";
+import { areaAllowsOpening, areaAllowsProperty } from "../db/areaAccess";
 import {
   getPresignedUploadUrl,
   buildDocumentStorageKey,
@@ -34,9 +35,9 @@ async function assertOpeningInOrg(openingId: string, orgId: string): Promise<boo
   return result.rows.length > 0;
 }
 
-async function assertAttachmentInOrg(propertyId: string | undefined, openingId: string | undefined, orgId: string): Promise<boolean> {
-  if (propertyId && !(await assertPropertyInOrg(propertyId, orgId))) return false;
-  if (openingId && !(await assertOpeningInOrg(openingId, orgId))) return false;
+async function assertAttachmentInOrg(propertyId: string | undefined, openingId: string | undefined, orgId: string, userId: string): Promise<boolean> {
+  if (propertyId && (!(await assertPropertyInOrg(propertyId, orgId)) || !(await areaAllowsProperty(userId, propertyId)))) return false;
+  if (openingId && (!(await assertOpeningInOrg(openingId, orgId)) || !(await areaAllowsOpening(userId, openingId)))) return false;
   return true;
 }
 
@@ -53,13 +54,14 @@ documentsRouter.post("/presign", async (req: AuthedRequest, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { property_id, opening_id, content_type } = parsed.data;
   const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
 
   if (!isAllowedDocumentContentType(content_type)) {
     return res.status(400).json({ error: "unsupported_content_type" });
   }
 
   try {
-    if (!(await assertAttachmentInOrg(property_id, opening_id, orgId))) {
+    if (!(await assertAttachmentInOrg(property_id, opening_id, orgId, userId))) {
       return res.status(403).json({ error: "forbidden" });
     }
 
@@ -99,7 +101,7 @@ documentsRouter.post("/", async (req: AuthedRequest, res) => {
   const userId = req.auth!.userId;
 
   try {
-    if (!(await assertAttachmentInOrg(b.property_id, b.opening_id, orgId))) {
+    if (!(await assertAttachmentInOrg(b.property_id, b.opening_id, orgId, userId))) {
       return res.status(403).json({ error: "forbidden" });
     }
 
@@ -119,7 +121,7 @@ documentsRouter.get("/by-property/:propertyId", async (req: AuthedRequest, res) 
   const { propertyId } = req.params;
   const orgId = req.auth!.organizationId;
   try {
-    if (!(await assertPropertyInOrg(propertyId, orgId))) return res.status(403).json({ error: "forbidden" });
+    if (!(await assertPropertyInOrg(propertyId, orgId)) || !(await areaAllowsProperty(req.auth!.userId, propertyId))) return res.status(403).json({ error: "forbidden" });
     const result = await pool.query(
       "SELECT * FROM documents WHERE property_id = $1 ORDER BY created_at DESC",
       [propertyId]
@@ -135,7 +137,7 @@ documentsRouter.get("/by-opening/:openingId", async (req: AuthedRequest, res) =>
   const { openingId } = req.params;
   const orgId = req.auth!.organizationId;
   try {
-    if (!(await assertOpeningInOrg(openingId, orgId))) return res.status(403).json({ error: "forbidden" });
+    if (!(await assertOpeningInOrg(openingId, orgId)) || !(await areaAllowsOpening(req.auth!.userId, openingId))) return res.status(403).json({ error: "forbidden" });
     const result = await pool.query(
       "SELECT * FROM documents WHERE opening_id = $1 ORDER BY created_at DESC",
       [openingId]
@@ -163,6 +165,10 @@ documentsRouter.delete("/:id", async (req: AuthedRequest, res) => {
     if (docResult.rows.length === 0) return res.status(404).json({ error: "not_found" });
 
     const doc = docResult.rows[0];
+    const inArea = doc.property_id
+      ? await areaAllowsProperty(req.auth!.userId, doc.property_id)
+      : await areaAllowsOpening(req.auth!.userId, doc.opening_id);
+    if (!inArea) return res.status(404).json({ error: "not_found" });
     await pool.query("DELETE FROM documents WHERE id = $1", [id]);
 
     try {
