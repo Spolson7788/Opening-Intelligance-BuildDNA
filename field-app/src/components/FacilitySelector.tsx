@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { fetchMe, fetchOpening, listFieldProperties, listOpenings, searchFieldFacilities } from "../lib/api";
-import { ALL_AREAS, areaFilterKey, defaultAreaFilter, type AreaFilter, type AreaPreferences } from "../lib/facilityArea";
+import { ALL_AREAS, areaFilterKey, defaultAreaFilter, filterFacilitiesByArea, type AreaFilter, type AreaPreferences } from "../lib/facilityArea";
 import { getOfflineSetting, putOfflineSetting } from "../lib/db";
 import { useAuth } from "../lib/AuthContext";
 import type { FacilityProperty } from "../lib/facilityOpenings";
