@@ -11,6 +11,9 @@ import { auditLogRouter } from "./routes/auditLogRoute";
 import { documentsRouter } from "./routes/documents";
 import { workOrdersRouter } from "./routes/workOrders";
 import { maintenanceSchedulesRouter } from "./routes/maintenanceSchedulesRoute";
+import { locationsRouter } from "./routes/locations";
+import { facilitiesRouter } from "./routes/facilities";
+import { providerRouter } from "./routes/providerAreas";
 
 // In local dev, the field-app/dashboard talk to the API through their own
 // Vite dev-server proxy, so this never mattered. Once each piece is deployed
@@ -57,6 +60,9 @@ export function createApp() {
   app.use("/api/documents", documentsRouter);
   app.use("/api/work-orders", workOrdersRouter);
   app.use("/api/maintenance-schedules", maintenanceSchedulesRouter);
+  app.use("/api/locations", locationsRouter);
+  app.use("/api/facilities", facilitiesRouter);
+  app.use("/api/provider", providerRouter);
 
   return app;
 }

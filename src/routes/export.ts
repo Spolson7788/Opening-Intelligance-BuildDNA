@@ -3,7 +3,7 @@ import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { openingsForOrgSubquery } from "../db/tenantScope";
+import { openingsVisibleToUserSubquery } from "../db/areaAccess";
 import { toCsv } from "../services/csv";
 import { generateComplianceReportPdf } from "../services/complianceReport";
 import { generateCapitalForecastPdf } from "../services/capitalForecastReport";
@@ -252,8 +252,8 @@ const OPENINGS_COLUMNS = [
 // Same filter shape as GET /api/openings, so "export what I'm currently
 // looking at" behaves exactly like the dashboard's filter state.
 exportRouter.get("/openings.csv", async (req: AuthedRequest, res) => {
-  const { building_id, property_id, opening_type, max_health_score } = req.query;
-  const orgId = req.auth!.organizationId;
+  const { building_id, property_id, opening_type, max_health_score, state_code, county_fips } = req.query;
+  const userId = req.auth!.userId;
   const conditions: string[] = [];
   const values: any[] = [];
 
@@ -273,8 +273,18 @@ exportRouter.get("/openings.csv", async (req: AuthedRequest, res) => {
     values.push(max_health_score);
     conditions.push(`o.health_score <= $${values.length}`);
   }
-  values.push(orgId);
-  conditions.push(`o.id IN (${openingsForOrgSubquery(values.length)})`);
+  if (typeof state_code === "string" && state_code !== "") {
+    if (!/^[A-Za-z]{2}$/.test(state_code)) return res.status(400).json({ error: "invalid_state_code" });
+    values.push(state_code.toUpperCase());
+    conditions.push(`p.state_code = $${values.length}`);
+  }
+  if (typeof county_fips === "string" && county_fips !== "") {
+    if (!/^\d{5}$/.test(county_fips)) return res.status(400).json({ error: "invalid_county_fips" });
+    values.push(county_fips);
+    conditions.push(`p.county_fips = $${values.length}`);
+  }
+  values.push(userId);
+  conditions.push(`o.id IN (${openingsVisibleToUserSubquery(values.length)})`);
 
   try {
     const result = await pool.query(
@@ -312,7 +322,7 @@ const HARDWARE_COLUMNS = [
 // something you can hand to a capital planning spreadsheet.
 exportRouter.get("/hardware.csv", async (req: AuthedRequest, res) => {
   const { manufacturer, model_number, component_type } = req.query;
-  const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
   const conditions: string[] = [];
   const values: any[] = [];
 
@@ -328,8 +338,8 @@ exportRouter.get("/hardware.csv", async (req: AuthedRequest, res) => {
     values.push(component_type);
     conditions.push(`hc.component_type = $${values.length}`);
   }
-  values.push(orgId);
-  conditions.push(`hc.opening_id IN (${openingsForOrgSubquery(values.length)})`);
+  values.push(userId);
+  conditions.push(`hc.opening_id IN (${openingsVisibleToUserSubquery(values.length)})`);
 
   try {
     const result = await pool.query(

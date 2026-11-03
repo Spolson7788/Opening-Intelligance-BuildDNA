@@ -4,7 +4,7 @@ import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { openingsForOrgSubquery } from "../db/tenantScope";
+import { openingsVisibleToUserSubquery, userCanWorkOpening } from "../db/areaAccess";
 import {
   getPresignedUploadUrl,
   buildStorageKey,
@@ -19,12 +19,8 @@ photosRouter.use(requireAuth);
 photosRouter.use(enforceRolePermissions);
 photosRouter.use(auditLog);
 
-async function assertOpeningInOrg(openingId: string, orgId: string): Promise<boolean> {
-  const result = await pool.query(
-    `SELECT 1 FROM (${openingsForOrgSubquery(2)}) allowed WHERE allowed.id = $1`,
-    [openingId, orgId]
-  );
-  return result.rows.length > 0;
+async function assertOpeningVisible(openingId: string, userId: string): Promise<boolean> {
+  return userCanWorkOpening(userId, openingId);
 }
 
 const presignSchema = z.object({
@@ -46,7 +42,7 @@ photosRouter.post("/presign", async (req: AuthedRequest, res) => {
   }
 
   try {
-    if (!(await assertOpeningInOrg(opening_id, orgId))) {
+    if (!(await assertOpeningVisible(opening_id, req.auth!.userId))) {
       return res.status(403).json({ error: "forbidden" });
     }
 
@@ -90,7 +86,7 @@ photosRouter.post("/", async (req: AuthedRequest, res) => {
   const mediaType = mediaTypeForContentType(b.content_type);
 
   try {
-    if (!(await assertOpeningInOrg(b.opening_id, orgId))) {
+    if (!(await assertOpeningVisible(b.opening_id, req.auth!.userId))) {
       return res.status(403).json({ error: "forbidden" });
     }
 
@@ -114,7 +110,7 @@ photosRouter.get("/by-opening/:openingId", async (req: AuthedRequest, res) => {
   const { openingId } = req.params;
   const orgId = req.auth!.organizationId;
   try {
-    if (!(await assertOpeningInOrg(openingId, orgId))) {
+    if (!(await assertOpeningVisible(openingId, req.auth!.userId))) {
       return res.status(403).json({ error: "forbidden" });
     }
     const result = await pool.query(
@@ -133,8 +129,8 @@ photosRouter.delete("/:id", async (req: AuthedRequest, res) => {
   const orgId = req.auth!.organizationId;
   try {
     const photoResult = await pool.query(
-      `SELECT p.* FROM photos p WHERE p.id = $1 AND p.opening_id IN (${openingsForOrgSubquery(2)})`,
-      [id, orgId]
+      `SELECT p.* FROM photos p WHERE p.id = $1 AND p.opening_id IN (${openingsVisibleToUserSubquery(2)})`,
+      [id, req.auth!.userId]
     );
     if (photoResult.rows.length === 0) return res.status(404).json({ error: "not_found" });
 

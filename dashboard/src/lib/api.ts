@@ -89,6 +89,10 @@ export interface Property {
   name: string;
   city: string | null;
   state: string | null;
+  state_code: string | null;
+  county_fips: string | null;
+  state_name: string | null;
+  county_name: string | null;
   buildings: Building[];
 }
 

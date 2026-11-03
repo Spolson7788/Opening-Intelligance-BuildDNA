@@ -10,6 +10,7 @@ import { LogInspectionEventPage } from "./pages/LogInspectionEventPage";
 import { LogHardwarePage } from "./pages/LogHardwarePage";
 import { EditHardwarePage } from "./pages/EditHardwarePage";
 import { MyWorkOrdersPage } from "./pages/MyWorkOrdersPage";
+import { MyFacilitiesPage } from "./pages/MyFacilitiesPage";
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { auth, loading } = useAuth();
@@ -29,6 +30,7 @@ function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/scan" element={<RequireAuth><ScanPage /></RequireAuth>} />
       <Route path="/my-work-orders" element={<RequireAuth><MyWorkOrdersPage /></RequireAuth>} />
+      <Route path="/my-facilities" element={<RequireAuth><MyFacilitiesPage /></RequireAuth>} />
       <Route path="/opening/by-qr/:qrToken" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />
       <Route path="/opening/by-code/:openingCode" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />
       <Route path="/opening/:id" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />
