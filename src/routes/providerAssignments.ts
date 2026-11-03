@@ -25,5 +25,9 @@ providerAssignmentsRouter.put('/:propertyId/:providerId',async(req:AuthedRequest
  VALUES($1,$2,$3,CASE WHEN $4 THEN NULL ELSE now() END)
  ON CONFLICT(property_id,provider_organization_id) DO UPDATE SET granted_by_user_id=$3,granted_at=now(),revoked_at=CASE WHEN $4 THEN NULL ELSE now() END RETURNING *`,[propertyId,providerId,req.auth!.userId,body.data.active]);
  await client.query('COMMIT');res.json(result.rows[0]);
- }catch(e){await client.query('ROLLBACK');console.error(e);res.status(500).json({error:'assignment_failed'});}finally{client.release();}
+ }catch(e: any){
+  await client.query('ROLLBACK');
+  if (e?.code === '23514' && String(e.message).includes('out_of_area')) return res.status(409).json({ error: 'out_of_area' });
+  console.error(e);res.status(500).json({error:'assignment_failed'});
+ }finally{client.release();}
 });

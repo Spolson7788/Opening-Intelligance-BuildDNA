@@ -4,6 +4,7 @@ import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
 import { openingsForOrgSubquery, orgScope, extraReadOrgs } from "../db/tenantScope";
+import { areaAllowsProperty } from "../db/areaAccess";
 import { canExportTree } from "./locations";
 import { toCsv } from "../services/csv";
 import { generateComplianceReportPdf } from "../services/complianceReport";
@@ -47,6 +48,7 @@ exportRouter.get("/compliance-report.pdf", async (req: AuthedRequest, res) => {
       [property_id, orgId]
     );
     if (propertyResult.rows.length === 0) return res.status(403).json({ error: "forbidden" });
+    if (!(await areaAllowsProperty(req.auth!.userId, property_id))) return res.status(403).json({ error: "forbidden" });
     const property = propertyResult.rows[0];
 
     const scopeFilter = scope === "all" ? "" : "AND (o.fire_rated = true OR o.life_safety_critical = true)";

@@ -37,10 +37,21 @@ locationsRouter.get("/", async (req: AuthedRequest, res) => {
       return pool.query(`SELECT o.id, o.name, NULL::uuid AS parent_organization_id, 'member' AS access, $2::text AS role FROM organizations o WHERE o.id = $1`, [a.organizationId, a.role]);
     })).rows.filter((c: any) => orgs.includes(c.id));
     const facilities = (await pool.query(
-      `SELECT p.id, p.name, CASE WHEN pf.organization_id = ANY($1::uuid[]) THEN pf.organization_id END AS organization_id,
+      `SELECT p.id, p.name, p.state_code, p.county_fips, st.name AS state_name, co.name AS county_name,
+              CASE WHEN pf.organization_id = ANY($1::uuid[]) THEN pf.organization_id END AS organization_id,
               COALESCE((SELECT array_agg(b.id) FROM buildings b WHERE b.property_id = p.id), '{}') AS building_ids
        FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id
-       WHERE ${facilityAccessPredicateAny(1)} ORDER BY p.name`, [orgs])).rows;
+       LEFT JOIN us_states st ON st.code = p.state_code
+       LEFT JOIN us_counties co ON co.fips = p.county_fips
+       WHERE ${facilityAccessPredicateAny(1)} AND oi_private.caller_area_allows($2::uuid, p.id) ORDER BY st.name NULLS LAST, co.name NULLS LAST, p.name`, [orgs, a.userId]
+    ).catch(async (error) => {
+      if (!isMissingSchema(error)) throw error;
+      return pool.query(
+        `SELECT p.id, p.name, CASE WHEN pf.organization_id = ANY($1::uuid[]) THEN pf.organization_id END AS organization_id,
+                COALESCE((SELECT array_agg(b.id) FROM buildings b WHERE b.property_id = p.id), '{}') AS building_ids
+         FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id
+         WHERE ${facilityAccessPredicateAny(1)} ORDER BY p.name`, [orgs]);
+    })).rows;
     res.set("Cache-Control", "no-store").json({
       active_organization_id: a.organizationId,
       tree: companies.length > 1,

@@ -3,7 +3,7 @@ import { facilityAccessPredicate, photoVisibleSql, serviceEventVisibleSql, facil
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
-import { requireAuth, AuthedRequest } from "../middleware/auth";
+import { requireAuth, AuthedRequest, isMissingSchema } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
 
@@ -66,7 +66,13 @@ portfolioRouter.get("/facility-search", async (req: AuthedRequest, res) => {
   const parsed=z.object({state:z.string().regex(/^[A-Za-z]{2}$/).optional(),territory:z.string().max(120).optional(),q:z.string().max(200).optional()}).safeParse(req.query);
   if(!parsed.success)return res.status(400).json({error:"invalid_search"});
   try {
-    const {rows}=await pool.query(`SELECT p.* FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id WHERE ${facilityAccessPredicate(1)} ORDER BY p.name,p.id`,[req.auth!.organizationId]);
+    let rows;
+    try {
+      rows=(await pool.query(`SELECT p.* FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id WHERE ${facilityAccessPredicate(1)} AND oi_private.caller_area_allows($2::uuid, p.id) ORDER BY p.name,p.id`,[req.auth!.organizationId, req.auth!.userId])).rows;
+    } catch (error) {
+      if (!isMissingSchema(error)) throw error;
+      rows=(await pool.query(`SELECT p.* FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id WHERE ${facilityAccessPredicate(1)} ORDER BY p.name,p.id`,[req.auth!.organizationId])).rows;
+    }
     const preferences=await pool.query('SELECT CASE WHEN b.id IS NOT NULL THEN b.default_state ELSE u.home_state END AS home_state, CASE WHEN b.id IS NOT NULL THEN b.default_territory ELSE u.home_territory END AS home_territory FROM users u LEFT JOIN user_branch_assignments a ON a.user_id=u.id AND a.organization_id=u.organization_id LEFT JOIN company_branches b ON b.id=a.branch_id AND b.organization_id=u.organization_id AND b.is_active=true WHERE u.id=$1 AND u.organization_id=$2',[req.auth!.userId,req.auth!.organizationId]);
     const {state,territory,q}=parsed.data;
     const term=(q||'').trim().toLowerCase();
@@ -111,6 +117,8 @@ const createPropertySchema = z.object({
   address_line1: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
+  state_code: z.string().regex(/^[A-Za-z]{2}$/).optional(),
+  county_fips: z.string().regex(/^\d{5}$/).optional(),
   postal_code: z.string().optional(),
   property_type: z.enum(["multifamily", "senior_living", "healthcare", "university", "hospitality", "other"]).optional(),
   latitude: z.number().optional(),
@@ -132,9 +140,10 @@ portfolioRouter.post("/properties", async (req: AuthedRequest, res) => {
 
     const result = await pool.query(
       `INSERT INTO properties
-        (portfolio_id, name, address_line1, city, state, postal_code, property_type, latitude, longitude)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        (portfolio_id, name, address_line1, city, state, state_code, county_fips, postal_code, property_type, latitude, longitude)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [b.portfolio_id, b.name, b.address_line1 ?? null, b.city ?? null, b.state ?? null,
+       b.state_code ? b.state_code.toUpperCase() : null, b.county_fips ?? null,
        b.postal_code ?? null, b.property_type ?? null, b.latitude ?? null, b.longitude ?? null]
     );
     res.status(201).json(result.rows[0]);
@@ -174,20 +183,40 @@ portfolioRouter.post("/buildings", async (req: AuthedRequest, res) => {
 portfolioRouter.get("/properties", async (req: AuthedRequest, res) => {
   const orgId = req.auth!.organizationId;
   try {
-    const propertiesRes = await pool.query(
-      // ?scope=tree (read only): also facilities owned by descendant locations the person may see
-      // through an admin or facilities_manager membership of the active company (multi-company M1).
-      req.query.scope === "tree"
-        ? `SELECT p.*, (pf.organization_id = $1) AS is_owner, (pf.organization_id <> $1 AND pf.organization_id = ANY($2::uuid[])) AS is_tree_location FROM properties p
+    const propertiesSql = req.query.scope === "tree"
+        ? `SELECT p.*, (pf.organization_id = $1) AS is_owner, (pf.organization_id <> $1 AND pf.organization_id = ANY($2::uuid[])) AS is_tree_location,
+              s.name AS state_name, c.name AS county_name
+           FROM properties p
        JOIN portfolios pf ON pf.id = p.portfolio_id
-       WHERE ${facilityAccessPredicateAny(2)}
-       ORDER BY p.name`
-        : `SELECT p.*, (pf.organization_id = $1) AS is_owner FROM properties p
+       LEFT JOIN us_states s ON s.code = p.state_code
+       LEFT JOIN us_counties c ON c.fips = p.county_fips
+       WHERE ${facilityAccessPredicateAny(2)} AND oi_private.caller_area_allows($3::uuid, p.id)
+       ORDER BY s.name NULLS LAST, c.name NULLS LAST, p.name`
+        : `SELECT p.*, (pf.organization_id = $1) AS is_owner, s.name AS state_name, c.name AS county_name FROM properties p
        JOIN portfolios pf ON pf.id = p.portfolio_id
-       WHERE ${facilityAccessPredicate(1)}
-       ORDER BY p.name`,
-      req.query.scope === "tree" ? [orgId, allowedOrgIds(req.auth!)] : [orgId]
-    );
+       LEFT JOIN us_states s ON s.code = p.state_code
+       LEFT JOIN us_counties c ON c.fips = p.county_fips
+       WHERE ${facilityAccessPredicate(1)} AND oi_private.caller_area_allows($2::uuid, p.id)
+       ORDER BY s.name NULLS LAST, c.name NULLS LAST, p.name`;
+    const propertiesArgs = req.query.scope === "tree" ? [orgId, allowedOrgIds(req.auth!), req.auth!.userId] : [orgId, req.auth!.userId];
+    let propertiesRes;
+    try {
+      propertiesRes = await pool.query(propertiesSql, propertiesArgs);
+    } catch (error) {
+      if (!isMissingSchema(error)) throw error;
+      propertiesRes = await pool.query(
+        req.query.scope === "tree"
+          ? `SELECT p.*, (pf.organization_id = $1) AS is_owner, (pf.organization_id <> $1 AND pf.organization_id = ANY($2::uuid[])) AS is_tree_location FROM properties p
+             JOIN portfolios pf ON pf.id = p.portfolio_id
+             WHERE ${facilityAccessPredicateAny(2)}
+             ORDER BY p.name`
+          : `SELECT p.*, (pf.organization_id = $1) AS is_owner FROM properties p
+             JOIN portfolios pf ON pf.id = p.portfolio_id
+             WHERE ${facilityAccessPredicate(1)}
+             ORDER BY p.name`,
+        req.query.scope === "tree" ? [orgId, allowedOrgIds(req.auth!)] : [orgId]
+      );
+    }
     const properties = propertiesRes.rows;
     if (properties.length === 0) return res.json([]);
 

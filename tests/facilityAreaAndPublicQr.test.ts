@@ -32,14 +32,13 @@ describe('facility area filter', () => {
     expect(areaOptions(list)).toEqual({ states: ['CA', 'FL'], territories: ['NorCal', 'SoCal', 'South FL'] });
     expect(sameArea({ kind: 'state', value: 'CA' }, { kind: 'state', value: 'CA' })).toBe(true);
   });
-  it('the picker offers All authorized, My Territory and State, plus a one-tap Show all button', () => {
+  it('the facility list is grouped by state and county and does not offer a territory picker', () => {
     const src = readFileSync('field-app/src/components/FacilitySelector.tsx', 'utf8');
-    expect(src).toContain('<option value="all">All authorized facilities</option>');
-    expect(src).toContain('label="My Territory"');
-    expect(src).toContain('label="State"');
-    expect(src).toContain('onClick={() => s.setArea(ALL_AREAS)}>Show all authorized</button>');
-    expect(src).toContain('filterFacilitiesByArea(properties, s.area, selectedId)');
-    // Facilities still come from the server's authorized list; the filter is client-side narrowing only.
+    expect(src).toContain('aria-label="Facilities by state and county"');
+    expect(src).toContain('State not set');
+    expect(src).toContain('County not set');
+    expect(src).not.toContain('My Territory');
+    expect(src).not.toContain('service_territory');
     expect(src).toContain('list = await listFieldProperties()');
   });
 });

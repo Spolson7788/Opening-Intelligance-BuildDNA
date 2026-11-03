@@ -6,6 +6,8 @@ import { requireAuth, requireRole, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
 import { openingsForOrgSubquery, orgScope } from "../db/tenantScope";
+import { areaAllowsOpening } from "../db/areaAccess";
+import { isMissingSchema } from "../middleware/auth";
 
 export const maintenanceSchedulesRouter = Router();
 maintenanceSchedulesRouter.use(requireAuth);
@@ -109,7 +111,7 @@ maintenanceSchedulesRouter.post("/", requireRole("admin", "facilities_manager"),
   const userId = req.auth!.userId;
 
   try {
-    if (!(await assertOpeningInOrg(b.opening_id, orgId))) {
+    if (!(await assertOpeningInOrg(b.opening_id, orgId)) || !(await areaAllowsOpening(userId, b.opening_id))) {
       return res.status(403).json({ error: "forbidden" });
     }
     if (b.assigned_to_user_id) {
@@ -134,8 +136,7 @@ maintenanceSchedulesRouter.post("/", requireRole("admin", "facilities_manager"),
 maintenanceSchedulesRouter.get("/", async (req: AuthedRequest, res) => {
   const orgId = req.auth!.organizationId;
   try {
-    const result = await pool.query(
-      `SELECT ms.*, o.opening_code, b.name AS building_name, p.name AS property_name, p.id AS property_id,
+    const sql = `SELECT ms.*, o.opening_code, b.name AS building_name, p.name AS property_name, p.id AS property_id,
               assignee.full_name AS assigned_to_name
        FROM maintenance_schedules ms
        JOIN openings o ON o.id = ms.opening_id
@@ -143,10 +144,14 @@ maintenanceSchedulesRouter.get("/", async (req: AuthedRequest, res) => {
        JOIN properties p ON p.id = b.property_id
        JOIN portfolios pf ON pf.id = p.portfolio_id
        LEFT JOIN users assignee ON assignee.id = ms.assigned_to_user_id
-       WHERE ${orgScope("pf.organization_id", 1)}
-       ORDER BY ms.next_due_date ASC`,
-      [orgId]
-    );
+       WHERE ${orgScope("pf.organization_id", 1)}`;
+    let result;
+    try {
+      result = await pool.query(`${sql} AND oi_private.caller_area_allows($2::uuid, p.id) ORDER BY ms.next_due_date ASC`, [orgId, req.auth!.userId]);
+    } catch (error) {
+      if (!isMissingSchema(error)) throw error;
+      result = await pool.query(`${sql} ORDER BY ms.next_due_date ASC`, [orgId]);
+    }
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -171,7 +176,7 @@ maintenanceSchedulesRouter.patch("/:id", requireRole("admin", "facilities_manage
   const orgId = req.auth!.organizationId;
 
   const existing = await pool.query(
-    `SELECT ms.id FROM maintenance_schedules ms
+    `SELECT ms.id, ms.opening_id FROM maintenance_schedules ms
      JOIN openings o ON o.id = ms.opening_id
      JOIN buildings bl ON bl.id = o.building_id
      JOIN properties p ON p.id = bl.property_id
@@ -179,7 +184,7 @@ maintenanceSchedulesRouter.patch("/:id", requireRole("admin", "facilities_manage
      WHERE ms.id = $1 AND pf.organization_id = $2`,
     [req.params.id, orgId]
   );
-  if (existing.rows.length === 0) return res.status(404).json({ error: "not_found" });
+  if (existing.rows.length === 0 || !(await areaAllowsOpening(req.auth!.userId, existing.rows[0].opening_id))) return res.status(404).json({ error: "not_found" });
 
   if (b.assigned_to_user_id) {
     const check = await pool.query("SELECT 1 FROM users WHERE id = $1 AND organization_id = $2", [b.assigned_to_user_id, orgId]);

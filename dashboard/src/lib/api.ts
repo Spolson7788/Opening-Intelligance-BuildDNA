@@ -94,6 +94,10 @@ export interface Property {
   name: string;
   city: string | null;
   state: string | null;
+  state_code?: string | null;
+  county_fips?: string | null;
+  state_name?: string | null;
+  county_name?: string | null;
   buildings: Building[];
   /** True when the caller's organization owns this facility (server-computed). */
   is_owner?: boolean;
@@ -358,6 +362,8 @@ export async function createProperty(payload: {
   address_line1?: string;
   city?: string;
   state?: string;
+  state_code?: string;
+  county_fips?: string;
   postal_code?: string;
   property_type?: string;
 }) {
@@ -837,7 +843,34 @@ export function passwordErrorMessage(code: string | undefined): string {
 // ---- M3: companies and locations ----
 export interface CompanyChoice { organization_id: string; name: string; role: string; is_home: boolean; access?: string }
 export interface LocationCompany { id: string; name: string; parent_organization_id: string | null; access: "member" | "tree_admin" | "tree_view"; role: string }
-export interface LocationFacility { id: string; name: string; organization_id: string | null; building_ids: string[] }
+export interface LocationFacility { id: string; name: string; organization_id: string | null; building_ids: string[]; state_code?: string | null; county_fips?: string | null; state_name?: string | null; county_name?: string | null }
+
+export async function listStates(): Promise<{ code: string; name: string }[]> {
+  return authedFetch("/geo/states");
+}
+export async function listCounties(stateCode: string): Promise<{ fips: string; state_code: string; name: string }[]> {
+  return authedFetch(`/geo/counties?state_code=${encodeURIComponent(stateCode)}`);
+}
+export async function fetchCoverage(): Promise<{
+  facilities: Property[];
+  branches: { id: string; name: string; default_state: string; areas: { id: string; state_code: string; county_fips: string | null; state_name: string; county_name: string | null }[] }[];
+  technicians: { id: string; full_name: string; branch_id: string | null; areas: { id: string; state_code: string; county_fips: string | null; state_name: string; county_name: string | null }[] }[];
+  assignments: { property_id: string; property_name: string; provider_organization_id: string; provider_name: string; state_name: string | null; county_name: string | null }[];
+}> {
+  return authedFetch("/geo/coverage");
+}
+export async function saveFacilityCounty(id: string, state_code: string | null, county_fips: string | null) {
+  return authedFetch(`/geo/facilities/${id}`, { method: "PATCH", body: JSON.stringify({ state_code, county_fips }) });
+}
+export async function addBranchArea(branchId: string, state_code: string, county_fips: string | null) {
+  return authedFetch(`/geo/branches/${branchId}/areas`, { method: "POST", body: JSON.stringify({ state_code, county_fips }) });
+}
+export async function addTechnicianArea(userId: string, state_code: string, county_fips: string | null) {
+  return authedFetch(`/geo/technicians/${userId}/areas`, { method: "POST", body: JSON.stringify({ state_code, county_fips }) });
+}
+export async function assignProvider(propertyId: string, providerId: string, active: boolean) {
+  return authedFetch(`/provider-assignments/${propertyId}/${providerId}`, { method: "PUT", body: JSON.stringify({ active }) });
+}
 export interface LocationsResponse { active_organization_id: string; tree: boolean; can_export_tree: boolean; companies: LocationCompany[]; facilities: LocationFacility[] }
 export async function listCompanies(): Promise<CompanyChoice[]> {
   const r = await authedFetch("/auth/companies");
