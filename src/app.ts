@@ -21,6 +21,7 @@ import cors from "cors";
 import { openingsRouter } from "./routes/openings";
 import { eventsRouter } from "./routes/events";
 import { authRouter } from "./routes/auth";
+import { requireAuth } from "./middleware/auth";
 import { membersRouter, invitesPublicRouter } from "./routes/members";
 import { hardwareRouter } from "./routes/hardware";
 import { photosRouter } from "./routes/photos";
@@ -120,7 +121,7 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   app.use("/api/geo", geoRouter);
   app.use("/api/members", membersRouter);
   app.use("/api/invites", invitesPublicRouter);
-  app.get("/api/features",(_req,res)=>{res.set("Cache-Control","no-store").json({recognition:recognitionFeaturesEnabled});});
+  app.get("/api/features",requireAuth,(_req,res)=>{res.set("Cache-Control","no-store").json({recognition:recognitionFeaturesEnabled});});
   if(recognitionFeaturesEnabled){
     app.use("/api/recognition", recordRecognitionAccessDenials); // 401/403 records, before auth
     app.use("/api/recognition/runs", recognitionRunsRouter);

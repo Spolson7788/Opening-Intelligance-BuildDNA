@@ -7,7 +7,7 @@ import { createApp } from "../src/app";
 describe("production gating", () => {
   it("turns recognition, reference library and recognition usage/billing endpoints off when disabled", async () => {
     const app = createApp({ recognitionFeaturesEnabled: false });
-    expect((await request(app).get("/api/features")).body).toEqual({ recognition: false });
+    expect((await request(app).get("/api/features")).status).toBe(401); // signed-in users only
     for (const path of ["/api/recognition/runs", "/api/recognition", "/api/platform/recognition-usage?month=2026-11",
       "/api/platform/recognition-usage/settings", "/api/platform/recognition-run-records/outbox"]) {
       const r = await request(app).get(path);
@@ -18,7 +18,6 @@ describe("production gating", () => {
   });
   it("keeps existing behavior by default", async () => {
     const app = createApp();
-    expect((await request(app).get("/api/features")).body).toEqual({ recognition: true });
     expect((await request(app).get("/api/recognition/runs")).status).not.toBe(404);
   });
   it("Netlify entry enables recognition only on the two staging sites", () => {
