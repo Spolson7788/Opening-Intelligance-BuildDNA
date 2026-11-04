@@ -7,4 +7,8 @@ const staging={...good,SITE_ID:'b64bf33c-a131-4ae2-b2b0-9aec16e9f77b',BRANCH:'re
 assert.doesNotThrow(()=>assertIsolatedReleaseContext(staging));
 for(const patch of [{NETLIFY:'false'},{SITE_ID:good.SITE_ID},{SITE_ID:'unknown'},{CONTEXT:'deploy-preview'},{CONTEXT:'branch-deploy'},{BRANCH:'main'},{BRANCH:good.BRANCH}]) assert.throws(()=>assertIsolatedReleaseContext({...staging,...patch}));
 assert.throws(()=>assertIsolatedReleaseContext({...good,BRANCH:staging.BRANCH}));
-console.log('Isolated release guard: both exact pairs passed; 13 forbidden contexts/cross-pairs rejected.');
+const production={...good,SITE_ID:'b4e0fc62-86ce-4a26-9ebf-26d7386f4b01',BRANCH:'release/production'};
+assert.doesNotThrow(()=>assertIsolatedReleaseContext(production));
+for(const patch of [{NETLIFY:'false'},{SITE_ID:good.SITE_ID},{SITE_ID:staging.SITE_ID},{CONTEXT:'deploy-preview'},{CONTEXT:'branch-deploy'},{BRANCH:'main'},{BRANCH:staging.BRANCH},{BRANCH:good.BRANCH}]) assert.throws(()=>assertIsolatedReleaseContext({...production,...patch}));
+assert.throws(()=>assertIsolatedReleaseContext({...staging,BRANCH:production.BRANCH}));
+console.log('Isolated release guard: all three exact pairs passed; 22 forbidden contexts/cross-pairs rejected.');

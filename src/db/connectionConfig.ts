@@ -19,10 +19,10 @@ export function databaseTargetDescriptor(connectionString: string | undefined): 
   }
 }
 
-// Explicit opt-in for this isolated database only. Connection mode and TLS are unchanged.
+// Explicit opt-in for the isolated staging database and oi-production only. Connection mode and TLS are unchanged.
 export function serverlessPoolConfig(env: NodeJS.ProcessEnv): PoolConfig {
   if (env.OI_DATABASE_POOL_PROFILE !== 'isolated-serverless') return {};
-  if (databaseTargetDescriptor(env.DATABASE_URL) !== 'supabase:boaoedvyvifppuklbwad') {
+  if (!['supabase:boaoedvyvifppuklbwad','supabase:bekaxmatcvxqpjixwsqn'].includes(databaseTargetDescriptor(env.DATABASE_URL))) {
     throw new Error('database_pool_profile_target_mismatch');
   }
   return {max:1,min:0,idleTimeoutMillis:1000,connectionTimeoutMillis:5000,maxLifetimeSeconds:60};
