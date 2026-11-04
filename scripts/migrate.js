@@ -18,6 +18,14 @@ async function main() {
     process.exit(1);
   }
 
+  // Production (oi-production) is migrated only with a reviewed, approved bundle.
+  // This runner would apply every file, including ones production deliberately
+  // excludes, so it refuses that project. The URL itself is never printed.
+  if (/bekaxmatcvxqpjixwsqn/i.test(process.env.DATABASE_URL)) {
+    console.error("Refusing to run: DATABASE_URL points at oi-production. Use the approved production bundle instead.");
+    process.exit(1);
+  }
+
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
   try {

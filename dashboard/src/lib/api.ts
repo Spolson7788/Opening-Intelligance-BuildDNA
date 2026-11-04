@@ -892,6 +892,10 @@ export interface PlatformOrgUser { id: string; email: string; full_name: string;
 export interface ProviderRequest { id: string; property_id: string; property_name: string; provider_organization_id: string; provider_name: string; action: "assign" | "unassign"; reason: string; status: string; requested_at: string; requested_by_user_id: string; requested_by_name?: string; facility_organization_name?: string; reviewed_at?: string | null; review_note?: string | null }
 export interface PlatformStaffRow { user_id: string; email: string; full_name: string; granted_at: string; grant_reason: string; revoked_at: string | null; revoke_reason: string | null; active: boolean }
 const post = (path: string, body: unknown, method = "POST") => authedFetch(path, { method, body: JSON.stringify(body) });
+// Server-reported optional features; fails closed (off) on any error.
+export async function serverFeatures(): Promise<{ recognition: boolean }> {
+  try { const f = await authedFetch("/features"); return { recognition: f?.recognition === true }; } catch { return { recognition: false }; }
+}
 export async function platformMe(): Promise<{ staff: boolean; user_id?: string }> {
   try { return await authedFetch("/platform/me"); } catch { return { staff: false }; }
 }

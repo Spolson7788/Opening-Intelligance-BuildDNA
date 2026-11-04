@@ -78,7 +78,7 @@ export function isAllowedOrigin(origin: string, allowedOrigins: string[]): boole
   );
 }
 
-export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boolean; accountRecoveryEnabled?: boolean; commercialStore?: CommercialStore; commercialInputsOnly?: boolean; commercialInputsEnabled?: boolean; facilityBudgetEnabled?: boolean; planningSandboxEnabled?: boolean; legacyDocumentsEnabled?: boolean } = {}) {
+export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boolean; accountRecoveryEnabled?: boolean; commercialStore?: CommercialStore; commercialInputsOnly?: boolean; commercialInputsEnabled?: boolean; facilityBudgetEnabled?: boolean; planningSandboxEnabled?: boolean; legacyDocumentsEnabled?: boolean; recognitionFeaturesEnabled?: boolean } = {}) {
   const app = express();
   app.locals.commercialStore=options.commercialStore;
   app.locals.retainedDocumentRecoveryAllowed=options.retainedDocumentRecoveryAllowed;
@@ -86,6 +86,10 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   app.locals.commercialInputsEnabled=options.commercialInputsEnabled===true;
   app.locals.facilityBudgetEnabled=options.facilityBudgetEnabled===true;
   app.locals.planningSandboxEnabled=options.planningSandboxEnabled===true;
+  // Recognition, reference library and recognition usage/billing need tables that
+  // production does not have. Default on keeps existing local/test behavior; the
+  // Netlify entry point turns them on only for the known staging sites.
+  const recognitionFeaturesEnabled=options.recognitionFeaturesEnabled!==false;
   const allowedOrigins = corsOriginsFromEnv();
 
   app.use(
@@ -116,9 +120,17 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   app.use("/api/geo", geoRouter);
   app.use("/api/members", membersRouter);
   app.use("/api/invites", invitesPublicRouter);
-  app.use("/api/recognition", recordRecognitionAccessDenials); // 401/403 records, before auth
-  app.use("/api/recognition/runs", recognitionRunsRouter);
-  app.use("/api/recognition", recognitionRouter);
+  app.get("/api/features",(_req,res)=>{res.set("Cache-Control","no-store").json({recognition:recognitionFeaturesEnabled});});
+  if(recognitionFeaturesEnabled){
+    app.use("/api/recognition", recordRecognitionAccessDenials); // 401/403 records, before auth
+    app.use("/api/recognition/runs", recognitionRunsRouter);
+    app.use("/api/recognition", recognitionRouter);
+  }else{
+    const off=(_req:express.Request,res:express.Response)=>{res.status(404).json({error:"feature_disabled"});};
+    app.use("/api/recognition",off);
+    app.use("/api/platform/recognition-usage",off);
+    app.use("/api/platform/recognition-run-records",off);
+  }
   if (options.accountRecoveryEnabled) app.use("/api/account-recovery", accountRecoveryRouter);
   app.use("/api/provider-assignments",providerAssignmentsRouter);
   app.use("/api/facility-schedules", facilitySchedulesRouter);

@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {listOpeningPhotos,startRecognitionRun,type RecognitionRun,type StoredPhoto} from '../lib/api';
+import {listOpeningPhotos,startRecognitionRun,type RecognitionRun,type StoredPhoto, serverFeatures } from '../lib/api';
 
 // Recognition runs on photographs already saved to this opening (stored originals), never on files
 // picked here. Each attempt is a recorded run; a refused or failed run shows its reason.
@@ -20,6 +20,8 @@ export function RecognitionReview({openingId,onUse}:{openingId:string;onUse:(man
   const [error,setError]=useState('');
   const [run,setRun]=useState<RecognitionRun|null>(null);
   const generation=useRef(0);
+  const [enabled,setEnabled]=useState(false);
+  useEffect(()=>{let live=true;serverFeatures().then(f=>{if(live)setEnabled(f.recognition);});return()=>{live=false;};},[]);
   useEffect(()=>{let live=true;listOpeningPhotos(openingId).then(r=>{if(live)setPhotos(usablePhotos(r));}).catch(()=>{if(live)setPhotos([]);});return()=>{live=false;};},[openingId]);
   function toggle(id:string){generation.current++;setRun(null);setError('');setSelected(s=>s.includes(id)?s.filter(x=>x!==id):s.length>=5?s:[...s,id]);}
   async function analyze(){
@@ -35,6 +37,7 @@ export function RecognitionReview({openingId,onUse}:{openingId:string;onUse:(man
     finally{if(current===generation.current)setBusy(false);}
   }
   const ok=run&&(run.status==='succeeded'||run.status==='abstained');
+  if(!enabled)return null;
   return <section className="card" aria-label="Photograph recognition">
     <h2>Identify from saved photographs</h2>
     <p>Choose up to five saved photographs of the same component. Save photographs to this opening first. Review the suggestion before using it.</p>

@@ -3,8 +3,7 @@ import { Sidebar } from "../components/Sidebar";
 import {
   createCompanyWithAdmin, createProviderFacility, grantMembership, platformMe, grantStaff, platformFacilities, platformOrganizations, platformOrgUsers, platformProviderRequests, platformProviders,
   platformRecognitionUsage, platformUsageSettings, setSafetyCap, updateUsageSettings, platformStaff, reviewProviderRequest, revokeStaff, setOrganizationParent,
-  type PlatformFacility, type PlatformOrganization, type PlatformOrgUser, type PlatformProvider, type PlatformStaffRow, type ProviderRequest, type RecognitionUsageReport, type SafetyCapRow, type UsageSettings,
-} from "../lib/api";
+  type PlatformFacility, type PlatformOrganization, type PlatformOrgUser, type PlatformProvider, type PlatformStaffRow, type ProviderRequest, type RecognitionUsageReport, type SafetyCapRow, type UsageSettings,, serverFeatures } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { filterSort, needsProviderConfirmation, parentChoices, treeLines } from "../lib/staffTools";
 
@@ -261,12 +260,14 @@ export function StaffToolsPage() {
   const [facilities, setFacilities] = useState<PlatformFacility[]>([]);
   const [staff, setStaff] = useState<boolean | null>(null);
   const [usageRefresh, setUsageRefresh] = useState(0);
+  const [recognitionOn, setRecognitionOn] = useState(false);
+  useEffect(() => { serverFeatures().then((f) => setRecognitionOn(f.recognition)); }, []);
   useEffect(() => { platformMe().then((m) => setStaff(m.staff)); }, []);
   const reload = () => { platformOrganizations().then(setOrgs).catch(() => setOrgs([])); };
   useEffect(() => { if (!staff) return; reload(); platformFacilities().then(setFacilities).catch(() => setFacilities([])); }, [staff]);
   const orgName = useMemo(() => { const m = new Map(orgs.map((o) => [o.id, o.name])); return (id: string) => m.get(id) ?? id; }, [orgs]);
   const facilityName = useMemo(() => { const m = new Map(facilities.map((f) => [f.property_id, `${f.owner_name} / ${f.property_name}`])); return (id: string) => m.get(id) ?? id; }, [facilities]);
-  const tabs: [Tab, string][] = [["facilities", "By facility"], ["providers", "By provider"], ["parents", "Parent links"], ["requests", "Provider requests"], ["companies", "Companies & people"], ["staff", "OI staff"], ["usage", "Recognition usage"]];
+  const tabs: [Tab, string][] = [["facilities", "By facility"], ["providers", "By provider"], ["parents", "Parent links"], ["requests", "Provider requests"], ["companies", "Companies & people"], ["staff", "OI staff"], ...(recognitionOn ? [["usage", "Recognition usage"] as [Tab, string]] : [])];
   if (staff !== true) return <div className="app-shell"><Sidebar /><div className="main">
     <p role="status">{staff === null ? "Checking access…" : "OI staff tools are only available to OI staff."}</p></div></div>;
   return <div className="app-shell"><Sidebar /><div className="main">
@@ -278,6 +279,6 @@ export function StaffToolsPage() {
     {tab === "requests" && <Requests />}
     {tab === "companies" && <Companies orgs={orgs} reload={reload} />}
     {tab === "staff" && <Staff me={auth?.userId} />}
-    {tab === "usage" && <><UsageSettingsEditor orgs={orgs} onSaved={() => setUsageRefresh((n) => n + 1)} /><RecognitionUsage refresh={usageRefresh} /></>}
+    {tab === "usage" && recognitionOn && <><UsageSettingsEditor orgs={orgs} onSaved={() => setUsageRefresh((n) => n + 1)} /><RecognitionUsage refresh={usageRefresh} /></>}
   </div></div>;
 }

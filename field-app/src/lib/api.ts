@@ -426,3 +426,8 @@ export interface FieldFacilitySchedule {
 export async function fetchFacilitySchedulesForOpening(openingId: string): Promise<FieldFacilitySchedule[]> {
   return authedFetch(`/facility-schedules/by-opening/${encodeURIComponent(openingId)}`);
 }
+
+// Server-reported optional features; fails closed (off) on any error.
+export async function serverFeatures(): Promise<{ recognition: boolean }> {
+  try { const f = await authedFetch('/features'); return { recognition: f?.recognition === true }; } catch { return { recognition: false }; }
+}

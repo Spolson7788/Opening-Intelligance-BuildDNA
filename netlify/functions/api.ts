@@ -19,6 +19,9 @@ export default async (request: Request, context: Context): Promise<Response> => 
     facilityBudgetEnabled:capabilities.facilityBudget,
     accountRecoveryEnabled: recoveryDeploymentAllowed(context),
     // SQL metadata-write denial alone does not prevent legacy presigned uploads.
+    // Fail closed: any site other than the two staging sites (e.g. production) gets
+    // no recognition, reference library or recognition usage/billing endpoints.
+    recognitionFeaturesEnabled:['b64bf33c-a131-4ae2-b2b0-9aec16e9f77b','80fbbee8-b9d3-4b16-b93f-d2d8396591ec'].includes(context?.site?.id??''),
     legacyDocumentsEnabled: context?.site?.id !== "b64bf33c-a131-4ae2-b2b0-9aec16e9f77b",
   });
   return netlifyExpressAdapter(app)(request);
