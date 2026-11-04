@@ -3,7 +3,7 @@ import { Sidebar } from "../components/Sidebar";
 import {
   createCompanyWithAdmin, createProviderFacility, grantMembership, platformMe, grantStaff, platformFacilities, platformOrganizations, platformOrgUsers, platformProviderRequests, platformProviders,
   platformRecognitionUsage, platformUsageSettings, setSafetyCap, updateUsageSettings, platformStaff, reviewProviderRequest, revokeStaff, setOrganizationParent,
-  type PlatformFacility, type PlatformOrganization, type PlatformOrgUser, type PlatformProvider, type PlatformStaffRow, type ProviderRequest, type RecognitionUsageReport, type SafetyCapRow, type UsageSettings,, serverFeatures } from "../lib/api";
+  type PlatformFacility, type PlatformOrganization, type PlatformOrgUser, type PlatformProvider, type PlatformStaffRow, type ProviderRequest, type RecognitionUsageReport, type SafetyCapRow, type UsageSettings, serverFeatures } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { filterSort, needsProviderConfirmation, parentChoices, treeLines } from "../lib/staffTools";
 
