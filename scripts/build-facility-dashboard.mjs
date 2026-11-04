@@ -1,10 +1,13 @@
 import {readFileSync,writeFileSync,cpSync,mkdirSync} from 'node:fs';
 import {resolve} from 'node:path';
-export function buildFacilityDashboard(destination){
+export const PREVIEW_BANNER='<aside style="background:#fff1c8;padding:12px;text-align:center">Nonproduction preview — connected acceptance pending. <a href="opening.html">Opening review</a></aside>';
+export function buildFacilityDashboard(destination,{production=false}={}){
  const root=resolve(import.meta.dirname,'../facility-dashboard');
  let html=readFileSync(resolve(root,'portal-source.html'),'utf8');
  html=html.replace('<script type="module">','<script type="module">\nimport {installLabelActions,addOpeningLabelAction} from "./labels.mjs";\nimport {addServiceRequestAction} from "./service-requests.mjs";');
  const replace=(a,b)=>{if(!html.includes(a))throw Error('Dashboard source changed: '+a.slice(0,80));html=html.replace(a,b);};
+ // oi-production shows no nonproduction preview banner; staging keeps it.
+ if(production)replace(PREVIEW_BANNER,'');
  replace('import {url,key} from "./preview-config.mjs";', 'import {sb,refreshScope,refreshFacility,readFieldSession,api} from "./api-client.mjs";');
  replace("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';",'');
  replace('const SUPA_URL=url;', '');replace('const SUPA_KEY=key;','');replace('const sb=createClient(SUPA_URL,SUPA_KEY);','');
@@ -32,7 +35,7 @@ export function buildFacilityDashboard(destination){
  replace('Every opening on file, bucketed by its health score.', 'Openings grouped by service-history health score. Recorded part conditions also determine attention and priority.');
  replace("var complete=OPEN.every(o=>o.parts.every(p=>assessedScore(p)!==null));", "var complete=OPEN.every(o=>openingScore(o)!==null);");
  html=html.replaceAll('Opening review','Field App');
- html=html.replace('build v53','connected staging');
+ html=html.replace('build v53',production?'connected':'connected staging');
  html=html.replaceAll('href="opening.html"','href="/field/setup-opening"').replaceAll("href='/'", "href='/field/scan'").replaceAll('href="/"','href="/field/scan"');
  html=html.replace("parts=(ops||[]).length", "parts=(ops||[]).filter(p=>!p.placeholder).length").replaceAll("o.parts.length", "o.parts.filter(p=>!p.placeholder).length");
  // The canonical API has service history, not the preview-only deficiency workflow.

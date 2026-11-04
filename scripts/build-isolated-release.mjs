@@ -5,9 +5,12 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertIsolatedReleaseContext } from './isolated-release-context.mjs';
 import { buildFacilityDashboard } from './build-facility-dashboard.mjs';
+import { isProductionRelease, landingHtml, releaseInfo } from './release-wording.mjs';
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 assertIsolatedReleaseContext(process.env);
+const production = isProductionRelease(process.env);
+const info = releaseInfo(production);
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 function run(args, dir = root, extra = {}) {
@@ -39,16 +42,17 @@ mkdirSync(resolve(root, "dist"), { recursive: true });
 const output = resolve(root, "dist/isolated-release");
 const staging = mkdtempSync(resolve(root, "dist/staging-build-"));
 cpSync(resolve(root, "netlify/public"), staging, { recursive: true });
+writeFileSync(resolve(staging, "index.html"), landingHtml(readFileSync(resolve(staging, "index.html"), "utf8"), production));
 cpSync(resolve(root, "field-app/dist"), resolve(staging, "field"), { recursive: true });
 cpSync(resolve(root, "dashboard/dist"), resolve(staging, "dashboard"), { recursive: true });
-buildFacilityDashboard(resolve(staging, "facility-dashboard"));
+buildFacilityDashboard(resolve(staging, "facility-dashboard"), { production });
 writeFileSync(resolve(staging, 'build-info.json'), JSON.stringify({
-  environment: 'isolated-release-validation',
+  environment: info.environment,
   commit: process.env.COMMIT_REF || execFileSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf8'}).trim(),
   branch: process.env.HEAD || process.env.BRANCH || 'local',
   checkoutRef: process.env.BRANCH || 'local',
   context: process.env.CONTEXT || 'local',
-  releaseStatus: 'acceptance-pending',
+  releaseStatus: info.releaseStatus,
 }, null, 2) + '\n');
 writeFileSync(resolve(staging, "_redirects"),
   "/ /dashboard/ 302!\n/field/* /field/index.html 200\n/dashboard/* /dashboard/index.html 200\n");
