@@ -310,6 +310,16 @@ platformRouter.post("/companies", async (req: AuthedRequest, res) => {
       await platformEvent(c, req, { action: "org_created", targetOrg: org.id, targetId: org.id, reason: b.data.reason, after: { name: org.name, org_type: org.org_type } });
       await platformEvent(c, req, { action: "first_admin_invited", targetOrg: org.id, targetId: u.id, reason: b.data.reason,
         after: { email: u.email, full_name: u.full_name, role: "admin", must_change_password: true, temporary_password: "[redacted]" } });
+      // Customers need a portfolio in this same transaction so New Property works, as signup does.
+      // A provider's own facility already inserts Main Portfolio (select-first); do not insert another.
+      if (org.org_type === "customer") {
+        await c.query(
+          `INSERT INTO portfolios (organization_id, name)
+           SELECT $1, 'Main Portfolio'
+           WHERE NOT EXISTS (SELECT 1 FROM portfolios WHERE organization_id = $1)`,
+          [org.id]
+        );
+      }
       if (b.data.create_provider_facility && org.org_type !== "service_partner") throw new Refusal(400, "provider_facility_requires_provider");
       const facility = b.data.create_provider_facility ? await createProviderFacility(c, req, org.id, `${org.name} (own facility)`, b.data.reason) : undefined;
       return { organization: org, admin: u, ...(facility ? { provider_facility: facility } : {}) };

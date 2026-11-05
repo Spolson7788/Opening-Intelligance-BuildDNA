@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Sidebar } from "../components/Sidebar";
 import {
-  addBranchArea, addTechnicianArea, assignProvider, fetchCoverage, listCounties, listStates, saveFacilityCounty,
+  addBranchArea, addTechnicianArea, assignProvider, fetchCoverage, listCounties, listStates, providerRequestOptions, saveFacilityCounty,
 } from "../lib/api";
 
 type County = { fips: string; name: string };
@@ -18,12 +18,22 @@ export function CoveragePage() {
   const [branchId, setBranchId] = useState("");
   const [techId, setTechId] = useState("");
   const [providerId, setProviderId] = useState("");
+  const [providers, setProviders] = useState<{ id: string; name: string }[]>([]);
+  const [providersLoaded, setProvidersLoaded] = useState(false);
 
   function load() {
     setError(null);
     return fetchCoverage().then(setCoverage).catch(() => setError("Couldn't load state and county coverage."));
   }
   useEffect(() => { listStates().then(setStates).catch(() => setError("Couldn't load states.")); load(); }, []);
+  useEffect(() => {
+    let live = true;
+    providerRequestOptions()
+      .then((options) => { if (live) setProviders(options.providers); })
+      .catch(() => { if (live) setProviders([]); })
+      .finally(() => { if (live) setProvidersLoaded(true); });
+    return () => { live = false; };
+  }, []);
   useEffect(() => {
     if (!stateCode) { setCounties([]); setCountyFips(""); return; }
     listCounties(stateCode).then(setCounties).catch(() => setCounties([]));
@@ -97,9 +107,13 @@ export function CoveragePage() {
           <h2>Facility assignments</h2>
           <ul>{(coverage?.assignments ?? []).map((row) => <li key={row.property_id + row.provider_organization_id}>{row.property_name} ({row.state_name ?? "state not set"} / {row.county_name ?? "county not set"}) — {row.provider_name}</li>)}</ul>
           <form onSubmit={(e) => { e.preventDefault(); void run(() => assignProvider(facilityId, providerId, true), "Provider assigned."); }}>
-            <label>Provider company id <input aria-label="Provider company id" value={providerId} onChange={(e) => setProviderId(e.target.value)} /></label>
+            <label>Provider <select aria-label="Provider" value={providerId} onChange={(e) => setProviderId(e.target.value)}>
+              <option value="">Choose a provider</option>
+              {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
+            </select></label>
             <button className="btn btn-primary" type="submit" disabled={!facilityId || !providerId}>Assign provider</button>
           </form>
+          {providersLoaded && providers.length === 0 && <p>No eligible providers.</p>}
         </div>
       </div>
     </div>

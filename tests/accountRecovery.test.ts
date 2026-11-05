@@ -63,6 +63,25 @@ it('allows the isolated release only in its pinned context and excludes the publ
 
 it('readiness probe returns no account or credential information',async()=>{const r=await request(app).get('/recovery/status');expect(r.status).toBe(200);expect(r.body).toEqual({status:'available'});});
 
+it('allows oi-production account recovery only in that site production context',async()=>{
+ const {recoveryDeploymentAllowed}=await import('../src/services/recoveryDeployment');
+ const {createApp}=await import('../src/app');
+ const id='b4e0fc62-86ce-4a26-9ebf-26d7386f4b01';
+ const production={site:{id},deploy:{context:'production' as const}};
+ expect(recoveryDeploymentAllowed(production)).toBe(true);
+ for(const context of ['deploy-preview','branch-deploy','dev','',undefined])expect(recoveryDeploymentAllowed({site:{id},deploy:{context}})).toBe(false);
+ for(const wrong of [id+'-other',id.toUpperCase(),'ac07bb56-42f2-42b6-bcaf-0e543e99cac5',''])expect(recoveryDeploymentAllowed({site:{id:wrong},deploy:{context:'production'}})).toBe(false);
+ expect(recoveryDeploymentAllowed({deploy:{context:'production'}})).toBe(false);
+ const on=createApp({accountRecoveryEnabled:recoveryDeploymentAllowed(production)});
+ expect((await request(on).get('/api/account-recovery/status')).body).toEqual({status:'available'});
+ const off=createApp({accountRecoveryEnabled:recoveryDeploymentAllowed({site:{id},deploy:{context:'deploy-preview'}})});
+ expect((await request(off).get('/api/account-recovery/status')).status).toBe(404);
+ // Existing staging entries stay allowed and are not widened.
+ expect(recoveryDeploymentAllowed({site:{id:'6430c57d-8a98-43bc-ba25-94007dd244f2'},deploy:{context:'production'}})).toBe(false);
+ expect(recoveryDeploymentAllowed({site:{id:'80fbbee8-b9d3-4b16-b93f-d2d8396591ec'},deploy:{context:'deploy-preview'}})).toBe(false);
+ expect(recoveryDeploymentAllowed({site:{id:'b64bf33c-a131-4ae2-b2b0-9aec16e9f77b'},deploy:{context:'deploy-preview'}})).toBe(false);
+});
+
 it('allows only the exact isolated video staging site in its production deploy context',async()=>{
  const {recoveryDeploymentAllowed}=await import('../src/services/recoveryDeployment');
  const id='b64bf33c-a131-4ae2-b2b0-9aec16e9f77b';

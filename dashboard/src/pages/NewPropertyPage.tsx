@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { listPortfolios, createProperty, createBuilding } from "../lib/api";
+import { listPortfolios, createProperty, createBuilding, listCounties, listStates } from "../lib/api";
 import { Sidebar } from "../components/Sidebar";
 
 const PROPERTY_TYPES = [
@@ -22,7 +22,10 @@ export function NewPropertyPage() {
   const [name, setName] = useState("");
   const [addressLine1, setAddressLine1] = useState("");
   const [city, setCity] = useState("");
-  const [state, setState] = useState("");
+  const [states, setStates] = useState<{ code: string; name: string }[]>([]);
+  const [counties, setCounties] = useState<{ fips: string; name: string }[]>([]);
+  const [stateCode, setStateCode] = useState("");
+  const [countyFips, setCountyFips] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [propertyType, setPropertyType] = useState("multifamily");
   const [submittingProperty, setSubmittingProperty] = useState(false);
@@ -47,6 +50,24 @@ export function NewPropertyPage() {
       .finally(() => setLoadingPortfolio(false));
   }, []);
 
+  useEffect(() => {
+    listStates().then(setStates).catch(() => setStates([]));
+  }, []);
+
+  useEffect(() => {
+    if (!stateCode) {
+      setCounties([]);
+      setCountyFips("");
+      return;
+    }
+    let live = true;
+    setCountyFips("");
+    listCounties(stateCode)
+      .then((rows) => { if (live) setCounties(rows); })
+      .catch(() => { if (live) setCounties([]); });
+    return () => { live = false; };
+  }, [stateCode]);
+
   async function onCreateProperty(e: FormEvent) {
     e.preventDefault();
     if (!portfolioId) return;
@@ -58,7 +79,9 @@ export function NewPropertyPage() {
         name,
         address_line1: addressLine1 || undefined,
         city: city || undefined,
-        state: state || undefined,
+        state: stateCode || undefined,
+        state_code: stateCode || undefined,
+        county_fips: countyFips || undefined,
         postal_code: postalCode || undefined,
         property_type: propertyType,
       });
@@ -119,12 +142,22 @@ export function NewPropertyPage() {
                 <div style={{ display: "flex", gap: 12 }}>
                   <div className="field" style={{ flex: 1 }}>
                     <label htmlFor="state">State</label>
-                    <input id="state" value={state} onChange={(e) => setState(e.target.value)} placeholder="e.g. AZ" maxLength={2} />
+                    <select id="state" aria-label="Property state" value={stateCode} onChange={(e) => setStateCode(e.target.value)}>
+                      <option value="">State not set</option>
+                      {states.map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}
+                    </select>
                   </div>
                   <div className="field" style={{ flex: 1 }}>
                     <label htmlFor="postal-code">Zip code</label>
                     <input id="postal-code" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="e.g. 85040" maxLength={10} />
                   </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="county">County</label>
+                  <select id="county" aria-label="Property county" value={countyFips} onChange={(e) => setCountyFips(e.target.value)}>
+                    <option value="">County not set</option>
+                    {counties.map((c) => <option key={c.fips} value={c.fips}>{c.name}</option>)}
+                  </select>
                 </div>
                 <div className="field">
                   <label htmlFor="property-type">Property type</label>

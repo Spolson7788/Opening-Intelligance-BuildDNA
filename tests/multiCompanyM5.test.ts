@@ -180,6 +180,30 @@ describe('M5 company + first admin setup', () => {
     expect(JSON.stringify((await get(`/api/platform/organizations/${r.body.organization.id}/users`, S())).body)).not.toContain(pw);
     expect(generateTemporaryPassword()).not.toBe(generateTemporaryPassword());
   });
+
+  it('creates one Main Portfolio for a customer in the same transaction and does not add a second for a provider facility', async () => {
+    const post = (body: Record<string, unknown>) => request(app).post('/api/platform/companies').set('Authorization', S()).send(body);
+    const email = 'cust-admin-' + randomUUID().slice(0, 8) + '@example.invalid';
+    const customer = await post({ name: 'Synthetic Customer Co', org_type: 'customer', admin_email: email, admin_full_name: 'Synthetic Cust', reason: 'synthetic onboarding' });
+    expect(customer.status).toBe(201);
+    expect((await sql('SELECT name FROM portfolios WHERE organization_id=$1 ORDER BY name', [customer.body.organization.id])).rows).toEqual([{ name: 'Main Portfolio' }]);
+
+    const providerEmail = 'prov-admin-' + randomUUID().slice(0, 8) + '@example.invalid';
+    const provider = await post({ name: 'Synthetic Provider Co', org_type: 'service_partner', admin_email: providerEmail, admin_full_name: 'Synthetic Prov', reason: 'synthetic onboarding', create_provider_facility: true });
+    expect(provider.status).toBe(201);
+    expect((await sql('SELECT name FROM portfolios WHERE organization_id=$1', [provider.body.organization.id])).rows).toEqual([{ name: 'Main Portfolio' }]);
+    expect((await sql('SELECT count(*)::int n FROM properties p JOIN portfolios f ON f.id=p.portfolio_id WHERE f.organization_id=$1', [provider.body.organization.id])).rows[0].n).toBe(1);
+
+    const plainEmail = 'prov-plain-' + randomUUID().slice(0, 8) + '@example.invalid';
+    const plain = await post({ name: 'Synthetic Provider Plain', org_type: 'service_partner', admin_email: plainEmail, admin_full_name: 'Synthetic Plain', reason: 'synthetic onboarding' });
+    expect(plain.status).toBe(201);
+    expect((await sql('SELECT count(*)::int n FROM portfolios WHERE organization_id=$1', [plain.body.organization.id])).rows[0].n).toBe(0);
+
+    const rolled = await post({ name: 'Synthetic Customer Rollback', org_type: 'customer', admin_email: 'rollback-' + randomUUID().slice(0, 8) + '@example.invalid', admin_full_name: 'X', reason: 'synthetic', create_provider_facility: true });
+    expect(rolled.body.error).toBe('provider_facility_requires_provider');
+    expect((await sql("SELECT count(*)::int n FROM organizations WHERE name='Synthetic Customer Rollback'")).rows[0].n).toBe(0);
+    expect((await sql("SELECT count(*)::int n FROM portfolios pf JOIN organizations o ON o.id=pf.organization_id WHERE o.name='Synthetic Customer Rollback'")).rows[0].n).toBe(0);
+  });
 });
 
 describe('M5 platform staff management', () => {
