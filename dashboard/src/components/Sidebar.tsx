@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { useEffect, useState } from "react";
 import { LocationBar } from "./LocationBar";
@@ -12,9 +12,9 @@ export function Sidebar() {
   return (
     <div className="sidebar">
       <div className="sidebar-brand">Opening Intel</div>
-      <div style={{ color: "#c7cdd6", fontSize: 13, padding: "8px 10px", borderRadius: 6, background: "#28384b" }}>
+      <NavLink to="/" end className={({ isActive }) => (isActive ? "sidebar-home active" : "sidebar-home")}>
         Portfolio Overview
-      </div>
+      </NavLink>
       <LocationBar />
       <div className="sidebar-org">
         {auth?.role && <div style={{ textTransform: "capitalize", marginBottom: 8 }}>{auth.role.replace(/_/g, " ")}</div>}
