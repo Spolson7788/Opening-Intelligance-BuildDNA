@@ -24,18 +24,24 @@ export function ForgotPasswordPage() {
     }
   }
 
-  return <div className="login-shell"><div className="login-card">
-    <div className="asset-plate" style={{ marginBottom: 18 }}>OPENING-INTEL</div>
-    <h1>Reset your password</h1>
-    <p>Enter the email address for your Opening Intelligence account. The link opens on this dashboard.</p>
-    <form onSubmit={submit}>
-      <div className="field"><label htmlFor="reset-email">Email</label>
-        <input id="reset-email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></div>
-      <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? "Requesting…" : "Send reset link"}</button>
-    </form>
-    {message && <p role="status">{message}</p>}
-    <p><Link to="/login">Back to sign in</Link></p>
-  </div></div>;
+  return (
+    <div className="login-shell">
+      <div className="login-card">
+        <div className="asset-plate" style={{ marginBottom: 18 }}>OPENING-INTEL</div>
+        <h1>Reset your password</h1>
+        <p className="login-lead">Enter the email address for your Opening Intelligence account. The link opens on this dashboard.</p>
+        <form onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="reset-email">Email</label>
+            <input id="reset-email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          {message && <p className="login-note" role="status">{message}</p>}
+          <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? "Requesting…" : "Send reset link"}</button>
+        </form>
+        <p className="login-foot"><Link to="/login">Back to sign in</Link></p>
+      </div>
+    </div>
+  );
 }
 
 export function ResetPasswordPage() {
@@ -69,18 +75,28 @@ export function ResetPasswordPage() {
     }
   }
 
-  return <div className="login-shell"><div className="login-card">
-    <div className="asset-plate" style={{ marginBottom: 18 }}>OPENING-INTEL</div>
-    <h1>Choose a new password</h1>
-    {!token && <p>This link is missing its reset code. <Link to="/forgot-password">Request a new link</Link>.</p>}
-    {token && !done && <form onSubmit={submit}>
-      <div className="field"><label htmlFor="new-password">New password (12 to 72 characters)</label>
-        <input id="new-password" type="password" autoComplete="new-password" minLength={12} maxLength={72} required value={password} onChange={(e) => setPassword(e.target.value)} /></div>
-      <div className="field"><label htmlFor="confirm-password">Confirm new password</label>
-        <input id="confirm-password" type="password" autoComplete="new-password" minLength={12} maxLength={72} required value={confirm} onChange={(e) => setConfirm(e.target.value)} /></div>
-      <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? "Updating…" : "Save new password"}</button>
-    </form>}
-    {message && <p role="status">{message}</p>}
-    <p><Link to="/login">Back to sign in</Link></p>
-  </div></div>;
+  return (
+    <div className="login-shell">
+      <div className="login-card">
+        <div className="asset-plate" style={{ marginBottom: 18 }}>OPENING-INTEL</div>
+        <h1>Choose a new password</h1>
+        <p className="login-lead">12 to 72 characters. This replaces the password for your Opening Intelligence account.</p>
+        {!token && <p className="error-text">This link is missing its reset code. <Link to="/forgot-password">Request a new link</Link>.</p>}
+        {token && !done && <form onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="new-password">New password</label>
+            <input id="new-password" type="password" autoComplete="new-password" minLength={12} maxLength={72} required value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="confirm-password">Confirm new password</label>
+            <input id="confirm-password" type="password" autoComplete="new-password" minLength={12} maxLength={72} required value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          </div>
+          {message && <p className="error-text" role="status">{message}</p>}
+          <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? "Updating…" : "Save new password"}</button>
+        </form>}
+        {token && done && message && <p className="login-lead" role="status">{message}</p>}
+        <p className="login-foot"><Link to="/login">Back to sign in</Link></p>
+      </div>
+    </div>
+  );
 }

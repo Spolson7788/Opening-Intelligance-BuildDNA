@@ -56,6 +56,60 @@ h1, h2, h3 {
 
 /* The "asset plate" — the signature element. Every opening_code in the app renders
    inside this chip, echoing the physical QR/VIN-style tag on the real door. */
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0b1f3a;
+  padding: 24px 16px;
+}
+.login-shell .login-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 32px;
+  width: 340px;
+  max-width: 100%;
+  border-top: 4px solid #ff6a1a;
+  color: #1c1f22;
+}
+.login-shell .asset-plate {
+  color: #1e2a3a;
+  background: #f0efe9;
+  border: 1px solid #e2e0d8;
+  border-left: 3px solid #ff6a1a;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  padding: 3px 8px;
+}
+.login-shell h1 {
+  font-size: 20px;
+  margin: 0 0 4px;
+  color: #1c1f22;
+  box-shadow: inset 0 -3px 0 #ff6a1a;
+  display: inline-block;
+  padding-bottom: 2px;
+}
+.login-shell .login-lead { color: #6b7178; font-size: 13px; margin: 0 0 24px; }
+.login-shell .login-foot { font-size: 13px; margin-top: 12px; text-align: center; }
+.login-shell .login-note { font-size: 13px; color: #6b7178; margin: 0 0 16px; text-align: center; }
+.login-shell .field label { color: #6b7178; font-size: 13px; font-weight: 500; }
+.login-shell .field input {
+  height: 42px;
+  min-height: 42px;
+  border-radius: 6px;
+  border: 1px solid #e2e0d8;
+  background: #fff;
+  color: #1c1f22;
+  padding: 0 12px;
+  font-size: 14px;
+  width: 100%;
+}
+.login-shell .btn { height: 42px; min-height: 42px; border-radius: 6px; width: 100%; font-size: 14px; font-weight: 600; }
+.login-shell .btn-primary { background: #c2410c; border-color: #9a3412; color: #fff; }
+.login-shell .btn-primary:hover { background: #9a3412; }
+.login-shell a { color: #c2410c; font-weight: 700; }
+
 .asset-plate {
   display: inline-flex;
   align-items: center;

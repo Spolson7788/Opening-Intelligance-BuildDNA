@@ -38,7 +38,7 @@ export function ChangePasswordPage() {
       <div className="login-card">
         <div className="asset-plate" style={{ marginBottom: 18 }}>OPENING-INTEL</div>
         <h1 style={{ fontSize: 20, marginBottom: 4 }}>{forced ? "Choose a new password" : "Change password"}</h1>
-        <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 24 }}>
+        <p className="login-lead">
           {forced ? "Your admin gave you a temporary password. Choose your own before continuing." : "Other signed-in devices will be signed out."}
         </p>
         <form onSubmit={onSubmit}>
@@ -58,9 +58,11 @@ export function ChangePasswordPage() {
           {error && <p className="error-text" role="alert">{error}</p>}
           <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving..." : "Save new password"}</button>
         </form>
-        <button onClick={forced ? logout : () => navigate(-1)} style={{ background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: 13, marginTop: 16, padding: 0 }}>
-          {forced ? "Sign out" : "Cancel"}
-        </button>
+        <p className="login-foot">
+          <button type="button" onClick={forced ? logout : () => navigate(-1)} style={{ background: "none", border: "none", color: "#c2410c", cursor: "pointer", fontSize: 13, fontWeight: 700, padding: 0 }}>
+            {forced ? "Sign out" : "Cancel"}
+          </button>
+        </p>
       </div>
     </div>
   );
