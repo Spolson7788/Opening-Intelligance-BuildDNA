@@ -26,8 +26,10 @@ export function LocationBar() {
     const f: LocationFilter = v.startsWith("b:") ? { kind: "branch", orgId: v.slice(2) } : v.startsWith("f:") ? { kind: "facility", propertyId: v.slice(2) } : { kind: v === "all" ? "all" : "company" };
     setFilter(f);
   }
+  const single = !showCompanySwitcher(companies) ? uniqueCompanies(companies)[0] : undefined;
   return (
-    <div className="location-bar" style={{ padding: "8px 10px", fontSize: 12, color: "#c7cdd6" }}>
+    <div className="location-bar">
+      {single && <div className="sidebar-company-name">{single.name ?? "Company"}</div>}
       {showCompanySwitcher(companies) && (
         <label style={{ display: "block", marginBottom: 8 }}>Company
           <select aria-label="Company" style={sel} value={auth?.organizationId} onChange={e => onSwitch(e.target.value)}>

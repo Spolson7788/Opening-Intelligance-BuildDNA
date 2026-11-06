@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { listOpenings, listProperties, downloadOpeningsCsv, downloadComplianceReport } from "../lib/api";
-import type { Opening, Property } from "../lib/api";
+import { listOpenings, listProperties, listCompanies, downloadOpeningsCsv, downloadComplianceReport, fetchCapitalForecastRollup, fetchComplianceAlerts } from "../lib/api";
+import type { ComplianceAlertsResult, Opening, Property } from "../lib/api";
 import { facilitiesErrorMessage } from "../lib/scheduleUi";
 import { Sidebar } from "../components/Sidebar";
-import { HealthPill, healthBand } from "../components/HealthPill";
-import { HealthDistributionChart } from "../components/HealthDistributionChart";
+import { HealthPill } from "../components/HealthPill";
 import { useAuth } from "../lib/AuthContext";
 import { useLocations } from "../lib/LocationContext";
 import { CreateLocationPicker, useCreateTarget } from "../components/LocationBar";
 import { groupByLocation, rollupByLocation } from "../lib/locationScope";
+import { countBands, countyBadge, formatUsd, groupByStateCounty, needsAttentionCount, summarizeCorrectiveWork } from "../lib/portfolioOverview";
 
 const OPENING_TYPES = [
   { value: "", label: "All types" },
@@ -32,8 +32,6 @@ export function DashboardPage() {
   // imports. This is a UX nicety, not the actual security boundary — the
   // API enforces this regardless of what the dashboard shows or hides.
   const canManageSetup = auth?.role === "admin" || auth?.role === "facilities_manager";
-  // M4 v2: comparison reports are open to admin, facilities manager, technician and inspector.
-  const canViewComparisons = canManageSetup || auth?.role === "technician" || auth?.role === "inspector";
   const loc = useLocations();
   const createTarget = useCreateTarget();
   const [groupBy, setGroupBy] = useState(false);
@@ -53,6 +51,10 @@ export function DashboardPage() {
   const [sortKey, setSortKey] = useState<SortKey>("health_score");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [exporting, setExporting] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
+  const [companyName, setCompanyName] = useState<string | null>(null);
+  const [corrective, setCorrective] = useState<{ knownCost: number; awaitingEstimate: number } | null | undefined>(undefined);
+  const [compliance, setCompliance] = useState<ComplianceAlertsResult | null | undefined>(undefined);
 
   async function onExport() {
     setExporting(true);
@@ -92,7 +94,17 @@ export function DashboardPage() {
     // M3.1: failures are shown (a 401 goes to sign-in via authedFetch) instead of an empty list.
     listProperties().then((props) => { setProperties(props ?? []); setPropertiesError(null); })
       .catch((err) => setPropertiesError(facilitiesErrorMessage(err)));
-  }, []);
+    listCompanies().then((rows) => {
+      const mine = rows.find((company) => company.organization_id === auth?.organizationId);
+      setCompanyName(mine?.name ?? null);
+    }).catch(() => setCompanyName(null));
+    fetchCapitalForecastRollup()
+      .then((rollup) => setCorrective(summarizeCorrectiveWork(rollup.properties ?? [])))
+      .catch(() => setCorrective(null));
+    fetchComplianceAlerts()
+      .then(setCompliance)
+      .catch(() => setCompliance(null));
+  }, [auth?.organizationId]);
 
   const buildingsForSelectedProperty = useMemo(() => {
     return properties.find((p) => p.id === propertyFilter)?.buildings ?? [];
@@ -163,143 +175,141 @@ export function DashboardPage() {
   const totalOpenings = openings.length;
   const scored = openings.filter((o) => o.health_score !== null && o.health_score !== undefined);
   const avgHealth = scored.length ? Math.round(scored.reduce((s, o) => s + (o.health_score ?? 0), 0) / scored.length) : null;
-  const needsAttention = openings.filter((o) => healthBand(o.health_score) === "poor").length;
+  const needsAttention = needsAttentionCount(openings.map((o) => o.health_score));
   const fireRatedCount = openings.filter((o) => o.fire_rated).length;
+  const bands = countBands(openings.map((o) => o.health_score));
+  const buildingCount = properties.reduce((sum, property) => sum + (property.buildings?.length ?? 0), 0);
+  const areaGroups = groupByStateCounty(properties, openings);
+  const bandWidth = (count: number) => (totalOpenings ? `${(count / totalOpenings) * 100}%` : "0%");
 
   return (
     <div className="app-shell">
       <Sidebar />
       <div className="main">
-        <div className="page-header">
+        <div className="ov-header">
           <div>
             <h1>Portfolio Overview</h1>
-            <p>{totalOpenings} openings tracked across your portfolio</p>
+            <p>
+              {totalOpenings} openings tracked across {properties.length} {properties.length === 1 ? "property" : "properties"}
+              {companyName ? ` · ${companyName}` : ""}
+            </p>
           </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <Link
-              to="/work-orders"
-              className="btn btn-secondary"
-              style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
-            >
-              Work Orders
-            </Link>
-            <Link
-              to="/maintenance-schedules"
-              className="btn btn-secondary"
-              style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
-            >
-              Maintenance Schedules
-            </Link>
-            <Link
-              to="/facility-schedules"
-              className="btn btn-secondary"
-              style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
-            >
-              Door Schedules
-            </Link>
-            {canViewComparisons && (
-              <Link
-                to="/schedule-comparisons"
-                className="btn btn-secondary"
-                style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
-              >
-                Schedule Comparisons
-              </Link>
-            )}
-            {canManageSetup && (
-              <Link
-                to="/audit-log"
-                className="btn btn-secondary"
-                style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
-              >
-                Audit Log
-              </Link>
-            )}
-            <Link
-              to="/team"
-              className="btn btn-secondary"
-              style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
-            >
-              Team
-            </Link>
-            <Link
-              to="/compliance-alerts"
-              className="btn btn-secondary"
-              style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
-            >
-              Alerts
-            </Link>
-            <Link
-              to="/capital-forecast"
-              className="btn btn-secondary"
-              style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
-            >
-              Capital Forecast
-            </Link>
-            <Link
-              to="/openings/print-labels"
-              className="btn btn-secondary"
-              style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
-            >
-              Print Labels
-            </Link>
+          <div className="ov-header-actions">
+            <button type="button" className="ov-btn" onClick={() => window.print()}>Print / Save as PDF</button>
             {canManageSetup && createTarget.mustChoose && (
               <span title="New openings, properties and imports go to one specific location">
                 <CreateLocationPicker onChosen={() => {}} />
               </span>
             )}
             {canManageSetup && !createTarget.mustChoose && (
-              <>
-                <Link
-                  to="/openings/new"
-                  className="btn btn-secondary"
-                  style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
-                >
-                  + New Opening
-                </Link>
-                <Link
-                  to="/openings/import"
-                  className="btn btn-secondary"
-                  style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
-                >
-                  Import Openings
-                </Link>
-                <Link
-                  to="/hardware/import"
-                  className="btn btn-secondary"
-                  style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
-                >
-                  Import Hardware
-                </Link>
-                <Link
-                  to="/properties/new"
-                  className="btn btn-primary"
-                  style={{ width: "auto", textDecoration: "none", padding: "0 16px" }}
-                >
-                  + New Property
-                </Link>
-              </>
+              <div className={"ov-new" + (newOpen ? " open" : "")} onKeyDown={(e) => { if (e.key === "Escape") setNewOpen(false); }}>
+                <button type="button" className="ov-btn ov-btn-primary" aria-expanded={newOpen} aria-controls="new-menu-panel" onClick={() => setNewOpen((open) => !open)}>
+                  + New
+                </button>
+                {newOpen && (
+                  <div id="new-menu-panel" className="ov-new-panel" role="menu">
+                    <Link role="menuitem" to="/properties/new" onClick={() => setNewOpen(false)}>+ New Property</Link>
+                    <Link role="menuitem" to="/openings/new" onClick={() => setNewOpen(false)}>+ New Opening</Link>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
 
-        <div className="stat-row">
-          <div className="stat-card">
-            <div className="label">Total Openings</div>
-            <div className="value">{totalOpenings}</div>
+        <section className="ov-scores" aria-label="Portfolio scores">
+          <article className="ov-score">
+            <div className="ov-score-label">Portfolio Health Score</div>
+            <div className="ov-score-value">{avgHealth ?? "Not available"}</div>
+            <div className={"ov-score-sub" + (needsAttention > 0 ? " warn" : "")}>{needsAttention} {needsAttention === 1 ? "opening needs" : "openings need"} attention</div>
+          </article>
+          <article className="ov-score">
+            <div className="ov-score-label">Openings on File</div>
+            <div className="ov-score-value">{totalOpenings}</div>
+            <div className="ov-score-sub">{properties.length} {properties.length === 1 ? "property" : "properties"} · {buildingCount} {buildingCount === 1 ? "building" : "buildings"}</div>
+          </article>
+          <article className="ov-score">
+            <div className="ov-score-label">Need Attention</div>
+            <div className="ov-score-value">{needsAttention}</div>
+            <div className="ov-score-sub warn">below healthy threshold</div>
+          </article>
+          <article className="ov-score">
+            <div className="ov-score-label">Fire-Rated Openings</div>
+            <div className="ov-score-value">{fireRatedCount}</div>
+            <div className="ov-score-sub">{totalOpenings ? `${Math.round((fireRatedCount / totalOpenings) * 100)}% of portfolio` : "Not available"}</div>
+          </article>
+          <article className="ov-score">
+            <div className="ov-score-label">Identified Corrective Work</div>
+            <div className="ov-score-value">{corrective ? formatUsd(corrective.knownCost) : corrective === null ? "Not available" : "…"}</div>
+            <div className="ov-score-sub">{corrective ? `${corrective.awaitingEstimate} awaiting estimate` : "Known hardware cost"}</div>
+          </article>
+          <article className="ov-score">
+            <div className="ov-score-label">Recorded Service This Quarter</div>
+            <div className="ov-score-value">Not available</div>
+            <div className="ov-score-sub">No portfolio service-cost list</div>
+          </article>
+        </section>
+
+        <section className="ov-card" aria-label="Condition at a glance">
+          <div className="ov-card-head">
+            <h2>Condition at a glance</h2>
+            <p>Every opening on file, bucketed by its health score.</p>
           </div>
-          <div className="stat-card">
-            <div className="label">Avg Health Score</div>
-            <div className="value">{avgHealth ?? "—"}</div>
+          <div className="ov-bar" title={`Healthy ${bands.healthy} · Monitor ${bands.monitor} · Serious ${bands.serious} · Critical ${bands.critical} · Not assessed ${bands.unassessed}`}>
+            <span className="seg-healthy" style={{ width: bandWidth(bands.healthy) }} />
+            <span className="seg-monitor" style={{ width: bandWidth(bands.monitor) }} />
+            <span className="seg-serious" style={{ width: bandWidth(bands.serious) }} />
+            <span className="seg-critical" style={{ width: bandWidth(bands.critical) }} />
+            <span className="seg-none" style={{ width: bandWidth(bands.unassessed) }} />
           </div>
-          <div className={`stat-card ${needsAttention > 0 ? "alert" : ""}`}>
-            <div className="label">Needs Attention</div>
-            <div className="value">{needsAttention}</div>
+          <div className="ov-legend">
+            <span><i className="dot healthy" /> Healthy <strong>{bands.healthy}</strong></span>
+            <span><i className="dot monitor" /> Monitor <strong>{bands.monitor}</strong></span>
+            <span><i className="dot serious" /> Serious <strong>{bands.serious}</strong></span>
+            <span><i className="dot critical" /> Critical <strong>{bands.critical}</strong></span>
+            <span><i className="dot none" /> Not assessed <strong>{bands.unassessed}</strong></span>
           </div>
-          <div className="stat-card">
-            <div className="label">Fire-Rated Openings</div>
-            <div className="value">{fireRatedCount}</div>
-          </div>
+        </section>
+
+        <div className="ov-split">
+          <section className="ov-card" aria-label="Properties by state and county">
+            <div className="ov-card-head">
+              <h2>Properties by state and county</h2>
+              <p>Grouped summary of openings across the portfolio.</p>
+            </div>
+            {areaGroups.length === 0 ? <p className="ov-empty">No properties yet.</p> : areaGroups.map((state) => (
+              <div className="ov-state" key={state.state}>
+                <div className="ov-state-name"><span>{state.state}</span><span>{state.openingCount} openings</span></div>
+                {state.counties.map((county) => {
+                  const badge = countyBadge(county.bands);
+                  return (
+                    <div className="ov-county" key={state.state + county.county}>
+                      <span className="ov-county-name">{county.county}</span>
+                      <span className="ov-county-meta">{county.propertyCount} {county.propertyCount === 1 ? "property" : "properties"} · {county.openingCount} openings</span>
+                      <span className={"ov-badge " + badge.tone}>{badge.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </section>
+          <section className="ov-card" aria-label="Service and compliance">
+            <div className="ov-card-head">
+              <h2>Service &amp; compliance</h2>
+              <p>Compliance alerts come from the portfolio list. Recent service costs are not on a portfolio list yet.</p>
+            </div>
+            <div className="ov-service-summary">
+              {compliance === undefined ? "Loading compliance alerts…" : compliance === null ? "Compliance alerts are not available." : <><strong>{compliance.total_flagged}</strong> compliance {compliance.total_flagged === 1 ? "alert" : "alerts"} on file.</>}
+            </div>
+            <div className="ov-kicker">Recent service</div>
+            <p className="ov-empty">Not available</p>
+            {compliance && compliance.alerts.slice(0, 5).map((alert) => (
+              <div className="ov-service" key={alert.id}>
+                <div><span className="ov-code">{alert.opening_code}</span> — {alert.property_name}: {alert.alert_level.replace(/_/g, " ")}</div>
+                <div className="ov-when">{alert.last_inspection_date ? alert.last_inspection_date.slice(0, 10) : "No inspection date"}</div>
+              </div>
+            ))}
+          </section>
         </div>
 
         {loc.combined && (
@@ -318,39 +328,32 @@ export function DashboardPage() {
           </div>
         )}
 
-        <div className="panel">
-          <h2>Health Score Distribution</h2>
-          <HealthDistributionChart openings={openings} />
-        </div>
-
-        <div className="panel">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <h2 style={{ marginBottom: 0 }}>Openings</h2>
+        <section className="ov-card" id="openings">
+          <div className="ov-card-head">
+            <div>
+              <h2>Openings</h2>
+              <p>Filter, group, and export the full openings list.</p>
+            </div>
+            <div className="ov-header-actions">
             <button
+              className="ov-btn"
               onClick={onExport}
               disabled={exporting || sorted.length === 0 || (loc.combined && !loc.index.canExportTree)}
               title={loc.combined && !loc.index.canExportTree ? "Exports across several locations are for company admins only" : undefined}
-              style={{
-                height: 32, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)",
-                fontSize: 12.5, fontWeight: 600, padding: "0 12px", cursor: "pointer",
-              }}
             >
               {exporting ? "Exporting…" : "Export CSV"}
             </button>
             <button
+              className="ov-btn"
               onClick={onComplianceReport}
               disabled={generatingReport || !propertyFilter}
               title={!propertyFilter ? "Select a property first" : "Fire door & life safety compliance report"}
-              style={{
-                height: 32, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)",
-                fontSize: 12.5, fontWeight: 600, padding: "0 12px", cursor: propertyFilter ? "pointer" : "not-allowed",
-                marginLeft: 8, opacity: propertyFilter ? 1 : 0.5,
-              }}
             >
               {generatingReport ? "Generating…" : "Compliance Report (PDF)"}
             </button>
+            </div>
           </div>
-          <div className="filter-bar">
+          <div className="ov-filters">
             {loc.combined && (
               <label style={{ fontSize: 12.5 }}><input type="checkbox" checked={groupBy} onChange={(e) => setGroupBy(e.target.checked)} /> Group by location</label>
             )}
@@ -363,24 +366,24 @@ export function DashboardPage() {
               <option value="">All counties</option>
               {countyOptions.map(([fips, name]) => <option key={fips} value={fips}>{name}</option>)}
             </select>
-            <select value={propertyFilter} onChange={(e) => onPropertyChange(e.target.value)}>
+            <select aria-label="Property" value={propertyFilter} onChange={(e) => onPropertyChange(e.target.value)}>
               <option value="">All properties</option>
               {properties.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
-            <select value={buildingFilter} onChange={(e) => setBuildingFilter(e.target.value)} disabled={!propertyFilter}>
+            <select aria-label="Building" value={buildingFilter} onChange={(e) => setBuildingFilter(e.target.value)} disabled={!propertyFilter}>
               <option value="">All buildings</option>
               {buildingsForSelectedProperty.map((b) => (
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+            <select aria-label="Type" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
               {OPENING_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
               ))}
             </select>
-            <select value={maxHealthFilter} onChange={(e) => setMaxHealthFilter(e.target.value)}>
+            <select aria-label="Health" value={maxHealthFilter} onChange={(e) => setMaxHealthFilter(e.target.value)}>
               <option value="">All health scores</option>
               <option value="49">Needs attention (≤49)</option>
               <option value="74">Below good (≤74)</option>
@@ -443,7 +446,8 @@ export function DashboardPage() {
               </tbody>
             </table>
           )}
-        </div>
+          {!loading && !error && <p className="ov-foot">Showing {sorted.length} openings</p>}
+        </section>
       </div>
     </div>
   );

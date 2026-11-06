@@ -11,7 +11,11 @@ vi.mock("../dashboard/src/lib/AuthContext", () => ({
 vi.mock("../dashboard/src/lib/api", () => ({
   platformMe: async () => ({ staff: true }),
 }));
-vi.mock("../dashboard/src/components/LocationBar", () => ({ LocationBar: () => null }));
+vi.mock("../dashboard/src/components/LocationBar", () => ({
+  LocationBar: () => null,
+  useCreateTarget: () => ({ mustChoose: false, targets: [], choose: async () => true }),
+  CreateLocationPicker: () => null,
+}));
 import { Sidebar } from "../dashboard/src/components/Sidebar";
 
 let root: ReturnType<typeof createRoot>;

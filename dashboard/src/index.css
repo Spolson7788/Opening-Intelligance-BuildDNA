@@ -64,15 +64,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 
 .app-shell {
   display: flex;
-  min-height: 100%;
+  align-items: stretch;
+  min-height: 100vh;
+  background: #e8eef5;
 }
 
 .sidebar {
-  width: 220px;
+  width: 248px;
   flex-shrink: 0;
-  background: var(--navy);
-  color: #e8ebef;
-  padding: 20px 16px;
+  align-self: stretch;
+  min-height: 100vh;
+  background: linear-gradient(180deg, #0b1f3a 0%, #081628 100%);
+  color: #e8eef5;
+  padding: 20px 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -117,6 +121,58 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   border-color: var(--accent);
 }
 
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sidebar-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #f0a060, #c45a1a);
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+}
+.sidebar-brand-name { display: block; color: #fff; font-weight: 700; font-size: 15px; }
+.sidebar-brand-sub { display: block; color: #8fa3bc; font-size: 11px; font-weight: 500; }
+.sidebar-nav { display: flex; flex-direction: column; }
+.sidebar-spacer { flex: 1; min-height: 12px; }
+.nav-group { margin-bottom: 12px; }
+.nav-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a92ad;
+  padding: 6px 10px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #c9d6e8;
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.nav-item:hover { background: rgba(255,255,255,.06); color: #fff; }
+.nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.nav-item.active { background: rgba(255,255,255,.12); color: #fff; font-weight: 600; box-shadow: inset 3px 0 0 #f0a060; }
+.nav-admin { border-top: 1px solid rgba(255,255,255,.08); padding-top: 10px; margin-top: 6px; }
+.sidebar .location-bar { margin: 4px 0 8px; padding: 8px 10px; background: #1a3658; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; color: #fff; font-size: 12.5px; }
+.sidebar-company-name { font-weight: 600; }
+.sidebar .location-bar select { width: 100%; margin-top: 4px; }
+
 .sidebar-org {
   font-size: 12px;
   color: #9aa4b2;
@@ -124,6 +180,89 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   padding-top: 16px;
   border-top: 1px solid #34404f;
 }
+
+.ov-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+.ov-header h1 { font-size: 26px; color: #0b1f3a; letter-spacing: -0.3px; }
+.ov-header p { color: #5a6a7e; font-size: 14px; margin-top: 4px; }
+.ov-header-actions { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+.ov-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 14px; border-radius: 8px; border: 1px solid #d5dee8;
+  background: #fff; color: #1a2332; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none;
+}
+.ov-btn:hover { background: #f5f8fb; }
+.ov-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ov-btn-primary { background: #0b1f3a; color: #fff; border-color: #0b1f3a; }
+.ov-btn-primary:hover { background: #122a4a; }
+.ov-new { display: flex; flex-direction: column; align-items: stretch; }
+.ov-new-panel {
+  position: static;
+  margin-top: 8px;
+  background: #fff;
+  border: 1px solid #d5dee8;
+  border-radius: 10px;
+  padding: 6px;
+  min-width: 180px;
+  box-shadow: 0 1px 2px rgba(11,31,58,.06);
+}
+.ov-new-panel a { display: block; padding: 9px 12px; border-radius: 6px; color: #1a2332; text-decoration: none; font-size: 13.5px; font-weight: 500; }
+.ov-new-panel a:hover { background: #f0f4f8; }
+.ov-scores { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 16px; }
+.ov-score { background: #fff; border-radius: 12px; padding: 16px; min-height: 118px; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(11,31,58,.06), 0 4px 16px rgba(11,31,58,.06); }
+.ov-score-label { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #5a6a7e; }
+.ov-score-value { font-size: 32px; font-weight: 750; letter-spacing: -.6px; color: #0b1f3a; margin: 8px 0 6px; line-height: 1; }
+.ov-score-sub { font-size: 12px; font-weight: 600; margin-top: auto; color: #5a6a7e; }
+.ov-score-sub.warn { color: #c45a1a; }
+.ov-card { background: #fff; border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(11,31,58,.06), 0 4px 16px rgba(11,31,58,.06); }
+.ov-card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 14px; }
+.ov-card-head h2 { font-size: 16px; color: #0b1f3a; }
+.ov-card-head p { font-size: 13px; color: #5a6a7e; margin-top: 3px; }
+.ov-bar { display: flex; height: 18px; border-radius: 999px; overflow: hidden; background: #e6ebf0; margin-bottom: 14px; }
+.ov-bar span { display: block; height: 100%; }
+.seg-healthy { background: #2f9e64; }
+.seg-monitor { background: #e0a82a; }
+.seg-serious { background: #d45a3a; }
+.seg-critical { background: #a82020; }
+.seg-none { background: #9aa7b8; }
+.ov-legend { display: flex; flex-wrap: wrap; gap: 16px 22px; font-size: 13px; }
+.ov-legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+.dot.healthy { background: #2f9e64; }
+.dot.monitor { background: #e0a82a; }
+.dot.serious { background: #d45a3a; }
+.dot.critical { background: #a82020; }
+.dot.none { background: #9aa7b8; }
+.ov-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.ov-state { margin-bottom: 14px; }
+.ov-state-name { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: #0b1f3a; margin-bottom: 6px; }
+.ov-state-name span:last-child { color: #5a6a7e; font-weight: 600; }
+.ov-county { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; background: #f5f8fb; margin-bottom: 4px; font-size: 13px; }
+.ov-county-name { flex: 1; font-weight: 500; }
+.ov-county-meta { color: #5a6a7e; font-size: 12px; }
+.ov-badge { display: inline-flex; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.ov-badge.healthy { background: #d8f0e4; color: #1f7a4c; }
+.ov-badge.monitor { background: #f7ecd0; color: #8a6208; }
+.ov-badge.serious { background: #fde8e0; color: #a83818; }
+.ov-badge.critical { background: #f5d6d6; color: #b33030; }
+.ov-badge.unassessed { background: #e6ebf0; color: #7a8799; }
+.ov-service-summary { background: #f5f8fb; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 12px; }
+.ov-kicker { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #5a6a7e; margin-bottom: 8px; }
+.ov-empty { color: #5a6a7e; font-size: 13px; }
+.ov-service { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #d5dee8; font-size: 13.5px; }
+.ov-code { font-weight: 700; color: #c45a1a; }
+.ov-when { color: #5a6a7e; font-size: 12.5px; white-space: nowrap; }
+.ov-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.ov-filters select, .ov-filters label { font-size: 12.5px; }
+.ov-filters select { padding: 7px 10px; border: 1px solid #d5dee8; border-radius: 7px; background: #fff; }
+.ov-foot { margin-top: 12px; font-size: 12.5px; color: #5a6a7e; }
+@media (max-width: 1280px) { .ov-scores { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 980px) {
+  .app-shell { flex-direction: column; }
+  .sidebar { width: 100%; min-height: auto; position: static; }
+  .ov-split { grid-template-columns: 1fr; }
+  .ov-scores { grid-template-columns: repeat(2, 1fr); }
+  .main { padding: 20px 16px 40px; }
+}
+@media (max-width: 640px) { .ov-scores { grid-template-columns: 1fr; } }
 
 .main {
   flex: 1;
