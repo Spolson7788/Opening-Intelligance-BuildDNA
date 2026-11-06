@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { SESSION_EXPIRED_MESSAGE, SESSION_EXPIRED_PARAM } from "../lib/session";
 import { loginErrorMessage } from "../lib/scheduleUi";
 import { useAuth } from "../lib/AuthContext";
@@ -59,6 +59,9 @@ export function LoginPage() {
             {submitting ? "Signing in…" : "Sign In"}
           </button>
         </form>
+        <p style={{ fontSize: 13, marginTop: 12, textAlign: "center" }}>
+          <Link to="/forgot-password">Forgot password?</Link>
+        </p>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 16, textAlign: "center" }}>
           Need access? Ask your administrator for an invite.
         </p>

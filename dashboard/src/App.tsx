@@ -18,6 +18,7 @@ function RequireOneLocation({ children }: { children: React.ReactElement }) {
   );
 }
 import { LoginPage } from "./pages/LoginPage";
+import { ForgotPasswordPage, ResetPasswordPage } from "./pages/PasswordResetPages";
 import { DashboardPage } from "./pages/DashboardPage";
 import { FacilitySchedulesPage } from "./pages/FacilitySchedulesPage";
 import { ScheduleImportPage, ScheduleImportStartPage } from "./pages/ScheduleImportPage";
@@ -55,6 +56,8 @@ function AppRoutes() {
   return (
     <Routes key={scopeKey}>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/accept-invite" element={<AcceptInvitePage />} />
       <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
       <Route path="/" element={<RequireAuth><DashboardPage /></RequireAuth>} />

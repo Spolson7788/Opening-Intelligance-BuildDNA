@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
@@ -7,6 +7,7 @@ import { pool } from "../db/pool";
 import { requireAuth, requireRole, AuthedRequest, isMissingSchema } from "../middleware/auth";
 import { auditLog } from "../middleware/auditLog";
 import { membershipOf, activeAdminCount, record, HISTORY_DEFAULT_REASON } from "../services/teamMemberships";
+import { passwordResetConfigured, sendPasswordChangedEmail, sendPasswordResetEmail } from "../services/passwordResetEmail";
 
 export const authRouter = Router();
 
@@ -206,6 +207,109 @@ authRouter.post("/login", async (req, res) => {
   } catch {
     report("service_error");
     res.status(503).json({ error: "authentication_service_unavailable", reference });
+  }
+});
+
+const resetRequestSchema = z.object({ email: z.string().trim().toLowerCase().email().max(320) });
+const resetSchema = z.object({
+  token: z.string().regex(/^[a-f0-9]{64}$/),
+  password: z.string().min(12).max(72),
+});
+const RESET_MESSAGE = { message: "If this account can receive email, a reset link is on its way." };
+
+// The body cannot name an organization or a destination URL. The link is built only from server settings.
+authRouter.post("/password-reset/request", async (req, res) => {
+  const parsed = resetRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "invalid_email" });
+  if (!passwordResetConfigured()) return res.status(503).json({ error: "password_reset_unavailable" });
+  const started = Date.now();
+  try {
+    const client = await pool.connect();
+    let delivery: { email: string; token: string; tokenHash: string } | undefined;
+    try {
+      await client.query("BEGIN");
+      const userResult = await client.query(
+        "SELECT id, email FROM users WHERE lower(email)=$1 AND is_active=true FOR UPDATE",
+        [parsed.data.email]
+      );
+      if (userResult.rows.length) {
+        const user = userResult.rows[0];
+        const rate = await client.query(
+          "SELECT count(*)::int AS sent FROM password_reset_tokens WHERE user_id=$1 AND created_at > now()-interval '1 hour'",
+          [user.id]
+        );
+        if (rate.rows[0].sent < 3) {
+          const token = randomBytes(32).toString("hex");
+          const tokenHash = createHash("sha256").update(token).digest("hex");
+          await client.query(
+            "INSERT INTO password_reset_tokens (token_hash, user_id, expires_at) VALUES ($1,$2,now()+interval '30 minutes')",
+            [tokenHash, user.id]
+          );
+          delivery = { email: user.email, token, tokenHash };
+        }
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+    if (delivery) {
+      try {
+        await sendPasswordResetEmail(delivery.email, delivery.token);
+      } catch {
+        await pool.query("UPDATE password_reset_tokens SET consumed_at=now() WHERE token_hash=$1", [delivery.tokenHash]);
+        console.error("Password reset email delivery failed");
+      }
+    }
+  } catch {
+    console.error("Password reset request failed");
+  }
+  const remaining = 3200 - (Date.now() - started);
+  if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+  return res.json(RESET_MESSAGE);
+});
+
+authRouter.post("/password-reset/confirm", async (req, res) => {
+  const parsed = resetSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "invalid_reset_request" });
+  if (Buffer.byteLength(parsed.data.password, "utf8") > 72) return res.status(400).json({ error: "invalid_reset_request" });
+  const tokenHash = createHash("sha256").update(parsed.data.token).digest("hex");
+  let client;
+  try { client = await pool.connect(); }
+  catch { return res.status(503).json({ error: "password_reset_unavailable" }); }
+  try {
+    await client.query("BEGIN");
+    const candidate = await client.query("SELECT user_id FROM password_reset_tokens WHERE token_hash=$1", [tokenHash]);
+    if (!candidate.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "invalid_or_expired_reset_link" });
+    }
+    await client.query("SELECT id FROM users WHERE id=$1 FOR UPDATE", [candidate.rows[0].user_id]);
+    const result = await client.query(
+      `SELECT t.user_id, u.email FROM password_reset_tokens t JOIN users u ON u.id=t.user_id
+       WHERE t.token_hash=$1 AND t.consumed_at IS NULL AND t.expires_at>now() AND u.is_active=true FOR UPDATE OF t`,
+      [tokenHash]
+    );
+    if (!result.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "invalid_or_expired_reset_link" });
+    }
+    const { user_id: userId, email } = result.rows[0];
+    const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+    await client.query("UPDATE users SET password_hash=$1, session_version=session_version+1 WHERE id=$2", [passwordHash, userId]);
+    await client.query("UPDATE password_reset_tokens SET consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL", [userId]);
+    await client.query("COMMIT");
+    try { await sendPasswordChangedEmail(email); }
+    catch { console.error("Password changed email delivery failed"); }
+    return res.json({ message: "Password changed. Sign in with your new password." });
+  } catch {
+    await client.query("ROLLBACK");
+    console.error("Password reset confirmation failed");
+    return res.status(500).json({ error: "password_reset_failed" });
+  } finally {
+    client.release();
   }
 });
 
@@ -411,6 +515,9 @@ authRouter.post("/change-password", requireAuth, async (req: AuthedRequest, res)
        WHERE id = $1 AND organization_id = $2 RETURNING id, organization_id, role, session_version`,
       [req.auth!.userId, req.auth!.homeOrganizationId ?? req.auth!.organizationId, hash]
     );
+    await pool.query("UPDATE password_reset_tokens SET consumed_at=now() WHERE user_id=$1 AND consumed_at IS NULL", [req.auth!.userId]).catch((error) => {
+      if (!isMissingSchema(error)) throw error;
+    });
     await pool.query(
       `INSERT INTO audit_log (organization_id, user_id, action, method, path, request_body, status_code) VALUES ($1,$2,'Changed own password','POST','/api/auth/change-password',$3,200)`,
       [req.auth!.organizationId, req.auth!.userId, JSON.stringify({ current_password: "[redacted]", new_password: "[redacted]" })]

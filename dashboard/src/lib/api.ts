@@ -816,6 +816,18 @@ export async function fetchMe(): Promise<{ id: string; email: string; full_name:
 export async function changePassword(current_password: string, new_password: string): Promise<{ token: string }> {
   return authedFetch("/auth/change-password", { method: "POST", body: JSON.stringify({ current_password, new_password }) });
 }
+export async function requestPasswordReset(email: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/password-reset/request`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
+  });
+  if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error || "reset_request_failed");
+}
+export async function confirmPasswordReset(token: string, password: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/password-reset/confirm`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, password }),
+  });
+  if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error || "reset_confirmation_failed");
+}
 async function publicPost(path: string, body: unknown) {
   const res = await fetch(`${API_BASE}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const json = await res.json().catch(() => ({}));

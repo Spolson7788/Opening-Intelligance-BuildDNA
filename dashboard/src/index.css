@@ -407,7 +407,7 @@ tbody tr:hover { background: var(--surface-sunken); }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--navy);
+  background: #0b1f3a;
 }
 
 .login-card {
@@ -415,7 +415,12 @@ tbody tr:hover { background: var(--surface-sunken); }
   border-radius: var(--radius);
   padding: 32px;
   width: 340px;
+  border-top: 4px solid #ff6a1a;
 }
+.login-card h1 { box-shadow: inset 0 -3px 0 #ff6a1a; display: inline-block; padding-bottom: 2px; }
+.login-shell .btn-primary { background: #c2410c; border-color: #9a3412; color: #fff; }
+.login-shell .btn-primary:hover { background: #9a3412; }
+.login-card a { color: #c2410c; font-weight: 700; }
 
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
 .field label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
