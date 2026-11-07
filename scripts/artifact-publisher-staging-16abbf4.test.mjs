@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
-import { apiFunctionView, apiRoutesOk, appendStoredZipEntry, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, listStoredZipEntries, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { readFileSync } from 'node:fs';
+import { rmSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, stageFunctionSources, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('staging site is the only accepted target', () => {
   assert.deepEqual(assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL }), {
@@ -144,15 +146,18 @@ test('a preparing deploy is not uploaded, and a function retry keeps the same to
   assert.deepEqual(zipConfig['*'].externalNodeModules, ['express']);
 });
 
-test('the invocation stamp keeps a zip valid and changes its sha', () => {
-  const empty = Buffer.alloc(22);
-  empty.writeUInt32LE(0x06054b50, 0);
-  const original = appendStoredZipEntry(empty, 'hello.txt', 'hello');
-  const stamped = appendStoredZipEntry(original, 'oi-invocation-mode.json', '{"invocationMode":"stream"}\n');
-  const again = appendStoredZipEntry(stamped, 'oi-invocation-mode.json', '{"invocationMode":"stream"}\n');
-  assert.notEqual(createHash('sha256').update(original).digest('hex'), createHash('sha256').update(stamped).digest('hex'));
-  assert.ok(again.equals(stamped));
-  assert.deepEqual(listStoredZipEntries(stamped).map((entry) => entry.name), ['hello.txt', 'oi-invocation-mode.json']);
+test('the invocation stamp is appended only to a temp copy of the api function', () => {
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  const original = readFileSync(resolve(repo, 'netlify/functions/api.ts'), 'utf8');
+  const destination = resolve(repo, 'dist/function-src-test-stamp');
+  rmSync(destination, { recursive: true, force: true });
+  const functionsDir = stageFunctionSources(repo, 'stamp-a', destination);
+  const staged = readFileSync(resolve(functionsDir, 'api.ts'), 'utf8');
+  assert.equal(readFileSync(resolve(repo, 'netlify/functions/api.ts'), 'utf8'), original);
+  assert.equal(staged, original + invocationStampComment('stamp-a'));
+  assert.notEqual(staged, readFileSync(resolve(functionsDir, 'photo-deletion-retry.ts'), 'utf8'));
+  rmSync(destination, { recursive: true, force: true });
+  assert.equal(dirname(functionsDir).endsWith('netlify'), true);
 });
 
 test('compare deploys reports function routes, redirects, and env names without secrets', () => {
