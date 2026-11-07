@@ -246,6 +246,7 @@ membersRouter.post("/memberships", async (req: AuthedRequest, res) => {
   let staff = false;
   try { staff = await isPlatformStaff(actor); } catch { return res.status(503).json({ error: "database_unavailable" }); }
   if (!staff) return res.status(403).json({ error: "membership_grant_oi_staff_only", message: "Accounts are set up through each company's own email account. Only OI staff can add an existing account to another company." });
+  if (req.auth!.mfaVerified !== true) return res.status(403).json({ error: "mfa_required" });
   const orgId = parsed.data.organization_id ?? actorOrg;
   const reason = parsed.data.reason ?? "Granted by OI staff";
   let client;

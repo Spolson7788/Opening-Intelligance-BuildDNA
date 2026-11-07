@@ -10,13 +10,14 @@ import { allowedOrgIds, facilityAccessPredicateAny } from "../db/tenantScope";
 export const locationsRouter = Router();
 locationsRouter.use(requireAuth);
 
-export async function canExportTree(userId: string, activeOrgId: string): Promise<boolean> {
-  // DB check: an admin of the active company (member or tree_admin) or active OI staff.
+export async function canExportTree(userId: string, activeOrgId: string, mfaVerified = false): Promise<boolean> {
+  // DB check: an admin of the active company (member or tree_admin), or active OI staff
+  // whose session has completed authenticator verification.
   try {
     const r = await pool.query(
-      `SELECT is_platform_staff($1) OR EXISTS (SELECT 1 FROM user_authorized_orgs($1) t
+      `SELECT ($3::boolean AND is_platform_staff($1)) OR EXISTS (SELECT 1 FROM user_authorized_orgs($1) t
          WHERE t.organization_id = $2 AND t.via_organization_id = $2 AND t.role = 'admin' AND t.access IN ('member','tree_admin')) AS ok`,
-      [userId, activeOrgId]);
+      [userId, activeOrgId, mfaVerified]);
     return r.rows[0]?.ok === true;
   } catch (error) {
     if (isMissingSchema(error)) return false;
@@ -55,7 +56,7 @@ locationsRouter.get("/", async (req: AuthedRequest, res) => {
     res.set("Cache-Control", "no-store").json({
       active_organization_id: a.organizationId,
       tree: companies.length > 1,
-      can_export_tree: await canExportTree(a.userId, a.organizationId),
+      can_export_tree: await canExportTree(a.userId, a.organizationId, a.mfaVerified === true),
       companies, facilities,
     });
   } catch (err: any) {

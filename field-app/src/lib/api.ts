@@ -1,4 +1,4 @@
-import { loadAuth, cacheOpening, getCachedOpening, wipeAllOiData } from "./db";
+import { loadAuth, cacheOpening, getCachedOpening, wipeAllOiData, clearAuth } from "./db";
 import { isNetlifyAccessResponse, SITE_ACCESS_REQUIRED } from "./siteAccess";
 import {diagnosticActor,diagnosticAvailable,PROBES,readBoundedProbe,runPhotoProbes} from './photoDiagnostic';
 import type {Principal,ProbeResponse} from './photoDiagnostic';
@@ -81,6 +81,10 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
     }
     const body = await res.json().catch(() => ({}));
     const endedReference = typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined;
+    if (res.status === 403 && body.error === "mfa_required") {
+      const now = await loadAuth();
+      if (auth && now && now.userId === auth.userId && now.organizationId === auth.organizationId && now.token === auth.token) await clearAuth();
+    }
     if (endedReference && ((res.status === 401 && body.error === "session_revoked") || (res.status === 403 && body.error === "account_deactivated"))) {
       // C2: the API ended this account's access. Wipe all OI data on this device, but only while the
       // same account is still the one signed in here (never another person's data).
@@ -122,7 +126,34 @@ export async function login(email: string, password: string) {
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, body.error || "login_failed", typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
   }
-  return res.json() as Promise<{ token: string; expiresIn: string }>;
+  return res.json() as Promise<{ token?: string; expiresIn: string; mfa_required?: boolean; enrollment_required?: boolean; mfa_token?: string }>;
+}
+
+export interface StaffMfaEnrollment {
+  otpauth_url: string;
+  secret: string;
+  qr_data_url: string;
+  recovery_codes: string[];
+  warning: string;
+}
+
+async function staffMfaFetch(mfaToken: string, path: string, body?: unknown) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${mfaToken}` },
+    body: JSON.stringify(body ?? {}),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, payload.error || "mfa_failed");
+  return payload;
+}
+
+export function enrollStaffMfa(mfaToken: string): Promise<StaffMfaEnrollment> {
+  return staffMfaFetch(mfaToken, "/auth/mfa/enroll", {});
+}
+
+export function verifyStaffMfa(mfaToken: string, body: { code?: string; recovery_code?: string }): Promise<{ token: string }> {
+  return staffMfaFetch(mfaToken, "/auth/mfa/verify", body);
 }
 
 export async function requestPasswordReset(email: string): Promise<void> {

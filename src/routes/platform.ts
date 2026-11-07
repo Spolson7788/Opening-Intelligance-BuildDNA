@@ -5,6 +5,7 @@ import { Router } from "express";
 import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { recognitionUsageReport } from "../services/recognitionUsageReport";
+import { resetStaffMfa, StaffMfaError, unlockStaffMfa } from "../services/staffMfa";
 import { recognitionRunRecordsMonthly, reprocessRecordOutbox, recordOutboxStatus } from "../services/recognitionRunRecords";
 
 // OI staff read access (multi-company design, part B): READ ONLY overviews by facility and by
@@ -17,7 +18,9 @@ platformRouter.use(requireAuth, async (req: AuthedRequest, res, next) => {
   res.setHeader("Cache-Control", "no-store");
   try {
     const r = await pool.query("SELECT is_platform_staff($1) AS staff", [req.auth!.userId]);
+    // Customers stay forbidden. Staff without a verified authenticator session get no staff powers.
     if (r.rows[0]?.staff !== true) return res.status(403).json({ error: "forbidden" });
+    if (req.auth?.mfaVerified !== true) return res.status(403).json({ error: "mfa_required" });
     return next();
   } catch {
     return res.status(503).json({ error: "authorization_service_unavailable" });
@@ -379,4 +382,35 @@ platformRouter.delete("/staff/:userId", async (req: AuthedRequest, res) => {
     });
     if (out) res.json(out);
   } catch (err) { fail(res, err, "staff_revoke_failed"); }
+});
+
+// The other staff member, already signed in with an authenticator code, clears this person's
+// authenticator and recovery codes. They must enroll again. Sessions issued before the reset die
+// because session_version changes. No code or secret is written to the audit record.
+platformRouter.post("/staff/:userId/mfa-reset", async (req: AuthedRequest, res) => {
+  const id = uuid.safeParse(req.params.userId);
+  const body = z.object({ reason: reasonSchema }).strict().safeParse(req.body ?? {});
+  if (!id.success || !body.success) return res.status(400).json({ error: "reason_required" });
+  try {
+    await resetStaffMfa({ actorId: req.auth!.userId, actorOrgId: req.auth!.organizationId, targetId: id.data, reason: body.data.reason });
+    res.json({ user_id: id.data, reset: true });
+  } catch (error) {
+    if (error instanceof StaffMfaError) return res.status(error.status).json({ error: error.code });
+    return res.status(503).json({ error: "mfa_unavailable" });
+  }
+});
+
+// Clear the 15-minute wrong-code lockout. The caller must already be authenticator-verified.
+// This does not remove the authenticator or sign the person out. No code is written to the audit record.
+platformRouter.post("/staff/:userId/mfa-unlock", async (req: AuthedRequest, res) => {
+  const id = uuid.safeParse(req.params.userId);
+  const body = z.object({ reason: reasonSchema }).strict().safeParse(req.body ?? {});
+  if (!id.success || !body.success) return res.status(400).json({ error: "reason_required" });
+  try {
+    await unlockStaffMfa({ actorId: req.auth!.userId, actorOrgId: req.auth!.organizationId, targetId: id.data, reason: body.data.reason });
+    res.json({ user_id: id.data, unlocked: true });
+  } catch (error) {
+    if (error instanceof StaffMfaError) return res.status(error.status).json({ error: error.code });
+    return res.status(503).json({ error: "mfa_unavailable" });
+  }
 });

@@ -24,7 +24,7 @@ const id: Record<string, string> = {};
 const PASS = 'synthetic-pass-' + randomUUID().slice(0, 8);
 const MARK_B = 'SYNTH-B-PRIVATE-' + randomUUID().slice(0, 8);
 const tok = (u: string, org: string, role = 'admin', sessionVersion = 0) =>
-  'Bearer ' + jwt.sign({ userId: id[u], organizationId: id[org], role, sessionVersion }, process.env.JWT_SECRET!);
+  'Bearer ' + jwt.sign({ userId: id[u], organizationId: id[org], role, sessionVersion, ...(u === 'staff' ? { mfaVerified: true } : {}) }, process.env.JWT_SECRET!);
 const get = (path: string, auth: string) => request(app).get(path).set('Authorization', auth);
 const login = (u: string) => request(app).post('/api/auth/login').send({ email: id[u] + '@example.invalid', password: PASS });
 
