@@ -18,7 +18,7 @@ const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r2');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r3');
 const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
 const dryRunPath = resolve(journalDir, 'publication-dry-run.json');
@@ -201,12 +201,19 @@ function saveFailure(failure, response, extra = {}) {
   mkdirSync(journalDir, { recursive: true });
   writeJson(failurePath, {
     failure,
+    branch: extra.branch || null,
+    missingHash: extra.missingHash || null,
     status: response?.status ?? null,
     body: sanitize(response?.body?.toString?.('utf8') ?? ''),
     stdout: sanitize(extra.stdout),
     stderr: sanitize(extra.stderr),
     at: new Date().toISOString(),
   });
+}
+
+function missingUpload(branch, missingHash) {
+  saveFailure('deploy_upload_failed', null, { branch, missingHash });
+  throw fail('deploy_upload_failed');
 }
 
 async function readLiveDeploy(cliDir) {
@@ -229,7 +236,12 @@ async function readLiveDeploy(cliDir) {
   };
 }
 
-function digestFiles(directory) {
+function remember(byHash, sha, value) {
+  if (!byHash[sha]) byHash[sha] = [];
+  byHash[sha].push(value);
+}
+
+export function digestFiles(directory) {
   const files = {};
   const byHash = {};
   const walk = (dir, prefix) => {
@@ -238,15 +250,25 @@ function digestFiles(directory) {
       const rel = `${prefix}${entry.name}`.replace(/\\/g, '/');
       if (entry.isDirectory()) walk(path, `${rel}/`);
       else {
-        const bytes = readFileSync(path);
-        const sha = createHash('sha1').update(bytes).digest('hex');
+        const sha = createHash('sha1').update(readFileSync(path)).digest('hex');
         files[rel] = sha;
-        byHash[sha] = path;
+        remember(byHash, sha, { rel, path });
       }
     }
   };
   walk(directory, '');
   return { files, byHash };
+}
+
+export function checkLocalLookups(fileMap, functionMap) {
+  const missing = [];
+  for (const [rel, sha] of Object.entries(fileMap.files)) {
+    if (!(fileMap.byHash[sha] || []).some((entry) => entry.rel === rel)) missing.push({ branch: 'files', missingHash: sha });
+  }
+  for (const [name, sha] of Object.entries(functionMap.functions)) {
+    if (!(functionMap.byHash[sha] || []).some((entry) => entry.name === name)) missing.push({ branch: 'functions', missingHash: sha });
+  }
+  return missing;
 }
 
 async function bundleFunctions(cliDir) {
@@ -261,10 +283,9 @@ async function bundleFunctions(cliDir) {
   const functions = {};
   const byHash = {};
   for (const fn of built) {
-    const bytes = readFileSync(fn.path);
-    const sha = createHash('sha1').update(bytes).digest('hex');
+    const sha = createHash('sha256').update(readFileSync(fn.path)).digest('hex');
     functions[fn.name] = sha;
-    byHash[sha] = { path: fn.path, runtime: fn.runtime || 'js' };
+    remember(byHash, sha, { name: fn.name, path: fn.path, runtime: fn.runtime || 'js' });
   }
   return { functions, byHash, tmp };
 }
@@ -309,25 +330,26 @@ async function uploadDigestDeploy(token, fileMap, functionMap, journal) {
   writeJson(attemptPath, journal);
   let diff = deploy;
   if (!Array.isArray(diff.required)) diff = await pollDeploy(token, deployId, false);
-  for (const name of diff.required || []) {
-    const sha = fileMap.files[name] || fileMap.files[name.replace(/^\//, '')];
-    const path = fileMap.byHash[sha];
-    if (!path) throw fail('deploy_upload_failed');
-    const rel = name.replace(/^\//, '');
-    const uploaded = await stagingRequest('PUT', `/api/v1/deploys/${deployId}/files/${rel.split('/').map(encodeURIComponent).join('/')}`, token, readFileSync(path), 'application/octet-stream');
-    if (uploaded.status !== 200 && uploaded.status !== 201) {
-      saveFailure('deploy_upload_failed', uploaded);
-      throw fail('deploy_upload_failed');
+  for (const sha of diff.required || []) {
+    const entries = fileMap.byHash[sha];
+    if (!entries?.length) missingUpload('files', sha);
+    for (const entry of entries) {
+      const uploaded = await stagingRequest('PUT', `/api/v1/deploys/${deployId}/files/${entry.rel.split('/').map(encodeURIComponent).join('/')}`, token, readFileSync(entry.path), 'application/octet-stream');
+      if (uploaded.status !== 200 && uploaded.status !== 201) {
+        saveFailure('deploy_upload_failed', uploaded, { branch: 'files', missingHash: sha });
+        throw fail('deploy_upload_failed');
+      }
     }
   }
-  for (const name of diff.required_functions || []) {
-    const sha = functionMap.functions[name];
-    const fn = functionMap.byHash[sha];
-    if (!fn) throw fail('deploy_upload_failed');
-    const uploaded = await stagingRequest('PUT', `/api/v1/deploys/${deployId}/functions/${encodeURIComponent(name)}?runtime=${encodeURIComponent(fn.runtime)}`, token, readFileSync(fn.path), 'application/zip');
-    if (uploaded.status !== 200 && uploaded.status !== 201) {
-      saveFailure('deploy_upload_failed', uploaded);
-      throw fail('deploy_upload_failed');
+  for (const sha of diff.required_functions || []) {
+    const entries = functionMap.byHash[sha];
+    if (!entries?.length) missingUpload('functions', sha);
+    for (const fn of entries) {
+      const uploaded = await stagingRequest('PUT', `/api/v1/deploys/${deployId}/functions/${encodeURIComponent(fn.name)}?runtime=${encodeURIComponent(fn.runtime)}`, token, readFileSync(fn.path), 'application/zip');
+      if (uploaded.status !== 200 && uploaded.status !== 201) {
+        saveFailure('deploy_upload_failed', uploaded, { branch: 'functions', missingHash: sha });
+        throw fail('deploy_upload_failed');
+      }
     }
   }
   const ready = await pollDeploy(token, deployId, true);
@@ -400,20 +422,39 @@ async function runPublish(pin) {
   })();
 }
 
+async function uploadCheck() {
+  const pin = readPin();
+  const fileMap = digestFiles(resolve(packageDir, 'publish'));
+  const functionMap = await bundleFunctions(netlifyCliDir());
+  const missing = checkLocalLookups(fileMap, functionMap);
+  mkdirSync(journalDir, { recursive: true });
+  const record = {
+    state: missing.length ? 'upload-check-failed' : 'upload-check',
+    commit: PINNED_COMMIT,
+    packageSha256: pin.packageSha256,
+    files: Object.keys(fileMap.files).length,
+    functions: Object.keys(functionMap.functions).length,
+    missing,
+    productionRefused: true,
+    createdAt: new Date().toISOString(),
+  };
+  writeJson(resolve(journalDir, 'upload-check.json'), record);
+  console.log(JSON.stringify(record, null, 2));
+  if (missing.length) process.exitCode = 1;
+}
+
 async function main() {
+  const uploadCheckMode = process.argv.includes('--upload-check');
   const publish = process.argv.includes('--publish-approved');
-  const dryRun = process.argv.includes('--dry-run') || !publish;
-  if (publish && dryRun && process.argv.includes('--dry-run')) {
-    const error = new Error('choose_one_mode');
-    error.code = 'choose_one_mode';
-    throw error;
-  }
+  const dryRun = process.argv.includes('--dry-run') || (!publish && !uploadCheckMode);
+  if ([uploadCheckMode, publish, process.argv.includes('--dry-run')].filter(Boolean).length > 1) throw fail('choose_one_mode');
   assertHeadCommit(root);
   assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL });
   let productionRefused = false;
   try { assertSite({ id: PRODUCTION_SITE_ID, name: 'oi-production', url: 'https://oi-production.netlify.app' }); }
   catch (error) { productionRefused = error.code === 'refusing_production'; }
   if (!productionRefused) throw new Error('production_guard_failed');
+  if (uploadCheckMode) return uploadCheck();
 
   if (!publish) {
     let packageSha256 = null;
