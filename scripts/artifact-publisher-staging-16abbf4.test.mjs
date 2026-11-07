@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assertSite, assertStagingApiPath, checkLocalLookups, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { assertSite, assertStagingApiPath, checkLocalLookups, fileDigestKey, fileUploadPath, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('staging site is the only accepted target', () => {
   assert.deepEqual(assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL }), {
@@ -25,6 +25,9 @@ test('required file sha1 and function sha256 both resolve', () => {
   assert.deepEqual(checkLocalLookups(fileMap, functionMap), []);
   assert.equal(fileMap.byHash[fileSha][0].rel, 'index.html');
   assert.equal(functionMap.byHash[functionSha][0].name, 'api');
+  assert.equal(fileDigestKey('index.html'), '/index.html');
+  assert.equal(fileDigestKey('/field/index.html'), '/field/index.html');
+  assert.equal(fileUploadPath('abc', '/index.html'), '/api/v1/deploys/abc/files/index.html');
   assert.equal(fileMap.byHash['index.html'], undefined);
   assert.equal(functionMap.byHash.api, undefined);
   const missing = checkLocalLookups(

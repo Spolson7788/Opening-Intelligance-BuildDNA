@@ -18,7 +18,7 @@ const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r3');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r4');
 const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
 const dryRunPath = resolve(journalDir, 'publication-dry-run.json');
@@ -241,6 +241,17 @@ function remember(byHash, sha, value) {
   byHash[sha].push(value);
 }
 
+export function fileDigestKey(rel) {
+  const clean = String(rel).replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!clean || clean.split('/').some((part) => !part || part === '.' || part === '..')) throw fail('invalid_file_path');
+  return `/${clean}`;
+}
+
+export function fileUploadPath(deployId, digestKey) {
+  const rel = fileDigestKey(digestKey).slice(1);
+  return `/api/v1/deploys/${deployId}/files/${rel.split('/').map(encodeURIComponent).join('/')}`;
+}
+
 export function digestFiles(directory) {
   const files = {};
   const byHash = {};
@@ -251,8 +262,9 @@ export function digestFiles(directory) {
       if (entry.isDirectory()) walk(path, `${rel}/`);
       else {
         const sha = createHash('sha1').update(readFileSync(path)).digest('hex');
-        files[rel] = sha;
-        remember(byHash, sha, { rel, path });
+        const key = fileDigestKey(rel);
+        files[key] = sha;
+        remember(byHash, sha, { rel: key, path });
       }
     }
   };
@@ -285,13 +297,12 @@ async function bundleFunctions(cliDir) {
   for (const fn of built) {
     const sha = createHash('sha256').update(readFileSync(fn.path)).digest('hex');
     functions[fn.name] = sha;
-    remember(byHash, sha, { name: fn.name, path: fn.path, runtime: fn.runtime || 'js' });
+    remember(byHash, sha, { name: fn.name, path: fn.path, runtime: fn.runtimeVersion || fn.runtime || 'js' });
   }
   return { functions, byHash, tmp };
 }
 
 async function pollDeploy(token, deployId, ready) {
-  const states = ready ? new Set(['ready']) : new Set(['prepared', 'uploading', 'uploaded', 'ready']);
   const deadline = Date.now() + 10 * 60 * 1000;
   let last = null;
   while (Date.now() < deadline) {
@@ -306,10 +317,16 @@ async function pollDeploy(token, deployId, ready) {
       saveFailure('deploy_not_ready', response);
       throw fail('deploy_not_ready');
     }
-    if (states.has(last.state) && (ready || Array.isArray(last.required))) return last;
+    const filesListed = Array.isArray(last.required);
+    const functionsListed = !last.required_functions || Array.isArray(last.required_functions);
+    const outstanding = (last.required?.length || 0) + (last.required_functions?.length || 0);
+    if (ready && last.state === 'ready' && outstanding === 0) return last;
+    if (!ready && filesListed && functionsListed && (last.state === 'prepared' || (last.state === 'uploading' && outstanding > 0) || last.state === 'uploaded')) return last;
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 2000));
   }
-  saveFailure('deploy_poll_timeout', { status: 0, body: Buffer.from(sanitize(JSON.stringify({ state: last?.state || null }))) });
+  saveFailure('deploy_poll_timeout', { status: 0, body: Buffer.from(sanitize(JSON.stringify({
+    state: last?.state || null, required: last?.required || [], required_functions: last?.required_functions || [],
+  }))) });
   throw fail('deploy_poll_timeout');
 }
 
@@ -330,26 +347,31 @@ async function uploadDigestDeploy(token, fileMap, functionMap, journal) {
   writeJson(attemptPath, journal);
   let diff = deploy;
   if (!Array.isArray(diff.required)) diff = await pollDeploy(token, deployId, false);
+  journal.uploads = [];
+  const put = async (branch, sha, requestPath, bytes, contentType) => {
+    const uploaded = await stagingRequest(requestPath.method, requestPath.path, token, bytes, contentType);
+    journal.uploads.push({ branch, sha, path: requestPath.path.split('?')[0], status: uploaded.status, bytes: bytes.length });
+    writeJson(attemptPath, journal);
+    if (uploaded.status < 200 || uploaded.status >= 300) {
+      saveFailure('deploy_upload_failed', uploaded, { branch, missingHash: sha });
+      throw fail('deploy_upload_failed');
+    }
+  };
   for (const sha of diff.required || []) {
     const entries = fileMap.byHash[sha];
     if (!entries?.length) missingUpload('files', sha);
     for (const entry of entries) {
-      const uploaded = await stagingRequest('PUT', `/api/v1/deploys/${deployId}/files/${entry.rel.split('/').map(encodeURIComponent).join('/')}`, token, readFileSync(entry.path), 'application/octet-stream');
-      if (uploaded.status !== 200 && uploaded.status !== 201) {
-        saveFailure('deploy_upload_failed', uploaded, { branch: 'files', missingHash: sha });
-        throw fail('deploy_upload_failed');
-      }
+      const bytes = readFileSync(entry.path);
+      await put('files', sha, { method: 'PUT', path: `${fileUploadPath(deployId, entry.rel)}?size=${bytes.length}` }, bytes, 'application/octet-stream');
     }
   }
   for (const sha of diff.required_functions || []) {
     const entries = functionMap.byHash[sha];
     if (!entries?.length) missingUpload('functions', sha);
     for (const fn of entries) {
-      const uploaded = await stagingRequest('PUT', `/api/v1/deploys/${deployId}/functions/${encodeURIComponent(fn.name)}?runtime=${encodeURIComponent(fn.runtime)}`, token, readFileSync(fn.path), 'application/zip');
-      if (uploaded.status !== 200 && uploaded.status !== 201) {
-        saveFailure('deploy_upload_failed', uploaded, { branch: 'functions', missingHash: sha });
-        throw fail('deploy_upload_failed');
-      }
+      const bytes = readFileSync(fn.path);
+      const uploadPath = `/api/v1/deploys/${deployId}/functions/${encodeURIComponent(fn.name)}?runtime=${encodeURIComponent(fn.runtime)}&size=${bytes.length}`;
+      await put('functions', sha, { method: 'PUT', path: uploadPath }, bytes, 'application/zip');
     }
   }
   const ready = await pollDeploy(token, deployId, true);
@@ -443,17 +465,44 @@ async function uploadCheck() {
   if (missing.length) process.exitCode = 1;
 }
 
+async function inspectDeploy(deployId) {
+  if (!/^[0-9a-f]{24}$/.test(deployId)) throw fail('invalid_deploy_id');
+  const token = await authorize(netlifyCliDir());
+  const response = await stagingRequest('GET', `/api/v1/sites/${STAGING_SITE_ID}/deploys/${deployId}`, token);
+  if (response.status === 401 || response.status === 403) throw fail('auth_required');
+  if (response.status !== 200) {
+    saveFailure('inspect_failed', response);
+    throw fail('inspect_failed');
+  }
+  const deploy = JSON.parse(response.body.toString('utf8'));
+  if (deploy.site_id && deploy.site_id !== STAGING_SITE_ID) throw fail('refusing_site_mismatch');
+  const record = {
+    state: 'inspect',
+    deployId,
+    deployState: deploy.state || null,
+    required: deploy.required || [],
+    required_functions: deploy.required_functions || [],
+    error_message: deploy.error_message || null,
+  };
+  mkdirSync(journalDir, { recursive: true });
+  writeJson(resolve(journalDir, `inspect-${deployId}.json`), record);
+  console.log(JSON.stringify(record, null, 2));
+}
+
 async function main() {
+  const inspectIndex = process.argv.indexOf('--inspect-deploy');
+  const inspectId = inspectIndex >= 0 ? process.argv[inspectIndex + 1] : '';
   const uploadCheckMode = process.argv.includes('--upload-check');
   const publish = process.argv.includes('--publish-approved');
-  const dryRun = process.argv.includes('--dry-run') || (!publish && !uploadCheckMode);
-  if ([uploadCheckMode, publish, process.argv.includes('--dry-run')].filter(Boolean).length > 1) throw fail('choose_one_mode');
+  const dryRun = process.argv.includes('--dry-run') || (!publish && !uploadCheckMode && !inspectId);
+  if ([Boolean(inspectId), uploadCheckMode, publish, process.argv.includes('--dry-run')].filter(Boolean).length > 1) throw fail('choose_one_mode');
   assertHeadCommit(root);
   assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL });
   let productionRefused = false;
   try { assertSite({ id: PRODUCTION_SITE_ID, name: 'oi-production', url: 'https://oi-production.netlify.app' }); }
   catch (error) { productionRefused = error.code === 'refusing_production'; }
   if (!productionRefused) throw new Error('production_guard_failed');
+  if (inspectId) return inspectDeploy(inspectId);
   if (uploadCheckMode) return uploadCheck();
 
   if (!publish) {
