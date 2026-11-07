@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 60
     services:
       postgres:
-        image: postgres:17
+        image: postgres:16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -39,7 +39,9 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client openssl awscli
+          sudo apt-get install -y -qq postgresql-client python3-cryptography
+          python3 -m pip install --user --break-system-packages 'awscli==1.36.40'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Wait for Postgres
         run: |

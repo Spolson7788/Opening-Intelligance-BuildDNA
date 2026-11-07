@@ -30,7 +30,9 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client openssl awscli
+          sudo apt-get install -y -qq postgresql-client python3-cryptography
+          python3 -m pip install --user --break-system-packages 'awscli==1.36.40'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Run off-site backup
         env:
