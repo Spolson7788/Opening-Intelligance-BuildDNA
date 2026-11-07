@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS staff_mfa_attempts (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   attempted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   succeeded BOOLEAN NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('totp', 'recovery'))
+  kind TEXT NOT NULL CHECK (kind IN ('totp', 'recovery', 'lockout_cleared'))
 );
 CREATE INDEX IF NOT EXISTS staff_mfa_attempts_user_time ON staff_mfa_attempts (user_id, attempted_at DESC);
 
@@ -84,4 +84,4 @@ ALTER TABLE platform_audit_events ADD CONSTRAINT platform_audit_events_action_ch
     'org_parent_changed','membership_added','membership_removed',
     'usage_settings_changed','safety_cap_set','safety_cap_removed',
     'reference_document_approved','reference_product_approved','reference_dimension_verified','reference_lookalike_group_approved','reference_release_published',
-    'staff_mfa_reset'));
+    'staff_mfa_reset','staff_mfa_lockout_cleared'));

@@ -31,6 +31,7 @@ export function LoginPage() {
   const [code, setCode] = useState("");
   const [recovery, setRecovery] = useState("");
   const [savedCodes, setSavedCodes] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [staffEmail, setStaffEmail] = useState("");
   // Same allow-listed builder as the opening detail and QR pages; null on any other origin.
   const renewalUrl = siteAccessRenewalUrl(window.location.origin);
@@ -75,6 +76,23 @@ export function LoginPage() {
     }
   }
 
+  async function copySetupKey(secret: string) {
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(secret);
+      else {
+        const area = document.createElement("textarea");
+        area.value = secret;
+        document.body.append(area);
+        area.select();
+        document.execCommand("copy");
+        area.remove();
+      }
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
   async function onVerify(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!challenge || submitting) return;
@@ -100,10 +118,15 @@ export function LoginPage() {
         {enrollment && (
           <div>
             <p role="alert"><strong>Shown only once.</strong> {enrollment.warning}</p>
+            <a className="btn btn-primary mfa-add-app" href={enrollment.otpauth_url}>Add to authenticator app</a>
+            <p className="mfa-add-note">On an iPhone, this opens the built-in Passwords app and adds the verification code.</p>
             <img src={enrollment.qr_data_url} alt="Authenticator setup QR code" width={256} height={256} />
-            <p>Setup key: <code>{enrollment.secret}</code></p>
+            <p>Setup key: <code id="setup-key">{enrollment.secret}</code>{" "}
+              <button type="button" className="btn" onClick={() => copySetupKey(enrollment.secret)}>{copied ? "Copied" : "Copy setup key"}</button>
+            </p>
             <ul>{enrollment.recovery_codes.map((item) => <li key={item}><code>{item}</code></li>)}</ul>
             <label><input type="checkbox" checked={savedCodes} onChange={(ev) => setSavedCodes(ev.target.checked)} /> I have saved these recovery codes</label>
+            <style>{`.mfa-add-app{display:block;text-align:center;font-size:18px;padding:16px;margin:8px 0 4px;text-decoration:none}.mfa-add-note{font-size:13px;margin:0 0 12px}@media (max-width:720px){.mfa-add-app{font-size:20px;padding:18px 16px}}`}</style>
           </div>
         )}
         <form onSubmit={onVerify}>

@@ -958,6 +958,7 @@ export const platformStaff = (): Promise<PlatformStaffRow[]> => authedFetch("/pl
 export const grantStaff = (email: string, reason: string) => post("/platform/staff", { email, reason });
 export const revokeStaff = (userId: string, reason: string) => post(`/platform/staff/${userId}`, { reason }, "DELETE");
 export const resetStaffMfa = (userId: string, reason: string) => post(`/platform/staff/${userId}/mfa-reset`, { reason });
+export const unlockStaffMfa = (userId: string, reason: string) => post(`/platform/staff/${userId}/mfa-unlock`, { reason });
 // Facility admins: request a provider (OI staff decide).
 export const providerRequestOptions = (): Promise<{ providers: { id: string; name: string }[]; assigned: { property_id: string; provider_organization_id: string }[] }> => authedFetch("/provider-requests/options");
 export const myProviderRequests = (): Promise<ProviderRequest[]> => authedFetch("/provider-requests");

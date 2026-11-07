@@ -55,6 +55,14 @@ it('shows the setup QR and recovery codes only while enrolling',async()=>{
   expect(host.textContent).toContain('SETUPKEY');
   expect(host.textContent).toContain('ABCDE-FGHIJ');
   expect(host.querySelector('img')?.getAttribute('alt')).toBe('Authenticator setup QR code');
+  const add = host.querySelector('a.mfa-add-app');
+  expect(add?.textContent).toBe('Add to authenticator app');
+  expect(add?.getAttribute('href')).toBe('otpauth://totp/example');
+  expect(add?.getAttribute('target')).toBeNull();
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  await click('Copy setup key');
+  expect(writeText).toHaveBeenCalledWith('SETUPKEY');
   expect(host.textContent).not.toContain('Destination');
 });
 it('preserves normal signed-out sign-in and its validated return route',async()=>{

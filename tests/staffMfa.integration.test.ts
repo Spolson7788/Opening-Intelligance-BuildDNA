@@ -69,6 +69,12 @@ async function enrollAndConfirm(email: string) {
   expect(started.body.enrollment_required).toBe(true);
   const enrolled = await request(app).post("/api/auth/mfa/enroll").set(auth(started.body.mfa_token)).send({});
   expect(enrolled.status).toBe(200);
+  expect(enrolled.body.otpauth_url.startsWith("otpauth://totp/Opening%20Intelligence:")).toBe(true);
+  expect(enrolled.body.otpauth_url).toContain(`secret=${enrolled.body.secret}`);
+  expect(enrolled.body.otpauth_url).toContain("algorithm=SHA1");
+  expect(enrolled.body.otpauth_url).toContain("digits=6");
+  expect(enrolled.body.otpauth_url).toContain("period=30");
+  expect(enrolled.body.otpauth_url.split("?")[0]).toContain(":");
   expect(enrolled.body.recovery_codes).toHaveLength(10);
   expect(new Set(enrolled.body.recovery_codes).size).toBe(10);
   expect(JSON.stringify(enrolled.body)).not.toMatch(/password_hash|secret_ciphertext/i);
@@ -209,5 +215,52 @@ describe("staff authenticator sign-in", () => {
     const limited = await request(app).post("/api/auth/mfa/verify").set(auth(started.body.mfa_token)).send({ code: good });
     expect(limited.status).toBe(429);
     expect(limited.body.error).toBe("mfa_rate_limited");
+    id.badCode = bad;
+    id.mfaC = started.body.mfa_token;
+  });
+
+  it("lets another verified staff member clear the code lockout, and refuses a self unlock", async () => {
+    const stillLocked = await request(app).post("/api/auth/mfa/verify").set(auth(id.mfaC)).send({ code: id.badCode });
+    expect(stillLocked.status).toBe(429);
+    const customer = await login("customer-mfa@example.invalid");
+    const customerUnlock = await request(app).post("/api/platform/staff/" + id.c + "/mfa-unlock").set(auth(customer.body.token)).send({ reason: "customer must not do this" });
+    expect(customerUnlock.status).toBe(403);
+    expect(customerUnlock.body.error).toBe("forbidden");
+    const passwordUnlock = await request(app).post("/api/platform/staff/" + id.c + "/mfa-unlock").set(auth(passwordOnly("b"))).send({ reason: "password only" });
+    expect(passwordUnlock.status).toBe(403);
+    expect(passwordUnlock.body.error).toBe("mfa_required");
+    const self = await request(app).post("/api/platform/staff/" + id.b + "/mfa-unlock").set(auth(id.tokenB)).send({ reason: "myself" });
+    expect(self.status).toBe(400);
+    expect(self.body.error).toBe("cannot_unlock_own_mfa");
+    const unlocked = await request(app).post("/api/platform/staff/" + id.c + "/mfa-unlock").set(auth(id.tokenB)).send({ reason: "called and confirmed the lockout" });
+    expect(unlocked.body).toEqual({ user_id: id.c, unlocked: true });
+    const retry = await request(app).post("/api/auth/mfa/verify").set(auth(id.mfaC)).send({ code: id.badCode });
+    expect(retry.status).toBe(401);
+    expect(retry.body.error).toBe("invalid_mfa_code");
+    const audit = await sql("SELECT request_body::text AS body FROM audit_log WHERE action = 'Cleared staff code lockout' AND user_id = $1", [id.b]);
+    expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0].body).toContain("called and confirmed the lockout");
+    expect(audit.rows[0].body).not.toContain(id.badCode);
+    const event = await sql("SELECT reason FROM platform_audit_events WHERE action = 'staff_mfa_lockout_cleared' AND target_id = $1", [id.c]);
+    expect(event.rows[0].reason).toBe("called and confirmed the lockout");
+  });
+
+  it("clears the lockout when another staff member resets the authenticator", async () => {
+    // One failed try remains from the unlock check, so four more reach the limit.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      expect((await request(app).post("/api/auth/mfa/verify").set(auth(id.mfaC)).send({ code: id.badCode })).status).toBe(401);
+    }
+    expect((await request(app).post("/api/auth/mfa/verify").set(auth(id.mfaC)).send({ code: id.badCode })).status).toBe(429);
+    const reset = await request(app).post("/api/platform/staff/" + id.c + "/mfa-reset").set(auth(id.tokenB)).send({ reason: "reset also clears the lockout" });
+    expect(reset.status).toBe(200);
+    const fresh = await login("staff-c@example.invalid");
+    expect(fresh.body.enrollment_required).toBe(true);
+    const enrolled = await request(app).post("/api/auth/mfa/enroll").set(auth(fresh.body.mfa_token)).send({});
+    expect(enrolled.status).toBe(200);
+    const freshCode = totpCodeForBase32(enrolled.body.secret);
+    const wrong = freshCode === id.badCode ? (id.badCode === "000000" ? "111111" : "000000") : id.badCode;
+    const attempt = await request(app).post("/api/auth/mfa/verify").set(auth(fresh.body.mfa_token)).send({ code: wrong });
+    expect(attempt.status).toBe(401);
+    expect(attempt.body.error).toBe("invalid_mfa_code");
   });
 });

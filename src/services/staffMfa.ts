@@ -3,6 +3,7 @@ import { pool } from "../db/pool";
 import { isMissingSchema } from "../middleware/auth";
 import {
   asBuffer,
+  authenticatorSetupUrl,
   base32Encode,
   decryptSecret,
   encryptSecret,
@@ -78,10 +79,22 @@ export async function staffLoginGate(userId: string): Promise<"customer" | "enro
 
 async function failedAttempts(client: Db, userId: string): Promise<number> {
   const count = await client.query(
-    "SELECT count(*)::int AS n FROM staff_mfa_attempts WHERE user_id = $1 AND succeeded = false AND attempted_at > now() - interval '15 minutes'",
+    `SELECT count(*)::int AS n FROM staff_mfa_attempts
+     WHERE user_id = $1 AND succeeded = false AND kind IN ('totp', 'recovery')
+       AND attempted_at > now() - interval '15 minutes'
+       AND attempted_at > COALESCE(
+         (SELECT max(attempted_at) FROM staff_mfa_attempts WHERE user_id = $1 AND kind = 'lockout_cleared'),
+         '-infinity'::timestamptz)`,
     [userId]
   );
   return Number(count.rows[0]?.n ?? 0);
+}
+
+async function clearCodeLockout(client: Db, userId: string) {
+  await client.query(
+    "INSERT INTO staff_mfa_attempts (user_id, succeeded, kind) VALUES ($1, true, 'lockout_cleared')",
+    [userId]
+  );
 }
 
 async function recordAttempt(client: Db, userId: string, succeeded: boolean, kind: "totp" | "recovery") {
@@ -111,7 +124,7 @@ export async function enrollStaffFactor(userId: string, email: string) {
     }
   });
   const secret = base32Encode(raw);
-  const otpauthUrl = `otpauth://totp/${encodeURIComponent("Opening Intelligence:" + email)}?secret=${secret}&issuer=${encodeURIComponent("Opening Intelligence")}&algorithm=SHA1&digits=6&period=30`;
+  const otpauthUrl = authenticatorSetupUrl(email, secret);
   const qrDataUrl = await QRCode.toDataURL(otpauthUrl, { errorCorrectionLevel: "M", margin: 1, width: 256 });
   return { otpauth_url: otpauthUrl, secret, qr_data_url: qrDataUrl, recovery_codes: codes, warning: SHOWN_ONCE };
 }
@@ -191,6 +204,7 @@ export async function resetStaffMfa(input: { actorId: string; actorOrgId: string
     const enrolled = had.rows[0]?.enrolled === true;
     await client.query("DELETE FROM staff_mfa_recovery_codes WHERE user_id = $1", [input.targetId]);
     await client.query("DELETE FROM staff_mfa_factors WHERE user_id = $1", [input.targetId]);
+    await clearCodeLockout(client, input.targetId);
     await client.query("UPDATE users SET session_version = session_version + 1 WHERE id = $1", [input.targetId]);
     const detail = { target_user_id: input.targetId, reason: input.reason };
     await client.query(
@@ -201,7 +215,29 @@ export async function resetStaffMfa(input: { actorId: string; actorOrgId: string
     await client.query(
       `INSERT INTO platform_audit_events (actor_user_id, actor_org_id, action, target_org_id, target_id, reason, before_state, after_state)
        VALUES ($1, $2, 'staff_mfa_reset', $2, $3, $4, $5, $6)`,
-      [input.actorId, input.actorOrgId, input.targetId, input.reason, JSON.stringify({ enrolled }), JSON.stringify({ enrolled: false })]
+      [input.actorId, input.actorOrgId, input.targetId, input.reason, JSON.stringify({ enrolled }), JSON.stringify({ enrolled: false, lockout_cleared: true })]
+    );
+  });
+}
+
+export async function unlockStaffMfa(input: { actorId: string; actorOrgId: string; targetId: string; reason: string }) {
+  if (input.actorId === input.targetId) throw new StaffMfaError(400, "cannot_unlock_own_mfa");
+  await withTx(async (client) => {
+    const actor = await client.query("SELECT is_platform_staff($1) AS staff", [input.actorId]);
+    if (actor.rows[0]?.staff !== true) throw new StaffMfaError(403, "forbidden");
+    const target = await client.query("SELECT is_platform_staff($1) AS staff", [input.targetId]);
+    if (target.rows[0]?.staff !== true) throw new StaffMfaError(404, "not_staff");
+    await clearCodeLockout(client, input.targetId);
+    const detail = { target_user_id: input.targetId, reason: input.reason };
+    await client.query(
+      `INSERT INTO audit_log (organization_id, user_id, action, method, path, request_body, status_code)
+       VALUES ($1, $2, 'Cleared staff code lockout', 'POST', $3, $4, 200)`,
+      [input.actorOrgId, input.actorId, "/api/platform/staff/" + input.targetId + "/mfa-unlock", JSON.stringify(detail)]
+    );
+    await client.query(
+      `INSERT INTO platform_audit_events (actor_user_id, actor_org_id, action, target_org_id, target_id, reason, before_state, after_state)
+       VALUES ($1, $2, 'staff_mfa_lockout_cleared', $2, $3, $4, $5, $6)`,
+      [input.actorId, input.actorOrgId, input.targetId, input.reason, JSON.stringify({ locked: true }), JSON.stringify({ locked: false })]
     );
   });
 }

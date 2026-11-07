@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  authenticatorSetupUrl,
   base32Decode,
   base32Encode,
   decryptSecret,
@@ -83,6 +84,17 @@ describe("staff authenticator crypto", () => {
   it("limits code attempts after five failures", () => {
     expect(rateLimitDecision(4)).toBe("ok");
     expect(rateLimitDecision(5)).toBe("limited");
+  });
+
+  it("builds an otpauth link the iPhone Passwords app can open", () => {
+    const url = authenticatorSetupUrl("staff@example.invalid", "SECRETKEY");
+    expect(url.startsWith("otpauth://totp/Opening%20Intelligence:staff%40example.invalid?")).toBe(true);
+    expect(url).toContain("secret=SECRETKEY");
+    expect(url).toContain("issuer=Opening%20Intelligence");
+    expect(url).toContain("algorithm=SHA1");
+    expect(url).toContain("digits=6");
+    expect(url).toContain("period=30");
+    expect(url.split("?")[0]).not.toContain("%3A");
   });
 
   it("round-trips base32", () => {

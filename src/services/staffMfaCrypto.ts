@@ -94,6 +94,24 @@ export function totpCodeForBase32(secret: string, timeMs = Date.now()): string {
   return totpAt(base32Decode(secret), timeMs).code;
 }
 
+/**
+ * otpauth link for authenticator apps, including the iPhone Passwords app.
+ * The issuer and account are encoded separately so the colon between them stays
+ * literal. SHA-1, 6 digits, and 30 seconds are the values that app accepts.
+ */
+export function authenticatorSetupUrl(email: string, secret: string): string {
+  const issuer = "Opening Intelligence";
+  const label = `${encodeURIComponent(issuer)}:${encodeURIComponent(email)}`;
+  const query = [
+    `secret=${encodeURIComponent(secret)}`,
+    `issuer=${encodeURIComponent(issuer)}`,
+    "algorithm=SHA1",
+    "digits=6",
+    "period=30",
+  ].join("&");
+  return `otpauth://totp/${label}?${query}`;
+}
+
 export type TotpMatch = { ok: true; step: number } | { ok: false; reason: "invalid" | "replay" };
 
 /** Accept the current 30-second step and one step of clock skew. The same step cannot be used twice. */

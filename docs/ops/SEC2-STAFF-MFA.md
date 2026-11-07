@@ -4,7 +4,9 @@ This is not a production change. The migration file is in the repository and has
 
 Staff (rows in `platform_staff`, currently Stephan and Michelle) enter the password they already use, then a 6-digit code from an authenticator app. Customers sign in the same way they do today.
 
-The setup QR code, the typed setup key, and the 10 recovery codes are returned only by the enrollment response. Each recovery code works once. Store the codes somewhere safe before leaving that screen. A later sign-in does not show them again.
+The setup QR code, the typed setup key, and the 10 recovery codes are returned only by the enrollment response. Each recovery code works once. Store the codes somewhere safe before leaving that screen. A later sign-in does not show them again. On a phone, Add to authenticator app opens the iPhone Passwords app with that same setup link. Copy setup key copies the key if the QR code cannot be scanned.
+
+A verified staff member can clear the other person's 15-minute wrong-code lockout from OI staff tools, with a reason. That does not remove the authenticator. Nobody can clear their own lockout. Resetting an authenticator also clears the lockout.
 
 If one staff member loses the phone, the other staff member — already signed in with their own authenticator code — opens OI staff tools, chooses Reset authenticator, and records a reason after checking identity on a known phone number. The reset person enrolls again. They cannot reset their own authenticator with a password alone.
 
