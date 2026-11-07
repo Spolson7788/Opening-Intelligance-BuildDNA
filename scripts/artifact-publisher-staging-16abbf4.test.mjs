@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, includeNetlifyToml, productionDeployBody, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, scrubDeployValue, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionUploadHeaders, includeNetlifyToml, productionDeployBody, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, scrubDeployValue, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('staging site is the only accepted target', () => {
   assert.deepEqual(assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL }), {
@@ -29,7 +29,10 @@ test('required file sha1 and function sha256 both resolve', () => {
   assert.equal(fileDigestKey('index.html'), '/index.html');
   assert.equal(fileDigestKey('/field/index.html'), '/field/index.html');
   assert.equal(fileUploadPath('abc', '/index.html'), '/api/v1/deploys/abc/files/index.html');
-  assert.equal(diffReady({ state: 'uploading', required: [], required_functions: [] }), false);
+  assert.equal(diffReady({ state: 'uploading', required: [], required_functions: [] }), true);
+  const preparing = { state: 'preparing', required: [], required_functions: ['f1d3799c'] };
+  assert.equal(diffReady(preparing), false);
+  assert.equal(selectUploadSnapshot([preparing, { state: 'prepared', required: [], required_functions: ['f1d3799c'] }]).state, 'prepared');
   const prepared = { state: 'prepared', required: ['646641cc', '4b841fe6', '34618751', '5ae24228'], required_functions: [] };
   assert.equal(diffReady(prepared), true);
   assert.equal(selectUploadSnapshot([{ state: 'preparing', required: [], required_functions: [] }, prepared]), prepared);
@@ -40,6 +43,7 @@ test('required file sha1 and function sha256 both resolve', () => {
   assert.equal(selectUploadSnapshot([{ state: 'preparing', required: [] }, deduped]), deduped);
   assert.deepEqual(readyPublishSteps(deduped), ['restore', 'confirm-published']);
   assert.deepEqual(readyPublishSteps(prepared), ['upload', 'wait-ready', 'restore', 'confirm-published']);
+  assert.deepEqual(readyPublishSteps(preparing), ['wait-prepared', 'upload', 'wait-ready', 'restore', 'confirm-published']);
   const api = functionConfigFromBuild({ name: 'api', routes: ['/health', '/api/*'], displayName: 'API', generator: '@netlify/functions', schedule: '0 0 * * *' });
   assert.deepEqual(api.routes, ['/health', '/api/*']);
   assert.equal(api.display_name, 'API');
@@ -71,7 +75,7 @@ test('a ready deploy is restored once and confirmed as the published deploy', as
     id: STAGING_SITE_ID,
     name: STAGING_SITE_NAME,
     ssl_url: STAGING_URL,
-    published_deploy: { id: deployId },
+    published_deploy: { id: deployId, context: 'production' },
   };
   const result = await publishReadyDeploy(async (method, path) => {
     calls.push(`${method} ${path}`);
@@ -82,11 +86,27 @@ test('a ready deploy is restored once and confirmed as the published deploy', as
     `POST /api/v1/sites/${STAGING_SITE_ID}/deploys/${deployId}/restore`,
     `GET /api/v1/sites/${STAGING_SITE_ID}`,
   ]);
-  assert.deepEqual(result, { published: true, publishedDeployId: deployId });
+  assert.deepEqual(result, { published: true, publishedDeployId: deployId, context: 'production' });
   await assert.rejects(() => publishReadyDeploy(async (method) => {
     if (method === 'POST') return { status: 200, body: Buffer.from('{}') };
     return { status: 200, body: Buffer.from(JSON.stringify({ ...site, published_deploy: { id: '6aef9b65877e6e067c751d5b' } })) };
   }, deployId), /deploy_publish_unconfirmed/);
+  await assert.rejects(() => publishReadyDeploy(async (method) => {
+    if (method === 'POST') return { status: 200, body: Buffer.from('{}') };
+    return { status: 200, body: Buffer.from(JSON.stringify({ ...site, published_deploy: { id: deployId, context: 'deploy-preview' } })) };
+  }, deployId), /refusing_deploy_context/);
+});
+
+test('a preparing deploy is not uploaded, and a function retry keeps the same token', () => {
+  const body = "Access Denied: deploy must be in , not preparing / Access Denied: User does not have access / could not authenticate request";
+  assert.equal(classifyUploadResponse(401, body), 'wait-prepared');
+  assert.equal(classifyUploadResponse(401, 'Access Denied: User does not have access'), 'auth_required');
+  assert.equal(classifyUploadResponse(500, 'could not authenticate request'), 'retry-same-token');
+  const token = 'memory-token';
+  assert.equal(functionUploadHeaders(token, 0).authorization, `Bearer ${token}`);
+  assert.equal(functionUploadHeaders(token, 0)['x-nf-retry-count'], undefined);
+  assert.equal(functionUploadHeaders(token, 1).authorization, `Bearer ${token}`);
+  assert.equal(functionUploadHeaders(token, 1)['x-nf-retry-count'], '1');
 });
 
 test('compare deploys reports function routes, redirects, and env names without secrets', () => {
