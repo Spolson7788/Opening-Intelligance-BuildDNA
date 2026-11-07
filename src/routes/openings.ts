@@ -7,7 +7,8 @@ import { computeHealthScore } from "../services/healthScore";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { buildingsForOrgSubquery, openingsForOrgSubquery } from "../db/tenantScope";
+import { buildingsForOrgSubquery } from "../db/tenantScope";
+import { openingsVisibleToUserSubquery, userCanWorkOpening } from "../db/areaAccess";
 
 export const openingsRouter = Router();
 openingsRouter.use(requireAuth);
@@ -226,11 +227,11 @@ openingsRouter.get("/qr-codes", async (req: AuthedRequest, res) => {
 // only if it belongs to the caller's organization.
 openingsRouter.get("/:id", async (req: AuthedRequest, res) => {
   const { id } = req.params;
-  const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
   try {
     const opening = await pool.query(
-      `SELECT * FROM openings WHERE id = $1 AND id IN (${openingsForOrgSubquery(2)})`,
-      [id, orgId]
+      `SELECT * FROM openings WHERE id = $1 AND id IN (${openingsVisibleToUserSubquery(2)})`,
+      [id, userId]
     );
     if (opening.rows.length === 0) return res.status(404).json({ error: "not_found" });
 
@@ -245,11 +246,11 @@ openingsRouter.get("/:id", async (req: AuthedRequest, res) => {
 // Scoped to the caller's org so a tech can't resolve another customer's QR code.
 openingsRouter.get("/by-qr/:qrToken", async (req: AuthedRequest, res) => {
   const { qrToken } = req.params;
-  const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
   try {
     const result = await pool.query(
-      `SELECT * FROM openings WHERE qr_token = $1 AND id IN (${openingsForOrgSubquery(2)})`,
-      [qrToken, orgId]
+      `SELECT * FROM openings WHERE qr_token = $1 AND id IN (${openingsVisibleToUserSubquery(2)})`,
+      [qrToken, userId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: "not_found" });
     res.json(await hydrateOpening(result.rows[0]));
@@ -265,11 +266,11 @@ openingsRouter.get("/by-qr/:qrToken", async (req: AuthedRequest, res) => {
 // tag doesn't know the internal qr_token UUID embedded in the QR itself.
 openingsRouter.get("/by-code/:openingCode", async (req: AuthedRequest, res) => {
   const { openingCode } = req.params;
-  const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
   try {
     const result = await pool.query(
-      `SELECT * FROM openings WHERE opening_code = $1 AND id IN (${openingsForOrgSubquery(2)})`,
-      [openingCode, orgId]
+      `SELECT * FROM openings WHERE opening_code = $1 AND id IN (${openingsVisibleToUserSubquery(2)})`,
+      [openingCode, userId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: "not_found" });
     res.json(await hydrateOpening(result.rows[0]));
@@ -282,11 +283,11 @@ openingsRouter.get("/by-code/:openingCode", async (req: AuthedRequest, res) => {
 // Generate a printable QR code image (PNG data URL) for a given opening
 openingsRouter.get("/:id/qr-code", async (req: AuthedRequest, res) => {
   const { id } = req.params;
-  const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
   try {
     const result = await pool.query(
-      `SELECT qr_token FROM openings WHERE id = $1 AND id IN (${openingsForOrgSubquery(2)})`,
-      [id, orgId]
+      `SELECT qr_token FROM openings WHERE id = $1 AND id IN (${openingsVisibleToUserSubquery(2)})`,
+      [id, userId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: "not_found" });
 
@@ -307,12 +308,12 @@ openingsRouter.get("/:id/qr-code", async (req: AuthedRequest, res) => {
 // Recompute and persist the health score for an opening
 openingsRouter.post("/:id/recompute-health-score", async (req: AuthedRequest, res) => {
   const { id } = req.params;
-  const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
   try {
     const openingRes = await pool.query(
       `SELECT install_date, last_service_date, fire_rated FROM openings
-       WHERE id = $1 AND id IN (${openingsForOrgSubquery(2)})`,
-      [id, orgId]
+       WHERE id = $1 AND id IN (${openingsVisibleToUserSubquery(2)})`,
+      [id, userId]
     );
     if (openingRes.rows.length === 0) return res.status(404).json({ error: "not_found" });
     const opening = openingRes.rows[0];
@@ -356,37 +357,57 @@ openingsRouter.post("/:id/recompute-health-score", async (req: AuthedRequest, re
   }
 });
 
-// Portfolio-wide list, filterable by property/building/type/health threshold —
-// the dashboard's main query. Always scoped to the caller's organization.
+// Portfolio-wide list. Customer organizations see their own openings.
+// Provider technicians see openings inside their state and county area.
+// state_code and county_fips filter the facility the opening belongs to.
 openingsRouter.get("/", async (req: AuthedRequest, res) => {
-  const { building_id, property_id, opening_type, max_health_score } = req.query;
-  const orgId = req.auth!.organizationId;
+  const { building_id, property_id, opening_type, max_health_score, state_code, county_fips } = req.query;
+  const userId = req.auth!.userId;
   const conditions: string[] = [];
   const values: any[] = [];
 
   if (building_id) {
     values.push(building_id);
-    conditions.push(`building_id = $${values.length}`);
+    conditions.push(`o.building_id = $${values.length}`);
   }
   if (property_id) {
     values.push(property_id);
-    conditions.push(`building_id IN (SELECT id FROM buildings WHERE property_id = $${values.length})`);
+    conditions.push(`o.building_id IN (SELECT id FROM buildings WHERE property_id = $${values.length})`);
   }
   if (opening_type) {
     values.push(opening_type);
-    conditions.push(`opening_type = $${values.length}`);
+    conditions.push(`o.opening_type = $${values.length}`);
   }
   if (max_health_score) {
     values.push(max_health_score);
-    conditions.push(`health_score <= $${values.length}`);
+    conditions.push(`o.health_score <= $${values.length}`);
   }
-  values.push(orgId);
-  conditions.push(`id IN (${openingsForOrgSubquery(values.length)})`);
+  if (typeof state_code === "string" && state_code !== "") {
+    if (!/^[A-Za-z]{2}$/.test(state_code)) return res.status(400).json({ error: "invalid_state_code" });
+    values.push(state_code.toUpperCase());
+    conditions.push(`p.state_code = $${values.length}`);
+  }
+  if (typeof county_fips === "string" && county_fips !== "") {
+    if (!/^\d{5}$/.test(county_fips)) return res.status(400).json({ error: "invalid_county_fips" });
+    values.push(county_fips);
+    conditions.push(`p.county_fips = $${values.length}`);
+  }
+  values.push(userId);
+  conditions.push(`o.id IN (${openingsVisibleToUserSubquery(values.length)})`);
 
   const whereClause = `WHERE ${conditions.join(" AND ")}`;
   try {
     const result = await pool.query(
-      `SELECT * FROM openings ${whereClause} ORDER BY health_score ASC NULLS LAST LIMIT 500`,
+      `SELECT o.*, p.id AS property_id, p.name AS property_name,
+              p.state_code, p.county_fips, s.name AS state_name, c.name AS county_name
+       FROM openings o
+       JOIN buildings b ON b.id = o.building_id
+       JOIN properties p ON p.id = b.property_id
+       LEFT JOIN us_states s ON s.code = p.state_code
+       LEFT JOIN us_counties c ON c.fips = p.county_fips
+       ${whereClause}
+       ORDER BY o.health_score ASC NULLS LAST
+       LIMIT 500`,
       values
     );
     res.json(result.rows);

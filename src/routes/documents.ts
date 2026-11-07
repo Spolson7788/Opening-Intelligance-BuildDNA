@@ -4,7 +4,7 @@ import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { openingsForOrgSubquery, propertiesForOrgSubquery } from "../db/tenantScope";
+import { userCanReadProperty, userCanWorkOpening } from "../db/areaAccess";
 import {
   getPresignedUploadUrl,
   buildDocumentStorageKey,
@@ -18,25 +18,9 @@ documentsRouter.use(requireAuth);
 documentsRouter.use(enforceRolePermissions);
 documentsRouter.use(auditLog);
 
-async function assertPropertyInOrg(propertyId: string, orgId: string): Promise<boolean> {
-  const result = await pool.query(
-    `SELECT 1 FROM (${propertiesForOrgSubquery(2)}) allowed WHERE allowed.id = $1`,
-    [propertyId, orgId]
-  );
-  return result.rows.length > 0;
-}
-
-async function assertOpeningInOrg(openingId: string, orgId: string): Promise<boolean> {
-  const result = await pool.query(
-    `SELECT 1 FROM (${openingsForOrgSubquery(2)}) allowed WHERE allowed.id = $1`,
-    [openingId, orgId]
-  );
-  return result.rows.length > 0;
-}
-
-async function assertAttachmentInOrg(propertyId: string | undefined, openingId: string | undefined, orgId: string): Promise<boolean> {
-  if (propertyId && !(await assertPropertyInOrg(propertyId, orgId))) return false;
-  if (openingId && !(await assertOpeningInOrg(openingId, orgId))) return false;
+async function assertAttachmentVisible(propertyId: string | undefined, openingId: string | undefined, userId: string): Promise<boolean> {
+  if (propertyId && !(await userCanReadProperty(userId, propertyId))) return false;
+  if (openingId && !(await userCanWorkOpening(userId, openingId))) return false;
   return true;
 }
 
@@ -53,13 +37,14 @@ documentsRouter.post("/presign", async (req: AuthedRequest, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { property_id, opening_id, content_type } = parsed.data;
   const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
 
   if (!isAllowedDocumentContentType(content_type)) {
     return res.status(400).json({ error: "unsupported_content_type" });
   }
 
   try {
-    if (!(await assertAttachmentInOrg(property_id, opening_id, orgId))) {
+    if (!(await assertAttachmentVisible(property_id, opening_id, userId))) {
       return res.status(403).json({ error: "forbidden" });
     }
 
@@ -95,11 +80,10 @@ documentsRouter.post("/", async (req: AuthedRequest, res) => {
   const parsed = createDocumentSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
-  const orgId = req.auth!.organizationId;
   const userId = req.auth!.userId;
 
   try {
-    if (!(await assertAttachmentInOrg(b.property_id, b.opening_id, orgId))) {
+    if (!(await assertAttachmentVisible(b.property_id, b.opening_id, userId))) {
       return res.status(403).json({ error: "forbidden" });
     }
 
@@ -117,9 +101,9 @@ documentsRouter.post("/", async (req: AuthedRequest, res) => {
 
 documentsRouter.get("/by-property/:propertyId", async (req: AuthedRequest, res) => {
   const { propertyId } = req.params;
-  const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
   try {
-    if (!(await assertPropertyInOrg(propertyId, orgId))) return res.status(403).json({ error: "forbidden" });
+    if (!(await userCanReadProperty(userId, propertyId))) return res.status(403).json({ error: "forbidden" });
     const result = await pool.query(
       "SELECT * FROM documents WHERE property_id = $1 ORDER BY created_at DESC",
       [propertyId]
@@ -133,9 +117,9 @@ documentsRouter.get("/by-property/:propertyId", async (req: AuthedRequest, res) 
 
 documentsRouter.get("/by-opening/:openingId", async (req: AuthedRequest, res) => {
   const { openingId } = req.params;
-  const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
   try {
-    if (!(await assertOpeningInOrg(openingId, orgId))) return res.status(403).json({ error: "forbidden" });
+    if (!(await userCanWorkOpening(userId, openingId))) return res.status(403).json({ error: "forbidden" });
     const result = await pool.query(
       "SELECT * FROM documents WHERE opening_id = $1 ORDER BY created_at DESC",
       [openingId]
@@ -149,16 +133,13 @@ documentsRouter.get("/by-opening/:openingId", async (req: AuthedRequest, res) =>
 
 documentsRouter.delete("/:id", async (req: AuthedRequest, res) => {
   const { id } = req.params;
-  const orgId = req.auth!.organizationId;
+  const userId = req.auth!.userId;
   try {
     const docResult = await pool.query(
       `SELECT * FROM documents
        WHERE id = $1
-         AND (
-           (property_id IS NOT NULL AND property_id IN (${propertiesForOrgSubquery(2)}))
-           OR (opening_id IS NOT NULL AND opening_id IN (${openingsForOrgSubquery(2)}))
-         )`,
-      [id, orgId]
+         AND oi_private.can_read_document($2::uuid, property_id, opening_id)`,
+      [id, userId]
     );
     if (docResult.rows.length === 0) return res.status(404).json({ error: "not_found" });
 

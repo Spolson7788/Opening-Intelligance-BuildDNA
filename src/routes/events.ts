@@ -4,19 +4,15 @@ import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { openingsForOrgSubquery } from "../db/tenantScope";
+import { userCanWorkOpening } from "../db/areaAccess";
 
 export const eventsRouter = Router();
 eventsRouter.use(requireAuth);
 eventsRouter.use(enforceRolePermissions);
 eventsRouter.use(auditLog);
 
-async function assertOpeningInOrg(openingId: string, orgId: string): Promise<boolean> {
-  const result = await pool.query(
-    `SELECT 1 FROM (${openingsForOrgSubquery(2)}) allowed WHERE allowed.id = $1`,
-    [openingId, orgId]
-  );
-  return result.rows.length > 0;
+async function assertOpeningVisible(openingId: string, userId: string): Promise<boolean> {
+  return userCanWorkOpening(userId, openingId);
 }
 
 const serviceEventSchema = z.object({
@@ -33,11 +29,10 @@ eventsRouter.post("/service-events", async (req: AuthedRequest, res) => {
   const parsed = serviceEventSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
-  const orgId = req.auth!.organizationId;
   const userId = req.auth!.userId;
 
   try {
-    if (!(await assertOpeningInOrg(b.opening_id, orgId))) {
+    if (!(await assertOpeningVisible(b.opening_id, userId))) {
       return res.status(403).json({ error: "forbidden" });
     }
 
@@ -76,11 +71,10 @@ eventsRouter.post("/inspection-events", async (req: AuthedRequest, res) => {
   const parsed = inspectionEventSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
-  const orgId = req.auth!.organizationId;
   const userId = req.auth!.userId;
 
   try {
-    if (!(await assertOpeningInOrg(b.opening_id, orgId))) {
+    if (!(await assertOpeningVisible(b.opening_id, userId))) {
       return res.status(403).json({ error: "forbidden" });
     }
 

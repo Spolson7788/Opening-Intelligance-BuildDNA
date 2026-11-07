@@ -88,6 +88,14 @@ export function ScanPage() {
         <button
           className="btn btn-secondary"
           style={{ marginTop: 24 }}
+          onClick={() => navigate("/my-facilities")}
+        >
+          My Facilities
+        </button>
+
+        <button
+          className="btn btn-secondary"
+          style={{ marginTop: 12 }}
           onClick={() => navigate("/my-work-orders")}
         >
           My Work Orders

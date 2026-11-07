@@ -4,6 +4,7 @@ import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
+import { respondToConstraint } from "../db/constraintError";
 
 export const portfolioRouter = Router();
 portfolioRouter.use(requireAuth);
@@ -40,12 +41,17 @@ portfolioRouter.post("/portfolios", async (req: AuthedRequest, res) => {
   }
 });
 
+const stateCodeSchema = z.string().regex(/^[A-Za-z]{2}$/).transform((value) => value.toUpperCase());
+const countyFipsSchema = z.string().regex(/^\d{5}$/);
+
 const createPropertySchema = z.object({
   portfolio_id: z.string().uuid(),
   name: z.string().min(1),
   address_line1: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
+  state_code: stateCodeSchema.optional(),
+  county_fips: countyFipsSchema.optional(),
   postal_code: z.string().optional(),
   property_type: z.enum(["multifamily", "senior_living", "healthcare", "university", "hospitality", "other"]).optional(),
   latitude: z.number().optional(),
@@ -67,13 +73,47 @@ portfolioRouter.post("/properties", async (req: AuthedRequest, res) => {
 
     const result = await pool.query(
       `INSERT INTO properties
-        (portfolio_id, name, address_line1, city, state, postal_code, property_type, latitude, longitude)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        (portfolio_id, name, address_line1, city, state, state_code, county_fips, postal_code, property_type, latitude, longitude)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [b.portfolio_id, b.name, b.address_line1 ?? null, b.city ?? null, b.state ?? null,
+       b.state_code ?? null, b.county_fips ?? null,
        b.postal_code ?? null, b.property_type ?? null, b.latitude ?? null, b.longitude ?? null]
     );
     res.status(201).json(result.rows[0]);
-  } catch (err) {
+  } catch (err: any) {
+    if (respondToConstraint(res, err)) return;
+    console.error(err);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+const locationSchema = z.object({
+  state_code: stateCodeSchema.nullable(),
+  county_fips: countyFipsSchema.nullable(),
+});
+
+// Sets the facility's state and county. Both are nullable: unknown stays
+// unknown, and a provider assignment that would no longer cover the
+// facility is rejected by the database.
+portfolioRouter.patch("/properties/:id/location", async (req: AuthedRequest, res) => {
+  const parsed = locationSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const orgId = req.auth!.organizationId;
+  const { id } = req.params;
+  try {
+    const owned = await pool.query(
+      `SELECT 1 FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id
+       WHERE p.id = $1 AND pf.organization_id = $2`,
+      [id, orgId]
+    );
+    if (owned.rows.length === 0) return res.status(404).json({ error: "not_found" });
+    const result = await pool.query(
+      `UPDATE properties SET state_code = $1, county_fips = $2 WHERE id = $3 RETURNING *`,
+      [parsed.data.state_code, parsed.data.county_fips, id]
+    );
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    if (respondToConstraint(res, err)) return;
     console.error(err);
     res.status(500).json({ error: "internal_error" });
   }
@@ -108,13 +148,30 @@ portfolioRouter.post("/buildings", async (req: AuthedRequest, res) => {
 // this is what powers the dashboard's property/building picker.
 portfolioRouter.get("/properties", async (req: AuthedRequest, res) => {
   const orgId = req.auth!.organizationId;
+  const stateCode = typeof req.query.state_code === "string" && req.query.state_code
+    ? req.query.state_code.toUpperCase()
+    : null;
+  const countyFips = typeof req.query.county_fips === "string" && req.query.county_fips
+    ? req.query.county_fips
+    : null;
+  if (stateCode && !/^[A-Z]{2}$/.test(stateCode)) {
+    return res.status(400).json({ error: "invalid_state_code" });
+  }
+  if (countyFips && !/^\d{5}$/.test(countyFips)) {
+    return res.status(400).json({ error: "invalid_county_fips" });
+  }
   try {
     const propertiesRes = await pool.query(
-      `SELECT p.* FROM properties p
+      `SELECT p.*, s.name AS state_name, c.name AS county_name
+       FROM properties p
        JOIN portfolios pf ON pf.id = p.portfolio_id
+       LEFT JOIN us_states s ON s.code = p.state_code
+       LEFT JOIN us_counties c ON c.fips = p.county_fips
        WHERE pf.organization_id = $1
-       ORDER BY p.name`,
-      [orgId]
+         AND ($2::text IS NULL OR p.state_code = $2)
+         AND ($3::text IS NULL OR p.county_fips = $3)
+       ORDER BY s.name NULLS LAST, c.name NULLS LAST, p.name`,
+      [orgId, stateCode, countyFips]
     );
     const properties = propertiesRes.rows;
     if (properties.length === 0) return res.json([]);

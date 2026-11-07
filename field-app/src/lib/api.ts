@@ -167,6 +167,36 @@ export interface FieldWorkOrder {
 // order assignments aren't something a technician creates themselves, so
 // there's nothing meaningful to queue offline for. Same reasoning as
 // hardware capture.
+export interface FieldFacility {
+  id: string;
+  name: string;
+  city: string | null;
+  state_code: string | null;
+  county_fips: string | null;
+  state_name: string | null;
+  county_name: string | null;
+  opening_count: number;
+}
+
+export interface FieldFacilityOpening {
+  id: string;
+  opening_code: string;
+  opening_type: string;
+  floor_label: string | null;
+  location_description: string | null;
+  status: string;
+}
+
+// Facilities this technician is allowed to work. The server drops anything
+// outside the technician's state and county area.
+export async function listMyFacilities(): Promise<FieldFacility[]> {
+  return authedFetch("/facilities");
+}
+
+export async function listFacilityOpenings(propertyId: string): Promise<FieldFacilityOpening[]> {
+  return authedFetch(`/facilities/${propertyId}/openings`);
+}
+
 export async function fetchMyWorkOrders(userId: string): Promise<FieldWorkOrder[]> {
   return authedFetch(`/work-orders?assigned_to_user_id=${userId}`);
 }

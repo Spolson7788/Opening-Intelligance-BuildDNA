@@ -6,6 +6,7 @@ import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
 import { openingsForOrgSubquery } from "../db/tenantScope";
+import { openingsVisibleToUserSubquery, userCanWorkOpening } from "../db/areaAccess";
 
 export const hardwareRouter = Router();
 hardwareRouter.use(requireAuth);
@@ -20,21 +21,17 @@ function generateTrackerId(): string {
   return `TRK-${randomBytes(4).toString("hex").toUpperCase()}`;
 }
 
-async function assertOpeningInOrg(openingId: string, orgId: string): Promise<boolean> {
-  const result = await pool.query(
-    `SELECT 1 FROM (${openingsForOrgSubquery(2)}) allowed WHERE allowed.id = $1`,
-    [openingId, orgId]
-  );
-  return result.rows.length > 0;
+async function assertOpeningVisible(openingId: string, userId: string): Promise<boolean> {
+  return userCanWorkOpening(userId, openingId);
 }
 
-// A hardware component is only reachable through an opening the caller's org owns,
-// so every route here either takes opening_id directly or joins through it.
-async function assertHardwareInOrg(hardwareId: string, orgId: string): Promise<string | null> {
+// A hardware component is only reachable through an opening the caller may
+// work. Provider technicians are limited to their state and county area.
+async function assertHardwareVisible(hardwareId: string, userId: string): Promise<string | null> {
   const result = await pool.query(
     `SELECT hc.opening_id FROM hardware_components hc
-     WHERE hc.id = $1 AND hc.opening_id IN (${openingsForOrgSubquery(2)})`,
-    [hardwareId, orgId]
+     WHERE hc.id = $1 AND hc.opening_id IN (${openingsVisibleToUserSubquery(2)})`,
+    [hardwareId, userId]
   );
   return result.rows[0]?.opening_id ?? null;
 }
@@ -69,10 +66,9 @@ hardwareRouter.post("/", async (req: AuthedRequest, res) => {
   const parsed = createHardwareSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
-  const orgId = req.auth!.organizationId;
 
   try {
-    if (!(await assertOpeningInOrg(b.opening_id, orgId))) {
+    if (!(await assertOpeningVisible(b.opening_id, req.auth!.userId))) {
       return res.status(403).json({ error: "forbidden" });
     }
     const trackerId = generateTrackerId();
@@ -103,7 +99,7 @@ hardwareRouter.get("/by-opening/:openingId", async (req: AuthedRequest, res) => 
   const { openingId } = req.params;
   const orgId = req.auth!.organizationId;
   try {
-    if (!(await assertOpeningInOrg(openingId, orgId))) {
+    if (!(await assertOpeningVisible(openingId, req.auth!.userId))) {
       return res.status(403).json({ error: "forbidden" });
     }
     const result = await pool.query(
@@ -121,7 +117,6 @@ hardwareRouter.get("/by-opening/:openingId", async (req: AuthedRequest, res) => 
 // installed before 2019" a real query instead of a hypothetical in the pitch deck.
 hardwareRouter.get("/", async (req: AuthedRequest, res) => {
   const { manufacturer, model_number, component_type, installed_before, installed_after } = req.query;
-  const orgId = req.auth!.organizationId;
   const conditions: string[] = [];
   const values: any[] = [];
 
@@ -145,8 +140,8 @@ hardwareRouter.get("/", async (req: AuthedRequest, res) => {
     values.push(installed_after);
     conditions.push(`install_date >= $${values.length}`);
   }
-  values.push(orgId);
-  conditions.push(`opening_id IN (${openingsForOrgSubquery(values.length)})`);
+  values.push(req.auth!.userId);
+  conditions.push(`opening_id IN (${openingsVisibleToUserSubquery(values.length)})`);
 
   try {
     const result = await pool.query(
@@ -169,7 +164,7 @@ hardwareRouter.patch("/:id", async (req: AuthedRequest, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   try {
-    const openingId = await assertHardwareInOrg(id, orgId);
+    const openingId = await assertHardwareVisible(id, req.auth!.userId);
     if (!openingId) return res.status(404).json({ error: "not_found" });
 
     const fields = Object.entries(parsed.data).filter(([, v]) => v !== undefined);
@@ -194,7 +189,7 @@ hardwareRouter.delete("/:id", async (req: AuthedRequest, res) => {
   const { id } = req.params;
   const orgId = req.auth!.organizationId;
   try {
-    const openingId = await assertHardwareInOrg(id, orgId);
+    const openingId = await assertHardwareVisible(id, req.auth!.userId);
     if (!openingId) return res.status(404).json({ error: "not_found" });
 
     await pool.query("DELETE FROM hardware_components WHERE id = $1", [id]);
