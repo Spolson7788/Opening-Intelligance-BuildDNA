@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionUploadHeaders, includeNetlifyToml, productionDeployBody, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, scrubDeployValue, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionUploadHeaders, includeNetlifyToml, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('staging site is the only accepted target', () => {
   assert.deepEqual(assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL }), {
@@ -107,6 +107,18 @@ test('a preparing deploy is not uploaded, and a function retry keeps the same to
   assert.equal(functionUploadHeaders(token, 0)['x-nf-retry-count'], undefined);
   assert.equal(functionUploadHeaders(token, 1).authorization, `Bearer ${token}`);
   assert.equal(functionUploadHeaders(token, 1)['x-nf-retry-count'], '1');
+  const routes = [{ pattern: '/health', literal: '/health' }, { pattern: '/api/*', expression: '^\\/api' }];
+  const uploading = { state: 'uploading', context: 'production', required_functions: ['f1d3799c'] };
+  const processing = { state: 'processing', context: 'production', required: [], required_functions: [] };
+  const readyBare = { state: 'ready', context: 'production', required: [], required_functions: [], available_functions: [{ n: 'api', d: 'f1d3799c' }] };
+  const readyRouted = { state: 'ready', context: 'production', available_functions: [{ n: 'api', d: 'f1d3799c', ro: routes }] };
+  assert.equal(publishBlocker(uploading), 'wait');
+  assert.equal(publishBlocker(processing), 'wait');
+  assert.equal(publishBlocker(readyBare), 'routes');
+  assert.equal(publishBlocker(readyRouted), 'ok');
+  assert.equal(selectPublishSnapshot([uploading, processing, readyBare]), null);
+  assert.equal(selectPublishSnapshot([uploading, processing, readyBare, readyRouted]), readyRouted);
+  assert.deepEqual(apiFunctionView(readyRouted)[0].routes, ['/health', '/api/*']);
 });
 
 test('compare deploys reports function routes, redirects, and env names without secrets', () => {

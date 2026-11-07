@@ -34,8 +34,11 @@ node scripts/artifact-publisher-staging-16abbf4.mjs --dry-run
 The Netlify CLI install is loaded from `C:\Users\spols\Documents\Codex\2026-10-23\task\.local-netlify-cli\node_modules\netlify-cli` (v27.14.2). Pass `--netlify-cli-dir` only if that folder moved. The publisher uses that install's dev-utils to confirm the logged-in account and to take an in-memory token. The token is not printed or written. Requests go only to `api.netlify.com` for site `b64bf33c-a131-4ae2-b2b0-9aec16e9f77b` and for the deploy id this run creates. `auth_required` and `auth_account_mismatch` are login problems. `deploy_create_failed`, `deploy_upload_failed`, `deploy_poll_failed`, `deploy_not_ready`, and `deploy_publish_failed` are upload problems. `failure.json` records `branch` (`files` or `functions`) and `missingHash` when a required digest does not resolve. File digests are SHA-1 and `required` returns those SHA-1 values. Function digests are SHA-256 and `required_functions` returns those SHA-256 values. The attempt file is `dist/staging-publish-journal-16abbf4-r7/publication-attempt.json`. An empty `required` list is not uploaded. The script waits until the deploy state is `prepared` before any PUT, including when `required_functions` is already populated during `preparing`. To finish deploy `6aefac034fc7533e305439c9`:
 
 ```
+node scripts/artifact-publisher-staging-16abbf4.mjs --inspect-deploy 6aefac034fc7533e305439c9
 node scripts/artifact-publisher-staging-16abbf4.mjs --resume-deploy 6aefac034fc7533e305439c9
 ```
+
+`--inspect-deploy` only GETs the deploy. It prints `deployState`, `context`, and `apiRoutes`. Resume keeps polling after the state is `ready` until those routes are present, then calls restore.
 
 Resume waits until the deploy state is `prepared` before any file or function PUT. A 401 that says the deploy is still `preparing` is not an authentication failure. The same in-memory token is reused, and a function retry sends `X-Nf-Retry-Count`. After the deploy is ready, resume calls restore and records success only when `published_deploy.id` is that deploy and its context is `production`.
 

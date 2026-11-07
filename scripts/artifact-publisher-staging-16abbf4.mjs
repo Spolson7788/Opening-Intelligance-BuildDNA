@@ -300,6 +300,12 @@ export function productionDeployBody({ files, functions, functionsConfig, schedu
   return body;
 }
 
+function routeList(fn) {
+  const raw = fn?.ro ?? fn?.routes ?? fn?.config?.path ?? fn?.config?.routes ?? null;
+  if (typeof raw === 'string') return [raw];
+  return Array.isArray(raw) ? raw : [];
+}
+
 export function functionRoutePatternsFromDeploy(deploy) {
   const patterns = [];
   const sources = [];
@@ -312,11 +318,37 @@ export function functionRoutePatternsFromDeploy(deploy) {
   for (const fn of sources) {
     const name = fn.n || fn.name;
     if (name && name !== 'api') continue;
-    const routes = fn.ro || fn.routes || fn.config?.path || [];
-    if (!Array.isArray(routes)) continue;
-    for (const route of routes) patterns.push(routePattern(route));
+    for (const route of routeList(fn)) patterns.push(routePattern(route));
   }
   return patterns;
+}
+
+export function apiFunctionView(deploy) {
+  const sources = [];
+  if (Array.isArray(deploy?.available_functions)) sources.push(...deploy.available_functions);
+  if (Array.isArray(deploy?.functions)) sources.push(...deploy.functions);
+  if (deploy?.functions_config?.api) sources.push({ name: 'api', ...deploy.functions_config.api });
+  return sources.filter((fn) => (fn.n || fn.name || 'api') === 'api').map((fn) => scrubDeployValue({
+    name: fn.n || fn.name || 'api',
+    sha: fn.d || fn.sha || null,
+    runtime: fn.runtime || null,
+    routes: routeList(fn).map(routePattern).filter(Boolean),
+  }));
+}
+
+export function publishBlocker(deploy) {
+  if (!deploy || deploy.state === 'error' || deploy.state === 'canceled') return 'failed';
+  if (deploy.state !== 'ready') return 'wait';
+  const outstanding = (deploy.required?.length || 0) + (deploy.required_functions?.length || 0);
+  if (outstanding > 0) return 'wait';
+  if (deploy.context !== 'production') return 'context';
+  const routes = functionRoutePatternsFromDeploy(deploy);
+  if (!routes.includes('/health') || !routes.includes('/api/*')) return 'routes';
+  return 'ok';
+}
+
+export function selectPublishSnapshot(responses) {
+  return responses.find((deploy) => publishBlocker(deploy) === 'ok') || null;
 }
 
 export function assertPublishableDeploy(deploy) {
@@ -597,15 +629,24 @@ async function pollDeploy(token, deployId, ready) {
       saveFailure('deploy_not_ready', response);
       throw fail('deploy_not_ready');
     }
-    const outstanding = (last.required?.length || 0) + (last.required_functions?.length || 0);
-    if (ready && last.state === 'ready' && outstanding === 0) return last;
+    const blocker = publishBlocker(last);
+    if (blocker === 'failed') {
+      saveFailure('deploy_not_ready', response);
+      throw fail('deploy_not_ready');
+    }
+    if (ready && blocker === 'context') throw fail('refusing_deploy_context');
+    if (ready && blocker === 'ok') return last;
     if (!ready && diffReady(last)) return last;
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 2000));
   }
-  saveFailure('deploy_poll_timeout', { status: 0, body: Buffer.from(sanitize(JSON.stringify({
-    state: last?.state || null, required: last?.required || [], required_functions: last?.required_functions || [],
+  const apiRoutes = functionRoutePatternsFromDeploy(last || {});
+  const failure = ready && last?.state === 'ready' && (!apiRoutes.includes('/health') || !apiRoutes.includes('/api/*'))
+    ? 'refusing_missing_routes' : 'deploy_poll_timeout';
+  saveFailure(failure, { status: 0, body: Buffer.from(sanitize(JSON.stringify({
+    state: last?.state || null, context: last?.context || null, apiRoutes,
+    required: last?.required || [], required_functions: last?.required_functions || [],
   }))) });
-  throw fail('deploy_poll_timeout');
+  throw fail(failure);
 }
 
 async function uploadOutstanding(token, deployId, diff, fileMap, functionMap, journal) {
@@ -871,10 +912,7 @@ async function resumeDeploy(deployId) {
     if (current.state !== 'ready' && !publishWithoutUpload(current)) {
       await uploadOutstanding(token, deployId, current, deployFiles(), await bundleFunctions(cliDir), journal);
     }
-    if (current.state !== 'ready') {
-      current = await pollDeploy(token, deployId, true);
-      if (current.state !== 'ready') throw fail('deploy_not_ready');
-    }
+    current = await pollDeploy(token, deployId, true);
     const gate = assertPublishableDeploy(current);
     const confirmation = await publishReadyDeploy((method, path, body) => stagingRequest(method, path, token, body), deployId);
     journal.state = 'ready';
@@ -943,10 +981,19 @@ async function inspectDeploy(deployId) {
   }
   const deploy = JSON.parse(response.body.toString('utf8'));
   if (deploy.site_id && deploy.site_id !== STAGING_SITE_ID) throw fail('refusing_site_mismatch');
+  const lists = [];
+  for (const path of [`/api/v1/deploys/${deployId}/functions`, `/api/v1/sites/${STAGING_SITE_ID}/deploys/${deployId}/functions`]) {
+    const got = await readJsonGet(path, token);
+    if (got.status === 200 && Array.isArray(got.body)) lists.push(...got.body);
+  }
+  const viewed = { ...deploy, functions: [...(Array.isArray(deploy.functions) ? deploy.functions : []), ...lists] };
   const record = {
     state: 'inspect',
     deployId,
     deployState: deploy.state || null,
+    context: deploy.context || null,
+    apiRoutes: functionRoutePatternsFromDeploy(viewed),
+    apiFunctions: apiFunctionView(viewed),
     required: deploy.required || [],
     required_functions: deploy.required_functions || [],
     error_message: deploy.error_message || null,
