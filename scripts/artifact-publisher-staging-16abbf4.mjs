@@ -347,6 +347,126 @@ export function apiRoutesOk(functionMap) {
   return patterns.includes('/health') && patterns.includes('/api/*');
 }
 
+const SECRET_KEY = /secret|token|password|authorization|credential|api[_-]?key|database_url|private_key|access_key/i;
+
+export function scrubDeployValue(value, depth = 0) {
+  if (depth > 8) return '[truncated]';
+  if (Array.isArray(value)) return value.map((item) => scrubDeployValue(item, depth + 1));
+  if (!value || typeof value !== 'object') {
+    if (typeof value === 'string' && (/Bearer\s+\S+/i.test(value) || /\bnf_[A-Za-z0-9_]{6,}\b/.test(value))) return '[redacted]';
+    return value;
+  }
+  const out = {};
+  for (const [key, item] of Object.entries(value)) out[key] = SECRET_KEY.test(key) ? '[redacted]' : scrubDeployValue(item, depth + 1);
+  return out;
+}
+
+function envBundling(build) {
+  if (!build || typeof build !== 'object') return null;
+  const names = build.env || build.envVars || build.included_env || build.node_env_vars;
+  const envVarNames = Array.isArray(names) ? names.map(String) : names && typeof names === 'object' ? Object.keys(names).sort() : [];
+  return scrubDeployValue({
+    bootstrapVersion: build.bootstrapVersion || build.bootstrap_version || null,
+    runtimeAPIVersion: build.runtimeAPIVersion || build.runtime_api_version || null,
+    bundler: build.bundler || null,
+    includedFiles: build.includedFiles || build.included_files || null,
+    envVarNames,
+  });
+}
+
+export function normalizeFunctionRecord(fn) {
+  if (!fn || typeof fn !== 'object') return null;
+  const name = fn.n || fn.name;
+  if (typeof name !== 'string' || !name) return null;
+  return scrubDeployValue({
+    name,
+    sha: fn.d || fn.sha || fn.digest || null,
+    runtime: fn.runtime || fn.runtime_version || fn.r || null,
+    routes: fn.ro || fn.routes || fn.config?.routes || fn.config?.path || null,
+    excluded_routes: fn.er || fn.excluded_routes || fn.excludedRoutes || null,
+    generator: fn.g || fn.generator || null,
+    region: fn.region || fn.rg || null,
+    build_data: envBundling(fn.bd || fn.build_data || fn.buildData),
+  });
+}
+
+function mergeFunction(current, next) {
+  const merged = { ...(current || {}) };
+  for (const [key, value] of Object.entries(next)) {
+    if (value !== null && value !== undefined) merged[key] = value;
+  }
+  return merged;
+}
+
+export function snapshotFromResponses({ id, deploy, functionLists = [], fileList = [], listStatus = {} }) {
+  const byName = new Map();
+  const sources = [];
+  if (Array.isArray(deploy?.available_functions)) sources.push(...deploy.available_functions);
+  if (Array.isArray(deploy?.functions)) sources.push(...deploy.functions);
+  if (deploy?.functions_config && typeof deploy.functions_config === 'object') {
+    for (const [name, config] of Object.entries(deploy.functions_config)) sources.push({ name, ...(config || {}) });
+  }
+  for (const list of functionLists) if (Array.isArray(list)) sources.push(...list);
+  for (const source of sources) {
+    const normalized = normalizeFunctionRecord(source);
+    if (!normalized) continue;
+    byName.set(normalized.name, mergeFunction(byName.get(normalized.name), normalized));
+  }
+  const files = {};
+  for (const file of Array.isArray(fileList) ? fileList : []) {
+    const rel = String(file.path || file.name || '').replace(/^\/+/, '');
+    if (rel === '_redirects' || rel === 'netlify.toml' || rel === '_headers' || rel === 'function-package-evidence.json' || rel.startsWith('edge-functions') || rel.includes('redirect')) {
+      files[rel] = { sha: file.sha || null, size: file.size ?? null };
+    }
+  }
+  return scrubDeployValue({
+    id,
+    siteId: deploy?.site_id || null,
+    state: deploy?.state || null,
+    commit: deploy?.commit_ref || null,
+    context: deploy?.context || null,
+    framework: deploy?.framework || null,
+    title: deploy?.title || null,
+    functionSchedules: deploy?.function_schedules || [],
+    edgeFunctions: deploy?.edge_functions || null,
+    requiredEdgeFunctions: deploy?.required_edge_functions || [],
+    redirects: deploy?.redirects || deploy?.summary?.redirects || null,
+    functions: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    files,
+    listStatus,
+  });
+}
+
+function changedFields(good, bad, keys) {
+  const fields = {};
+  for (const key of keys) {
+    if (JSON.stringify(good?.[key] ?? null) !== JSON.stringify(bad?.[key] ?? null)) fields[key] = { good: good?.[key] ?? null, bad: bad?.[key] ?? null };
+  }
+  return fields;
+}
+
+export function compareDeploySnapshots(good, bad) {
+  const differences = [];
+  const goodFns = new Map((good.functions || []).map((fn) => [fn.name, fn]));
+  const badFns = new Map((bad.functions || []).map((fn) => [fn.name, fn]));
+  for (const name of [...new Set([...goodFns.keys(), ...badFns.keys()])].sort()) {
+    if (!goodFns.has(name)) differences.push({ kind: 'function', name, change: 'only-in-bad' });
+    else if (!badFns.has(name)) differences.push({ kind: 'function', name, change: 'only-in-good' });
+    else {
+      const fields = changedFields(goodFns.get(name), badFns.get(name), ['sha', 'runtime', 'routes', 'excluded_routes', 'generator', 'region', 'build_data']);
+      if (Object.keys(fields).length) differences.push({ kind: 'function', name, change: 'different', fields });
+    }
+  }
+  for (const kind of ['redirects', 'edgeFunctions', 'requiredEdgeFunctions', 'functionSchedules', 'files', 'commit', 'framework', 'context']) {
+    if (JSON.stringify(good[kind] ?? null) !== JSON.stringify(bad[kind] ?? null)) {
+      differences.push({ kind, good: good[kind] ?? null, bad: bad[kind] ?? null });
+    }
+  }
+  return scrubDeployValue({
+    good: good.id, bad: bad.id, siteId: STAGING_SITE_ID, readOnly: true, differences,
+  });
+}
+
 export function publishWithoutUpload(deploy) {
   if (!deploy || deploy.state === 'error' || deploy.state === 'canceled') return false;
   if (deploy.state === 'ready') return true;
@@ -679,6 +799,41 @@ async function resumeDeploy(deployId) {
   }
 }
 
+async function readJsonGet(path, token) {
+  const response = await stagingRequest('GET', path, token);
+  if (response.status === 401 || response.status === 403) throw fail('auth_required');
+  let body = null;
+  try { body = JSON.parse(response.body.toString('utf8')); } catch { body = null; }
+  return { status: response.status, body };
+}
+
+async function compareDeploys(goodId, badId) {
+  if (!/^[0-9a-f]{24}$/.test(goodId) || !/^[0-9a-f]{24}$/.test(badId) || goodId === badId) throw fail('invalid_deploy_id');
+  const token = await authorize(netlifyCliDir());
+  const load = async (id) => {
+    const deployRes = await readJsonGet(`/api/v1/sites/${STAGING_SITE_ID}/deploys/${id}`, token);
+    if (deployRes.status !== 200 || !deployRes.body || typeof deployRes.body !== 'object') throw fail('inspect_failed');
+    if (deployRes.body.site_id !== STAGING_SITE_ID) throw fail('refusing_site_mismatch');
+    const lists = [];
+    const listStatus = {};
+    for (const path of [`/api/v1/deploys/${id}/functions`, `/api/v1/sites/${STAGING_SITE_ID}/deploys/${id}/functions`]) {
+      const got = await readJsonGet(path, token);
+      listStatus[path] = got.status;
+      if (got.status === 200 && Array.isArray(got.body)) lists.push(got.body);
+    }
+    const filesRes = await readJsonGet(`/api/v1/deploys/${id}/files`, token);
+    listStatus.files = filesRes.status;
+    return snapshotFromResponses({
+      id, deploy: deployRes.body, functionLists: lists, listStatus,
+      fileList: filesRes.status === 200 && Array.isArray(filesRes.body) ? filesRes.body : [],
+    });
+  };
+  const report = compareDeploySnapshots(await load(goodId), await load(badId));
+  mkdirSync(journalDir, { recursive: true });
+  writeJson(resolve(journalDir, `compare-${goodId.slice(0, 8)}-${badId.slice(0, 8)}.json`), report);
+  console.log(JSON.stringify(report, null, 2));
+}
+
 async function inspectDeploy(deployId) {
   if (!/^[0-9a-f]{24}$/.test(deployId)) throw fail('invalid_deploy_id');
   const token = await authorize(netlifyCliDir());
@@ -708,17 +863,22 @@ async function main() {
   const inspectId = inspectIndex >= 0 ? process.argv[inspectIndex + 1] : '';
   const resumeIndex = process.argv.indexOf('--resume-deploy');
   const resumeId = resumeIndex >= 0 ? process.argv[resumeIndex + 1] : '';
+  const compareIndex = process.argv.indexOf('--compare-deploys');
+  const compareGood = compareIndex >= 0 ? process.argv[compareIndex + 1] : '';
+  const compareBad = compareIndex >= 0 ? process.argv[compareIndex + 2] : '';
+  const compareMode = compareIndex >= 0;
   const uploadCheckMode = process.argv.includes('--upload-check');
   const rollback = process.argv.includes('--rollback-approved');
   const publish = process.argv.includes('--publish-approved');
-  const dryRun = process.argv.includes('--dry-run') || (!publish && !uploadCheckMode && !inspectId && !resumeId && !rollback);
-  if ([Boolean(inspectId), Boolean(resumeId), uploadCheckMode, publish, rollback, process.argv.includes('--dry-run')].filter(Boolean).length > 1) throw fail('choose_one_mode');
+  const dryRun = process.argv.includes('--dry-run') || (!publish && !uploadCheckMode && !inspectId && !resumeId && !rollback && !compareMode);
+  if ([Boolean(inspectId), Boolean(resumeId), uploadCheckMode, publish, rollback, compareMode, process.argv.includes('--dry-run')].filter(Boolean).length > 1) throw fail('choose_one_mode');
   assertHeadCommit(root);
   assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL });
   let productionRefused = false;
   try { assertSite({ id: PRODUCTION_SITE_ID, name: 'oi-production', url: 'https://oi-production.netlify.app' }); }
   catch (error) { productionRefused = error.code === 'refusing_production'; }
   if (!productionRefused) throw new Error('production_guard_failed');
+  if (compareMode) return compareDeploys(compareGood, compareBad);
   if (inspectId) return inspectDeploy(inspectId);
   if (resumeId) return resumeDeploy(resumeId);
   if (rollback) return rollbackApproved();

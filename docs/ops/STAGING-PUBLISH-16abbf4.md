@@ -39,6 +39,12 @@ node scripts/artifact-publisher-staging-16abbf4.mjs --resume-deploy 6aefa304e953
 
 Resume is allowed only for a deploy id recorded by an earlier journal from this publisher, and only while that deploy on the staging site is `prepared` or `ready`. A `ready` deploy skips uploads. Once the deploy is ready, resume calls restore once, then records `published: true` and `publishedDeployId` only when the site's `published_deploy.id` equals that deploy. A resume journal without `published: true` can be run again. The upload creates a draft, uploads only the required digests, waits until the deploy is ready, then publishes it. It does not run `netlify deploy`.
 
+Read-only compare of the CLI deploy and the digest deploy. This only sends GET requests and prints route, checksum, runtime, redirect, edge-function, and env-variable-name differences:
+
+```
+node scripts/artifact-publisher-staging-16abbf4.mjs --compare-deploys 6aef3f786cc2af03c2ef1cd0 6aefa304e95393802c4d7b16
+```
+
 When the dry run looks right:
 
 ```

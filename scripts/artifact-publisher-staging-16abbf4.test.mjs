@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apiRoutesOk, assertSite, assertStagingApiPath, checkLocalLookups, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, selectUploadSnapshot, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiRoutesOk, assertSite, assertStagingApiPath, checkLocalLookups, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, scrubDeployValue, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('staging site is the only accepted target', () => {
   assert.deepEqual(assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL }), {
@@ -86,4 +86,50 @@ test('a ready deploy is restored once and confirmed as the published deploy', as
     if (method === 'POST') return { status: 200, body: Buffer.from('{}') };
     return { status: 200, body: Buffer.from(JSON.stringify({ ...site, published_deploy: { id: '6aef9b65877e6e067c751d5b' } })) };
   }, deployId), /deploy_publish_unconfirmed/);
+});
+
+test('compare deploys reports function routes, redirects, and env names without secrets', () => {
+  const goodId = '6aef3f786cc2af03c2ef1cd0';
+  const badId = '6aefa304e95393802c4d7b16';
+  const base = { site_id: STAGING_SITE_ID, state: 'ready', context: 'production', framework: null };
+  const good = snapshotFromResponses({
+    id: goodId,
+    deploy: {
+      ...base,
+      commit_ref: 'cli',
+      available_functions: [{
+        n: 'api', d: 'sha-good', runtime: 'js',
+        ro: [{ pattern: '/health', literal: '/health' }, { pattern: '/api/*', expression: '^\\/api' }],
+        bd: { runtimeAPIVersion: 2, env: { DATABASE_URL: 'postgres://secret', JWT_SECRET: 'nf_should_not_print' } },
+      }],
+      edge_functions: { deno: 'edge-good' },
+      redirects: [{ from: '/api/*', to: '/.netlify/functions/api', status: 200 }],
+    },
+    fileList: [{ path: '/_redirects', sha: 'redirects-good', size: 80 }],
+    listStatus: { files: 200 },
+  });
+  const bad = snapshotFromResponses({
+    id: badId,
+    deploy: {
+      ...base,
+      commit_ref: 'digest',
+      functions_config: { api: { routes: [], build_data: { runtimeAPIVersion: 2, env: ['JWT_SECRET'] } } },
+      available_functions: [{ n: 'api', d: 'sha-good', runtime: 'js', ro: [] }],
+      edge_functions: null,
+    },
+    fileList: [{ path: '_redirects', sha: 'redirects-bad', size: 90 }],
+    listStatus: { files: 200 },
+  });
+  const report = compareDeploySnapshots(good, bad);
+  const api = report.differences.find((item) => item.kind === 'function' && item.name === 'api');
+  assert.equal(api.change, 'different');
+  assert.deepEqual(api.fields.routes.good.map((route) => route.pattern), ['/health', '/api/*']);
+  assert.deepEqual(api.fields.routes.bad, []);
+  assert.deepEqual(api.fields.build_data.good.envVarNames, ['DATABASE_URL', 'JWT_SECRET']);
+  assert.ok(report.differences.some((item) => item.kind === 'redirects'));
+  assert.ok(report.differences.some((item) => item.kind === 'files' && item.good._redirects.sha === 'redirects-good'));
+  const text = JSON.stringify(report);
+  assert.equal(text.includes('postgres://secret'), false);
+  assert.equal(text.includes('nf_should_not_print'), false);
+  assert.equal(scrubDeployValue({ authorization: 'Bearer abc', note: 'Bearer abc' }).note, '[redacted]');
 });
