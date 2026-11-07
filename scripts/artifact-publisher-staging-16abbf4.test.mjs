@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, loginProbeReached, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('staging site is the only accepted target', () => {
   assert.deepEqual(assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL }), {
@@ -114,10 +114,16 @@ test('a preparing deploy is not uploaded, and a function retry keeps the same to
   const readyRouted = { state: 'ready', context: 'production', available_functions: [{ n: 'api', d: 'f1d3799c', ro: routes }] };
   assert.equal(publishBlocker(uploading), 'wait');
   assert.equal(publishBlocker(processing), 'wait');
-  assert.equal(publishBlocker(readyBare), 'routes');
+  assert.equal(publishBlocker(readyBare), 'ok');
   assert.equal(publishBlocker(readyRouted), 'ok');
-  assert.equal(selectPublishSnapshot([uploading, processing, readyBare]), null);
-  assert.equal(selectPublishSnapshot([uploading, processing, readyBare, readyRouted]), readyRouted);
+  assert.equal(selectPublishSnapshot([uploading, processing, readyBare]), readyBare);
+  assert.equal(loginProbeReached(404), false);
+  assert.equal(loginProbeReached(400), true);
+  assert.equal(rollbackTarget().rollbackDeployId, '6aef3f786cc2af03c2ef1cd0');
+  const knownGood = { state: 'ready', context: 'production', available_functions: [{ n: 'api', im: 'stream', ro: [] }] };
+  assert.equal(publishBlocker(knownGood), 'ok');
+  assert.throws(() => assertPublishableDeploy(knownGood, { status: 404 }), /refusing_missing_routes/);
+  assert.equal(assertPublishableDeploy(knownGood, { status: 400 }).probeStatus, 400);
   assert.deepEqual(apiFunctionView(readyRouted)[0].routes, ['/health', '/api/*']);
   const registered = { state: 'ready', context: 'production', available_functions: [{ n: 'api', d: 'sha', im: 'stream', ro: routes }] };
   assert.equal(apiFunctionView(registered)[0].invocationMode, 'stream');
@@ -193,8 +199,8 @@ test('a production deploy includes netlify.toml and refuses any other context', 
   });
   assert.equal(body.draft, false);
   assert.equal(body.files['/netlify.toml'], files.files['/netlify.toml']);
-  const ready = { context: 'production', available_functions: [{ n: 'api', ro: routes }] };
-  assert.equal(assertPublishableDeploy(ready).context, 'production');
-  assert.throws(() => assertPublishableDeploy({ ...ready, context: 'deploy-preview' }), /refusing_deploy_context/);
-  assert.throws(() => assertPublishableDeploy({ context: 'production', available_functions: [{ n: 'api', ro: [] }] }), /refusing_missing_routes/);
+  const ready = { context: 'production', available_functions: [{ n: 'api', im: 'stream', ro: [] }] };
+  assert.equal(assertPublishableDeploy(ready, { status: 400 }).context, 'production');
+  assert.throws(() => assertPublishableDeploy({ ...ready, context: 'deploy-preview' }, { status: 400 }), /refusing_deploy_context/);
+  assert.throws(() => assertPublishableDeploy(ready, { status: 404 }), /refusing_missing_routes/);
 });

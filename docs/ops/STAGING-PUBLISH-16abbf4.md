@@ -37,7 +37,10 @@ Read-only view of the routes on the working deploy. It GETs that deploy and prin
 
 ```
 node scripts/artifact-publisher-staging-16abbf4.mjs --inspect-deploy 6aef3f786cc2af03c2ef1cd0
+node scripts/artifact-publisher-staging-16abbf4.mjs --check-deploy 6aefb27ce9feb6a9e881d55d
 ```
+
+`--check-deploy` only reads. It POSTs `{}` to that deploy's permalink `/api/auth/login` with no token. `publishable` is true when the deploy is `ready`, its context is `production`, and the probe status is not 404. An empty `routes` list matches the known-good deploy. `rollbackDeployId` is always `6aef3f786cc2af03c2ef1cd0`. The journal `commit` is the publisher HEAD, and `packageCommit` stays `16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5`.
 
 Resume waits until the deploy state is `prepared` before any file or function PUT. A 401 that says the deploy is still `preparing` is not an authentication failure. The same in-memory token is reused, and a function retry sends `X-Nf-Retry-Count`. After the deploy is ready, resume calls restore and records success only when `published_deploy.id` is that deploy and its context is `production`.
 

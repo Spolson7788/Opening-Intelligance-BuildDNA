@@ -260,10 +260,38 @@ async function readLiveDeploy(cliDir) {
   if (/production/i.test(account)) throw fail('refusing_production');
   const deploy = site.published_deploy || {};
   return {
-    rollbackDeployId: deploy.id || null,
-    rollbackCommit: deploy.commit_ref || null,
-    rollbackPermalink: deploy.id ? `https://${deploy.id}--oi-video-workflows-staging.netlify.app` : null,
+    liveDeployId: deploy.id || null,
+    livePermalink: deploy.id ? deployPermalink(deploy.id) : null,
+    ...rollbackTarget(),
   };
+}
+
+function probeLoginRoute(deployId) {
+  if (!/^[0-9a-f]{24}$/.test(deployId)) throw fail('invalid_deploy_id');
+  const body = Buffer.from('{}');
+  return new Promise((resolvePromise, reject) => {
+    const req = https.request({
+      host: `${deployId}--oi-video-workflows-staging.netlify.app`,
+      method: 'POST',
+      path: '/api/auth/login',
+      headers: { accept: 'application/json', 'content-type': 'application/json', 'content-length': body.length },
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        const status = res.statusCode || 0;
+        resolvePromise({
+          status,
+          contentType: String(res.headers['content-type'] || ''),
+          reached: loginProbeReached(status),
+          body: sanitize(Buffer.concat(chunks).toString('utf8')).slice(0, 300),
+        });
+      });
+    });
+    req.setTimeout(15000, () => req.destroy(fail('login_probe_failed')));
+    req.on('error', () => reject(fail('login_probe_failed')));
+    req.end(body);
+  });
 }
 
 function remember(byHash, sha, value) {
@@ -344,20 +372,32 @@ export function publishBlocker(deploy) {
   const outstanding = (deploy.required?.length || 0) + (deploy.required_functions?.length || 0);
   if (outstanding > 0) return 'wait';
   if (deploy.context !== 'production') return 'context';
-  const routes = functionRoutePatternsFromDeploy(deploy);
-  if (!routes.includes('/health') || !routes.includes('/api/*')) return 'routes';
   return 'ok';
+}
+
+export function deployPermalink(deployId) {
+  return `https://${deployId}--oi-video-workflows-staging.netlify.app`;
+}
+
+export function loginProbeReached(status) {
+  return Number.isInteger(status) && status > 0 && status !== 404;
+}
+
+export function rollbackTarget() {
+  return {
+    rollbackDeployId: ROLLBACK_DEPLOY_ID,
+    rollbackPermalink: deployPermalink(ROLLBACK_DEPLOY_ID),
+  };
 }
 
 export function selectPublishSnapshot(responses) {
   return responses.find((deploy) => publishBlocker(deploy) === 'ok') || null;
 }
 
-export function assertPublishableDeploy(deploy) {
+export function assertPublishableDeploy(deploy, probe) {
   if (!deploy || deploy.context !== 'production') throw fail('refusing_deploy_context');
-  const routes = functionRoutePatternsFromDeploy(deploy);
-  if (!routes.includes('/health') || !routes.includes('/api/*')) throw fail('refusing_missing_routes');
-  return { context: deploy.context, routes };
+  if (!loginProbeReached(probe?.status)) throw fail('refusing_missing_routes');
+  return { context: deploy.context, probeStatus: probe.status, apiRoutes: functionRoutePatternsFromDeploy(deploy) };
 }
 
 export function digestFiles(directory) {
@@ -689,14 +729,11 @@ async function pollDeploy(token, deployId, ready) {
     if (!ready && diffReady(last)) return last;
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 2000));
   }
-  const apiRoutes = functionRoutePatternsFromDeploy(last || {});
-  const failure = ready && last?.state === 'ready' && (!apiRoutes.includes('/health') || !apiRoutes.includes('/api/*'))
-    ? 'refusing_missing_routes' : 'deploy_poll_timeout';
-  saveFailure(failure, { status: 0, body: Buffer.from(sanitize(JSON.stringify({
-    state: last?.state || null, context: last?.context || null, apiRoutes,
+  saveFailure('deploy_poll_timeout', { status: 0, body: Buffer.from(sanitize(JSON.stringify({
+    state: last?.state || null, context: last?.context || null,
     required: last?.required || [], required_functions: last?.required_functions || [],
   }))) });
-  throw fail(failure);
+  throw fail('deploy_poll_timeout');
 }
 
 async function uploadOutstanding(token, deployId, diff, fileMap, functionMap, journal) {
@@ -783,9 +820,11 @@ async function uploadDigestDeploy(token, fileMap, functionMap, journal) {
     throw fail('deploy_not_ready');
   }
   try {
-    const gate = assertPublishableDeploy(diff);
+    const probe = await probeLoginRoute(deployId);
+    journal.probeStatus = probe.status;
+    const gate = assertPublishableDeploy(diff, probe);
     journal.context = gate.context;
-    journal.routes = gate.routes;
+    journal.routes = gate.apiRoutes;
     const confirmation = await publishReadyDeploy((method, path, body) => stagingRequest(method, path, token, body), deployId);
     journal.published = confirmation.published;
     journal.publishedDeployId = confirmation.publishedDeployId;
@@ -818,11 +857,13 @@ async function runPublish(pin) {
   closeSync(created);
   const journal = {
     state: 'attempt-prepared',
-    commit: PINNED_COMMIT,
+    commit: assertHeadCommit(root),
+    packageCommit: PINNED_COMMIT,
     siteId: STAGING_SITE_ID,
     siteName: STAGING_SITE_NAME,
     packageSha256: pin.packageSha256,
     ...live,
+    ...rollbackTarget(),
     createdAt: new Date().toISOString(),
   };
   writeJson(attemptPath, journal);
@@ -963,7 +1004,9 @@ async function resumeDeploy(deployId) {
       await uploadOutstanding(token, deployId, current, deployFiles(), await bundleFunctions(cliDir), journal);
     }
     current = await pollDeploy(token, deployId, true);
-    const gate = assertPublishableDeploy(current);
+    const probe = await probeLoginRoute(deployId);
+    journal.probeStatus = probe.status;
+    const gate = assertPublishableDeploy(current, probe);
     const confirmation = await publishReadyDeploy((method, path, body) => stagingRequest(method, path, token, body), deployId);
     journal.state = 'ready';
     journal.context = confirmation.context || gate.context;
@@ -1053,9 +1096,80 @@ async function inspectDeploy(deployId) {
   console.log(JSON.stringify(record, null, 2));
 }
 
+async function loadCheckedDeploy(deployId) {
+  if (!/^[0-9a-f]{24}$/.test(deployId)) throw fail('invalid_deploy_id');
+  const token = await authorize(netlifyCliDir());
+  const response = await stagingRequest('GET', `/api/v1/sites/${STAGING_SITE_ID}/deploys/${deployId}`, token);
+  if (response.status === 401 || response.status === 403) throw fail('auth_required');
+  if (response.status !== 200) throw fail('inspect_failed');
+  const deploy = JSON.parse(response.body.toString('utf8'));
+  if (deploy.site_id && deploy.site_id !== STAGING_SITE_ID) throw fail('refusing_site_mismatch');
+  const probe = await probeLoginRoute(deployId);
+  return { token, deploy, probe, publishable: publishBlocker(deploy) === 'ok' && probe.reached === true };
+}
+
+async function publishExisting(deployId) {
+  const readyPath = resolve(journalDir, `publish-ready-${deployId}.json`);
+  if (existsSync(readyPath)) throw fail('attempt_already_recorded');
+  const { token, deploy, probe, publishable } = await loadCheckedDeploy(deployId);
+  if (deploy.context !== 'production') throw fail('refusing_deploy_context');
+  if (publishBlocker(deploy) !== 'ok') throw fail('deploy_not_ready');
+  if (!publishable) throw fail('refusing_missing_routes');
+  mkdirSync(journalDir, { recursive: true });
+  closeSync(openSync(readyPath, 'wx'));
+  const journal = {
+    state: 'publish-ready', deployId, commit: assertHeadCommit(root), packageCommit: PINNED_COMMIT,
+    probeStatus: probe.status, published: false, uploads: [], ...rollbackTarget(), createdAt: new Date().toISOString(),
+  };
+  writeJson(readyPath, journal);
+  try {
+    const confirmation = await publishReadyDeploy((method, path, body) => stagingRequest(method, path, token, body), deployId);
+    journal.state = 'ready';
+    journal.published = confirmation.published;
+    journal.publishedDeployId = confirmation.publishedDeployId;
+    journal.context = confirmation.context;
+    journal.finishedAt = new Date().toISOString();
+    writeJson(readyPath, journal);
+    console.log(JSON.stringify({ state: 'ready', deployId, published: true, publishedDeployId: confirmation.publishedDeployId, context: confirmation.context, rollbackDeployId: ROLLBACK_DEPLOY_ID }, null, 2));
+  } catch (error) {
+    journal.state = 'failed';
+    journal.published = false;
+    journal.failure = error.code || 'deploy_publish_failed';
+    writeJson(readyPath, journal);
+    throw error;
+  }
+}
+
+async function checkDeploy(deployId) {
+  const { deploy, probe, publishable } = await loadCheckedDeploy(deployId);
+  const record = {
+    state: 'check',
+    readsOnly: true,
+    deployId,
+    deployState: deploy.state || null,
+    context: deploy.context || null,
+    apiFunctions: apiFunctionView(deploy),
+    probeStatus: probe.status,
+    probeContentType: probe.contentType,
+    probeReached: probe.reached,
+    publishable,
+    ...rollbackTarget(),
+    commit: assertHeadCommit(root),
+    packageCommit: PINNED_COMMIT,
+  };
+  mkdirSync(journalDir, { recursive: true });
+  writeJson(resolve(journalDir, `check-${deployId}.json`), record);
+  console.log(JSON.stringify(record, null, 2));
+  if (!record.publishable) process.exitCode = 1;
+}
+
 async function main() {
   const inspectIndex = process.argv.indexOf('--inspect-deploy');
   const inspectId = inspectIndex >= 0 ? process.argv[inspectIndex + 1] : '';
+  const checkIndex = process.argv.indexOf('--check-deploy');
+  const checkId = checkIndex >= 0 ? process.argv[checkIndex + 1] : '';
+  const publishReadyIndex = process.argv.indexOf('--publish-ready');
+  const publishReadyId = publishReadyIndex >= 0 ? process.argv[publishReadyIndex + 1] : '';
   const resumeIndex = process.argv.indexOf('--resume-deploy');
   const resumeId = resumeIndex >= 0 ? process.argv[resumeIndex + 1] : '';
   const compareIndex = process.argv.indexOf('--compare-deploys');
@@ -1065,8 +1179,8 @@ async function main() {
   const uploadCheckMode = process.argv.includes('--upload-check');
   const rollback = process.argv.includes('--rollback-approved');
   const publish = process.argv.includes('--publish-approved');
-  const dryRun = process.argv.includes('--dry-run') || (!publish && !uploadCheckMode && !inspectId && !resumeId && !rollback && !compareMode);
-  if ([Boolean(inspectId), Boolean(resumeId), uploadCheckMode, publish, rollback, compareMode, process.argv.includes('--dry-run')].filter(Boolean).length > 1) throw fail('choose_one_mode');
+  const dryRun = process.argv.includes('--dry-run') || (!publish && !uploadCheckMode && !inspectId && !resumeId && !rollback && !compareMode && !checkId && !publishReadyId);
+  if ([Boolean(inspectId), Boolean(checkId), Boolean(publishReadyId), Boolean(resumeId), uploadCheckMode, publish, rollback, compareMode, process.argv.includes('--dry-run')].filter(Boolean).length > 1) throw fail('choose_one_mode');
   assertHeadCommit(root);
   assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL });
   let productionRefused = false;
@@ -1074,6 +1188,8 @@ async function main() {
   catch (error) { productionRefused = error.code === 'refusing_production'; }
   if (!productionRefused) throw new Error('production_guard_failed');
   if (compareMode) return compareDeploys(compareGood, compareBad);
+  if (checkId) return checkDeploy(checkId);
+  if (publishReadyId) return publishExisting(publishReadyId);
   if (inspectId) return inspectDeploy(inspectId);
   if (resumeId) return resumeDeploy(resumeId);
   if (rollback) return rollbackApproved();
@@ -1098,13 +1214,14 @@ async function main() {
     mkdirSync(journalDir, { recursive: true });
     const record = {
       state: 'dry-run',
-      commit: PINNED_COMMIT,
+      commit: assertHeadCommit(root),
+      packageCommit: PINNED_COMMIT,
       siteId: STAGING_SITE_ID,
       siteName: STAGING_SITE_NAME,
       packageState,
       packageSha256,
-      rollbackDeployId: rollback?.rollbackDeployId || null,
-      rollbackPermalink: rollback?.rollbackPermalink || null,
+      ...rollbackTarget(),
+      liveDeployId: rollback?.liveDeployId || null,
       rollbackError,
       productionRefused: true,
       createdAt: new Date().toISOString(),
@@ -1116,7 +1233,7 @@ async function main() {
   }
   const pin = readPin();
   const journal = await runPublish(pin);
-  console.log(JSON.stringify({ state: journal.state, commit: PINNED_COMMIT, siteId: STAGING_SITE_ID, deployId: journal.deployId || null, rollbackDeployId: journal.rollbackDeployId }, null, 2));
+  console.log(JSON.stringify({ state: journal.state, commit: journal.commit, packageCommit: PINNED_COMMIT, siteId: STAGING_SITE_ID, deployId: journal.deployId || null, rollbackDeployId: journal.rollbackDeployId }, null, 2));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
