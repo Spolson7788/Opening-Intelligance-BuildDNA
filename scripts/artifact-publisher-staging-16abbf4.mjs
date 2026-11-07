@@ -40,9 +40,20 @@ export function hashTree(directory, prefix = '') {
   return out;
 }
 
+const PUBLISHER_FILES = new Set([
+  'docs/ops/STAGING-PUBLISH-16abbf4.md',
+  'scripts/artifact-publisher-staging-16abbf4.mjs',
+  'scripts/artifact-publisher-staging-16abbf4.test.mjs',
+  'scripts/build-staging-package-16abbf4.mjs',
+]);
+
 export function assertHeadCommit(repo = root) {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
-  if (head !== PINNED_COMMIT) {
+  if (head === PINNED_COMMIT) return head;
+  const ancestor = spawnSync('git', ['merge-base', '--is-ancestor', PINNED_COMMIT, head], { cwd: repo });
+  const diff = execFileSync('git', ['diff', '--name-only', PINNED_COMMIT, head], { cwd: repo, encoding: 'utf8' })
+    .split('\n').map((line) => line.trim()).filter(Boolean);
+  if (ancestor.status !== 0 || diff.some((path) => !PUBLISHER_FILES.has(path))) {
     const error = new Error('refusing_commit_mismatch');
     error.code = 'refusing_commit_mismatch';
     throw error;

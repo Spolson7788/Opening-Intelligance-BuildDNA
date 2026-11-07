@@ -12,10 +12,12 @@ Build this on the PC that will publish. This environment does not build or uploa
 
 ```
 git fetch origin cursor/roboflow-door-hardware-9550
-git checkout 16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5
+git checkout cursor/roboflow-door-hardware-9550
 node scripts/build-staging-package-16abbf4.mjs
 node scripts/artifact-publisher-staging-16abbf4.mjs --dry-run
 ```
+
+The application tree must be `16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5`. The branch tip may also contain only these publisher files. Any other change is refused.
 
 The build prints `packageSha256`. The dry run writes `dist/staging-publish-journal-16abbf4/publication-dry-run.json` and does not contact Netlify. It should say `package_checksum_matched` and `productionRefused: true`.
 
