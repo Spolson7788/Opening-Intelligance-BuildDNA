@@ -1,0 +1,141 @@
+{
+  "when": "2026-10-23T13:19:06.743Z",
+  "patch": "v3",
+  "note": "Tests are mocked/jsdom — no live writes or database-permission bypass were tested.",
+  "results": [
+    {
+      "id": "A1",
+      "ok": true,
+      "msg": "Actual guard initialization throwing → status=fail; Inspect controls stay disabled; zero-write gate"
+    },
+    {
+      "id": "A2",
+      "ok": true,
+      "msg": "Successful guard init → explicit ready/ok; QA notice present; UI restrictions preserved; writes allowed"
+    },
+    {
+      "id": "B1",
+      "ok": true,
+      "msg": "Guard absent/missing → zero writes; controls default-blocked; no script-onload success path in source"
+    },
+    {
+      "id": "B2",
+      "ok": true,
+      "msg": "Guard pending → zero writes; controls blocked"
+    },
+    {
+      "id": "B3",
+      "ok": true,
+      "msg": "Guard fail status → zero writes; controls stay blocked"
+    },
+    {
+      "id": "C1",
+      "ok": true,
+      "msg": "After upload before photo-record insert gate fail → partial-failure message (not success); upload kept; no auto-delete; no photo insert"
+    },
+    {
+      "id": "C2",
+      "ok": true,
+      "msg": "Failure during second upload → partial-failure message (not success); first photo kept; no auto-delete"
+    },
+    {
+      "id": "D1",
+      "ok": true,
+      "msg": "Successful init+save+photo path (mocked) — inspection insert, upload, photo-record insert"
+    },
+    {
+      "id": "P1",
+      "ok": true,
+      "msg": "Missing signed URL → visible error, no silent hide, no getPublicUrl"
+    },
+    {
+      "id": "P2",
+      "ok": true,
+      "msg": "Rejected createSignedUrl → visible error"
+    },
+    {
+      "id": "P3",
+      "ok": true,
+      "msg": "Image onerror → visible error"
+    },
+    {
+      "id": "P4",
+      "ok": true,
+      "msg": "Successful signed URL → photo shown"
+    },
+    {
+      "id": "S1",
+      "ok": true,
+      "msg": "guard.js present on inspect"
+    },
+    {
+      "id": "S2",
+      "ok": true,
+      "msg": "data-schedule-staging=bound-review on inspect body"
+    },
+    {
+      "id": "S3",
+      "ok": true,
+      "msg": "getPublicUrl count=0 on portal"
+    },
+    {
+      "id": "S4",
+      "ok": true,
+      "msg": "createSignedUrl still present"
+    },
+    {
+      "id": "S5",
+      "ok": true,
+      "msg": "guard.js changed with explicit ready/fail after init try/catch; original restrictions preserved; orig checksum intact"
+    },
+    {
+      "id": "S6",
+      "ok": true,
+      "msg": "no prod Supabase ref"
+    },
+    {
+      "id": "S7",
+      "ok": true,
+      "msg": "staging ref present"
+    },
+    {
+      "id": "S8",
+      "ok": true,
+      "msg": "no secrets introduced"
+    },
+    {
+      "id": "S9",
+      "ok": true,
+      "msg": "original Drop inspect+portal+guard checksums intact (untouched)"
+    },
+    {
+      "id": "S10",
+      "ok": true,
+      "msg": "importer not enabled / bucket not made public (no such toggles in patch)"
+    },
+    {
+      "id": "S11",
+      "ok": true,
+      "msg": "baseline zip SHA-256 intact"
+    },
+    {
+      "id": "S12",
+      "ok": true,
+      "msg": "Save and photo controls start disabled in HTML"
+    },
+    {
+      "id": "S13",
+      "ok": true,
+      "msg": "Inspect does not treat script onload as success; listens for guard ready event"
+    }
+  ],
+  "checksums": {
+    "zip": "5bd7161bb78df9e0b421f9bc0d794d0116b62186ba679a7a3adfa75499afcb64",
+    "orig_inspect": "58449f29c02ca36a2aa218b6c739ab0046bbddd48ea5fb12508cfefc37d9bd94",
+    "orig_portal": "342c6d2203f7468746cce3b6a0ea71aa17932c0be2e4ebc3f6eeed2616e6996a",
+    "orig_guard": "015550c798eaa8261525c6aaa734ddca697b4f769c975a6a0b969890a2e6cc27",
+    "patched_inspect": "5608debf1c7443cd4c030f7d64f4cf74cfe5a67947e37bb6dc6e4736708c0898",
+    "patched_portal": "2c396f10e4aca68d3f1e0c7a7191a35fc39176cccc2271b5954f17ef4ddeb60b",
+    "patched_guard": "b2bef67d0a00b167711ea62fafe1e78db0f643fa9fd2069cd85ea068772fc0bb"
+  }
+}

@@ -1,0 +1,189 @@
+# Staging-only patch v3 vs original Drop deploy 6ad40355d11faef8a0292823
+# Files: inspect.html, portal.html, staging/guard.js
+# NOT DEPLOYED. No credentials/permissions/DB/policy/importer/bucket/production changes.
+#
+--- a/inspect.html	2026-10-23 07:19:42.542735755 -0500
++++ b/inspect.html	2026-10-23 08:18:16.860459726 -0500
+@@ -1,4 +1,4 @@
+-<meta charset="utf-8">
++<!DOCTYPE html><html lang="en"><head><script>window.__OI_STAGING_GUARD__={ready:false,status:"pending"};</script><script src="/staging/guard.js" onerror="(function(g){g.ready=false;g.status='fail';try{window.dispatchEvent(new Event('oi-staging-guard-fail'));}catch(e){}})(window.__OI_STAGING_GUARD__||(window.__OI_STAGING_GUARD__={ready:false,status:'fail'}))"></script><meta charset="utf-8">
+ <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+ <title>Fire Door Inspection — NFPA 80 · Opening Intelligence</title>
+ <link rel="manifest" href="manifest.json">
+@@ -41,8 +41,7 @@
+ .msg{font-size:13px;margin-top:8px}
+ a.link{color:var(--navy);font-weight:700;text-decoration:none}
+ .badge{display:inline-block;background:var(--orange);color:#fff;font-size:11px;font-weight:800;border-radius:999px;padding:2px 9px;letter-spacing:.5px}
+-</style>
+-
++</style></head><body data-schedule-staging="bound-review">
+ <header>
+   <h1>Fire Door Inspection</h1>
+   <p>NFPA 80 · annual swinging-door assembly · Opening Intelligence</p>
+@@ -94,13 +93,13 @@
+     <label style="margin-top:12px;font-weight:600;text-transform:none;color:var(--ink);letter-spacing:0">Notes (optional)</label>
+     <input id="notes" placeholder="Overall notes, corrective actions, etc.">
+     <label style="margin-top:12px;font-weight:600;text-transform:none;color:var(--ink);letter-spacing:0">Photos (optional)</label>
+-    <input id="photos" type="file" accept="image/*" capture="environment" multiple>
++    <input id="photos" type="file" accept="image/*" capture="environment" multiple disabled title="Blocked until staging guard is ready">
+     <div class="hint" id="photomsg"></div>
+   </div>
+ 
+   <div class="card">
+     <div class="result" id="result">Complete the checklist</div>
+-    <button class="btn orange" id="save" style="margin-top:12px">Save inspection record</button>
++    <button class="btn orange" id="save" style="margin-top:12px" disabled title="Blocked until staging guard is ready">Save inspection record</button>
+     <div class="msg hint" id="savemsg"></div>
+   </div>
+ 
+@@ -114,6 +113,22 @@
+ let facility=null;
+ const $=id=>document.getElementById(id);
+ 
++// Staging write gate: #save/#photos stay disabled until guard.js signals ready
++// AFTER successful init (window.__OI_STAGING_GUARD__.status==='ok'). Script onload is NOT success.
++function stagingGuardAllowsWrites(){
++  const g=window.__OI_STAGING_GUARD__;
++  return !!(g&&g.ready===true&&g.status==='ok');
++}
++function applyWriteControlsFromGuard(){
++  const allow=stagingGuardAllowsWrites();
++  const save=$('save'), photos=$('photos');
++  if(save){save.disabled=!allow; if(allow) save.removeAttribute('title'); else save.title='Blocked until staging guard is ready';}
++  if(photos){photos.disabled=!allow; if(allow) photos.removeAttribute('title'); else photos.title='Blocked until staging guard is ready';}
++}
++window.addEventListener('oi-staging-guard-ready',applyWriteControlsFromGuard);
++window.addEventListener('oi-staging-guard-fail',applyWriteControlsFromGuard);
++applyWriteControlsFromGuard();
++
+ // ---- NFPA 80 checklist (swinging door with builders hardware) ----
+ const ITEMS=[
+  {k:'labels', t:'Labels present, visible, and legible', s:'Door and frame fire-rating labels intact and readable.'},
+@@ -216,6 +231,7 @@
+   const r=computeResult();
+   const op=$('opnum').value.trim();
+   const msg=$('savemsg');
++  if(!stagingGuardAllowsWrites()){msg.textContent='Staging guard not ready — save and photo upload blocked.';return;}
+   if(!op){msg.textContent='Enter an opening number first.';return;}
+   if(!r.ready){msg.textContent='Finish every checklist item before saving.';return;}
+   if(!facility){msg.textContent='Sign in and pick a facility to save the record.';return;}
+@@ -227,16 +243,30 @@
+     items,clearances:clr,deficiencies,notes:$('notes').value||null};
+   msg.textContent='Saving…';
+   try{
++    // Recheck immediately before inspection insert
++    if(!stagingGuardAllowsWrites()){msg.textContent='Staging guard not ready — save blocked.';return;}
+     const ins=await sb.from('inspections').insert(row).select().single();
+     if(ins.error){msg.textContent='⚠ '+ins.error.message+(/inspections/.test(ins.error.message)?' — has the inspections table been created?':'');return;}
+-    // optional photos
+-    const files=$('photos').files; let up=0;
+-    for(let i=0;i<files.length;i++){
++    // optional photos: re-check before each upload AND before each photo-record insert; no auto-delete on partial failure
++    const files=$('photos').files; let up=0; let photoPartial=null; const total=files?files.length:0;
++    for(let i=0;i<total;i++){
++      if(!stagingGuardAllowsWrites()){photoPartial='Staging guard not ready — photo upload blocked after '+up+' of '+total+' photo(s) fully recorded.';break;}
+       const path=facility.id+'/'+op+'/insp-'+Date.now()+'-'+i+'.jpg';
+       const u=await sb.storage.from('opening-photos').upload(path,files[i],{contentType:files[i].type||'image/jpeg'});
+-      if(!u.error){up++; await sb.from('opening_photos').insert({facility_id:facility.id,opening_no:op,storage_path:path}).then(()=>{}).catch(()=>{});}
++      if(u.error){photoPartial='Photo upload failed'+(u.error.message?(' ('+u.error.message+')'):'')+' after '+up+' of '+total+' photo(s) fully recorded. Uploaded objects were not deleted.';break;}
++      // Recheck immediately before photo-record insert (upload may have succeeded)
++      if(!stagingGuardAllowsWrites()){photoPartial='Staging guard not ready — photo record insert blocked after upload ('+up+' of '+total+' fully recorded; 1 uploaded object left without DB record). Uploaded objects were not deleted.';break;}
++      try{
++        const ir=await sb.from('opening_photos').insert({facility_id:facility.id,opening_no:op,storage_path:path});
++        if(ir&&ir.error){photoPartial='Photo record insert failed after upload ('+up+' of '+total+' fully recorded). Uploaded objects were not deleted.';break;}
++        up++;
++      }catch(pe){photoPartial='Photo record insert failed after upload ('+up+' of '+total+' fully recorded). Uploaded objects were not deleted.';break;}
++    }
++    if(photoPartial){
++      msg.textContent='⚠ Partial failure: inspection saved for opening '+op+', but '+photoPartial;
++    }else{
++      msg.innerHTML='✓ Inspection saved for opening '+op+' — <b>'+(r.result==='pass'?'PASS':'DEFICIENCIES')+'</b>'+(up?(' · '+up+' photo(s)'):'')+'. <a class="link" href="portal.html">View on dashboard →</a>';
+     }
+-    msg.innerHTML='✓ Inspection saved for opening '+op+' — <b>'+(r.result==='pass'?'PASS':'DEFICIENCIES')+'</b>'+(up?(' · '+up+' photo(s)'):'')+'. <a class="link" href="portal.html">View on dashboard →</a>';
+   }catch(e){msg.textContent='⚠ '+e.message;}
+ });
+ 
+@@ -245,3 +275,4 @@
+ renderItems(); renderClrs(); computeResult(); checkHash(); refresh();
+ if("serviceWorker" in navigator){}
+ </script>
++</body></html>
+
+--- a/portal.html	2026-10-23 07:19:43.798757824 -0500
++++ b/portal.html	2026-10-23 08:18:16.884459745 -0500
+@@ -573,11 +573,21 @@
+   const qrHost=document.createElement('section');document.getElementById('detcard').append(qrHost);
+   dashboardQR.mount(qrHost,{fid:current.id,op:o.opening_no,facility:current.name});
+   function _addPhoto(path){
++    function _photoErr(msg){
++      var sec=document.getElementById('detphotosec');var c=document.getElementById('detphotos');
++      if(!c)return; if(sec)sec.style.display='';
++      var err=document.createElement('div');
++      err.setAttribute('role','alert'); err.className='photo-load-error';
++      err.style.cssText='font-size:13px;color:#8f2020;background:#fbe4e4;border:1px solid #8f202044;border-radius:8px;padding:8px 10px;max-width:100%';
++      err.textContent=msg||'Photo failed to load';
++      c.appendChild(err);
++    }
+     sb.storage.from('opening-photos').createSignedUrl(path,3600).then(function(r){
+       var url=(r&&r.data&&r.data.signedUrl)||null;
+-      if(!url){try{var pu=sb.storage.from('opening-photos').getPublicUrl(path);url=pu&&pu.data&&pu.data.publicUrl;}catch(e){}}
+-      if(url){var sec=document.getElementById('detphotosec');var c=document.getElementById('detphotos');if(c){if(sec)sec.style.display='';var img=document.createElement('img');img.src=url;img.loading='lazy';img.style.cssText='width:104px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer';img.title='Open full size';img.onclick=function(){window.open(url,'_blank');};img.onerror=function(){img.remove();if(c&&!c.children.length&&sec)sec.style.display='none';};c.appendChild(img);}}
+-    }).catch(function(){});
++      if(!url){_photoErr('Signed URL unavailable for this photo.');return;}
++      var sec=document.getElementById('detphotosec');var c=document.getElementById('detphotos');
++      if(c){if(sec)sec.style.display='';var img=document.createElement('img');img.src=url;img.loading='lazy';img.style.cssText='width:104px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer';img.title='Open full size';img.onclick=function(){window.open(url,'_blank');};img.onerror=function(){img.remove();_photoErr('Photo failed to load from signed URL.');};c.appendChild(img);}
++    }).catch(function(){_photoErr('Could not create signed URL for this photo.');});
+   }
+   // ── SERVICE RECORD · added 2026-09-06 ────────────────────────────────
+   // What was reported, what was done, what remains open. Repeat service is
+
+--- a/staging/guard.js	2026-10-23 07:19:44.046762184 -0500
++++ b/staging/guard.js	2026-10-23 08:17:50.132442204 -0500
+@@ -2,6 +2,23 @@
+ (() => {
+   const selector = '#addFacBtn,#createFacBtn,#vendorFacBtn,#capbtn,#caplibbtn,#photo,#photolib,#addmore,[onclick*="identifyFrames("],[onclick*="visionFocus("],[onclick*="sendToPurchasing("],[onclick*="sendLogToPurchasing("]';
+   const message = 'Unavailable in schedule QA staging';
++  // Explicit readiness API for Inspect write gate. Script load alone is NOT success —
++  // ready/ok is set only after start() finishes applying restrictions successfully.
++  const api = (window.__OI_STAGING_GUARD__ = window.__OI_STAGING_GUARD__ || {});
++  api.ready = false;
++  api.status = 'pending';
++  function signalReady() {
++    api.ready = true;
++    api.status = 'ok';
++    try { delete api.error; } catch (e) {}
++    try { window.dispatchEvent(new Event('oi-staging-guard-ready')); } catch (e) {}
++  }
++  function signalFail(err) {
++    api.ready = false;
++    api.status = 'fail';
++    try { api.error = err && (err.message || String(err)); } catch (e) {}
++    try { window.dispatchEvent(new Event('oi-staging-guard-fail')); } catch (e) {}
++  }
+   function disable() {
+     document.querySelectorAll(selector).forEach(el => {
+       if (!el.disabled) el.disabled = true;
+@@ -13,12 +30,17 @@
+     if (event.target.closest?.(selector)) { event.preventDefault(); event.stopImmediatePropagation(); }
+   }, true);
+   function start() {
+-    const notice = document.createElement('aside');
+-    notice.id = 'stagingNotice'; notice.setAttribute('role', 'note');
+-    notice.style.cssText = 'padding:12px;background:#fff3cd;color:#332701;font:14px sans-serif';
+-    notice.textContent = 'Schedule QA staging — private test environment; schedule import disabled. Use only the assigned QA facility. Facility creation, photo recognition and purchasing messages are unavailable. Schedule specifications remain separate from field-verified identity.';
+-    document.body.prepend(notice); disable();
+-    new MutationObserver(disable).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','onclick','id']});
++    try {
++      const notice = document.createElement('aside');
++      notice.id = 'stagingNotice'; notice.setAttribute('role', 'note');
++      notice.style.cssText = 'padding:12px;background:#fff3cd;color:#332701;font:14px sans-serif';
++      notice.textContent = 'Schedule QA staging — private test environment; schedule import disabled. Use only the assigned QA facility. Facility creation, photo recognition and purchasing messages are unavailable. Schedule specifications remain separate from field-verified identity.';
++      document.body.prepend(notice); disable();
++      new MutationObserver(disable).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','onclick','id']});
++      signalReady();
++    } catch (err) {
++      signalFail(err);
++    }
+   }
+   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, {once:true}); else start();
+ })();
