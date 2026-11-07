@@ -18,7 +18,15 @@ const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r4');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r5');
+const resumePath = resolve(journalDir, 'resume-attempt.json');
+const PRIOR_JOURNALS = [
+  'dist/staging-publish-journal-16abbf4/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r2/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r3/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r4/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r5/publication-attempt.json',
+];
 const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
 const dryRunPath = resolve(journalDir, 'publication-dry-run.json');
@@ -302,6 +310,17 @@ async function bundleFunctions(cliDir) {
   return { functions, byHash, tmp };
 }
 
+export function diffReady(deploy) {
+  if (!deploy || deploy.state === 'error' || deploy.state === 'canceled') return false;
+  const required = Array.isArray(deploy.required) ? deploy.required : [];
+  const functions = Array.isArray(deploy.required_functions) ? deploy.required_functions : [];
+  return deploy.state === 'prepared' || required.length > 0 || functions.length > 0;
+}
+
+export function selectUploadSnapshot(responses) {
+  return responses.find((deploy) => diffReady(deploy)) || null;
+}
+
 async function pollDeploy(token, deployId, ready) {
   const deadline = Date.now() + 10 * 60 * 1000;
   let last = null;
@@ -317,11 +336,9 @@ async function pollDeploy(token, deployId, ready) {
       saveFailure('deploy_not_ready', response);
       throw fail('deploy_not_ready');
     }
-    const filesListed = Array.isArray(last.required);
-    const functionsListed = !last.required_functions || Array.isArray(last.required_functions);
     const outstanding = (last.required?.length || 0) + (last.required_functions?.length || 0);
     if (ready && last.state === 'ready' && outstanding === 0) return last;
-    if (!ready && filesListed && functionsListed && (last.state === 'prepared' || (last.state === 'uploading' && outstanding > 0) || last.state === 'uploaded')) return last;
+    if (!ready && diffReady(last)) return last;
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 2000));
   }
   saveFailure('deploy_poll_timeout', { status: 0, body: Buffer.from(sanitize(JSON.stringify({
@@ -330,28 +347,12 @@ async function pollDeploy(token, deployId, ready) {
   throw fail('deploy_poll_timeout');
 }
 
-async function uploadDigestDeploy(token, fileMap, functionMap, journal) {
-  const created = await stagingRequest('POST', `/api/v1/sites/${STAGING_SITE_ID}/deploys?title=${encodeURIComponent(`staging ${PINNED_COMMIT}`)}`, token, JSON.stringify({
-    files: fileMap.files, functions: functionMap.functions, draft: true, async: true,
-  }));
-  if (created.status === 401 || created.status === 403) throw fail('auth_required');
-  if (created.status !== 200 && created.status !== 201) {
-    saveFailure('deploy_create_failed', created);
-    throw fail('deploy_create_failed');
-  }
-  const deploy = JSON.parse(created.body.toString('utf8'));
-  if (deploy.site_id && deploy.site_id !== STAGING_SITE_ID) throw fail('refusing_site_mismatch');
-  const deployId = deploy.id;
-  journal.deployId = deployId;
-  journal.state = 'response-received';
-  writeJson(attemptPath, journal);
-  let diff = deploy;
-  if (!Array.isArray(diff.required)) diff = await pollDeploy(token, deployId, false);
-  journal.uploads = [];
+async function uploadOutstanding(token, deployId, diff, fileMap, functionMap, journal) {
+  journal.uploads = journal.uploads || [];
   const put = async (branch, sha, requestPath, bytes, contentType) => {
     const uploaded = await stagingRequest(requestPath.method, requestPath.path, token, bytes, contentType);
     journal.uploads.push({ branch, sha, path: requestPath.path.split('?')[0], status: uploaded.status, bytes: bytes.length });
-    writeJson(attemptPath, journal);
+    writeJson(journal.attemptPath || attemptPath, journal);
     if (uploaded.status < 200 || uploaded.status >= 300) {
       saveFailure('deploy_upload_failed', uploaded, { branch, missingHash: sha });
       throw fail('deploy_upload_failed');
@@ -374,6 +375,26 @@ async function uploadDigestDeploy(token, fileMap, functionMap, journal) {
       await put('functions', sha, { method: 'PUT', path: uploadPath }, bytes, 'application/zip');
     }
   }
+}
+
+async function uploadDigestDeploy(token, fileMap, functionMap, journal) {
+  const created = await stagingRequest('POST', `/api/v1/sites/${STAGING_SITE_ID}/deploys?title=${encodeURIComponent(`staging ${PINNED_COMMIT}`)}`, token, JSON.stringify({
+    files: fileMap.files, functions: functionMap.functions, draft: true, async: true,
+  }));
+  if (created.status === 401 || created.status === 403) throw fail('auth_required');
+  if (created.status !== 200 && created.status !== 201) {
+    saveFailure('deploy_create_failed', created);
+    throw fail('deploy_create_failed');
+  }
+  const deploy = JSON.parse(created.body.toString('utf8'));
+  if (deploy.site_id && deploy.site_id !== STAGING_SITE_ID) throw fail('refusing_site_mismatch');
+  const deployId = deploy.id;
+  journal.deployId = deployId;
+  journal.state = 'response-received';
+  writeJson(attemptPath, journal);
+  let diff = deploy;
+  if (!diffReady(diff)) diff = await pollDeploy(token, deployId, false);
+  await uploadOutstanding(token, deployId, diff, fileMap, functionMap, journal);
   const ready = await pollDeploy(token, deployId, true);
   if (ready.state !== 'ready') {
     saveFailure('deploy_not_ready', { status: 0, body: Buffer.from(sanitize(JSON.stringify({ state: ready.state }))) });
@@ -465,6 +486,63 @@ async function uploadCheck() {
   if (missing.length) process.exitCode = 1;
 }
 
+function recordedDeployIds() {
+  const ids = new Set();
+  for (const rel of PRIOR_JOURNALS) {
+    const path = resolve(root, rel);
+    if (!existsSync(path)) continue;
+    try {
+      const journal = JSON.parse(readFileSync(path, 'utf8'));
+      if (typeof journal.deployId === 'string' && /^[0-9a-f]{24}$/.test(journal.deployId)) ids.add(journal.deployId);
+    } catch { /* an unreadable journal does not authorize a resume */ }
+  }
+  return ids;
+}
+
+async function resumeDeploy(deployId) {
+  if (!/^[0-9a-f]{24}$/.test(deployId)) throw fail('invalid_deploy_id');
+  if (!recordedDeployIds().has(deployId)) throw fail('resume_deploy_unknown');
+  if (existsSync(resumePath)) throw fail('attempt_already_recorded');
+  const pin = readPin();
+  const token = await authorize(netlifyCliDir());
+  const response = await stagingRequest('GET', `/api/v1/sites/${STAGING_SITE_ID}/deploys/${deployId}`, token);
+  if (response.status === 401 || response.status === 403) throw fail('auth_required');
+  if (response.status !== 200) {
+    saveFailure('inspect_failed', response);
+    throw fail('inspect_failed');
+  }
+  const deploy = JSON.parse(response.body.toString('utf8'));
+  if (deploy.site_id && deploy.site_id !== STAGING_SITE_ID) throw fail('refusing_site_mismatch');
+  if (deploy.state !== 'prepared') throw fail('resume_not_prepared');
+  mkdirSync(journalDir, { recursive: true });
+  closeSync(openSync(resumePath, 'wx'));
+  const journal = {
+    state: 'resume-prepared', attemptPath: resumePath, deployId, commit: PINNED_COMMIT, siteId: STAGING_SITE_ID,
+    packageSha256: pin.packageSha256, required: deploy.required || [], required_functions: deploy.required_functions || [],
+    uploads: [], createdAt: new Date().toISOString(),
+  };
+  writeJson(resumePath, journal);
+  try {
+    const cliDir = netlifyCliDir();
+    await uploadOutstanding(token, deployId, deploy, digestFiles(resolve(packageDir, 'publish')), await bundleFunctions(cliDir), journal);
+    await pollDeploy(token, deployId, true);
+    const published = await stagingRequest('POST', `/api/v1/sites/${STAGING_SITE_ID}/deploys/${deployId}/restore`, token, '{}');
+    if (published.status < 200 || published.status >= 300) {
+      saveFailure('deploy_publish_failed', published);
+      throw fail('deploy_publish_failed');
+    }
+    journal.state = 'ready';
+    journal.finishedAt = new Date().toISOString();
+    writeJson(resumePath, journal);
+    console.log(JSON.stringify({ state: 'ready', deployId, siteId: STAGING_SITE_ID, uploads: journal.uploads.length }, null, 2));
+  } catch (error) {
+    journal.state = 'failed';
+    journal.failure = error.code || 'deploy_upload_failed';
+    writeJson(resumePath, journal);
+    throw error;
+  }
+}
+
 async function inspectDeploy(deployId) {
   if (!/^[0-9a-f]{24}$/.test(deployId)) throw fail('invalid_deploy_id');
   const token = await authorize(netlifyCliDir());
@@ -492,10 +570,12 @@ async function inspectDeploy(deployId) {
 async function main() {
   const inspectIndex = process.argv.indexOf('--inspect-deploy');
   const inspectId = inspectIndex >= 0 ? process.argv[inspectIndex + 1] : '';
+  const resumeIndex = process.argv.indexOf('--resume-deploy');
+  const resumeId = resumeIndex >= 0 ? process.argv[resumeIndex + 1] : '';
   const uploadCheckMode = process.argv.includes('--upload-check');
   const publish = process.argv.includes('--publish-approved');
-  const dryRun = process.argv.includes('--dry-run') || (!publish && !uploadCheckMode && !inspectId);
-  if ([Boolean(inspectId), uploadCheckMode, publish, process.argv.includes('--dry-run')].filter(Boolean).length > 1) throw fail('choose_one_mode');
+  const dryRun = process.argv.includes('--dry-run') || (!publish && !uploadCheckMode && !inspectId && !resumeId);
+  if ([Boolean(inspectId), Boolean(resumeId), uploadCheckMode, publish, process.argv.includes('--dry-run')].filter(Boolean).length > 1) throw fail('choose_one_mode');
   assertHeadCommit(root);
   assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL });
   let productionRefused = false;
@@ -503,6 +583,7 @@ async function main() {
   catch (error) { productionRefused = error.code === 'refusing_production'; }
   if (!productionRefused) throw new Error('production_guard_failed');
   if (inspectId) return inspectDeploy(inspectId);
+  if (resumeId) return resumeDeploy(resumeId);
   if (uploadCheckMode) return uploadCheck();
 
   if (!publish) {

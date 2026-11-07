@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assertSite, assertStagingApiPath, checkLocalLookups, fileDigestKey, fileUploadPath, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { assertSite, assertStagingApiPath, checkLocalLookups, diffReady, fileDigestKey, fileUploadPath, selectUploadSnapshot, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('staging site is the only accepted target', () => {
   assert.deepEqual(assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL }), {
@@ -28,6 +28,10 @@ test('required file sha1 and function sha256 both resolve', () => {
   assert.equal(fileDigestKey('index.html'), '/index.html');
   assert.equal(fileDigestKey('/field/index.html'), '/field/index.html');
   assert.equal(fileUploadPath('abc', '/index.html'), '/api/v1/deploys/abc/files/index.html');
+  assert.equal(diffReady({ state: 'uploading', required: [], required_functions: [] }), false);
+  const prepared = { state: 'prepared', required: ['646641cc', '4b841fe6', '34618751', '5ae24228'], required_functions: [] };
+  assert.equal(diffReady(prepared), true);
+  assert.equal(selectUploadSnapshot([{ state: 'preparing', required: [], required_functions: [] }, prepared]), prepared);
   assert.equal(fileMap.byHash['index.html'], undefined);
   assert.equal(functionMap.byHash.api, undefined);
   const missing = checkLocalLookups(
