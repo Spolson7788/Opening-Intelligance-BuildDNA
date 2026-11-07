@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apiRoutesOk, assertSite, assertStagingApiPath, checkLocalLookups, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, selectUploadSnapshot, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiRoutesOk, assertSite, assertStagingApiPath, checkLocalLookups, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, publishWithoutUpload, selectUploadSnapshot, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('staging site is the only accepted target', () => {
   assert.deepEqual(assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL }), {
@@ -32,6 +32,11 @@ test('required file sha1 and function sha256 both resolve', () => {
   const prepared = { state: 'prepared', required: ['646641cc', '4b841fe6', '34618751', '5ae24228'], required_functions: [] };
   assert.equal(diffReady(prepared), true);
   assert.equal(selectUploadSnapshot([{ state: 'preparing', required: [], required_functions: [] }, prepared]), prepared);
+  const deduped = { state: 'ready', required: [], required_functions: [] };
+  assert.equal(publishWithoutUpload(deduped), true);
+  assert.equal(publishWithoutUpload({ state: 'prepared', required: [], required_functions: [] }), true);
+  assert.equal(publishWithoutUpload(prepared), false);
+  assert.equal(selectUploadSnapshot([{ state: 'preparing', required: [] }, deduped]), deduped);
   const api = functionConfigFromBuild({ name: 'api', routes: ['/health', '/api/*'], displayName: 'API', generator: '@netlify/functions', schedule: '0 0 * * *' });
   assert.deepEqual(api.routes, ['/health', '/api/*']);
   assert.equal(api.display_name, 'API');

@@ -34,10 +34,10 @@ node scripts/artifact-publisher-staging-16abbf4.mjs --dry-run
 The Netlify CLI install is loaded from `C:\Users\spols\Documents\Codex\2026-10-23\task\.local-netlify-cli\node_modules\netlify-cli` (v27.14.2). Pass `--netlify-cli-dir` only if that folder moved. The publisher uses that install's dev-utils to confirm the logged-in account and to take an in-memory token. The token is not printed or written. Requests go only to `api.netlify.com` for site `b64bf33c-a131-4ae2-b2b0-9aec16e9f77b` and for the deploy id this run creates. `auth_required` and `auth_account_mismatch` are login problems. `deploy_create_failed`, `deploy_upload_failed`, `deploy_poll_failed`, `deploy_not_ready`, and `deploy_publish_failed` are upload problems. `failure.json` records `branch` (`files` or `functions`) and `missingHash` when a required digest does not resolve. File digests are SHA-1 and `required` returns those SHA-1 values. Function digests are SHA-256 and `required_functions` returns those SHA-256 values. The attempt file is `dist/staging-publish-journal-16abbf4-r6/publication-attempt.json`. An empty `required` list is not uploaded. The script waits until `required` or `required_functions` is populated, or the state is `prepared`, uploads every listed hash, then waits until ready. To finish the unpublished deploy `6aef9b65877e6e067c751d5b` instead of creating another one:
 
 ```
-node scripts/artifact-publisher-staging-16abbf4.mjs --resume-deploy 6aef9b65877e6e067c751d5b
+node scripts/artifact-publisher-staging-16abbf4.mjs --resume-deploy 6aefa304e95393802c4d7b16
 ```
 
-Resume is allowed only for a deploy id recorded by an earlier journal from this publisher, and only while that deploy on the staging site is still `prepared`. The upload creates a draft, uploads only the required digests, waits until the deploy is ready, then publishes it. It does not run `netlify deploy`.
+Resume is allowed only for a deploy id recorded by an earlier journal from this publisher, and only while that deploy on the staging site is `prepared` or `ready`. A `ready` deploy, or a `prepared` deploy with empty `required` and `required_functions`, is published with no uploads. The upload creates a draft, uploads only the required digests, waits until the deploy is ready, then publishes it. It does not run `netlify deploy`.
 
 When the dry run looks right:
 

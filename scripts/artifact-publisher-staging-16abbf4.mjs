@@ -347,8 +347,17 @@ export function apiRoutesOk(functionMap) {
   return patterns.includes('/health') && patterns.includes('/api/*');
 }
 
+export function publishWithoutUpload(deploy) {
+  if (!deploy || deploy.state === 'error' || deploy.state === 'canceled') return false;
+  if (deploy.state === 'ready') return true;
+  const required = Array.isArray(deploy.required) ? deploy.required : [];
+  const functions = Array.isArray(deploy.required_functions) ? deploy.required_functions : [];
+  return deploy.state === 'prepared' && required.length === 0 && functions.length === 0;
+}
+
 export function diffReady(deploy) {
   if (!deploy || deploy.state === 'error' || deploy.state === 'canceled') return false;
+  if (publishWithoutUpload(deploy)) return true;
   const required = Array.isArray(deploy.required) ? deploy.required : [];
   const functions = Array.isArray(deploy.required_functions) ? deploy.required_functions : [];
   return deploy.state === 'prepared' || required.length > 0 || functions.length > 0;
@@ -433,11 +442,13 @@ async function uploadDigestDeploy(token, fileMap, functionMap, journal) {
   writeJson(attemptPath, journal);
   let diff = deploy;
   if (!diffReady(diff)) diff = await pollDeploy(token, deployId, false);
-  await uploadOutstanding(token, deployId, diff, fileMap, functionMap, journal);
-  const ready = await pollDeploy(token, deployId, true);
-  if (ready.state !== 'ready') {
-    saveFailure('deploy_not_ready', { status: 0, body: Buffer.from(sanitize(JSON.stringify({ state: ready.state }))) });
-    throw fail('deploy_not_ready');
+  if (!publishWithoutUpload(diff)) {
+    await uploadOutstanding(token, deployId, diff, fileMap, functionMap, journal);
+    const ready = await pollDeploy(token, deployId, true);
+    if (ready.state !== 'ready') {
+      saveFailure('deploy_not_ready', { status: 0, body: Buffer.from(sanitize(JSON.stringify({ state: ready.state }))) });
+      throw fail('deploy_not_ready');
+    }
   }
   const published = await stagingRequest('POST', `/api/v1/sites/${STAGING_SITE_ID}/deploys/${deployId}/restore`, token, '{}');
   if (published.status !== 200 && published.status !== 201) {
@@ -586,7 +597,7 @@ async function resumeDeploy(deployId) {
   }
   const deploy = JSON.parse(response.body.toString('utf8'));
   if (deploy.site_id && deploy.site_id !== STAGING_SITE_ID) throw fail('refusing_site_mismatch');
-  if (deploy.state !== 'prepared') throw fail('resume_not_prepared');
+  if (deploy.state !== 'prepared' && deploy.state !== 'ready') throw fail('resume_not_prepared');
   mkdirSync(journalDir, { recursive: true });
   closeSync(openSync(resumePath, 'wx'));
   const journal = {
@@ -597,8 +608,10 @@ async function resumeDeploy(deployId) {
   writeJson(resumePath, journal);
   try {
     const cliDir = netlifyCliDir();
-    await uploadOutstanding(token, deployId, deploy, digestFiles(resolve(packageDir, 'publish')), await bundleFunctions(cliDir), journal);
-    await pollDeploy(token, deployId, true);
+    if (!publishWithoutUpload(deploy)) {
+      await uploadOutstanding(token, deployId, deploy, digestFiles(resolve(packageDir, 'publish')), await bundleFunctions(cliDir), journal);
+      await pollDeploy(token, deployId, true);
+    }
     const published = await stagingRequest('POST', `/api/v1/sites/${STAGING_SITE_ID}/deploys/${deployId}/restore`, token, '{}');
     if (published.status < 200 || published.status >= 300) {
       saveFailure('deploy_publish_failed', published);
