@@ -4,14 +4,17 @@
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, writeFileSync, closeSync } from 'node:fs';
+import https from 'node:https';
 import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 export const PINNED_COMMIT = '16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5';
 export const STAGING_SITE_ID = 'b64bf33c-a131-4ae2-b2b0-9aec16e9f77b';
 export const STAGING_SITE_NAME = 'oi-video-workflows-staging';
 export const STAGING_URL = 'https://oi-video-workflows-staging.netlify.app';
 export const PRODUCTION_SITE_ID = 'b4e0fc62-86ce-4a26-9ebf-26d7386f4b01';
+export const DEFAULT_NETLIFY_CLI_DIR = 'C:\\Users\\spols\\Documents\\Codex\\2026-10-23\\task\\.local-netlify-cli\\node_modules\\netlify-cli';
+const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
@@ -113,36 +116,85 @@ function readPin() {
   return { packageSha256, fileCount: Object.keys(files).length };
 }
 
-function netlifyBin() {
-  return process.platform === 'win32' ? 'netlify.cmd' : 'netlify';
+function fail(code) {
+  const error = new Error(code);
+  error.code = code;
+  return error;
 }
 
-function runNetlify(args) {
-  return spawnSync(netlifyBin(), args, {
-    cwd: root,
-    encoding: 'utf8',
-    shell: process.platform === 'win32',
-    windowsHide: true,
-    timeout: 60000,
+export function netlifyCliDir(argv = process.argv) {
+  const index = argv.indexOf('--netlify-cli-dir');
+  return index >= 0 && argv[index + 1] ? argv[index + 1] : DEFAULT_NETLIFY_CLI_DIR;
+}
+
+export function assertStagingApiPath(path) {
+  const allowed = `/api/v1/sites/${STAGING_SITE_ID}`;
+  if (path !== allowed && !path.startsWith(`${allowed}/`) && !path.startsWith(`${allowed}?`)) throw fail('refusing_site_mismatch');
+  return path;
+}
+
+function devUtilsPath(cliDir) {
+  const candidates = [
+    resolve(cliDir, 'node_modules/@netlify/dev-utils/dist/main.js'),
+    resolve(cliDir, '../@netlify/dev-utils/dist/main.js'),
+  ];
+  return candidates.find((path) => existsSync(path)) || null;
+}
+
+async function loadDevUtils(cliDir) {
+  const pkgPath = resolve(cliDir, 'package.json');
+  if (!existsSync(pkgPath) || !existsSync(resolve(cliDir, 'bin/run.js'))) throw fail('netlify_cli_not_found');
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+  if (pkg.name !== 'netlify-cli' || pkg.version !== NETLIFY_CLI_VERSION) throw fail('netlify_cli_version_mismatch');
+  const utils = devUtilsPath(cliDir);
+  if (!utils) throw fail('netlify_dev_utils_not_found');
+  return import(pathToFileURL(utils).href);
+}
+
+async function authorize(cliDir) {
+  const { getGlobalConfigStore, getAPIToken } = await loadDevUtils(cliDir);
+  const store = await getGlobalConfigStore();
+  const userId = store.get('userId');
+  if (typeof userId !== 'string' || !userId.trim()) throw fail('auth_required');
+  const token = await getAPIToken();
+  if (typeof token !== 'string' || token.length < 8) throw fail('auth_required');
+  return token;
+}
+
+function stagingRequest(method, path, token, body) {
+  assertStagingApiPath(path);
+  return new Promise((resolvePromise, reject) => {
+    const req = https.request({
+      host: 'api.netlify.com',
+      method,
+      path,
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept: 'application/json',
+        ...(body ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } : {}),
+      },
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => resolvePromise({ status: res.statusCode || 0, body: Buffer.concat(chunks) }));
+    });
+    req.on('error', () => reject(fail('site_lookup_failed')));
+    req.end(body);
   });
 }
 
-function readLiveDeploy() {
-  // Uses the Netlify CLI's existing login. The token is never read or printed.
-  const result = runNetlify(['api', 'getSite', '--data', JSON.stringify({ site_id: STAGING_SITE_ID })]);
-  if (result.error || result.status !== 0) {
-    const error = new Error(result.error?.code === 'ENOENT' ? 'netlify_cli_not_found' : 'cli_login_required');
-    error.code = error.message;
-    throw error;
-  }
+async function readLiveDeploy(cliDir) {
+  const token = await authorize(cliDir);
+  const response = await stagingRequest('GET', `/api/v1/sites/${STAGING_SITE_ID}`, token);
+  if (response.status === 401 || response.status === 403) throw fail('auth_required');
+  if (response.status === 404) throw fail('auth_account_mismatch');
+  if (response.status !== 200) throw fail('site_lookup_failed');
   let site;
-  try { site = JSON.parse(result.stdout); }
-  catch {
-    const error = new Error('site_lookup_failed');
-    error.code = 'site_lookup_failed';
-    throw error;
-  }
+  try { site = JSON.parse(response.body.toString('utf8')); }
+  catch { throw fail('site_lookup_failed'); }
   assertSite({ id: site.id, name: site.name, url: site.ssl_url || site.url });
+  const account = `${site.account_slug || ''} ${site.account_name || ''}`;
+  if (/production/i.test(account)) throw fail('refusing_production');
   const deploy = site.published_deploy || {};
   return {
     rollbackDeployId: deploy.id || null,
@@ -151,11 +203,21 @@ function readLiveDeploy() {
   };
 }
 
+function runDeployCommand(cliDir) {
+  const bin = resolve(cliDir, 'bin/run.js');
+  if (!existsSync(bin)) throw fail('netlify_cli_not_found');
+  return spawnSync(process.execPath, [bin, 'deploy', '--prod', '--site', STAGING_SITE_ID,
+    '--dir', resolve(packageDir, 'publish'), '--functions', resolve(root, 'netlify/functions'),
+    '--message', `staging ${PINNED_COMMIT}`], {
+    cwd: root, encoding: 'utf8', windowsHide: true, timeout: 600000,
+  });
+}
+
 function writeJson(path, value) {
   writeFileSync(path, JSON.stringify(value, null, 2) + '\n');
 }
 
-function runPublish(pin) {
+async function runPublish(pin) {
   mkdirSync(journalDir, { recursive: true });
   if (existsSync(attemptPath)) {
     const error = new Error('attempt_already_recorded');
@@ -168,7 +230,7 @@ function runPublish(pin) {
     error.code = 'working_tree_dirty';
     throw error;
   }
-  const live = readLiveDeploy();
+  const live = await readLiveDeploy(netlifyCliDir());
   const created = openSync(attemptPath, 'wx');
   closeSync(created);
   const journal = {
@@ -183,9 +245,7 @@ function runPublish(pin) {
   writeJson(attemptPath, journal);
   return (async () => {
     try {
-      const cli = runNetlify(['deploy', '--prod', '--site', STAGING_SITE_ID,
-        '--dir', resolve(packageDir, 'publish'), '--functions', resolve(root, 'netlify/functions'),
-        '--message', `staging ${PINNED_COMMIT}`]);
+      const cli = runDeployCommand(netlifyCliDir());
       journal.state = 'response-received';
       journal.cliStatus = cli.status;
       writeJson(attemptPath, journal);
@@ -243,7 +303,7 @@ async function main() {
     let rollback = null;
     let rollbackError = null;
     if (packageState === 'package_checksum_matched' || packageState === 'package_not_built') {
-      try { rollback = readLiveDeploy(); }
+      try { rollback = await readLiveDeploy(netlifyCliDir()); }
       catch (error) { rollbackError = error.code || 'cli_login_required'; }
     }
     mkdirSync(journalDir, { recursive: true });

@@ -19,14 +19,18 @@ node scripts/artifact-publisher-staging-16abbf4.mjs --dry-run
 
 The application tree must be `16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5`. The branch tip may also contain only these publisher files. Any other change is refused.
 
-The build prints `packageSha256`. The dry run writes `dist/staging-publish-journal-16abbf4/publication-dry-run.json` and does not contact Netlify. It should say `package_checksum_matched` and `productionRefused: true`.
+The build prints `packageSha256`. Do not rebuild if that value is still `ab779e93cffb8f8958dbf95409dcad60891ae3e96281a2ad3809494b40bb3c2d`. The dry run writes `dist/staging-publish-journal-16abbf4/publication-dry-run.json`. It should say `package_checksum_matched`, `productionRefused: true`, and a `rollbackDeployId`. It does not upload.
 
-When that dry run looks right, and only then:
+```
+node scripts/artifact-publisher-staging-16abbf4.mjs --dry-run
+```
+
+The Netlify CLI is loaded from `C:\Users\spols\Documents\Codex\2026-10-23\task\.local-netlify-cli\node_modules\netlify-cli` (v27.14.2). Pass `--netlify-cli-dir` only if that folder moved. The publisher uses that install's dev-utils to confirm the logged-in account and to take an in-memory token. The token is not printed or written. Site lookup goes only to `api.netlify.com` for site `b64bf33c-a131-4ae2-b2b0-9aec16e9f77b`. `auth_required` and `auth_account_mismatch` are login problems. `deploy_command_failed` is the upload command. The attempt journal is `dist/staging-publish-journal-16abbf4/publication-attempt.json`.
+
+When the dry run looks right:
 
 ```
 node scripts/artifact-publisher-staging-16abbf4.mjs --publish-approved
 ```
-
-Both commands use the Netlify CLI already logged in on this PC (`netlify login`). They do not read a token from the environment. The dry run calls `netlify api getSite` for this staging site only and records `rollbackDeployId`. It does not upload. The attempt journal is `dist/staging-publish-journal-16abbf4/publication-attempt.json`. A ready journal has `state` `ready`, the new deploy id, and `rollbackDeployId` for the deploy that was live before this one.
 
 Rollback is redeploying that recorded deploy in the Netlify UI for this staging site only. Do not delete it.
