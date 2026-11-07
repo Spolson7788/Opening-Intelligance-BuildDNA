@@ -18,7 +18,7 @@ const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r9');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r10');
 const resumePath = resolve(journalDir, 'resume-attempt.json');
 const ROLLBACK_DEPLOY_ID = '6aef3f786cc2af03c2ef1cd0';
 const rollbackDir = resolve(root, 'dist/staging-publish-journal-16abbf4-rollback');
@@ -33,6 +33,7 @@ const PRIOR_JOURNALS = [
   'dist/staging-publish-journal-16abbf4-r7/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r8/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r9/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r10/publication-attempt.json',
 ];
 const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
@@ -461,6 +462,7 @@ async function bundleFunctions(cliDir) {
   const functions = {};
   const byHash = {};
   for (const fn of built) {
+    if (functionInvocationMode(fn) === 'stream') stampStreamZip(fn.path);
     const sha = createHash('sha256').update(readFileSync(fn.path)).digest('hex');
     functions[fn.name] = sha;
     remember(byHash, sha, {
@@ -494,6 +496,18 @@ export function functionInvocationMode(fn) {
   if (mode === 'background' || fn?.background === true) return 'background';
   if (runtimeAPIVersion === 2 || functionHasApiRoutes(fn)) return 'stream';
   return mode;
+}
+
+export function functionShasToUpload(requiredFunctions, byHash) {
+  const shas = new Set(requiredFunctions || []);
+  for (const [sha, entries] of Object.entries(byHash || {})) {
+    if ((entries || []).some((fn) => functionInvocationMode(fn) === 'stream')) shas.add(sha);
+  }
+  return [...shas];
+}
+
+export function needsPublishingLock(publishedDeploy) {
+  return Boolean(publishedDeploy?.id) && publishedDeploy.locked !== true;
 }
 
 export function functionUploadQuery(deployId, fn, size) {
@@ -797,7 +811,7 @@ async function uploadOutstanding(token, deployId, diff, fileMap, functionMap, jo
       await put('files', sha, { method: 'PUT', path: `${fileUploadPath(deployId, entry.rel)}?size=${bytes.length}` }, bytes, 'application/octet-stream');
     }
   }
-  for (const sha of diff.required_functions || []) {
+  for (const sha of functionShasToUpload(diff.required_functions, functionMap.byHash)) {
     const entries = functionMap.byHash[sha];
     if (!entries?.length) missingUpload('functions', sha);
     for (const fn of entries) {
@@ -812,8 +826,48 @@ function deployFiles() {
   return includeNetlifyToml(digestFiles(resolve(packageDir, 'publish')), resolve(root, 'netlify.toml'));
 }
 
+function stampStreamZip(zipPath) {
+  const marker = 'oi-invocation-mode.json';
+  const result = spawnSync('python3', ['-c', `
+import sys, zipfile
+path, marker = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(path, 'a') as archive:
+    if marker not in archive.namelist():
+        archive.writestr(marker, '{"invocationMode":"stream"}\\n')
+`, zipPath, marker], { encoding: 'utf8' });
+  if (result.status !== 0) throw fail('functions_bundle_failed');
+}
+
+async function ensurePublishingLocked(token, journal) {
+  const response = await stagingRequest('GET', `/api/v1/sites/${STAGING_SITE_ID}`, token);
+  if (response.status === 401 || response.status === 403) throw fail('auth_required');
+  if (response.status !== 200) throw fail('site_lookup_failed');
+  const site = JSON.parse(response.body.toString('utf8'));
+  assertSite({ id: site.id, name: site.name, url: site.ssl_url || site.url });
+  const published = site.published_deploy || {};
+  journal.liveDeployId = published.id || null;
+  journal.liveDeployLocked = published.locked === true;
+  if (!published.id) throw fail('refusing_unlocked_publish');
+  if (!needsPublishingLock(published)) {
+    journal.publishingLocked = true;
+    journal.lockedDeployId = published.id;
+    return published.id;
+  }
+  const locked = await stagingRequest('POST', `/api/v1/deploys/${published.id}/lock`, token, '{}');
+  if (locked.status === 401 || locked.status === 403) throw fail('auth_required');
+  if (locked.status < 200 || locked.status >= 300) {
+    saveFailure('publishing_lock_failed', locked);
+    throw fail('publishing_lock_failed');
+  }
+  journal.publishingLocked = true;
+  journal.lockedDeployId = published.id;
+  writeJson(attemptPath, journal);
+  return published.id;
+}
+
 async function uploadDigestDeploy(token, fileMap, functionMap, journal) {
   if (!fileMap.files['/netlify.toml'] || !apiRoutesOk(functionMap)) throw fail('refusing_missing_routes');
+  await ensurePublishingLocked(token, journal);
   const createBody = productionDeployBody({
     files: fileMap.files,
     functions: functionMap.functions,
