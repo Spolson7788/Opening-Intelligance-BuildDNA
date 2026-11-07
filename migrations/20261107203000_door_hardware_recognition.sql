@@ -5,17 +5,28 @@
 -- Does not alter photos, photo_upload_reservations, or hardware_components.
 -- Those existing tables hold the photograph bytes and the confirmed parts.
 
+-- No company-wide cap unless a row sets one. NULL means the company is unlimited.
 CREATE TABLE IF NOT EXISTS hardware_recognition_settings (
   organization_id UUID PRIMARY KEY REFERENCES organizations(id),
-  daily_run_limit INTEGER NOT NULL CHECK (daily_run_limit BETWEEN 0 AND 100000),
+  daily_run_limit INTEGER CHECK (daily_run_limit IS NULL OR daily_run_limit BETWEEN 0 AND 100000),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Optional company cap. Unused while hardware_recognition_settings.daily_run_limit is null.
 CREATE TABLE IF NOT EXISTS hardware_recognition_daily_usage (
   organization_id UUID NOT NULL REFERENCES organizations(id),
   run_day DATE NOT NULL,
   run_count INTEGER NOT NULL CHECK (run_count >= 0),
   PRIMARY KEY (organization_id, run_day)
+);
+
+-- The default spend cap: one counter per technician per company per UTC day.
+CREATE TABLE IF NOT EXISTS hardware_recognition_tech_daily_usage (
+  organization_id UUID NOT NULL REFERENCES organizations(id),
+  user_id UUID NOT NULL REFERENCES users(id),
+  run_day DATE NOT NULL,
+  run_count INTEGER NOT NULL CHECK (run_count >= 0),
+  PRIMARY KEY (organization_id, user_id, run_day)
 );
 
 CREATE TABLE IF NOT EXISTS hardware_recognition_runs (
@@ -113,6 +124,7 @@ CREATE INDEX IF NOT EXISTS hardware_training_labels_org_idx ON hardware_training
 
 ALTER TABLE hardware_recognition_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hardware_recognition_daily_usage ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hardware_recognition_tech_daily_usage ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hardware_recognition_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hardware_recognition_run_photos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hardware_recognition_items ENABLE ROW LEVEL SECURITY;
@@ -121,10 +133,10 @@ ALTER TABLE hardware_training_labels ENABLE ROW LEVEL SECURITY;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'oi_pr2_api') THEN
     GRANT SELECT ON hardware_recognition_settings, hardware_recognition_daily_usage,
-      hardware_recognition_runs, hardware_recognition_run_photos, hardware_recognition_items,
-      hardware_training_labels TO oi_pr2_api;
-    GRANT INSERT, UPDATE ON hardware_recognition_daily_usage, hardware_recognition_runs,
-      hardware_recognition_items TO oi_pr2_api;
+      hardware_recognition_tech_daily_usage, hardware_recognition_runs, hardware_recognition_run_photos,
+      hardware_recognition_items, hardware_training_labels TO oi_pr2_api;
+    GRANT INSERT, UPDATE ON hardware_recognition_daily_usage, hardware_recognition_tech_daily_usage,
+      hardware_recognition_runs, hardware_recognition_items TO oi_pr2_api;
     GRANT INSERT ON hardware_recognition_run_photos, hardware_training_labels TO oi_pr2_api;
   END IF;
 END $$;
@@ -135,7 +147,8 @@ DO $$ DECLARE roles text; r record; BEGIN
   FOR r IN SELECT c.oid::regclass AS t FROM pg_class c
     WHERE c.relnamespace = 'public'::regnamespace
       AND c.relname IN (
-        'hardware_recognition_settings', 'hardware_recognition_daily_usage', 'hardware_recognition_runs',
+        'hardware_recognition_settings', 'hardware_recognition_daily_usage', 'hardware_recognition_tech_daily_usage',
+        'hardware_recognition_runs',
         'hardware_recognition_run_photos', 'hardware_recognition_items', 'hardware_training_labels'
       )
   LOOP

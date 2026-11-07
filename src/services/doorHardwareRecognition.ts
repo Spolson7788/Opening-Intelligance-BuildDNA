@@ -6,7 +6,7 @@ export const DOOR_HARDWARE_WORKFLOW_URL =
   'https://serverless.roboflow.com/stephan-o-s-workspace-td3d7/workflows/oi-door-hardware-recognition';
 export const MIN_HARDWARE_PHOTOS = 3;
 export const MAX_HARDWARE_PHOTOS = 9;
-export const DEFAULT_DAILY_RUN_LIMIT = 50;
+export const DEFAULT_DAILY_RUN_LIMIT_PER_TECH = 40;
 // Stay under the serverless 20 MB request cap, including JSON and the key.
 export const WORKFLOW_REQUEST_BYTE_BUDGET = 18 * 1024 * 1024;
 
@@ -110,7 +110,7 @@ export interface DoorHardwareStore {
   loadPhotos(orgId: string, openingId: string, photoIds: string[]): Promise<RunPhoto[]>;
   readBytes(key: string): Promise<Uint8Array>;
   orgDailyLimit(orgId: string): Promise<number | null>;
-  consumeDailyRun(orgId: string, limit: number): Promise<boolean>;
+  consumeDailyRun(orgId: string, userId: string, techLimit: number, companyLimit: number | null): Promise<boolean>;
   insertRun(row: { organizationId: string; propertyId: string; openingId: string; userId: string; clientRequestId: string; photoCount: number }): Promise<{ id: string; created: boolean }>;
   attachPhotos(runId: string, photos: { photoId: string; ordinal: number; sha256: string; sentBytes: number }[]): Promise<void>;
   finishRun(runId: string, patch: { status: string; failure_code?: string | null; result?: unknown; provider_called: boolean }): Promise<void>;
@@ -212,12 +212,12 @@ export function photoCountError(count: number): 'too_few_photos' | 'too_many_pho
   return null;
 }
 
-export function resolveDailyLimit(env: NodeJS.ProcessEnv, orgOverride: number | null): number {
-  if (orgOverride != null && Number.isInteger(orgOverride) && orgOverride >= 0 && orgOverride <= 100000) return orgOverride;
-  const raw = env.HARDWARE_RECOGNITION_DAILY_RUN_LIMIT;
-  if (raw == null || raw === '') return DEFAULT_DAILY_RUN_LIMIT;
+/** Per-technician runs per UTC day. A missing or invalid env value uses the default. */
+export function resolveTechDailyLimit(env: NodeJS.ProcessEnv): number {
+  const raw = env.HARDWARE_RECOGNITION_DAILY_RUN_LIMIT_PER_TECH;
+  if (raw == null || raw === '') return DEFAULT_DAILY_RUN_LIMIT_PER_TECH;
   const n = Number(raw);
-  if (!Number.isInteger(n) || n < 0 || n > 100000) return DEFAULT_DAILY_RUN_LIMIT;
+  if (!Number.isInteger(n) || n < 0 || n > 100000) return DEFAULT_DAILY_RUN_LIMIT_PER_TECH;
   return n;
 }
 
@@ -492,8 +492,9 @@ export async function executeIdentify(
     photoId: photo.id, ordinal: index + 1, sha256: photo.sha256_checksum, sentBytes: prepared.sentBytes[index] ?? 0,
   })));
 
-  const limit = resolveDailyLimit(env, await store.orgDailyLimit(actor.organizationId));
-  if (!(await store.consumeDailyRun(actor.organizationId, limit))) return fail('refused', 'daily_limit_exceeded', 429);
+  const techLimit = resolveTechDailyLimit(env);
+  const companyLimit = await store.orgDailyLimit(actor.organizationId);
+  if (!(await store.consumeDailyRun(actor.organizationId, actor.userId, techLimit, companyLimit))) return fail('refused', 'daily_limit_exceeded', 429);
 
   const fetchImpl = deps.fetchImpl ?? (fetch as unknown as FetchLike);
   let providerCalled = false;

@@ -19,7 +19,7 @@ import {
   parseCombinedHardware,
   photoCountError,
   planConfirmation,
-  resolveDailyLimit,
+  resolveTechDailyLimit,
   takeCombinedHardware,
   validateIdentifyRequest,
   workflowRequestBytes,
@@ -36,12 +36,13 @@ function picture(n: number) {
   return { id: randomUUID(), key: `photo-${n}`, bytes, sha: sha256Hex(bytes) };
 }
 
-function memoryStore(options?: { area?: boolean; opening?: boolean }) {
+function memoryStore(options?: { area?: boolean; opening?: boolean; companyLimit?: number | null }) {
   const photos = new Map<string, RunPhoto & { bytes: Uint8Array }>();
   const runs = new Map<string, StoredRun>();
   const byRequest = new Map<string, string>();
   const labels: ConfirmationPlan['labels'] = [];
-  let used = 0;
+  const techUsed = new Map<string, number>();
+  let companyUsed = 0;
   let confirmCalls = 0;
   const calls = { fetch: 0, read: 0 };
   const store: DoorHardwareStore = {
@@ -62,10 +63,14 @@ function memoryStore(options?: { area?: boolean; opening?: boolean }) {
       if (!row) throw new Error('object_missing');
       return row.bytes;
     },
-    async orgDailyLimit() { return null; },
-    async consumeDailyRun(_org, limit) {
-      if (used >= limit) return false;
-      used += 1;
+    async orgDailyLimit() { return options?.companyLimit ?? null; },
+    async consumeDailyRun(orgId, userId, techLimit, companyLimit) {
+      const key = `${orgId}:${userId}`;
+      const current = techUsed.get(key) ?? 0;
+      if (current >= techLimit) return false;
+      if (companyLimit != null && companyUsed >= companyLimit) return false;
+      techUsed.set(key, current + 1);
+      if (companyLimit != null) companyUsed += 1;
       return true;
     },
     async insertRun(row) {
@@ -182,11 +187,11 @@ describe('door hardware type mapping and limits', () => {
     expect(photoCountError(3)).toBeNull();
     expect(photoCountError(9)).toBeNull();
     expect(photoCountError(10)).toBe('too_many_photos');
-    expect(resolveDailyLimit({}, null)).toBe(50);
-    expect(resolveDailyLimit({ HARDWARE_RECOGNITION_DAILY_RUN_LIMIT: '12' }, null)).toBe(12);
-    expect(resolveDailyLimit({ HARDWARE_RECOGNITION_DAILY_RUN_LIMIT: 'nope' }, null)).toBe(50);
-    expect(resolveDailyLimit({ HARDWARE_RECOGNITION_DAILY_RUN_LIMIT: '12' }, 0)).toBe(0);
-    expect(resolveDailyLimit({}, 7)).toBe(7);
+    expect(resolveTechDailyLimit({})).toBe(40);
+    expect(resolveTechDailyLimit({ HARDWARE_RECOGNITION_DAILY_RUN_LIMIT_PER_TECH: '12' })).toBe(12);
+    expect(resolveTechDailyLimit({ HARDWARE_RECOGNITION_DAILY_RUN_LIMIT_PER_TECH: 'nope' })).toBe(40);
+    expect(resolveTechDailyLimit({ HARDWARE_RECOGNITION_DAILY_RUN_LIMIT_PER_TECH: '0' })).toBe(0);
+    expect(resolveTechDailyLimit({ HARDWARE_RECOGNITION_DAILY_RUN_LIMIT: '12' })).toBe(40);
   });
 
   it('rejects a browser-supplied API key and the wrong photograph counts', () => {
@@ -219,7 +224,7 @@ describe('door hardware type mapping and limits', () => {
 });
 
 describe('door hardware recognition run', () => {
-  const env = { ROBOFLOW_API_KEY: KEY, HARDWARE_RECOGNITION_DAILY_RUN_LIMIT: '1' };
+  const env = { ROBOFLOW_API_KEY: KEY, HARDWARE_RECOGNITION_DAILY_RUN_LIMIT_PER_TECH: '1' };
 
   function stage() {
     const mem = memoryStore();
@@ -277,7 +282,7 @@ describe('door hardware recognition run', () => {
     const first = await executeIdentify(
       { organizationId: ORG, userId: USER },
       { openingId: OPENING, photoIds: staged.shots.map((shot) => shot.id), clientRequestId: randomUUID() },
-      { store: staged.mem.store, fetchImpl: staged.fetchImpl as any, env: { ...env, HARDWARE_RECOGNITION_DAILY_RUN_LIMIT: '5' } },
+      { store: staged.mem.store, fetchImpl: staged.fetchImpl as any, env: { ...env, HARDWARE_RECOGNITION_DAILY_RUN_LIMIT_PER_TECH: '5' } },
     );
     expect(staged.fetchCount()).toBe(2);
     expect(first.httpStatus).toBe(201);
@@ -290,7 +295,7 @@ describe('door hardware recognition run', () => {
     const second = await executeIdentify(
       { organizationId: ORG, userId: USER },
       { openingId: OPENING, photoIds: staged.shots.map((shot) => shot.id), clientRequestId: randomUUID() },
-      { store: staged.mem.store, fetchImpl: staged.fetchImpl as any, env: { ...env, HARDWARE_RECOGNITION_DAILY_RUN_LIMIT: '5' } },
+      { store: staged.mem.store, fetchImpl: staged.fetchImpl as any, env: { ...env, HARDWARE_RECOGNITION_DAILY_RUN_LIMIT_PER_TECH: '5' } },
     );
     expect(second.httpStatus).toBe(502);
     expect(second.body.error).toBe('provider_result_unreadable');
@@ -307,6 +312,23 @@ describe('door hardware recognition run', () => {
     expect(capped.httpStatus).toBe(429);
     expect(capped.body.error).toBe('daily_limit_exceeded');
     expect(staged.fetchCount()).toBe(1);
+    const otherTech = '55555555-5555-4555-8555-555555555555';
+    staged.setScript([ok([closer])]);
+    const coworker = await executeIdentify({ organizationId: ORG, userId: otherTech }, { openingId: OPENING, photoIds: photos, clientRequestId: randomUUID() }, { store: staged.mem.store, fetchImpl: staged.fetchImpl as any, env });
+    expect(coworker.httpStatus).toBe(201);
+    expect(staged.fetchCount()).toBe(2);
+
+    const cappedCompany = memoryStore({ companyLimit: 1 });
+    for (const n of [4, 5, 6]) cappedCompany.add(n);
+    const companyPhotos = [...cappedCompany.photos.keys()];
+    const companyEnv = { ROBOFLOW_API_KEY: KEY, HARDWARE_RECOGNITION_DAILY_RUN_LIMIT_PER_TECH: '40' };
+    let companyCalls = 0;
+    const companyFetch = async () => { companyCalls += 1; return ok([closer])(); };
+    const firstCompany = await executeIdentify(actor, { openingId: OPENING, photoIds: companyPhotos, clientRequestId: randomUUID() }, { store: cappedCompany.store, fetchImpl: companyFetch as any, env: companyEnv });
+    const secondCompany = await executeIdentify({ organizationId: ORG, userId: otherTech }, { openingId: OPENING, photoIds: companyPhotos, clientRequestId: randomUUID() }, { store: cappedCompany.store, fetchImpl: companyFetch as any, env: companyEnv });
+    expect(firstCompany.httpStatus).toBe(201);
+    expect(secondCompany).toMatchObject({ httpStatus: 429, body: { error: 'daily_limit_exceeded' } });
+    expect(companyCalls).toBe(1);
 
     const blocked = memoryStore({ area: false });
     const shot = blocked.add(9);
@@ -316,14 +338,14 @@ describe('door hardware recognition run', () => {
     const missing = memoryStore({ opening: false });
     const absent = await executeIdentify(actor, { openingId: OPENING, photoIds: photos, clientRequestId: randomUUID() }, { store: missing.store, fetchImpl: staged.fetchImpl as any, env });
     expect(absent).toMatchObject({ httpStatus: 404, body: { error: 'opening_not_found' } });
-    expect(staged.fetchCount()).toBe(1);
+    expect(staged.fetchCount()).toBe(2);
   });
 
   it('replays the same request without a second provider call', async () => {
     staged.setScript([ok([lock])]);
     const requestId = randomUUID();
     const input = { openingId: OPENING, photoIds: staged.shots.map((shot) => shot.id), clientRequestId: requestId };
-    const deps = { store: staged.mem.store, fetchImpl: staged.fetchImpl as any, env: { ...env, HARDWARE_RECOGNITION_DAILY_RUN_LIMIT: '5' } };
+    const deps = { store: staged.mem.store, fetchImpl: staged.fetchImpl as any, env: { ...env, HARDWARE_RECOGNITION_DAILY_RUN_LIMIT_PER_TECH: '5' } };
     expect((await executeIdentify({ organizationId: ORG, userId: USER }, input, deps)).httpStatus).toBe(201);
     const replay = await executeIdentify({ organizationId: ORG, userId: USER }, input, deps);
     expect(replay).toMatchObject({ httpStatus: 200, body: { replayed: true } });
@@ -333,7 +355,7 @@ describe('door hardware recognition run', () => {
   it('saves training labels for confirmed photographs and skips a dismissed item', async () => {
     staged.setScript([ok([closer, lock])]);
     const actor = { organizationId: ORG, userId: USER };
-    const created = await executeIdentify(actor, { openingId: OPENING, photoIds: staged.shots.map((shot) => shot.id), clientRequestId: randomUUID() }, { store: staged.mem.store, fetchImpl: staged.fetchImpl as any, env: { ...env, HARDWARE_RECOGNITION_DAILY_RUN_LIMIT: '5' } });
+    const created = await executeIdentify(actor, { openingId: OPENING, photoIds: staged.shots.map((shot) => shot.id), clientRequestId: randomUUID() }, { store: staged.mem.store, fetchImpl: staged.fetchImpl as any, env: { ...env, HARDWARE_RECOGNITION_DAILY_RUN_LIMIT_PER_TECH: '5' } });
     const run = created.body.run as StoredRun;
     const saved = await executeConfirm(actor, run.id, [
       { id: run.items[0].id, include: true, component_type: 'closer', manufacturer: 'LCN', model_number: '4040XP', finish: '689', subtype: 'surface' },
@@ -386,6 +408,8 @@ describe('door hardware recognition migration', () => {
     expect(sql).not.toMatch(/fadihkhdwpfffpelqjtg|ytqiulxtiharrplqnuir|fdudsigbxumcpbxxxerb|ioqfdcehnhnqpnqawwvo|bekaxmatcvxqpjixwsqn|boaoedvyvifppuklbwad/);
     const rollback = readFileSync('docs/rollback/20261107203000_door_hardware_recognition_rollback.sql', 'utf8');
     expect(rollback).toContain('DROP TABLE IF EXISTS hardware_training_labels');
+    expect(rollback).toContain('DROP TABLE IF EXISTS hardware_recognition_tech_daily_usage');
+    expect(sql).toContain('daily_run_limit INTEGER CHECK (daily_run_limit IS NULL OR daily_run_limit BETWEEN 0 AND 100000)');
   });
 
   it('applies on a database that already has the referenced tables', async () => {
@@ -407,8 +431,13 @@ describe('door hardware recognition migration', () => {
     )).rows;
     expect(names.map((row) => row.relname)).toEqual([
       'hardware_recognition_daily_usage', 'hardware_recognition_items', 'hardware_recognition_run_photos',
-      'hardware_recognition_runs', 'hardware_recognition_settings', 'hardware_training_labels',
+      'hardware_recognition_runs', 'hardware_recognition_settings', 'hardware_recognition_tech_daily_usage',
+      'hardware_training_labels',
     ]);
+    expect((await db.query<{ is_nullable: string }>(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_name = 'hardware_recognition_settings' AND column_name = 'daily_run_limit'`,
+    )).rows[0].is_nullable).toBe('YES');
     expect(names.every((row) => row.relrowsecurity)).toBe(true);
     const org = randomUUID();
     const property = randomUUID();
@@ -418,6 +447,48 @@ describe('door hardware recognition migration', () => {
     await db.query('INSERT INTO properties (id) VALUES ($1)', [property]);
     await db.query('INSERT INTO openings (id) VALUES ($1)', [opening]);
     await db.query('INSERT INTO users (id) VALUES ($1)', [user]);
+    await db.query('INSERT INTO hardware_recognition_settings (organization_id, daily_run_limit) VALUES ($1, NULL)', [org]);
+    const techA = await db.query(
+      `WITH attempt AS (
+         INSERT INTO hardware_recognition_tech_daily_usage (organization_id, user_id, run_day, run_count)
+         SELECT $1, $2, (timezone('utc', now()))::date, 1
+         WHERE $3::int >= 1
+         ON CONFLICT (organization_id, user_id, run_day)
+         DO UPDATE SET run_count = hardware_recognition_tech_daily_usage.run_count + 1
+         WHERE hardware_recognition_tech_daily_usage.run_count < $3::int
+         RETURNING run_count
+       ) SELECT run_count FROM attempt`,
+      [org, user, 1],
+    );
+    expect(techA.rows[0].run_count).toBe(1);
+    const techABlocked = await db.query(
+      `WITH attempt AS (
+         INSERT INTO hardware_recognition_tech_daily_usage (organization_id, user_id, run_day, run_count)
+         SELECT $1, $2, (timezone('utc', now()))::date, 1
+         WHERE $3::int >= 1
+         ON CONFLICT (organization_id, user_id, run_day)
+         DO UPDATE SET run_count = hardware_recognition_tech_daily_usage.run_count + 1
+         WHERE hardware_recognition_tech_daily_usage.run_count < $3::int
+         RETURNING run_count
+       ) SELECT run_count FROM attempt`,
+      [org, user, 1],
+    );
+    expect(techABlocked.rows).toEqual([]);
+    const other = randomUUID();
+    await db.query('INSERT INTO users (id) VALUES ($1)', [other]);
+    const techB = await db.query(
+      `WITH attempt AS (
+         INSERT INTO hardware_recognition_tech_daily_usage (organization_id, user_id, run_day, run_count)
+         SELECT $1, $2, (timezone('utc', now()))::date, 1
+         WHERE $3::int >= 1
+         ON CONFLICT (organization_id, user_id, run_day)
+         DO UPDATE SET run_count = hardware_recognition_tech_daily_usage.run_count + 1
+         WHERE hardware_recognition_tech_daily_usage.run_count < $3::int
+         RETURNING run_count
+       ) SELECT run_count FROM attempt`,
+      [org, other, 1],
+    );
+    expect(techB.rows[0].run_count).toBe(1);
     const reserved = await db.query(
       `WITH attempt AS (
          INSERT INTO hardware_recognition_daily_usage (organization_id, run_day, run_count)

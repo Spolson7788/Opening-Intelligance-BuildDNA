@@ -89,11 +89,22 @@ export function createDoorHardwareStore(): DoorHardwareStore {
         'SELECT daily_run_limit FROM hardware_recognition_settings WHERE organization_id = $1',
         [orgId],
       )).rows[0];
-      return row ? Number(row.daily_run_limit) : null;
+      // No settings row, or a null limit, means the company is not capped.
+      if (!row || row.daily_run_limit == null) return null;
+      return Number(row.daily_run_limit);
     },
-    async consumeDailyRun(orgId, limit) {
-      const row = (await pool.query(
-        `WITH attempt AS (
+    async consumeDailyRun(orgId, userId, techLimit, companyLimit) {
+      const client = await pool.connect();
+      const techSql = `WITH attempt AS (
+           INSERT INTO hardware_recognition_tech_daily_usage (organization_id, user_id, run_day, run_count)
+           SELECT $1, $2, (timezone('utc', now()))::date, 1
+           WHERE $3::int >= 1
+           ON CONFLICT (organization_id, user_id, run_day)
+           DO UPDATE SET run_count = hardware_recognition_tech_daily_usage.run_count + 1
+           WHERE hardware_recognition_tech_daily_usage.run_count < $3::int
+           RETURNING run_count
+         ) SELECT run_count FROM attempt`;
+      const companySql = `WITH attempt AS (
            INSERT INTO hardware_recognition_daily_usage (organization_id, run_day, run_count)
            SELECT $1, (timezone('utc', now()))::date, 1
            WHERE $2::int >= 1
@@ -101,11 +112,23 @@ export function createDoorHardwareStore(): DoorHardwareStore {
            DO UPDATE SET run_count = hardware_recognition_daily_usage.run_count + 1
            WHERE hardware_recognition_daily_usage.run_count < $2::int
            RETURNING run_count
-         )
-         SELECT run_count FROM attempt`,
-        [orgId, limit],
-      )).rows[0];
-      return Boolean(row);
+         ) SELECT run_count FROM attempt`;
+      try {
+        await client.query('BEGIN');
+        const tech = (await client.query(techSql, [orgId, userId, techLimit])).rows[0];
+        if (!tech) { await client.query('ROLLBACK'); return false; }
+        if (companyLimit != null) {
+          const company = (await client.query(companySql, [orgId, companyLimit])).rows[0];
+          if (!company) { await client.query('ROLLBACK'); return false; }
+        }
+        await client.query('COMMIT');
+        return true;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
     },
     async insertRun(row) {
       const inserted = (await pool.query(

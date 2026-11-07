@@ -26,7 +26,7 @@ const REASONS: Record<string, string> = {
   too_few_photos: "Add at least 3 photographs.",
   too_many_photos: "9 photographs is the maximum for one identification.",
   duplicate_photo: "Each photograph can be included once.",
-  daily_limit_exceeded: "Your company has reached today’s identification limit.",
+  daily_limit_exceeded: "You have reached today’s identification limit.",
   hardware_recognition_unavailable: "Hardware identification is not available right now.",
   feature_disabled: "Hardware identification is not turned on for this site.",
   forbidden: "You do not have access to identify hardware on this opening.",

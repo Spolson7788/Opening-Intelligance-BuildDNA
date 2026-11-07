@@ -3,5 +3,6 @@ DROP TABLE IF EXISTS hardware_training_labels;
 DROP TABLE IF EXISTS hardware_recognition_items;
 DROP TABLE IF EXISTS hardware_recognition_run_photos;
 DROP TABLE IF EXISTS hardware_recognition_runs;
+DROP TABLE IF EXISTS hardware_recognition_tech_daily_usage;
 DROP TABLE IF EXISTS hardware_recognition_daily_usage;
 DROP TABLE IF EXISTS hardware_recognition_settings;
