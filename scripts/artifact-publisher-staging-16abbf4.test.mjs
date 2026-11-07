@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apiRoutesOk, assertSite, assertStagingApiPath, checkLocalLookups, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, scrubDeployValue, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { fileURLToPath } from 'node:url';
+import { apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, includeNetlifyToml, productionDeployBody, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, scrubDeployValue, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('staging site is the only accepted target', () => {
   assert.deepEqual(assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL }), {
@@ -132,4 +133,25 @@ test('compare deploys reports function routes, redirects, and env names without 
   assert.equal(text.includes('postgres://secret'), false);
   assert.equal(text.includes('nf_should_not_print'), false);
   assert.equal(scrubDeployValue({ authorization: 'Bearer abc', note: 'Bearer abc' }).note, '[redacted]');
+});
+
+test('a production deploy includes netlify.toml and refuses any other context', () => {
+  const routes = [
+    { pattern: '/health', literal: '/health' },
+    { pattern: '/api/*', expression: '^\\/api(?:\\/(.*))\\/?$' },
+  ];
+  const files = includeNetlifyToml({ files: { '/index.html': 'abc' }, byHash: {} }, fileURLToPath(new URL('../netlify.toml', import.meta.url)));
+  assert.equal(typeof files.files['/netlify.toml'], 'string');
+  assert.equal(files.files['/netlify.toml'].length, 40);
+  const body = productionDeployBody({
+    files: files.files,
+    functions: { api: 'f'.repeat(64) },
+    functionsConfig: { api: { routes } },
+  });
+  assert.equal(body.draft, false);
+  assert.equal(body.files['/netlify.toml'], files.files['/netlify.toml']);
+  const ready = { context: 'production', available_functions: [{ n: 'api', ro: routes }] };
+  assert.equal(assertPublishableDeploy(ready).context, 'production');
+  assert.throws(() => assertPublishableDeploy({ ...ready, context: 'deploy-preview' }), /refusing_deploy_context/);
+  assert.throws(() => assertPublishableDeploy({ context: 'production', available_functions: [{ n: 'api', ro: [] }] }), /refusing_missing_routes/);
 });
