@@ -9,17 +9,19 @@ describe("production gating", () => {
   it("turns recognition, reference library and recognition usage/billing endpoints off when disabled", async () => {
     const app = createApp({ recognitionFeaturesEnabled: false });
     expect((await request(app).get("/api/features")).status).toBe(401); // signed-in users only
-    for (const path of ["/api/recognition/runs", "/api/recognition", "/api/platform/recognition-usage?month=2026-11",
+    for (const path of ["/api/recognition/runs", "/api/recognition", "/api/hardware-recognition/runs", "/api/platform/recognition-usage?month=2026-11",
       "/api/platform/recognition-usage/settings", "/api/platform/recognition-run-records/outbox"]) {
       const r = await request(app).get(path);
       expect(r.status, path).toBe(404);
       expect(r.body).toEqual({ error: "feature_disabled" });
     }
     expect((await request(app).post("/api/recognition/runs").send({})).status).toBe(404);
+    expect((await request(app).post("/api/hardware-recognition/runs").send({})).body).toEqual({ error: "feature_disabled" });
   });
   it("keeps existing behavior by default", async () => {
     const app = createApp();
     expect((await request(app).get("/api/recognition/runs")).status).not.toBe(404);
+    expect((await request(app).post("/api/hardware-recognition/runs").send({})).status).not.toBe(404);
   });
   it("Netlify entry enables recognition only on the two staging sites", () => {
     const s = readFileSync("netlify/functions/api.ts", "utf8");

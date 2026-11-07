@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
-import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchPhotoAccessUrl } from "../lib/api";
+import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchPhotoAccessUrl, serverFeatures } from "../lib/api";
 import { mediaAssociationLabel } from "../lib/mediaAssociationLabel";
 import { openingLoadFailure } from "../lib/openingLoadFailure";
 import { siteAccessRenewalUrl } from "../lib/siteAccess";
@@ -19,6 +19,21 @@ function ServiceEventCard({ ev }: { ev: ServiceEventRow }) {
       <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
       <p style={{ margin: "4px 0 0", fontSize: 14 }}>{ev.work_performed}</p>
     </div>
+  );
+}
+
+function IdentifyHardwareEntry({ openingId }: { openingId: string }) {
+  const [enabled, setEnabled] = useState(false);
+  useEffect(() => {
+    let live = true;
+    serverFeatures().then((features) => { if (live) setEnabled(features.recognition); });
+    return () => { live = false; };
+  }, []);
+  if (!enabled) return null;
+  return (
+    <Link to={`/opening/${openingId}/identify-hardware`} className="btn btn-primary" style={{ textDecoration: "none", marginBottom: 10 }}>
+      Identify hardware
+    </Link>
   );
 }
 
@@ -399,6 +414,7 @@ export function OpeningDetailPage() {
             ))}
           </>
         )}
+        {!retired && <IdentifyHardwareEntry openingId={opening.id} />}
         <Link
           to={`/opening/${opening.id}/add-hardware`}
           className="btn btn-secondary"

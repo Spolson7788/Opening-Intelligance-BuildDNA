@@ -24,7 +24,8 @@ const INSPECTOR_ALLOWED: Row[] = [
   ['POST', '/api/service-requests'],
 ];
 const INSPECTOR_DENIED: Row[] = [
-  ['POST', '/api/hardware'], ['PATCH', '/api/hardware/h1'], ['DELETE', '/api/hardware/h1'],
+  ['POST', '/api/hardware'], ['POST', '/api/hardware-recognition/runs'], ['POST', '/api/hardware-recognition/runs/run-1/confirm'],
+  ['PATCH', '/api/hardware/h1'], ['DELETE', '/api/hardware/h1'],
   ['POST', '/api/sync/components'],
   ['POST', '/api/sync/operations', { entity_type: 'frame', operation_type: 'update' }],
   ['POST', '/api/sync/operations', { entity_type: 'door_leaf', operation_type: 'create' }],
@@ -44,7 +45,9 @@ const INSPECTOR_DENIED: Row[] = [
 // Technician expectations are the pre-change behavior, written out explicitly.
 const TECH_ALLOWED: Row[] = [
   ['POST', '/api/service-requests'], ['POST', '/api/labels/generations'], ['POST', '/api/events/service-events'],
-  ['POST', '/api/events/inspection-events'], ['POST', '/api/hardware'], ['PATCH', '/api/hardware/h1'], ['DELETE', '/api/hardware/h1'],
+  ['POST', '/api/events/inspection-events'], ['POST', '/api/hardware'],
+  ['POST', '/api/hardware-recognition/runs'], ['POST', '/api/hardware-recognition/runs/run-1/confirm'],
+  ['PATCH', '/api/hardware/h1'], ['DELETE', '/api/hardware/h1'],
   ['POST', '/api/photos/presign'], ['POST', '/api/photos/offline/reserve'], ['POST', '/api/photos/offline/confirm'],
   ['POST', '/api/photos/offline/recover-reservation'], ['POST', '/api/photos'], ['DELETE', '/api/photos/p1'],
   ['POST', '/api/documents/presign'], ['POST', '/api/documents', { document_type: 'warranty' }], ['DELETE', '/api/documents/d1'],
