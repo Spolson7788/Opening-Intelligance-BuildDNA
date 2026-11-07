@@ -37,6 +37,13 @@ test('required file sha1 and function sha256 both resolve', () => {
   assert.equal(api.display_name, 'API');
   assert.equal(apiRoutesOk({ functionsConfig: { api } }), true);
   assert.equal(apiRoutesOk({ functionsConfig: { api: { routes: ['/health'] } } }), false);
+  const zisiRoutes = [
+    { pattern: '/health', literal: '/health' },
+    { pattern: '/api/*', expression: '^\\/api(?:\\/(.*))\\/?$' },
+  ];
+  const zisi = functionConfigFromBuild({ name: 'api', routes: zisiRoutes });
+  assert.deepEqual(zisi.routes, zisiRoutes);
+  assert.equal(apiRoutesOk({ functionsConfig: { api: zisi } }), true);
   assert.equal(fileMap.byHash['index.html'], undefined);
   assert.equal(functionMap.byHash.api, undefined);
   const missing = checkLocalLookups(

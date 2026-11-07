@@ -19,7 +19,7 @@ node scripts/artifact-publisher-staging-16abbf4.mjs --dry-run
 
 The application tree must be `16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5`. The branch tip may also contain only these publisher files. Any other change is refused.
 
-The build prints `packageSha256`. Do not rebuild if that value is still `ab779e93cffb8f8958dbf95409dcad60891ae3e96281a2ad3809494b40bb3c2d`. This attempt uses `dist/staging-publish-journal-16abbf4-r6/`. Leave the earlier journal directories untouched. The deploy body includes `functions_config` so the `api` function keeps routes `/health` and `/api/*`. `--upload-check` fails unless those routes are present. To put the previous live deploy back, once:
+The build prints `packageSha256`. Do not rebuild if that value is still `ab779e93cffb8f8958dbf95409dcad60891ae3e96281a2ad3809494b40bb3c2d`. This attempt uses `dist/staging-publish-journal-16abbf4-r6/`. Leave the earlier journal directories untouched. The deploy body includes `functions_config` so the `api` function keeps routes `/health` and `/api/*`. `--upload-check` fails unless those routes are present, whether each route is a string or an object with `pattern`. The objects are sent unchanged. To put the previous live deploy back, once:
 
 ```
 node scripts/artifact-publisher-staging-16abbf4.mjs --rollback-approved

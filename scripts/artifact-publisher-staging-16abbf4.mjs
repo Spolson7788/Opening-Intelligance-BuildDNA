@@ -337,9 +337,14 @@ export function functionConfigFromBuild(fn) {
   return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== null));
 }
 
+export function routePattern(route) {
+  if (typeof route === 'string') return route;
+  return route && typeof route.pattern === 'string' ? route.pattern : '';
+}
+
 export function apiRoutesOk(functionMap) {
-  const routes = functionMap.functionsConfig?.api?.routes || [];
-  return routes.includes('/health') && routes.includes('/api/*');
+  const patterns = (functionMap.functionsConfig?.api?.routes || []).map(routePattern);
+  return patterns.includes('/health') && patterns.includes('/api/*');
 }
 
 export function diffReady(deploy) {
