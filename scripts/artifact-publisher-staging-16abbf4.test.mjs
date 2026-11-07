@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionUploadHeaders, includeNetlifyToml, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('staging site is the only accepted target', () => {
   assert.deepEqual(assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL }), {
@@ -119,6 +119,17 @@ test('a preparing deploy is not uploaded, and a function retry keeps the same to
   assert.equal(selectPublishSnapshot([uploading, processing, readyBare]), null);
   assert.equal(selectPublishSnapshot([uploading, processing, readyBare, readyRouted]), readyRouted);
   assert.deepEqual(apiFunctionView(readyRouted)[0].routes, ['/health', '/api/*']);
+  const registered = { state: 'ready', context: 'production', available_functions: [{ n: 'api', d: 'sha', im: 'stream', ro: routes }] };
+  assert.equal(apiFunctionView(registered)[0].invocationMode, 'stream');
+  assert.equal(functionInvocationMode({ runtimeAPIVersion: 2 }), 'stream');
+  assert.equal(functionInvocationMode({ runtimeAPIVersion: 2, invocationMode: 'background' }), 'background');
+  assert.equal(
+    functionUploadQuery('6aef3f786cc2af03c2ef1cd0', { name: 'api', runtime: 'nodejs22.x', runtimeAPIVersion: 2, timeout: 10 }, 528289),
+    '/api/v1/deploys/6aef3f786cc2af03c2ef1cd0/functions/api?runtime=nodejs22.x&invocation_mode=stream&timeout=10&size=528289',
+  );
+  const zipConfig = functionsZipConfig('[functions]\n  directory = "netlify/functions"\n  node_bundler = "esbuild"\n  external_node_modules = ["express"]\n');
+  assert.equal(zipConfig['*'].nodeBundler, 'esbuild_zisi');
+  assert.deepEqual(zipConfig['*'].externalNodeModules, ['express']);
 });
 
 test('compare deploys reports function routes, redirects, and env names without secrets', () => {

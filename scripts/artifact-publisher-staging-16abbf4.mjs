@@ -18,7 +18,7 @@ const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r7');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r8');
 const resumePath = resolve(journalDir, 'resume-attempt.json');
 const ROLLBACK_DEPLOY_ID = '6aef3f786cc2af03c2ef1cd0';
 const rollbackDir = resolve(root, 'dist/staging-publish-journal-16abbf4-rollback');
@@ -31,6 +31,7 @@ const PRIOR_JOURNALS = [
   'dist/staging-publish-journal-16abbf4-r5/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r6/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r7/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r8/publication-attempt.json',
 ];
 const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
@@ -332,6 +333,7 @@ export function apiFunctionView(deploy) {
     name: fn.n || fn.name || 'api',
     sha: fn.d || fn.sha || null,
     runtime: fn.runtime || null,
+    invocationMode: fn.im || fn.invoke_mode || fn.invocation_mode || null,
     routes: routeList(fn).map(routePattern).filter(Boolean),
   }));
 }
@@ -397,13 +399,21 @@ async function bundleFunctions(cliDir) {
   if (!entry) throw fail('functions_bundle_failed');
   const { zipFunctions } = await import(pathToFileURL(entry).href);
   const tmp = mkdtempSync(resolve(root, 'dist/function-zip-'));
-  const built = await zipFunctions([resolve(root, 'netlify/functions')], tmp, { basePath: root });
+  const zipConfig = functionsZipConfig(readFileSync(resolve(root, 'netlify.toml'), 'utf8'));
+  const built = await zipFunctions([resolve(root, 'netlify/functions')], tmp, { basePath: root, config: zipConfig });
   const functions = {};
   const byHash = {};
   for (const fn of built) {
     const sha = createHash('sha256').update(readFileSync(fn.path)).digest('hex');
     functions[fn.name] = sha;
-    remember(byHash, sha, { name: fn.name, path: fn.path, runtime: fn.runtimeVersion || fn.runtime || 'js' });
+    remember(byHash, sha, {
+      name: fn.name,
+      path: fn.path,
+      runtime: fn.runtimeVersion || fn.runtime || 'js',
+      runtimeAPIVersion: fn.runtimeAPIVersion,
+      invocationMode: fn.invocationMode,
+      timeout: fn.timeout,
+    });
   }
   const functionsConfig = {};
   const schedules = [];
@@ -415,8 +425,48 @@ async function bundleFunctions(cliDir) {
   return { functions, byHash, functionsConfig, schedules, tmp };
 }
 
+export function functionInvocationMode(fn) {
+  const runtimeAPIVersion = fn?.runtimeAPIVersion ?? fn?.buildData?.runtimeAPIVersion ?? fn?.build_data?.runtimeAPIVersion;
+  const mode = fn?.invocationMode || fn?.invocation_mode || null;
+  if (mode === 'background' || fn?.background === true) return 'background';
+  if (runtimeAPIVersion === 2) return mode || 'stream';
+  return mode;
+}
+
+export function functionUploadQuery(deployId, fn, size) {
+  const parts = [];
+  const runtime = fn.runtimeVersion || fn.runtime;
+  if (runtime) parts.push(`runtime=${encodeURIComponent(runtime)}`);
+  const mode = functionInvocationMode(fn);
+  if (mode) parts.push(`invocation_mode=${encodeURIComponent(mode)}`);
+  if (fn.timeout != null) parts.push(`timeout=${encodeURIComponent(String(fn.timeout))}`);
+  parts.push(`size=${encodeURIComponent(String(size))}`);
+  return `/api/v1/deploys/${deployId}/functions/${encodeURIComponent(fn.name)}?${parts.join('&')}`;
+}
+
+export function functionsZipConfig(tomlText) {
+  const match = String(tomlText).match(/\[functions\]([\s\S]*?)(?:\n\[|$)/);
+  const body = match ? match[1] : '';
+  const bundler = /node_bundler\s*=\s*"([^"]+)"/.exec(body)?.[1];
+  const external = /external_node_modules\s*=\s*\[([^\]]*)\]/.exec(body)?.[1] || '';
+  const modules = [...external.matchAll(/"([^"]+)"/g)].map((item) => item[1]);
+  return {
+    '*': {
+      ...(modules.length ? { externalNodeModules: modules } : {}),
+      ...(bundler === 'esbuild' ? { nodeBundler: 'esbuild_zisi' } : bundler ? { nodeBundler: bundler } : {}),
+      processDynamicNodeImports: true,
+      zipGo: true,
+    },
+  };
+}
+
 export function functionConfigFromBuild(fn) {
   const routes = fn.routes || fn.config?.path;
+  const buildData = {
+    ...(fn.buildData || {}),
+    ...(fn.bootstrapVersion != null ? { bootstrapVersion: fn.bootstrapVersion } : {}),
+    ...(fn.runtimeAPIVersion != null ? { runtimeAPIVersion: fn.runtimeAPIVersion } : {}),
+  };
   const payload = {
     display_name: fn.displayName,
     excluded_routes: fn.excludedRoutes,
@@ -424,7 +474,7 @@ export function functionConfigFromBuild(fn) {
     memory: fn.memory,
     region: fn.region,
     routes,
-    build_data: fn.buildData || (fn.bootstrapVersion || fn.runtimeAPIVersion ? { bootstrapVersion: fn.bootstrapVersion, runtimeAPIVersion: fn.runtimeAPIVersion } : undefined),
+    build_data: Object.keys(buildData).length ? buildData : undefined,
     priority: fn.priority,
     vcpu: fn.vcpu,
   };
@@ -686,7 +736,7 @@ async function uploadOutstanding(token, deployId, diff, fileMap, functionMap, jo
     if (!entries?.length) missingUpload('functions', sha);
     for (const fn of entries) {
       const bytes = readFileSync(fn.path);
-      const uploadPath = `/api/v1/deploys/${deployId}/functions/${encodeURIComponent(fn.name)}?runtime=${encodeURIComponent(fn.runtime)}&size=${bytes.length}`;
+      const uploadPath = functionUploadQuery(deployId, fn, bytes.length);
       await put('functions', sha, { method: 'PUT', path: uploadPath }, bytes, 'application/zip');
     }
   }
