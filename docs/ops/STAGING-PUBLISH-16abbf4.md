@@ -37,7 +37,7 @@ The Netlify CLI install is loaded from `C:\Users\spols\Documents\Codex\2026-10-2
 node scripts/artifact-publisher-staging-16abbf4.mjs --resume-deploy 6aefa304e95393802c4d7b16
 ```
 
-Resume is allowed only for a deploy id recorded by an earlier journal from this publisher, and only while that deploy on the staging site is `prepared` or `ready`. A `ready` deploy, or a `prepared` deploy with empty `required` and `required_functions`, is published with no uploads. The upload creates a draft, uploads only the required digests, waits until the deploy is ready, then publishes it. It does not run `netlify deploy`.
+Resume is allowed only for a deploy id recorded by an earlier journal from this publisher, and only while that deploy on the staging site is `prepared` or `ready`. A `ready` deploy skips uploads. Once the deploy is ready, resume calls restore once, then records `published: true` and `publishedDeployId` only when the site's `published_deploy.id` equals that deploy. A resume journal without `published: true` can be run again. The upload creates a draft, uploads only the required digests, waits until the deploy is ready, then publishes it. It does not run `netlify deploy`.
 
 When the dry run looks right:
 

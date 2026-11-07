@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apiRoutesOk, assertSite, assertStagingApiPath, checkLocalLookups, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, publishWithoutUpload, selectUploadSnapshot, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiRoutesOk, assertSite, assertStagingApiPath, checkLocalLookups, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, selectUploadSnapshot, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('staging site is the only accepted target', () => {
   assert.deepEqual(assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL }), {
@@ -37,6 +37,8 @@ test('required file sha1 and function sha256 both resolve', () => {
   assert.equal(publishWithoutUpload({ state: 'prepared', required: [], required_functions: [] }), true);
   assert.equal(publishWithoutUpload(prepared), false);
   assert.equal(selectUploadSnapshot([{ state: 'preparing', required: [] }, deduped]), deduped);
+  assert.deepEqual(readyPublishSteps(deduped), ['restore', 'confirm-published']);
+  assert.deepEqual(readyPublishSteps(prepared), ['upload', 'wait-ready', 'restore', 'confirm-published']);
   const api = functionConfigFromBuild({ name: 'api', routes: ['/health', '/api/*'], displayName: 'API', generator: '@netlify/functions', schedule: '0 0 * * *' });
   assert.deepEqual(api.routes, ['/health', '/api/*']);
   assert.equal(api.display_name, 'API');
@@ -59,4 +61,29 @@ test('required file sha1 and function sha256 both resolve', () => {
     { branch: 'files', missingHash: fileSha },
     { branch: 'functions', missingHash: functionSha },
   ]);
+});
+
+test('a ready deploy is restored once and confirmed as the published deploy', async () => {
+  const deployId = '6aefa304e95393802c4d7b16';
+  const calls = [];
+  const site = {
+    id: STAGING_SITE_ID,
+    name: STAGING_SITE_NAME,
+    ssl_url: STAGING_URL,
+    published_deploy: { id: deployId },
+  };
+  const result = await publishReadyDeploy(async (method, path) => {
+    calls.push(`${method} ${path}`);
+    if (method === 'POST') return { status: 200, body: Buffer.from('{}') };
+    return { status: 200, body: Buffer.from(JSON.stringify(site)) };
+  }, deployId);
+  assert.deepEqual(calls, [
+    `POST /api/v1/sites/${STAGING_SITE_ID}/deploys/${deployId}/restore`,
+    `GET /api/v1/sites/${STAGING_SITE_ID}`,
+  ]);
+  assert.deepEqual(result, { published: true, publishedDeployId: deployId });
+  await assert.rejects(() => publishReadyDeploy(async (method) => {
+    if (method === 'POST') return { status: 200, body: Buffer.from('{}') };
+    return { status: 200, body: Buffer.from(JSON.stringify({ ...site, published_deploy: { id: '6aef9b65877e6e067c751d5b' } })) };
+  }, deployId), /deploy_publish_unconfirmed/);
 });
