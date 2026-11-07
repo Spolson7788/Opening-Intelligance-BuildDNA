@@ -1,8 +1,18 @@
 import { createContext, useContext, useState } from "react";
 import type { ReactNode } from "react";
-import { login as apiLogin, setToken, decodeTokenPayload } from "./api";
+import { login as apiLogin, setToken, decodeTokenPayload, ApiError } from "./api";
 import { readValidToken } from "./session";
 import { playLoginIntro } from "./loginIntro";
+
+/** Password was accepted for a staff account. The emailed code is still required. */
+export class StaffMfaRequired extends Error {
+  readonly mfaToken: string;
+  constructor(mfaToken: string) {
+    super("mfa_required");
+    this.name = "StaffMfaRequired";
+    this.mfaToken = mfaToken;
+  }
+}
 
 interface AuthState {
   userId: string;
@@ -36,9 +46,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState | null>(readInitialAuth);
 
   async function login(email: string, password: string) {
-    const { token } = await apiLogin(email, password);
-    setToken(token);
-    setAuth(decodeTokenPayload(token));
+    const body = await apiLogin(email, password);
+    if (body.mfa_required) {
+      if (!body.mfa_token) throw new ApiError(503, "mfa_unavailable");
+      throw new StaffMfaRequired(body.mfa_token);
+    }
+    if (!body.token) throw new ApiError(503, "authentication_service_unavailable");
+    setToken(body.token);
+    setAuth(decodeTokenPayload(body.token));
     // Fresh interactive sign-in only (never on reload/session restore).
     playLoginIntro();
   }

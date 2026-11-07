@@ -24,7 +24,7 @@ const PASS = 'synthetic-pass-' + randomUUID().slice(0, 8);
 const MARK_B = 'SYNTH-B-PRIVATE-' + randomUUID().slice(0, 8);
 const MARK_C = 'SYNTH-CHILD-' + randomUUID().slice(0, 8);
 const tok = (u: string, org: string, role = 'admin', sv = 0) =>
-  'Bearer ' + jwt.sign({ userId: id[u], organizationId: id[org], role, sessionVersion: sv }, process.env.JWT_SECRET!);
+  'Bearer ' + jwt.sign({ userId: id[u], organizationId: id[org], role, sessionVersion: sv, ...(u === 'staff' ? { mfaVerified: true } : {}) }, process.env.JWT_SECRET!);
 const get = (path: string, auth: string) => request(app).get(path).set('Authorization', auth);
 const sv = async (u: string) => (await sql('SELECT session_version FROM users WHERE id=$1', [id[u]])).rows[0].session_version;
 const childSnapshot = async () => JSON.stringify((await sql(

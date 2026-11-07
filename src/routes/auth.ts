@@ -8,18 +8,30 @@ import { requireAuth, requireRole, AuthedRequest, isMissingSchema } from "../mid
 import { auditLog } from "../middleware/auditLog";
 import { membershipOf, activeAdminCount, record, HISTORY_DEFAULT_REASON } from "../services/teamMemberships";
 import { passwordResetConfigured, sendPasswordChangedEmail, sendPasswordResetEmail } from "../services/passwordResetEmail";
+import { isActivePlatformStaff, issueStaffSignInCode, resendStaffSignInCode, StaffMfaError, verifyStaffSignInCode } from "../services/staffMfa";
 
 export const authRouter = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET as string;
 const TOKEN_EXPIRY = "12h";
 
-export function issueToken(user: { id: string; organization_id: string; role: string; session_version?: number; must_change_password?: boolean }) {
+export function issueToken(user: { id: string; organization_id: string; role: string; session_version?: number; must_change_password?: boolean; mfaVerified?: boolean; mfaPending?: boolean }) {
   // mustChangePassword is a UI hint only; requireAuth enforces the flag from the database.
+  // Customer tokens omit both MFA claims. A pending staff token cannot also be verified.
+  const pending = user.mfaPending === true && user.mfaVerified !== true;
+  const verified = user.mfaVerified === true && !pending;
   return jwt.sign(
-    { userId: user.id, organizationId: user.organization_id, role: user.role, sessionVersion: user.session_version ?? 0, ...(user.must_change_password ? { mustChangePassword: true } : {}) },
+    {
+      userId: user.id,
+      organizationId: user.organization_id,
+      role: user.role,
+      sessionVersion: user.session_version ?? 0,
+      ...(user.must_change_password ? { mustChangePassword: true } : {}),
+      ...(verified ? { mfaVerified: true } : {}),
+      ...(pending ? { mfaPending: true } : {}),
+    },
     JWT_SECRET,
-    { expiresIn: TOKEN_EXPIRY }
+    { expiresIn: pending ? "10m" : TOKEN_EXPIRY }
   );
 }
 
@@ -176,7 +188,7 @@ authRouter.post("/login", async (req, res) => {
   const { email, password } = parsed.data;
   try {
     const result = await pool.query(
-      "SELECT id, organization_id, role, password_hash, is_active, session_version, (to_jsonb(users) ->> 'must_change_password')::boolean AS must_change_password FROM public.users WHERE email = $1",
+      "SELECT id, organization_id, email, role, password_hash, is_active, session_version, (to_jsonb(users) ->> 'must_change_password')::boolean AS must_change_password FROM public.users WHERE email = $1",
       [email.toLowerCase()]
     );
     if (result.rows.length === 0) {
@@ -200,11 +212,21 @@ authRouter.post("/login", async (req, res) => {
       report("no_active_membership");
       return res.status(403).json({ error: "membership_inactive", reference });
     }
+    if (await isActivePlatformStaff(user.id)) {
+      await issueStaffSignInCode(user.id, user.email);
+      const mfaToken = issueToken({ ...user, organization_id: active.organization_id, role: active.role, mfaPending: true });
+      report("mfa_required");
+      return res.json({ mfa_required: true, mfa_token: mfaToken, expiresIn: "10m", resend_after_seconds: 60 });
+    }
     const token = issueToken({ ...user, organization_id: active.organization_id, role: active.role });
     report("success");
     res.json({ token, expiresIn: TOKEN_EXPIRY, must_change_password: user.must_change_password === true,
       active_organization_id: active.organization_id, companies });
-  } catch {
+  } catch (error) {
+    if (error instanceof StaffMfaError) {
+      report("mfa_unavailable");
+      return res.status(error.status).json({ error: error.code, reference });
+    }
     report("service_error");
     res.status(503).json({ error: "authentication_service_unavailable", reference });
   }
@@ -522,8 +544,17 @@ authRouter.post("/change-password", requireAuth, async (req: AuthedRequest, res)
       `INSERT INTO audit_log (organization_id, user_id, action, method, path, request_body, status_code) VALUES ($1,$2,'Changed own password','POST','/api/auth/change-password',$3,200)`,
       [req.auth!.organizationId, req.auth!.userId, JSON.stringify({ current_password: "[redacted]", new_password: "[redacted]" })]
     );
-    // Stay in the company the person was working in.
-    res.json({ token: issueToken({ ...u.rows[0], organization_id: req.auth!.organizationId, role: req.auth!.role }), expiresIn: TOKEN_EXPIRY });
+    // Stay in the company the person was working in. A staff password change does not skip the authenticator.
+    const staffNeedsCode = req.auth!.staff === true && req.auth!.mfaVerified !== true;
+    const token = issueToken({
+      ...u.rows[0],
+      organization_id: req.auth!.organizationId,
+      role: req.auth!.role,
+      mfaVerified: req.auth!.mfaVerified === true,
+      mfaPending: staffNeedsCode,
+    });
+    if (staffNeedsCode) return res.json({ token, expiresIn: "10m", mfa_required: true, resend_after_seconds: 60 });
+    res.json({ token, expiresIn: TOKEN_EXPIRY });
   } catch {
     res.status(503).json({ error: "authentication_service_unavailable" });
   }
@@ -565,9 +596,74 @@ authRouter.post("/switch-company", requireAuth, async (req: AuthedRequest, res) 
       `INSERT INTO audit_log (organization_id, user_id, action, method, path, request_body, status_code) VALUES ($1,$2,'Switched company','POST','/api/auth/switch-company',$3,200)`,
       [row.organization_id, req.auth!.userId, JSON.stringify({ from_organization_id: req.auth!.organizationId, to_organization_id: row.organization_id })]
     ).catch(() => undefined);
-    res.json({ token: issueToken({ id: row.id, organization_id: row.organization_id, role: row.role, session_version: row.session_version, must_change_password: row.must_change_password }),
+    res.json({ token: issueToken({ id: row.id, organization_id: row.organization_id, role: row.role, session_version: row.session_version, must_change_password: row.must_change_password, mfaVerified: req.auth!.mfaVerified === true }),
       expiresIn: TOKEN_EXPIRY, active_organization_id: row.organization_id, role: row.role, access: row.access });
   } catch {
     res.status(503).json({ error: "authentication_service_unavailable" });
   }
+});
+
+function mfaError(res: { status: (code: number) => { json: (body: unknown) => unknown } }, error: unknown) {
+  if (error instanceof StaffMfaError) {
+    return res.status(error.status).json({ error: error.code, ...(error.retryAfterSeconds ? { retry_after_seconds: error.retryAfterSeconds } : {}) });
+  }
+  const code = String((error as { code?: string } | null)?.code ?? "unknown");
+  console.info("OI staff mfa", { outcome: "unavailable", code });
+  return res.status(503).json({ error: "mfa_unavailable" });
+}
+
+const mfaBody = z.object({ code: z.string().regex(/^\d{6}$/) }).strict();
+
+// Staff email-code step. The pending token can enter or resend a code, and nothing else.
+authRouter.get("/mfa/status", requireAuth, async (req: AuthedRequest, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  if (req.auth?.staff !== true) return res.status(403).json({ error: "forbidden" });
+  res.json({ staff: true, mfa_verified: req.auth.mfaVerified === true });
+});
+
+authRouter.post("/mfa/resend", requireAuth, async (req: AuthedRequest, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  if (req.auth?.staff !== true || req.auth.mfaVerified === true) return res.status(403).json({ error: "forbidden" });
+  try {
+    const user = await pool.query("SELECT email FROM users WHERE id = $1", [req.auth.userId]);
+    const email = user.rows[0]?.email;
+    if (!email) return res.status(503).json({ error: "mfa_unavailable" });
+    await resendStaffSignInCode(req.auth.userId, email);
+    console.info("OI staff mfa", { outcome: "code_resent" });
+    res.json({ sent: true, resend_after_seconds: 60 });
+  } catch (error) { mfaError(res, error); }
+});
+
+authRouter.post("/mfa/verify", requireAuth, async (req: AuthedRequest, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  if (req.auth?.staff !== true || req.auth.mfaVerified === true) return res.status(403).json({ error: "forbidden" });
+  const parsed = mfaBody.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: "invalid_mfa_code" });
+  try {
+    await verifyStaffSignInCode(req.auth.userId, parsed.data.code);
+    const current = await pool.query(
+      `SELECT id, session_version, (to_jsonb(users) ->> 'must_change_password')::boolean AS must_change_password
+       FROM users WHERE id = $1`,
+      [req.auth.userId]
+    );
+    const user = current.rows[0];
+    if (!user) return res.status(503).json({ error: "mfa_unavailable" });
+    const token = issueToken({
+      id: user.id,
+      organization_id: req.auth.organizationId,
+      role: req.auth.role,
+      session_version: user.session_version,
+      must_change_password: user.must_change_password === true,
+      mfaVerified: true,
+    });
+    const companies = await loadCompanies(req.auth.userId, req.auth.homeOrganizationId ?? req.auth.organizationId, req.auth.role);
+    console.info("OI staff mfa", { outcome: "verified" });
+    res.json({
+      token,
+      expiresIn: TOKEN_EXPIRY,
+      must_change_password: user.must_change_password === true,
+      active_organization_id: req.auth.organizationId,
+      companies,
+    });
+  } catch (error) { mfaError(res, error); }
 });
