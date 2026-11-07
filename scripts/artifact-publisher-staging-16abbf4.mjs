@@ -450,6 +450,17 @@ export function checkLocalLookups(fileMap, functionMap) {
 }
 
 async function bundleFunctions(cliDir) {
+  try {
+    return await bundleFunctionsUncaught(cliDir);
+  } catch (error) {
+    if (error.code === 'functions_bundle_failed' && error.detail) throw error;
+    const wrapped = fail('functions_bundle_failed');
+    wrapped.detail = error.detail || error.message || String(error);
+    throw wrapped;
+  }
+}
+
+async function bundleFunctionsUncaught(cliDir) {
   const entry = [
     resolve(cliDir, 'node_modules/@netlify/zip-it-and-ship-it/dist/main.js'),
     resolve(cliDir, '../@netlify/zip-it-and-ship-it/dist/main.js'),
@@ -826,16 +837,110 @@ function deployFiles() {
   return includeNetlifyToml(digestFiles(resolve(packageDir, 'publish')), resolve(root, 'netlify.toml'));
 }
 
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+export function findZipEocd(buffer) {
+  const maxBack = Math.min(buffer.length, 22 + 65535);
+  for (let offset = buffer.length - 22; offset >= buffer.length - maxBack; offset -= 1) {
+    if (offset < 0) break;
+    if (buffer.readUInt32LE(offset) !== 0x06054b50) continue;
+    const commentLength = buffer.readUInt16LE(offset + 20);
+    if (offset + 22 + commentLength === buffer.length) return offset;
+  }
+  throw new Error('zip end of central directory not found');
+}
+
+export function listStoredZipEntries(buffer) {
+  const eocd = findZipEocd(buffer);
+  const count = buffer.readUInt16LE(eocd + 10);
+  let cursor = buffer.readUInt32LE(eocd + 16);
+  const entries = [];
+  for (let index = 0; index < count; index += 1) {
+    if (buffer.readUInt32LE(cursor) !== 0x02014b50) throw new Error('zip central directory is truncated');
+    const nameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const commentLength = buffer.readUInt16LE(cursor + 32);
+    const crc = buffer.readUInt32LE(cursor + 16);
+    const size = buffer.readUInt32LE(cursor + 24);
+    const localOffset = buffer.readUInt32LE(cursor + 42);
+    const name = buffer.subarray(cursor + 46, cursor + 46 + nameLength).toString('utf8');
+    const localNameLength = buffer.readUInt16LE(localOffset + 26);
+    const localExtraLength = buffer.readUInt16LE(localOffset + 28);
+    const data = buffer.subarray(localOffset + 30 + localNameLength + localExtraLength, localOffset + 30 + localNameLength + localExtraLength + size);
+    if (crc32(data) !== crc) throw new Error(`zip crc mismatch for ${name}`);
+    entries.push({ name, size });
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+
+export function appendStoredZipEntry(buffer, name, contents) {
+  const data = Buffer.isBuffer(contents) ? contents : Buffer.from(String(contents));
+  const eocd = findZipEocd(buffer);
+  const totalEntries = buffer.readUInt16LE(eocd + 10);
+  const cdSize = buffer.readUInt32LE(eocd + 12);
+  const cdOffset = buffer.readUInt32LE(eocd + 16);
+  if (cdOffset === 0xffffffff || cdSize === 0xffffffff) throw new Error('zip64 is not supported for the invocation stamp');
+  const commentLength = buffer.readUInt16LE(eocd + 20);
+  const comment = buffer.subarray(eocd + 22, eocd + 22 + commentLength);
+  const central = buffer.subarray(cdOffset, cdOffset + cdSize);
+  const existing = listStoredZipEntries(buffer).some((entry) => entry.name === name);
+  if (existing) return Buffer.from(buffer);
+  const crc = crc32(data);
+  const nameBuf = Buffer.from(name, 'utf8');
+  const local = Buffer.alloc(30 + nameBuf.length + data.length);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt32LE(crc, 14);
+  local.writeUInt32LE(data.length, 18);
+  local.writeUInt32LE(data.length, 22);
+  local.writeUInt16LE(nameBuf.length, 26);
+  nameBuf.copy(local, 30);
+  data.copy(local, 30 + nameBuf.length);
+  const centralEntry = Buffer.alloc(46 + nameBuf.length);
+  centralEntry.writeUInt32LE(0x02014b50, 0);
+  centralEntry.writeUInt16LE(20, 4);
+  centralEntry.writeUInt16LE(20, 6);
+  centralEntry.writeUInt32LE(crc, 16);
+  centralEntry.writeUInt32LE(data.length, 20);
+  centralEntry.writeUInt32LE(data.length, 24);
+  centralEntry.writeUInt16LE(nameBuf.length, 28);
+  centralEntry.writeUInt32LE(cdOffset, 42);
+  nameBuf.copy(centralEntry, 46);
+  const nextEocd = Buffer.alloc(22 + comment.length);
+  nextEocd.writeUInt32LE(0x06054b50, 0);
+  nextEocd.writeUInt16LE(buffer.readUInt16LE(eocd + 8) + 1, 8);
+  nextEocd.writeUInt16LE(totalEntries + 1, 10);
+  nextEocd.writeUInt32LE(cdSize + centralEntry.length, 12);
+  nextEocd.writeUInt32LE(cdOffset + local.length, 16);
+  nextEocd.writeUInt16LE(comment.length, 20);
+  comment.copy(nextEocd, 22);
+  return Buffer.concat([buffer.subarray(0, cdOffset), local, central, centralEntry, nextEocd]);
+}
+
 function stampStreamZip(zipPath) {
   const marker = 'oi-invocation-mode.json';
-  const result = spawnSync('python3', ['-c', `
-import sys, zipfile
-path, marker = sys.argv[1], sys.argv[2]
-with zipfile.ZipFile(path, 'a') as archive:
-    if marker not in archive.namelist():
-        archive.writestr(marker, '{"invocationMode":"stream"}\\n')
-`, zipPath, marker], { encoding: 'utf8' });
-  if (result.status !== 0) throw fail('functions_bundle_failed');
+  try {
+    const before = readFileSync(zipPath);
+    const after = appendStoredZipEntry(before, marker, '{"invocationMode":"stream"}\n');
+    if (after.equals(before)) return;
+    const beforeSha = createHash('sha256').update(before).digest('hex');
+    const afterSha = createHash('sha256').update(after).digest('hex');
+    if (beforeSha === afterSha) throw new Error('zip stamp did not change the sha256');
+    listStoredZipEntries(after);
+    writeFileSync(zipPath, after);
+  } catch (error) {
+    const wrapped = fail('functions_bundle_failed');
+    wrapped.detail = `stamp ${zipPath}: ${error.detail || error.message || error}`;
+    throw wrapped;
+  }
 }
 
 async function ensurePublishingLocked(token, journal) {
@@ -981,7 +1086,27 @@ async function runPublish(pin) {
 async function uploadCheck() {
   const pin = readPin();
   const fileMap = deployFiles();
-  const functionMap = await bundleFunctions(netlifyCliDir());
+  let functionMap;
+  try {
+    functionMap = await bundleFunctions(netlifyCliDir());
+  } catch (error) {
+    const record = {
+      state: 'upload-check-failed',
+      failure: error.code || 'functions_bundle_failed',
+      detail: error.detail || error.message || String(error),
+      commit: assertHeadCommit(root),
+      packageCommit: PINNED_COMMIT,
+      packageSha256: pin.packageSha256,
+      productionRefused: true,
+      createdAt: new Date().toISOString(),
+    };
+    mkdirSync(journalDir, { recursive: true });
+    writeJson(resolve(journalDir, 'upload-check.json'), record);
+    console.error(record.detail);
+    console.log(JSON.stringify(record, null, 2));
+    process.exitCode = 1;
+    return;
+  }
   const missing = checkLocalLookups(fileMap, functionMap);
   const routesOk = apiRoutesOk(functionMap);
   const apiInvocationMode = functionMap.functionsConfig?.api?.invocation_mode || null;
@@ -1330,6 +1455,7 @@ async function main() {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
     console.error(error.code || 'publisher_failed');
+    if (error.detail) console.error(error.detail);
     process.exit(1);
   });
 }

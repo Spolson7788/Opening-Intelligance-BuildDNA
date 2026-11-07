@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { createHash } from 'node:crypto';
+import { apiFunctionView, apiRoutesOk, appendStoredZipEntry, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, listStoredZipEntries, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('staging site is the only accepted target', () => {
   assert.deepEqual(assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL }), {
@@ -141,6 +142,17 @@ test('a preparing deploy is not uploaded, and a function retry keeps the same to
   const zipConfig = functionsZipConfig('[functions]\n  directory = "netlify/functions"\n  node_bundler = "esbuild"\n  external_node_modules = ["express"]\n');
   assert.equal(zipConfig['*'].nodeBundler, 'esbuild_zisi');
   assert.deepEqual(zipConfig['*'].externalNodeModules, ['express']);
+});
+
+test('the invocation stamp keeps a zip valid and changes its sha', () => {
+  const empty = Buffer.alloc(22);
+  empty.writeUInt32LE(0x06054b50, 0);
+  const original = appendStoredZipEntry(empty, 'hello.txt', 'hello');
+  const stamped = appendStoredZipEntry(original, 'oi-invocation-mode.json', '{"invocationMode":"stream"}\n');
+  const again = appendStoredZipEntry(stamped, 'oi-invocation-mode.json', '{"invocationMode":"stream"}\n');
+  assert.notEqual(createHash('sha256').update(original).digest('hex'), createHash('sha256').update(stamped).digest('hex'));
+  assert.ok(again.equals(stamped));
+  assert.deepEqual(listStoredZipEntries(stamped).map((entry) => entry.name), ['hello.txt', 'oi-invocation-mode.json']);
 });
 
 test('compare deploys reports function routes, redirects, and env names without secrets', () => {
