@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { login as apiLogin, decodeTokenPayload, requestCompanySwitch } from "./api";
+import { login as apiLogin, decodeTokenPayload, requestCompanySwitch, ApiError } from "./api";
 import { decideSwitch, pendingWorkFor } from "./companySwitch";
 import type { SwitchDecision } from "./companySwitch";
 import { loadAuth, clearAuth } from "./db";
@@ -17,6 +17,18 @@ interface AuthState {
   mustChangePassword?: boolean;
 }
 
+/** Password was accepted for a staff account. The authenticator step is still required. */
+export class StaffMfaRequired extends Error {
+  readonly mfaToken: string;
+  readonly enrollmentRequired: boolean;
+  constructor(mfaToken: string, enrollmentRequired: boolean) {
+    super("mfa_required");
+    this.name = "StaffMfaRequired";
+    this.mfaToken = mfaToken;
+    this.enrollmentRequired = enrollmentRequired;
+  }
+}
+
 interface AuthContextValue {
   auth: AuthState | null;
   loading: boolean;
@@ -24,6 +36,7 @@ interface AuthContextValue {
   logoutPending: boolean;
   logoutError: string | null;
   login: (email: string, password: string, resumeQueued?: boolean) => Promise<void>;
+  finishStaffSignIn: (token: string, email: string, resumeQueued?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   /** M4: never discards work; blocked while uploading, needs confirmation with unsynced work. */
   switchCompany: (organizationId: string, acknowledgeUnsynced: boolean) => Promise<SwitchResult>;
@@ -70,10 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", focus); };
   }, []);
 
-  async function login(email: string, password: string, resumeQueued = true) {
-    changing.current = true; ++revision.current; setLoading(true);
-    try {
-    const { token } = await apiLogin(email, password);
+  async function establishSession(token: string, email: string, resumeQueued: boolean) {
     const { userId, organizationId, role } = decodeTokenPayload(token);
     // Display only; authorization continues to use the server-issued principal.
     const next = { token, userId, organizationId, role, email: email.trim() };
@@ -81,7 +91,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuth({ ...next, mustChangePassword: tokenRequiresPasswordChange(token) });
     // Fresh interactive sign-in only (never on reload, session restore, or company switch).
     playLoginIntro();
+  }
+
+  async function login(email: string, password: string, resumeQueued = true) {
+    changing.current = true; ++revision.current; setLoading(true);
+    try {
+      const body = await apiLogin(email, password);
+      if (body.mfa_required) {
+        if (!body.mfa_token) throw new ApiError(503, "mfa_unavailable");
+        throw new StaffMfaRequired(body.mfa_token, body.enrollment_required === true);
+      }
+      if (!body.token) throw new ApiError(503, "authentication_service_unavailable");
+      await establishSession(body.token, email, resumeQueued);
     } finally { changing.current = false; setLoading(false); setIdentityChecking(false); }
+  }
+
+  async function finishStaffSignIn(token: string, email: string, resumeQueued = true) {
+    changing.current = true; ++revision.current; setLoading(true);
+    try { await establishSession(token, email, resumeQueued); }
+    finally { changing.current = false; setLoading(false); setIdentityChecking(false); }
   }
 
   async function logout() {
@@ -115,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ auth, loading, identityChecking, logoutPending, logoutError, login, logout, switchCompany }}>
+    <AuthContext.Provider value={{ auth, loading, identityChecking, logoutPending, logoutError, login, finishStaffSignIn, logout, switchCompany }}>
       {children}
     </AuthContext.Provider>
   );

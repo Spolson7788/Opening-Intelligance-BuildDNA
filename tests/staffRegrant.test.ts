@@ -33,7 +33,7 @@ async function fresh(withRegrant: boolean) {
   state.db = db;
   return { db, q, id };
 }
-const tok = (u: string, org: string, sv = 0) => 'Bearer ' + jwt.sign({ userId: u, organizationId: org, role: 'admin', sessionVersion: sv }, process.env.JWT_SECRET!);
+const tok = (u: string, org: string, sv = 0) => 'Bearer ' + jwt.sign({ userId: u, organizationId: org, role: 'admin', sessionVersion: sv, mfaVerified: true }, process.env.JWT_SECRET!);
 afterAll(async () => { for (const d of dbs) await d.close(); });
 
 async function grantThenRevoke(id: Record<string, string>) {

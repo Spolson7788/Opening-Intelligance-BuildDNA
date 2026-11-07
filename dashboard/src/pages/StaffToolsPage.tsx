@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Sidebar } from "../components/Sidebar";
 import {
   createCompanyWithAdmin, createProviderFacility, grantMembership, platformMe, grantStaff, platformFacilities, platformOrganizations, platformOrgUsers, platformProviderRequests, platformProviders,
-  platformRecognitionUsage, platformUsageSettings, setSafetyCap, updateUsageSettings, platformStaff, reviewProviderRequest, revokeStaff, setOrganizationParent,
+  platformRecognitionUsage, platformUsageSettings, setSafetyCap, updateUsageSettings, platformStaff, reviewProviderRequest, revokeStaff, resetStaffMfa, setOrganizationParent,
   type PlatformFacility, type PlatformOrganization, type PlatformOrgUser, type PlatformProvider, type PlatformStaffRow, type ProviderRequest, type RecognitionUsageReport, type SafetyCapRow, type UsageSettings, serverFeatures } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { filterSort, needsProviderConfirmation, parentChoices, treeLines } from "../lib/staffTools";
@@ -172,6 +172,10 @@ function Staff({ me }: { me: string | undefined }) {
     const why = window.prompt(`Reason for removing ${r.full_name}'s OI staff access?`); if (!why?.trim()) return;
     try { await revokeStaff(r.user_id, why.trim()); setMsg("Staff access removed."); await load(); } catch (x) { setMsg(err(x)); }
   }
+  async function resetAuthenticator(r: PlatformStaffRow) {
+    const why = window.prompt(`Reset ${r.full_name}'s authenticator? They will have to enroll again. Enter the reason after you have verified their identity.`); if (!why?.trim()) return;
+    try { await resetStaffMfa(r.user_id, why.trim()); setMsg("Authenticator reset. They must enroll again at the next sign-in."); await load(); } catch (x) { setMsg(err(x)); }
+  }
   return <section className="panel"><h2>OI staff</h2>
     <p className="muted">Only members of the OI company can be staff. You cannot change your own staff access.</p>
     <input aria-label="Staff email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />{" "}
@@ -181,7 +185,10 @@ function Staff({ me }: { me: string | undefined }) {
     <table><thead><tr><th>Name</th><th>Email</th><th>Granted</th><th>Status</th><th></th></tr></thead><tbody>
       {rows.map((r) => <tr key={r.user_id}><td>{r.full_name}</td><td>{r.email}</td><td>{new Date(r.granted_at).toLocaleDateString()} · {r.grant_reason}</td>
         <td>{r.revoked_at ? `removed (${r.revoke_reason ?? ""})` : r.active ? "active" : "inactive"}</td>
-        <td>{!r.revoked_at && r.user_id !== me && <button className="btn btn-secondary" onClick={() => remove(r)}>Remove</button>}</td></tr>)}</tbody></table></section>;
+        <td>{!r.revoked_at && r.user_id !== me && <>
+          <button className="btn btn-secondary" onClick={() => resetAuthenticator(r)}>Reset authenticator</button>{" "}
+          <button className="btn btn-secondary" onClick={() => remove(r)}>Remove</button>
+        </>}</td></tr>)}</tbody></table></section>;
 }
 
 const usd = (n: number | null) => n == null ? "not set" : "$" + n.toFixed(4);

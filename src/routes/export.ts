@@ -19,7 +19,7 @@ exportRouter.use(auditLog);
 exportRouter.use(async (req: AuthedRequest, res, next) => {
   if (extraReadOrgs().length === 0) return next();
   try {
-    if (await canExportTree(req.auth!.userId, req.auth!.organizationId)) return next();
+    if (await canExportTree(req.auth!.userId, req.auth!.organizationId, req.auth!.mfaVerified === true)) return next();
     return res.status(403).json({ error: "tree_export_admin_only" });
   } catch { return res.status(503).json({ error: "database_unavailable" }); }
 });

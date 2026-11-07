@@ -48,6 +48,11 @@ async function authedFetch(path: string, options: RequestInit = {}) {
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    if (res.status === 403 && body.error === "mfa_required") {
+      handleUnauthorized(typeof localStorage !== "undefined" ? localStorage : null,
+        typeof window !== "undefined" ? { pathname: window.location.pathname, assign: (u) => window.location.assign(u) } : null,
+        import.meta.env.BASE_URL || "/");
+    }
     throw new ApiError(res.status, body.error || `request_failed_${res.status}`);
   }
   if (res.status === 204) return null; // no current caller uses this yet, but avoids the same crash the field app had
@@ -65,7 +70,34 @@ export async function login(email: string, password: string) {
     // The app's login route always returns a UUID reference; the hosting gate never does.
     throw new ApiError(res.status, body.error || "login_failed", typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
   }
-  return res.json() as Promise<{ token: string; expiresIn: string }>;
+  return res.json() as Promise<{ token?: string; expiresIn: string; mfa_required?: boolean; enrollment_required?: boolean; mfa_token?: string }>;
+}
+
+export interface StaffMfaEnrollment {
+  otpauth_url: string;
+  secret: string;
+  qr_data_url: string;
+  recovery_codes: string[];
+  warning: string;
+}
+
+async function staffMfaFetch(mfaToken: string, path: string, body?: unknown) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${mfaToken}` },
+    body: JSON.stringify(body ?? {}),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, payload.error || "mfa_failed");
+  return payload;
+}
+
+export function enrollStaffMfa(mfaToken: string): Promise<StaffMfaEnrollment> {
+  return staffMfaFetch(mfaToken, "/auth/mfa/enroll", {});
+}
+
+export function verifyStaffMfa(mfaToken: string, body: { code?: string; recovery_code?: string }): Promise<{ token: string }> {
+  return staffMfaFetch(mfaToken, "/auth/mfa/verify", body);
 }
 
 export interface Opening {
@@ -925,6 +957,7 @@ export const grantMembership = (body: { email: string; role: string; organizatio
 export const platformStaff = (): Promise<PlatformStaffRow[]> => authedFetch("/platform/staff");
 export const grantStaff = (email: string, reason: string) => post("/platform/staff", { email, reason });
 export const revokeStaff = (userId: string, reason: string) => post(`/platform/staff/${userId}`, { reason }, "DELETE");
+export const resetStaffMfa = (userId: string, reason: string) => post(`/platform/staff/${userId}/mfa-reset`, { reason });
 // Facility admins: request a provider (OI staff decide).
 export const providerRequestOptions = (): Promise<{ providers: { id: string; name: string }[]; assigned: { property_id: string; provider_organization_id: string }[] }> => authedFetch("/provider-requests/options");
 export const myProviderRequests = (): Promise<ProviderRequest[]> => authedFetch("/provider-requests");

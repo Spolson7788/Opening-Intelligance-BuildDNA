@@ -14,6 +14,12 @@ export interface AuthedRequest extends Request {
     // Companies whose data this request may READ: the active company plus, when the active
     // membership is admin or facilities_manager, its descendant locations. Writes stay on organizationId.
     allowedOrganizationIds?: string[];
+    /** True only for an unrevoked platform_staff account. */
+    staff?: boolean;
+    /** True only when this staff session completed authenticator verification. */
+    mfaVerified?: boolean;
+    /** Staff password was accepted and the authenticator code is still required. */
+    mfaPending?: boolean;
   };
 }
 
@@ -23,7 +29,8 @@ export interface AuthedRequest extends Request {
 export const AUTH_CONTEXT_SQL = `SELECT u.id, u.organization_id AS home_organization_id, u.is_active, u.session_version,
        (to_jsonb(u) ->> 'must_change_password')::boolean AS must_change_password,
        a.organization_id, a.role, a.access,
-       (SELECT array_agg(t.organization_id) FROM user_authorized_orgs(u.id) t WHERE t.via_organization_id = $2) AS allowed_organization_ids
+       (SELECT array_agg(t.organization_id) FROM user_authorized_orgs(u.id) t WHERE t.via_organization_id = $2) AS allowed_organization_ids,
+       is_platform_staff(u.id) AS is_platform_staff
 FROM users u LEFT JOIN LATERAL (SELECT x.organization_id, x.role, x.access FROM user_authorized_orgs(u.id) x WHERE x.organization_id = $2) a ON true
 WHERE u.id = $1`;
 
@@ -53,6 +60,17 @@ async function loadAuthContext(userId: string, organizationId: string) {
   }
 }
 
+function requestPath(req: Request): string {
+  return (req.originalUrl || req.url || "").split("?")[0].replace(/\/+$/, "");
+}
+
+// A staff password session may enroll, enter a code, read its own profile, or change its password.
+// It cannot use staff tools or any other company data until the authenticator check succeeds.
+function staffMfaPath(path: string): boolean {
+  return path.endsWith("/auth/mfa/enroll") || path.endsWith("/auth/mfa/verify") || path.endsWith("/auth/mfa/status")
+    || path.endsWith("/auth/me") || path.endsWith("/auth/change-password");
+}
+
 export async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
   // Correlate denied reads and writes without logging credentials, URLs,
   // query parameters, record IDs or request bodies.
@@ -68,7 +86,7 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     return deny(401, "missing_token");
   }
   const token = header.slice("Bearer ".length);
-  let payload: { userId: string; organizationId: string; role: string; sessionVersion?: number };
+  let payload: { userId: string; organizationId: string; role: string; sessionVersion?: number; mfaVerified?: boolean; mfaPending?: boolean };
   try {
     payload = jwt.verify(token, JWT_SECRET as string) as typeof payload;
   } catch (error) {
@@ -86,12 +104,18 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     // The database is authoritative on every request. A role change or account
     // deactivation therefore takes effect immediately instead of waiting for a
     // previously issued JWT to expire.
-    // M5: a forced password change blocks everything except reading your own profile
-    // and changing the password. Enforced from the database, not the token claim.
+    // M5: a forced password change blocks everything except reading your own profile,
+    // changing the password, and (for staff) the authenticator step.
+    const path = requestPath(req);
     if (user.must_change_password === true) {
-      const path = (req.originalUrl || req.url || "").split("?")[0].replace(/\/+$/, "");
-      if (!path.endsWith("/auth/change-password") && !path.endsWith("/auth/me")) return deny(403, "password_change_required");
+      if (!path.endsWith("/auth/change-password") && !path.endsWith("/auth/me") && !path.includes("/auth/mfa/")) return deny(403, "password_change_required");
     }
+
+    // Staff powers require a server-signed mfaVerified claim. A password-only or
+    // not-yet-confirmed staff token is not a staff session. Customers never take this branch.
+    const staff = user.is_platform_staff === true;
+    const mfaVerified = staff && payload.mfaVerified === true && payload.mfaPending !== true;
+    if (staff && !mfaVerified && !staffMfaPath(path)) return deny(403, "mfa_required");
 
     req.auth = {
       userId: user.id,
@@ -100,6 +124,9 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
       homeOrganizationId: user.home_organization_id ?? user.organization_id,
       access: user.access ?? "member",
       allowedOrganizationIds: Array.from(new Set([user.organization_id, ...((user.allowed_organization_ids as string[] | null) ?? [])])),
+      staff,
+      mfaVerified,
+      mfaPending: staff && !mfaVerified,
     };
     const method = (req.method || "GET").toUpperCase();
     const wantsTree = req.query?.scope === "tree" || String(req.headers["x-oi-scope"] ?? "").toLowerCase() === "tree";
