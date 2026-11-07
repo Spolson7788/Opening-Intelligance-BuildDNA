@@ -114,25 +114,27 @@ test('a preparing deploy is not uploaded, and a function retry keeps the same to
   const readyRouted = { state: 'ready', context: 'production', available_functions: [{ n: 'api', d: 'f1d3799c', ro: routes }] };
   assert.equal(publishBlocker(uploading), 'wait');
   assert.equal(publishBlocker(processing), 'wait');
-  assert.equal(publishBlocker(readyBare), 'ok');
-  assert.equal(publishBlocker(readyRouted), 'ok');
-  assert.equal(selectPublishSnapshot([uploading, processing, readyBare]), readyBare);
+  assert.equal(publishBlocker(readyBare), 'invocation');
+  assert.equal(publishBlocker({ ...readyRouted, available_functions: [{ n: 'api', im: 'stream', ro: routes }] }), 'ok');
+  assert.equal(selectPublishSnapshot([uploading, processing, readyBare]), null);
   assert.equal(loginProbeReached(404), false);
   assert.equal(loginProbeReached(400), true);
+  assert.equal(loginProbeReached({ status: 401, contentType: 'text/html', body: '<!doctype html><html>Login</html>' }), false);
   assert.equal(rollbackTarget().rollbackDeployId, '6aef3f786cc2af03c2ef1cd0');
   const knownGood = { state: 'ready', context: 'production', available_functions: [{ n: 'api', im: 'stream', ro: [] }] };
   assert.equal(publishBlocker(knownGood), 'ok');
-  assert.throws(() => assertPublishableDeploy(knownGood, { status: 404 }), /refusing_missing_routes/);
-  assert.equal(assertPublishableDeploy(knownGood, { status: 400 }).probeStatus, 400);
+  assert.equal(assertPublishableDeploy(knownGood).invocationMode, 'stream');
+  assert.throws(() => assertPublishableDeploy(readyBare), /refusing_invocation_mode/);
   assert.deepEqual(apiFunctionView(readyRouted)[0].routes, ['/health', '/api/*']);
   const registered = { state: 'ready', context: 'production', available_functions: [{ n: 'api', d: 'sha', im: 'stream', ro: routes }] };
   assert.equal(apiFunctionView(registered)[0].invocationMode, 'stream');
   assert.equal(functionInvocationMode({ runtimeAPIVersion: 2 }), 'stream');
   assert.equal(functionInvocationMode({ runtimeAPIVersion: 2, invocationMode: 'background' }), 'background');
   assert.equal(
-    functionUploadQuery('6aef3f786cc2af03c2ef1cd0', { name: 'api', runtime: 'nodejs22.x', runtimeAPIVersion: 2, timeout: 10 }, 528289),
+    functionUploadQuery('6aef3f786cc2af03c2ef1cd0', { name: 'api', runtime: 'nodejs22.x', routes: [{ pattern: '/api/*' }], timeout: 10 }, 528289),
     '/api/v1/deploys/6aef3f786cc2af03c2ef1cd0/functions/api?runtime=nodejs22.x&invocation_mode=stream&timeout=10&size=528289',
   );
+  assert.equal(functionConfigFromBuild({ name: 'api', routes: [{ pattern: '/health' }, { pattern: '/api/*' }] }).invocation_mode, 'stream');
   const zipConfig = functionsZipConfig('[functions]\n  directory = "netlify/functions"\n  node_bundler = "esbuild"\n  external_node_modules = ["express"]\n');
   assert.equal(zipConfig['*'].nodeBundler, 'esbuild_zisi');
   assert.deepEqual(zipConfig['*'].externalNodeModules, ['express']);
@@ -200,7 +202,7 @@ test('a production deploy includes netlify.toml and refuses any other context', 
   assert.equal(body.draft, false);
   assert.equal(body.files['/netlify.toml'], files.files['/netlify.toml']);
   const ready = { context: 'production', available_functions: [{ n: 'api', im: 'stream', ro: [] }] };
-  assert.equal(assertPublishableDeploy(ready, { status: 400 }).context, 'production');
-  assert.throws(() => assertPublishableDeploy({ ...ready, context: 'deploy-preview' }, { status: 400 }), /refusing_deploy_context/);
-  assert.throws(() => assertPublishableDeploy(ready, { status: 404 }), /refusing_missing_routes/);
+  assert.equal(assertPublishableDeploy(ready).context, 'production');
+  assert.throws(() => assertPublishableDeploy({ ...ready, context: 'deploy-preview' }), /refusing_deploy_context/);
+  assert.throws(() => assertPublishableDeploy({ context: 'production', available_functions: [{ n: 'api', im: null, ro: [] }] }), /refusing_invocation_mode/);
 });

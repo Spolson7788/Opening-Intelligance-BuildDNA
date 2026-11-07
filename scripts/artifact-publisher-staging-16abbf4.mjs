@@ -18,7 +18,7 @@ const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r8');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r9');
 const resumePath = resolve(journalDir, 'resume-attempt.json');
 const ROLLBACK_DEPLOY_ID = '6aef3f786cc2af03c2ef1cd0';
 const rollbackDir = resolve(root, 'dist/staging-publish-journal-16abbf4-rollback');
@@ -32,6 +32,7 @@ const PRIOR_JOURNALS = [
   'dist/staging-publish-journal-16abbf4-r6/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r7/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r8/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r9/publication-attempt.json',
 ];
 const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
@@ -283,7 +284,7 @@ function probeLoginRoute(deployId) {
         resolvePromise({
           status,
           contentType: String(res.headers['content-type'] || ''),
-          reached: loginProbeReached(status),
+          reached: loginProbeReached({ status, contentType: String(res.headers['content-type'] || ''), body: Buffer.concat(chunks).toString('utf8') }),
           body: sanitize(Buffer.concat(chunks).toString('utf8')).slice(0, 300),
         });
       });
@@ -366,21 +367,37 @@ export function apiFunctionView(deploy) {
   }));
 }
 
+export function apiInvocationMode(deploy) {
+  const modes = apiFunctionView(deploy).map((fn) => fn.invocationMode).filter(Boolean);
+  return modes[0] || null;
+}
+
+export function isPrivacyGate(probe) {
+  if (!probe || probe.status !== 401) return false;
+  const type = String(probe.contentType || '');
+  const body = String(probe.body || '');
+  return type.includes('text/html') || /<!doctype html/i.test(body) || /<html/i.test(body);
+}
+
+export function loginProbeReached(probe) {
+  const status = typeof probe === 'number' ? probe : probe?.status;
+  const details = typeof probe === 'number' ? { status } : probe;
+  if (!Number.isInteger(status) || status <= 0 || status === 404 || isPrivacyGate(details)) return false;
+  return true;
+}
+
 export function publishBlocker(deploy) {
   if (!deploy || deploy.state === 'error' || deploy.state === 'canceled') return 'failed';
   if (deploy.state !== 'ready') return 'wait';
   const outstanding = (deploy.required?.length || 0) + (deploy.required_functions?.length || 0);
   if (outstanding > 0) return 'wait';
   if (deploy.context !== 'production') return 'context';
+  if (apiInvocationMode(deploy) !== 'stream') return 'invocation';
   return 'ok';
 }
 
 export function deployPermalink(deployId) {
   return `https://${deployId}--oi-video-workflows-staging.netlify.app`;
-}
-
-export function loginProbeReached(status) {
-  return Number.isInteger(status) && status > 0 && status !== 404;
 }
 
 export function rollbackTarget() {
@@ -394,10 +411,10 @@ export function selectPublishSnapshot(responses) {
   return responses.find((deploy) => publishBlocker(deploy) === 'ok') || null;
 }
 
-export function assertPublishableDeploy(deploy, probe) {
+export function assertPublishableDeploy(deploy) {
   if (!deploy || deploy.context !== 'production') throw fail('refusing_deploy_context');
-  if (!loginProbeReached(probe?.status)) throw fail('refusing_missing_routes');
-  return { context: deploy.context, probeStatus: probe.status, apiRoutes: functionRoutePatternsFromDeploy(deploy) };
+  if (apiInvocationMode(deploy) !== 'stream') throw fail('refusing_invocation_mode');
+  return { context: deploy.context, invocationMode: 'stream', apiRoutes: functionRoutePatternsFromDeploy(deploy) };
 }
 
 export function digestFiles(directory) {
@@ -450,8 +467,9 @@ async function bundleFunctions(cliDir) {
       name: fn.name,
       path: fn.path,
       runtime: fn.runtimeVersion || fn.runtime || 'js',
-      runtimeAPIVersion: fn.runtimeAPIVersion,
-      invocationMode: fn.invocationMode,
+      runtimeAPIVersion: fn.runtimeAPIVersion ?? fn.buildData?.runtimeAPIVersion,
+      invocationMode: functionInvocationMode(fn),
+      routes: fn.routes,
       timeout: fn.timeout,
     });
   }
@@ -465,11 +483,16 @@ async function bundleFunctions(cliDir) {
   return { functions, byHash, functionsConfig, schedules, tmp };
 }
 
+export function functionHasApiRoutes(fn) {
+  const patterns = routeList(fn).map(routePattern);
+  return patterns.includes('/health') || patterns.includes('/api/*');
+}
+
 export function functionInvocationMode(fn) {
   const runtimeAPIVersion = fn?.runtimeAPIVersion ?? fn?.buildData?.runtimeAPIVersion ?? fn?.build_data?.runtimeAPIVersion;
   const mode = fn?.invocationMode || fn?.invocation_mode || null;
   if (mode === 'background' || fn?.background === true) return 'background';
-  if (runtimeAPIVersion === 2) return mode || 'stream';
+  if (runtimeAPIVersion === 2 || functionHasApiRoutes(fn)) return 'stream';
   return mode;
 }
 
@@ -502,10 +525,12 @@ export function functionsZipConfig(tomlText) {
 
 export function functionConfigFromBuild(fn) {
   const routes = fn.routes || fn.config?.path;
+  const mode = functionInvocationMode(fn);
   const buildData = {
     ...(fn.buildData || {}),
     ...(fn.bootstrapVersion != null ? { bootstrapVersion: fn.bootstrapVersion } : {}),
     ...(fn.runtimeAPIVersion != null ? { runtimeAPIVersion: fn.runtimeAPIVersion } : {}),
+    ...(mode === 'stream' && (fn.runtimeAPIVersion ?? fn.buildData?.runtimeAPIVersion) == null ? { runtimeAPIVersion: 2 } : {}),
   };
   const payload = {
     display_name: fn.displayName,
@@ -514,6 +539,7 @@ export function functionConfigFromBuild(fn) {
     memory: fn.memory,
     region: fn.region,
     routes,
+    invocation_mode: mode || undefined,
     build_data: Object.keys(buildData).length ? buildData : undefined,
     priority: fn.priority,
     vcpu: fn.vcpu,
@@ -729,11 +755,14 @@ async function pollDeploy(token, deployId, ready) {
     if (!ready && diffReady(last)) return last;
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 2000));
   }
-  saveFailure('deploy_poll_timeout', { status: 0, body: Buffer.from(sanitize(JSON.stringify({
-    state: last?.state || null, context: last?.context || null,
+  const invocationMode = apiInvocationMode(last || {});
+  const failure = ready && last?.state === 'ready' && last?.context === 'production' && invocationMode !== 'stream'
+    ? 'refusing_invocation_mode' : 'deploy_poll_timeout';
+  saveFailure(failure, { status: 0, body: Buffer.from(sanitize(JSON.stringify({
+    state: last?.state || null, context: last?.context || null, invocationMode,
     required: last?.required || [], required_functions: last?.required_functions || [],
   }))) });
-  throw fail('deploy_poll_timeout');
+  throw fail(failure);
 }
 
 async function uploadOutstanding(token, deployId, diff, fileMap, functionMap, journal) {
@@ -822,7 +851,8 @@ async function uploadDigestDeploy(token, fileMap, functionMap, journal) {
   try {
     const probe = await probeLoginRoute(deployId);
     journal.probeStatus = probe.status;
-    const gate = assertPublishableDeploy(diff, probe);
+    journal.privacyGate = isPrivacyGate(probe);
+    const gate = assertPublishableDeploy(diff);
     journal.context = gate.context;
     journal.routes = gate.apiRoutes;
     const confirmation = await publishReadyDeploy((method, path, body) => stagingRequest(method, path, token, body), deployId);
@@ -900,17 +930,22 @@ async function uploadCheck() {
   const functionMap = await bundleFunctions(netlifyCliDir());
   const missing = checkLocalLookups(fileMap, functionMap);
   const routesOk = apiRoutesOk(functionMap);
+  const apiInvocationMode = functionMap.functionsConfig?.api?.invocation_mode || null;
+  const invocationOk = apiInvocationMode === 'stream';
   const netlifyToml = Boolean(fileMap.files['/netlify.toml']);
   const productionContext = productionDeployBody({ files: fileMap.files, functions: functionMap.functions, functionsConfig: functionMap.functionsConfig }).draft === false;
   mkdirSync(journalDir, { recursive: true });
   const record = {
-    state: missing.length || !routesOk || !netlifyToml || !productionContext ? 'upload-check-failed' : 'upload-check',
-    commit: PINNED_COMMIT,
+    state: missing.length || !routesOk || !invocationOk || !netlifyToml || !productionContext ? 'upload-check-failed' : 'upload-check',
+    commit: assertHeadCommit(root),
+    packageCommit: PINNED_COMMIT,
     packageSha256: pin.packageSha256,
     files: Object.keys(fileMap.files).length,
     functions: Object.keys(functionMap.functions).length,
     apiRoutes: functionMap.functionsConfig?.api?.routes || [],
+    apiInvocationMode,
     routesOk,
+    invocationOk,
     netlifyToml,
     draft: false,
     context: 'production',
@@ -920,7 +955,7 @@ async function uploadCheck() {
   };
   writeJson(resolve(journalDir, 'upload-check.json'), record);
   console.log(JSON.stringify(record, null, 2));
-  if (missing.length || !routesOk || !netlifyToml || !productionContext) process.exitCode = 1;
+  if (missing.length || !routesOk || !invocationOk || !netlifyToml || !productionContext) process.exitCode = 1;
 }
 
 async function rollbackApproved() {
@@ -1006,7 +1041,8 @@ async function resumeDeploy(deployId) {
     current = await pollDeploy(token, deployId, true);
     const probe = await probeLoginRoute(deployId);
     journal.probeStatus = probe.status;
-    const gate = assertPublishableDeploy(current, probe);
+    journal.privacyGate = isPrivacyGate(probe);
+    const gate = assertPublishableDeploy(current);
     const confirmation = await publishReadyDeploy((method, path, body) => stagingRequest(method, path, token, body), deployId);
     journal.state = 'ready';
     journal.context = confirmation.context || gate.context;
@@ -1105,7 +1141,7 @@ async function loadCheckedDeploy(deployId) {
   const deploy = JSON.parse(response.body.toString('utf8'));
   if (deploy.site_id && deploy.site_id !== STAGING_SITE_ID) throw fail('refusing_site_mismatch');
   const probe = await probeLoginRoute(deployId);
-  return { token, deploy, probe, publishable: publishBlocker(deploy) === 'ok' && probe.reached === true };
+  return { token, deploy, probe, publishable: publishBlocker(deploy) === 'ok' };
 }
 
 async function publishExisting(deployId) {
@@ -1114,7 +1150,7 @@ async function publishExisting(deployId) {
   const { token, deploy, probe, publishable } = await loadCheckedDeploy(deployId);
   if (deploy.context !== 'production') throw fail('refusing_deploy_context');
   if (publishBlocker(deploy) !== 'ok') throw fail('deploy_not_ready');
-  if (!publishable) throw fail('refusing_missing_routes');
+  if (!publishable) throw fail('refusing_invocation_mode');
   mkdirSync(journalDir, { recursive: true });
   closeSync(openSync(readyPath, 'wx'));
   const journal = {
@@ -1151,7 +1187,8 @@ async function checkDeploy(deployId) {
     apiFunctions: apiFunctionView(deploy),
     probeStatus: probe.status,
     probeContentType: probe.contentType,
-    probeReached: probe.reached,
+    privacyGate: isPrivacyGate(probe),
+    probeReached: loginProbeReached(probe),
     publishable,
     ...rollbackTarget(),
     commit: assertHeadCommit(root),
