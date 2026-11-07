@@ -3,7 +3,7 @@
 // Does not print secrets. Default is a dry run; publish requires --publish-approved.
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, writeFileSync, closeSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, statSync, writeFileSync, closeSync } from 'node:fs';
 import https from 'node:https';
 import { resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -18,7 +18,8 @@ const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r2');
+const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
 const dryRunPath = resolve(journalDir, 'publication-dry-run.json');
 
@@ -127,9 +128,13 @@ export function netlifyCliDir(argv = process.argv) {
   return index >= 0 && argv[index + 1] ? argv[index + 1] : DEFAULT_NETLIFY_CLI_DIR;
 }
 
-export function assertStagingApiPath(path) {
-  const allowed = `/api/v1/sites/${STAGING_SITE_ID}`;
-  if (path !== allowed && !path.startsWith(`${allowed}/`) && !path.startsWith(`${allowed}?`)) throw fail('refusing_site_mismatch');
+export function assertStagingApiPath(path, deployId) {
+  if (path.includes(PRODUCTION_SITE_ID)) throw fail('refusing_production');
+  const site = `/api/v1/sites/${STAGING_SITE_ID}`;
+  const deploy = deployId ? `/api/v1/deploys/${deployId}` : '';
+  const allowed = path === site || path.startsWith(`${site}/`) || path.startsWith(`${site}?`)
+    || (deploy && (path === deploy || path.startsWith(`${deploy}/`) || path.startsWith(`${deploy}?`)));
+  if (!allowed) throw fail('refusing_site_mismatch');
   return path;
 }
 
@@ -161,8 +166,9 @@ async function authorize(cliDir) {
   return token;
 }
 
-function stagingRequest(method, path, token, body) {
-  assertStagingApiPath(path);
+function stagingRequest(method, path, token, body, contentType = 'application/json') {
+  assertStagingApiPath(path, path.includes('/api/v1/deploys/') ? path.split('/')[4] : undefined);
+  const payload = body == null ? null : Buffer.isBuffer(body) ? body : Buffer.from(body);
   return new Promise((resolvePromise, reject) => {
     const req = https.request({
       host: 'api.netlify.com',
@@ -171,7 +177,7 @@ function stagingRequest(method, path, token, body) {
       headers: {
         authorization: `Bearer ${token}`,
         accept: 'application/json',
-        ...(body ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } : {}),
+        ...(payload ? { 'content-type': contentType, 'content-length': payload.length } : {}),
       },
     }, (res) => {
       const chunks = [];
@@ -179,7 +185,27 @@ function stagingRequest(method, path, token, body) {
       res.on('end', () => resolvePromise({ status: res.statusCode || 0, body: Buffer.concat(chunks) }));
     });
     req.on('error', () => reject(fail('site_lookup_failed')));
-    req.end(body);
+    req.end(payload);
+  });
+}
+
+function sanitize(value) {
+  return String(value ?? '')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/\bnf_[A-Za-z0-9_]+\b/g, 'nf_[redacted]')
+    .replace(/("(?:access_token|token|authorization|password|secret)"\s*:\s*")[^"]*/gi, '$1[redacted]')
+    .slice(0, 8000);
+}
+
+function saveFailure(failure, response, extra = {}) {
+  mkdirSync(journalDir, { recursive: true });
+  writeJson(failurePath, {
+    failure,
+    status: response?.status ?? null,
+    body: sanitize(response?.body?.toString?.('utf8') ?? ''),
+    stdout: sanitize(extra.stdout),
+    stderr: sanitize(extra.stderr),
+    at: new Date().toISOString(),
   });
 }
 
@@ -203,14 +229,118 @@ async function readLiveDeploy(cliDir) {
   };
 }
 
-function runDeployCommand(cliDir) {
-  const bin = resolve(cliDir, 'bin/run.js');
-  if (!existsSync(bin)) throw fail('netlify_cli_not_found');
-  return spawnSync(process.execPath, [bin, 'deploy', '--prod', '--site', STAGING_SITE_ID,
-    '--dir', resolve(packageDir, 'publish'), '--functions', resolve(root, 'netlify/functions'),
-    '--message', `staging ${PINNED_COMMIT}`], {
-    cwd: root, encoding: 'utf8', windowsHide: true, timeout: 600000,
-  });
+function digestFiles(directory) {
+  const files = {};
+  const byHash = {};
+  const walk = (dir, prefix) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = resolve(dir, entry.name);
+      const rel = `${prefix}${entry.name}`.replace(/\\/g, '/');
+      if (entry.isDirectory()) walk(path, `${rel}/`);
+      else {
+        const bytes = readFileSync(path);
+        const sha = createHash('sha1').update(bytes).digest('hex');
+        files[rel] = sha;
+        byHash[sha] = path;
+      }
+    }
+  };
+  walk(directory, '');
+  return { files, byHash };
+}
+
+async function bundleFunctions(cliDir) {
+  const entry = [
+    resolve(cliDir, 'node_modules/@netlify/zip-it-and-ship-it/dist/main.js'),
+    resolve(cliDir, '../@netlify/zip-it-and-ship-it/dist/main.js'),
+  ].find((path) => existsSync(path));
+  if (!entry) throw fail('functions_bundle_failed');
+  const { zipFunctions } = await import(pathToFileURL(entry).href);
+  const tmp = mkdtempSync(resolve(root, 'dist/function-zip-'));
+  const built = await zipFunctions([resolve(root, 'netlify/functions')], tmp, { basePath: root });
+  const functions = {};
+  const byHash = {};
+  for (const fn of built) {
+    const bytes = readFileSync(fn.path);
+    const sha = createHash('sha1').update(bytes).digest('hex');
+    functions[fn.name] = sha;
+    byHash[sha] = { path: fn.path, runtime: fn.runtime || 'js' };
+  }
+  return { functions, byHash, tmp };
+}
+
+async function pollDeploy(token, deployId, ready) {
+  const states = ready ? new Set(['ready']) : new Set(['prepared', 'uploading', 'uploaded', 'ready']);
+  const deadline = Date.now() + 10 * 60 * 1000;
+  let last = null;
+  while (Date.now() < deadline) {
+    const response = await stagingRequest('GET', `/api/v1/sites/${STAGING_SITE_ID}/deploys/${deployId}`, token);
+    if (response.status === 401 || response.status === 403) throw fail('auth_required');
+    if (response.status !== 200) {
+      saveFailure('deploy_poll_failed', response);
+      throw fail('deploy_poll_failed');
+    }
+    last = JSON.parse(response.body.toString('utf8'));
+    if (last.state === 'error' || last.state === 'canceled') {
+      saveFailure('deploy_not_ready', response);
+      throw fail('deploy_not_ready');
+    }
+    if (states.has(last.state) && (ready || Array.isArray(last.required))) return last;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 2000));
+  }
+  saveFailure('deploy_poll_timeout', { status: 0, body: Buffer.from(sanitize(JSON.stringify({ state: last?.state || null }))) });
+  throw fail('deploy_poll_timeout');
+}
+
+async function uploadDigestDeploy(token, fileMap, functionMap, journal) {
+  const created = await stagingRequest('POST', `/api/v1/sites/${STAGING_SITE_ID}/deploys?title=${encodeURIComponent(`staging ${PINNED_COMMIT}`)}`, token, JSON.stringify({
+    files: fileMap.files, functions: functionMap.functions, draft: true, async: true,
+  }));
+  if (created.status === 401 || created.status === 403) throw fail('auth_required');
+  if (created.status !== 200 && created.status !== 201) {
+    saveFailure('deploy_create_failed', created);
+    throw fail('deploy_create_failed');
+  }
+  const deploy = JSON.parse(created.body.toString('utf8'));
+  if (deploy.site_id && deploy.site_id !== STAGING_SITE_ID) throw fail('refusing_site_mismatch');
+  const deployId = deploy.id;
+  journal.deployId = deployId;
+  journal.state = 'response-received';
+  writeJson(attemptPath, journal);
+  let diff = deploy;
+  if (!Array.isArray(diff.required)) diff = await pollDeploy(token, deployId, false);
+  for (const name of diff.required || []) {
+    const sha = fileMap.files[name] || fileMap.files[name.replace(/^\//, '')];
+    const path = fileMap.byHash[sha];
+    if (!path) throw fail('deploy_upload_failed');
+    const rel = name.replace(/^\//, '');
+    const uploaded = await stagingRequest('PUT', `/api/v1/deploys/${deployId}/files/${rel.split('/').map(encodeURIComponent).join('/')}`, token, readFileSync(path), 'application/octet-stream');
+    if (uploaded.status !== 200 && uploaded.status !== 201) {
+      saveFailure('deploy_upload_failed', uploaded);
+      throw fail('deploy_upload_failed');
+    }
+  }
+  for (const name of diff.required_functions || []) {
+    const sha = functionMap.functions[name];
+    const fn = functionMap.byHash[sha];
+    if (!fn) throw fail('deploy_upload_failed');
+    const uploaded = await stagingRequest('PUT', `/api/v1/deploys/${deployId}/functions/${encodeURIComponent(name)}?runtime=${encodeURIComponent(fn.runtime)}`, token, readFileSync(fn.path), 'application/zip');
+    if (uploaded.status !== 200 && uploaded.status !== 201) {
+      saveFailure('deploy_upload_failed', uploaded);
+      throw fail('deploy_upload_failed');
+    }
+  }
+  const ready = await pollDeploy(token, deployId, true);
+  if (ready.state !== 'ready') {
+    saveFailure('deploy_not_ready', { status: 0, body: Buffer.from(sanitize(JSON.stringify({ state: ready.state }))) });
+    throw fail('deploy_not_ready');
+  }
+  const published = await stagingRequest('POST', `/api/v1/sites/${STAGING_SITE_ID}/deploys/${deployId}/restore`, token, '{}');
+  if (published.status !== 200 && published.status !== 201) {
+    saveFailure('deploy_publish_failed', published);
+    throw fail('deploy_publish_failed');
+  }
+  return deployId;
 }
 
 function writeJson(path, value) {
@@ -244,32 +374,27 @@ async function runPublish(pin) {
   };
   writeJson(attemptPath, journal);
   return (async () => {
+    const cliDir = netlifyCliDir();
     try {
-      const cli = runDeployCommand(netlifyCliDir());
-      journal.state = 'response-received';
-      journal.cliStatus = cli.status;
-      writeJson(attemptPath, journal);
-      if (cli.status !== 0) {
-        journal.state = 'failed';
-        journal.failure = 'deploy_command_failed';
-        writeJson(attemptPath, journal);
-        const error = new Error('deploy_command_failed');
-        error.code = 'deploy_command_failed';
-        throw error;
-      }
-      const id = (cli.stdout || '').match(/([0-9a-f]{24})--oi-video-workflows-staging\.netlify\.app/i);
-      journal.deployId = id ? id[1] : null;
+      const token = await authorize(cliDir);
+      const fileMap = digestFiles(resolve(packageDir, 'publish'));
+      const functionMap = await bundleFunctions(cliDir);
+      const deployId = await uploadDigestDeploy(token, fileMap, functionMap, journal);
+      journal.state = 'ready';
+      journal.deployId = deployId;
       journal.deployUrl = STAGING_URL;
-      journal.state = journal.deployId ? 'ready' : 'response-received';
+      journal.stdout = '';
+      journal.stderr = '';
       journal.finishedAt = new Date().toISOString();
       writeJson(attemptPath, journal);
       return journal;
     } catch (error) {
-      if (journal.state !== 'failed') {
-        journal.state = 'failed';
-        journal.failure = error.code || 'publish_failed';
-        writeJson(attemptPath, journal);
-      }
+      journal.state = 'failed';
+      journal.failure = error.code || 'deploy_command_failed';
+      journal.stdout = '';
+      journal.stderr = sanitize(error.message === error.code ? '' : error.message);
+      writeJson(attemptPath, journal);
+      if (!existsSync(failurePath)) saveFailure(journal.failure, null, { stderr: journal.stderr });
       throw error;
     }
   })();
