@@ -18,14 +18,18 @@ const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r5');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r6');
 const resumePath = resolve(journalDir, 'resume-attempt.json');
+const ROLLBACK_DEPLOY_ID = '6aef3f786cc2af03c2ef1cd0';
+const rollbackDir = resolve(root, 'dist/staging-publish-journal-16abbf4-rollback');
+const rollbackAttempt = resolve(rollbackDir, 'rollback-attempt.json');
 const PRIOR_JOURNALS = [
   'dist/staging-publish-journal-16abbf4/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r2/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r3/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r4/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r5/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r6/publication-attempt.json',
 ];
 const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
@@ -307,7 +311,35 @@ async function bundleFunctions(cliDir) {
     functions[fn.name] = sha;
     remember(byHash, sha, { name: fn.name, path: fn.path, runtime: fn.runtimeVersion || fn.runtime || 'js' });
   }
-  return { functions, byHash, tmp };
+  const functionsConfig = {};
+  const schedules = [];
+  for (const fn of built) {
+    const config = functionConfigFromBuild(fn);
+    if (Object.keys(config).length) functionsConfig[fn.name] = config;
+    if (fn.schedule) schedules.push({ name: fn.name, cron: fn.schedule });
+  }
+  return { functions, byHash, functionsConfig, schedules, tmp };
+}
+
+export function functionConfigFromBuild(fn) {
+  const routes = fn.routes || fn.config?.path;
+  const payload = {
+    display_name: fn.displayName,
+    excluded_routes: fn.excludedRoutes,
+    generator: fn.generator,
+    memory: fn.memory,
+    region: fn.region,
+    routes,
+    build_data: fn.buildData || (fn.bootstrapVersion || fn.runtimeAPIVersion ? { bootstrapVersion: fn.bootstrapVersion, runtimeAPIVersion: fn.runtimeAPIVersion } : undefined),
+    priority: fn.priority,
+    vcpu: fn.vcpu,
+  };
+  return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== null));
+}
+
+export function apiRoutesOk(functionMap) {
+  const routes = functionMap.functionsConfig?.api?.routes || [];
+  return routes.includes('/health') && routes.includes('/api/*');
 }
 
 export function diffReady(deploy) {
@@ -378,9 +410,11 @@ async function uploadOutstanding(token, deployId, diff, fileMap, functionMap, jo
 }
 
 async function uploadDigestDeploy(token, fileMap, functionMap, journal) {
-  const created = await stagingRequest('POST', `/api/v1/sites/${STAGING_SITE_ID}/deploys?title=${encodeURIComponent(`staging ${PINNED_COMMIT}`)}`, token, JSON.stringify({
-    files: fileMap.files, functions: functionMap.functions, draft: true, async: true,
-  }));
+  const createBody = {
+    files: fileMap.files, functions: functionMap.functions, functions_config: functionMap.functionsConfig, draft: true, async: true,
+  };
+  if (functionMap.schedules?.length) createBody.function_schedules = functionMap.schedules;
+  const created = await stagingRequest('POST', `/api/v1/sites/${STAGING_SITE_ID}/deploys?title=${encodeURIComponent(`staging ${PINNED_COMMIT}`)}`, token, JSON.stringify(createBody));
   if (created.status === 401 || created.status === 403) throw fail('auth_required');
   if (created.status !== 200 && created.status !== 201) {
     saveFailure('deploy_create_failed', created);
@@ -470,20 +504,54 @@ async function uploadCheck() {
   const fileMap = digestFiles(resolve(packageDir, 'publish'));
   const functionMap = await bundleFunctions(netlifyCliDir());
   const missing = checkLocalLookups(fileMap, functionMap);
+  const routesOk = apiRoutesOk(functionMap);
   mkdirSync(journalDir, { recursive: true });
   const record = {
-    state: missing.length ? 'upload-check-failed' : 'upload-check',
+    state: missing.length || !routesOk ? 'upload-check-failed' : 'upload-check',
     commit: PINNED_COMMIT,
     packageSha256: pin.packageSha256,
     files: Object.keys(fileMap.files).length,
     functions: Object.keys(functionMap.functions).length,
+    apiRoutes: functionMap.functionsConfig?.api?.routes || [],
+    routesOk,
     missing,
     productionRefused: true,
     createdAt: new Date().toISOString(),
   };
   writeJson(resolve(journalDir, 'upload-check.json'), record);
   console.log(JSON.stringify(record, null, 2));
-  if (missing.length) process.exitCode = 1;
+  if (missing.length || !routesOk) process.exitCode = 1;
+}
+
+async function rollbackApproved() {
+  if (existsSync(rollbackAttempt)) throw fail('attempt_already_recorded');
+  const token = await authorize(netlifyCliDir());
+  const response = await stagingRequest('GET', `/api/v1/sites/${STAGING_SITE_ID}/deploys/${ROLLBACK_DEPLOY_ID}`, token);
+  if (response.status === 401 || response.status === 403) throw fail('auth_required');
+  if (response.status !== 200) {
+    mkdirSync(rollbackDir, { recursive: true });
+    writeJson(resolve(rollbackDir, 'failure.json'), { failure: 'inspect_failed', status: response.status, body: sanitize(response.body.toString('utf8')) });
+    throw fail('inspect_failed');
+  }
+  const deploy = JSON.parse(response.body.toString('utf8'));
+  if (deploy.id !== ROLLBACK_DEPLOY_ID || (deploy.site_id && deploy.site_id !== STAGING_SITE_ID)) throw fail('refusing_site_mismatch');
+  mkdirSync(rollbackDir, { recursive: true });
+  closeSync(openSync(rollbackAttempt, 'wx'));
+  const journal = { state: 'rollback-prepared', deployId: ROLLBACK_DEPLOY_ID, siteId: STAGING_SITE_ID, createdAt: new Date().toISOString() };
+  writeJson(rollbackAttempt, journal);
+  const restored = await stagingRequest('POST', `/api/v1/sites/${STAGING_SITE_ID}/deploys/${ROLLBACK_DEPLOY_ID}/restore`, token, '{}');
+  if (restored.status < 200 || restored.status >= 300) {
+    journal.state = 'failed';
+    journal.failure = 'deploy_publish_failed';
+    journal.status = restored.status;
+    journal.body = sanitize(restored.body.toString('utf8'));
+    writeJson(rollbackAttempt, journal);
+    throw fail('deploy_publish_failed');
+  }
+  journal.state = 'ready';
+  journal.finishedAt = new Date().toISOString();
+  writeJson(rollbackAttempt, journal);
+  console.log(JSON.stringify({ state: 'ready', deployId: ROLLBACK_DEPLOY_ID, siteId: STAGING_SITE_ID }, null, 2));
 }
 
 function recordedDeployIds() {
@@ -573,9 +641,10 @@ async function main() {
   const resumeIndex = process.argv.indexOf('--resume-deploy');
   const resumeId = resumeIndex >= 0 ? process.argv[resumeIndex + 1] : '';
   const uploadCheckMode = process.argv.includes('--upload-check');
+  const rollback = process.argv.includes('--rollback-approved');
   const publish = process.argv.includes('--publish-approved');
-  const dryRun = process.argv.includes('--dry-run') || (!publish && !uploadCheckMode && !inspectId && !resumeId);
-  if ([Boolean(inspectId), Boolean(resumeId), uploadCheckMode, publish, process.argv.includes('--dry-run')].filter(Boolean).length > 1) throw fail('choose_one_mode');
+  const dryRun = process.argv.includes('--dry-run') || (!publish && !uploadCheckMode && !inspectId && !resumeId && !rollback);
+  if ([Boolean(inspectId), Boolean(resumeId), uploadCheckMode, publish, rollback, process.argv.includes('--dry-run')].filter(Boolean).length > 1) throw fail('choose_one_mode');
   assertHeadCommit(root);
   assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL });
   let productionRefused = false;
@@ -584,6 +653,7 @@ async function main() {
   if (!productionRefused) throw new Error('production_guard_failed');
   if (inspectId) return inspectDeploy(inspectId);
   if (resumeId) return resumeDeploy(resumeId);
+  if (rollback) return rollbackApproved();
   if (uploadCheckMode) return uploadCheck();
 
   if (!publish) {
