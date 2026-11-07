@@ -113,21 +113,35 @@ function readPin() {
   return { packageSha256, fileCount: Object.keys(files).length };
 }
 
-function tokenPresent() {
-  const value = process.env.NETLIFY_AUTH_TOKEN;
-  return typeof value === 'string' && value.length > 0;
+function netlifyBin() {
+  return process.platform === 'win32' ? 'netlify.cmd' : 'netlify';
 }
 
-async function readLiveDeploy() {
-  const response = await fetch(`https://api.netlify.com/api/v1/sites/${STAGING_SITE_ID}`, {
-    headers: { authorization: `Bearer ${process.env.NETLIFY_AUTH_TOKEN}` },
+function runNetlify(args) {
+  return spawnSync(netlifyBin(), args, {
+    cwd: root,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+    windowsHide: true,
+    timeout: 60000,
   });
-  if (!response.ok) {
+}
+
+function readLiveDeploy() {
+  // Uses the Netlify CLI's existing login. The token is never read or printed.
+  const result = runNetlify(['api', 'getSite', '--data', JSON.stringify({ site_id: STAGING_SITE_ID })]);
+  if (result.error || result.status !== 0) {
+    const error = new Error(result.error?.code === 'ENOENT' ? 'netlify_cli_not_found' : 'cli_login_required');
+    error.code = error.message;
+    throw error;
+  }
+  let site;
+  try { site = JSON.parse(result.stdout); }
+  catch {
     const error = new Error('site_lookup_failed');
     error.code = 'site_lookup_failed';
     throw error;
   }
-  const site = await response.json();
   assertSite({ id: site.id, name: site.name, url: site.ssl_url || site.url });
   const deploy = site.published_deploy || {};
   return {
@@ -148,17 +162,13 @@ function runPublish(pin) {
     error.code = 'attempt_already_recorded';
     throw error;
   }
-  if (!tokenPresent()) {
-    const error = new Error('credentials_required');
-    error.code = 'credentials_required';
-    throw error;
-  }
   const dirty = trackedDirty();
   if (dirty.length) {
     const error = new Error('working_tree_dirty');
     error.code = 'working_tree_dirty';
     throw error;
   }
+  const live = readLiveDeploy();
   const created = openSync(attemptPath, 'wx');
   closeSync(created);
   const journal = {
@@ -167,19 +177,15 @@ function runPublish(pin) {
     siteId: STAGING_SITE_ID,
     siteName: STAGING_SITE_NAME,
     packageSha256: pin.packageSha256,
-    rollbackDeployId: null,
-    rollbackPermalink: null,
+    ...live,
     createdAt: new Date().toISOString(),
   };
   writeJson(attemptPath, journal);
   return (async () => {
     try {
-      const live = await readLiveDeploy();
-      Object.assign(journal, live, { state: 'attempt-prepared' });
-      writeJson(attemptPath, journal);
-      const cli = spawnSync('npx', ['--yes', 'netlify', 'deploy', '--prod', '--site', STAGING_SITE_ID,
+      const cli = runNetlify(['deploy', '--prod', '--site', STAGING_SITE_ID,
         '--dir', resolve(packageDir, 'publish'), '--functions', resolve(root, 'netlify/functions'),
-        '--message', `staging ${PINNED_COMMIT}`], { cwd: root, encoding: 'utf8' });
+        '--message', `staging ${PINNED_COMMIT}`]);
       journal.state = 'response-received';
       journal.cliStatus = cli.status;
       writeJson(attemptPath, journal);
@@ -234,6 +240,12 @@ async function main() {
       if (error.code !== 'package_not_built' && error.code !== 'refusing_package_checksum' && error.code !== 'refusing_package_commit') throw error;
       packageState = error.code;
     }
+    let rollback = null;
+    let rollbackError = null;
+    if (packageState === 'package_checksum_matched' || packageState === 'package_not_built') {
+      try { rollback = readLiveDeploy(); }
+      catch (error) { rollbackError = error.code || 'cli_login_required'; }
+    }
     mkdirSync(journalDir, { recursive: true });
     const record = {
       state: 'dry-run',
@@ -242,12 +254,15 @@ async function main() {
       siteName: STAGING_SITE_NAME,
       packageState,
       packageSha256,
-      rollback: tokenPresent() ? 'not-fetched-on-dry-run' : 'credentials-not-present',
+      rollbackDeployId: rollback?.rollbackDeployId || null,
+      rollbackPermalink: rollback?.rollbackPermalink || null,
+      rollbackError,
       productionRefused: true,
       createdAt: new Date().toISOString(),
     };
     writeJson(dryRunPath, record);
     console.log(JSON.stringify(record, null, 2));
+    if (rollbackError) process.exitCode = 1;
     return;
   }
   const pin = readPin();

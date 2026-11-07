@@ -27,6 +27,6 @@ When that dry run looks right, and only then:
 node scripts/artifact-publisher-staging-16abbf4.mjs --publish-approved
 ```
 
-That command needs a Netlify login already available to the Netlify CLI (`NETLIFY_AUTH_TOKEN` or an existing `netlify login`). It does not print the token. The attempt journal is `dist/staging-publish-journal-16abbf4/publication-attempt.json`. A ready journal has `state` `ready`, the new deploy id, and `rollbackDeployId` for the deploy that was live before this one.
+Both commands use the Netlify CLI already logged in on this PC (`netlify login`). They do not read a token from the environment. The dry run calls `netlify api getSite` for this staging site only and records `rollbackDeployId`. It does not upload. The attempt journal is `dist/staging-publish-journal-16abbf4/publication-attempt.json`. A ready journal has `state` `ready`, the new deploy id, and `rollbackDeployId` for the deploy that was live before this one.
 
 Rollback is redeploying that recorded deploy in the Netlify UI for this staging site only. Do not delete it.
