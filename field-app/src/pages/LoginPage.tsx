@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { StaffMfaRequired, useAuth } from "../lib/AuthContext";
-import { ApiError, enrollStaffMfa, verifyStaffMfa } from "../lib/api";
-import type { StaffMfaEnrollment } from "../lib/api";
+import { ApiError, resendStaffSignInCode, verifyStaffMfa } from "../lib/api";
+import { clearPendingStaffSignIn, readPendingStaffSignIn, savePendingStaffSignIn, type PendingStaffSignIn } from "../lib/staffSignInPending";
 import { readLoginForm } from "../lib/loginForm";
 import { loginFailureMessage } from "../lib/authResponse";
 import { loginReturnPath } from "../lib/qrPayload";
@@ -12,11 +12,17 @@ import { siteAccessRenewalUrl } from '../lib/siteAccess';
 import { isSiteAccessLoginFailure } from '../lib/authResponse';
 
 function mfaMessage(code: string): string {
-  if (code === "mfa_code_reused") return "That code was already used. Wait for the next authenticator code, or use a recovery code.";
-  if (code === "mfa_rate_limited") return "Too many attempts. Wait 15 minutes and try again.";
-  if (code === "mfa_unavailable") return "Authenticator setup is unavailable right now. Try again shortly.";
-  if (code === "invalid_mfa_code") return "That code wasn't accepted. Check the authenticator app and try again.";
-  return "The authenticator code could not be checked. Try again.";
+  if (code === "mfa_code_reused") return "That code was already used. Send a new one.";
+  if (code === "mfa_code_expired") return "That code expired. Send a new one.";
+  if (code === "mfa_rate_limited") return "Too many attempts. Wait 15 minutes, or ask another staff member to clear the lockout.";
+  if (code === "resend_cooldown") return "Wait about a minute before sending another code.";
+  if (code === "mfa_unavailable") return "The sign-in code could not be emailed. Try again shortly.";
+  if (code === "invalid_mfa_code") return "That code wasn't accepted. Check the email and try again.";
+  return "The sign-in code could not be checked. Try again.";
+}
+
+function browserSession(): Storage | null {
+  return typeof sessionStorage === "undefined" ? null : sessionStorage;
 }
 
 export function LoginPage() {
@@ -26,17 +32,33 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [reference, setReference] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [challenge, setChallenge] = useState<StaffMfaRequired | null>(null);
-  const [enrollment, setEnrollment] = useState<StaffMfaEnrollment | null>(null);
+  const [pending, setPending] = useState<PendingStaffSignIn | null>(() => readPendingStaffSignIn(browserSession()));
   const [code, setCode] = useState("");
-  const [recovery, setRecovery] = useState("");
-  const [savedCodes, setSavedCodes] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [staffEmail, setStaffEmail] = useState("");
+  const [now, setNow] = useState(() => Date.now());
   // Same allow-listed builder as the opening detail and QR pages; null on any other origin.
   const renewalUrl = siteAccessRenewalUrl(window.location.origin);
+  const wait = pending ? Math.max(0, 60 - Math.floor((now - pending.sentAt) / 1000)) : 0;
 
   useEffect(() => { setError(null); setReference(null); }, [auth?.userId, auth?.organizationId]);
+  useEffect(() => {
+    if (!pending) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [pending]);
+
+  function remember(next: PendingStaffSignIn) {
+    const store = browserSession();
+    if (store) savePendingStaffSignIn(next, store);
+    setPending(next);
+    setNow(Date.now());
+  }
+  function forget() {
+    const store = browserSession();
+    if (store) clearPendingStaffSignIn(store);
+    setPending(null);
+    setCode("");
+    setError(null);
+  }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -50,19 +72,12 @@ export function LoginPage() {
     try {
       if (isQrDetailsPath(location.state?.from)) await login(credentials.email, credentials.password, false);
       else await login(credentials.email, credentials.password);
+      forget();
       const from = location.state?.from;
       navigate(loginReturnPath(from), { replace: true });
     } catch (err) {
       if (err instanceof StaffMfaRequired) {
-        setStaffEmail(credentials.email);
-        setChallenge(err);
-        if (err.enrollmentRequired) {
-          try { setEnrollment(await enrollStaffMfa(err.mfaToken)); }
-          catch (enrollError) {
-            setChallenge(null);
-            setError(enrollError instanceof ApiError ? mfaMessage(enrollError.message) : "Authenticator setup is unavailable right now. Try again shortly.");
-          }
-        }
+        remember({ mfaToken: err.mfaToken, email: credentials.email, sentAt: Date.now() });
         return;
       }
       if (err instanceof ApiError) setReference(err.reference || null);
@@ -76,74 +91,50 @@ export function LoginPage() {
     }
   }
 
-  async function copySetupKey(secret: string) {
-    try {
-      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(secret);
-      else {
-        const area = document.createElement("textarea");
-        area.value = secret;
-        document.body.append(area);
-        area.select();
-        document.execCommand("copy");
-        area.remove();
-      }
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  }
-
   async function onVerify(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!challenge || submitting) return;
+    if (!pending || submitting) return;
     setError(null);
     setSubmitting(true);
     try {
-      const result = await verifyStaffMfa(challenge.mfaToken, enrollment || !recovery.trim() ? { code } : { recovery_code: recovery.trim() });
+      const result = await verifyStaffMfa(pending.mfaToken, { code });
       const resumeQueued = !isQrDetailsPath(location.state?.from);
-      await finishStaffSignIn(result.token, staffEmail, resumeQueued);
+      forget();
+      await finishStaffSignIn(result.token, pending.email, resumeQueued);
       navigate(loginReturnPath(location.state?.from), { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? mfaMessage(err.message) : "The authenticator code could not be checked. Try again.");
+      setError(err instanceof ApiError ? mfaMessage(err.message) : "The sign-in code could not be checked. Try again.");
     } finally { setSubmitting(false); }
   }
 
-  if (challenge) {
-    const canSubmit = enrollment ? code.length === 6 && savedCodes : (code.length === 6 || recovery.trim().length >= 8);
+  async function onResend() {
+    if (!pending || wait > 0 || submitting) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await resendStaffSignInCode(pending.mfaToken);
+      remember({ ...pending, sentAt: Date.now() });
+    } catch (err) {
+      setError(err instanceof ApiError ? mfaMessage(err.message) : "The sign-in code could not be emailed. Try again shortly.");
+    } finally { setSubmitting(false); }
+  }
+
+  if (pending) {
     return (
       <div className="screen" style={{ display: "flex", flexDirection: "column", justifyContent: "center", minHeight: "100vh" }}>
         <div className="asset-plate" style={{ marginBottom: 16 }}>OPENING-INTEL</div>
-        <h1 style={{ fontSize: 24, marginBottom: 4 }}>Authenticator code</h1>
-        <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>Staff sign-in needs the 6-digit code from your authenticator app. You need a network connection for this step.</p>
-        {enrollment && (
-          <div>
-            <p role="alert"><strong>Shown only once.</strong> {enrollment.warning}</p>
-            <a className="btn btn-primary mfa-add-app" href={enrollment.otpauth_url}>Add to authenticator app</a>
-            <p className="mfa-add-note">On an iPhone, this opens the built-in Passwords app and adds the verification code.</p>
-            <img src={enrollment.qr_data_url} alt="Authenticator setup QR code" width={256} height={256} />
-            <p>Setup key: <code id="setup-key">{enrollment.secret}</code>{" "}
-              <button type="button" className="btn" onClick={() => copySetupKey(enrollment.secret)}>{copied ? "Copied" : "Copy setup key"}</button>
-            </p>
-            <ul>{enrollment.recovery_codes.map((item) => <li key={item}><code>{item}</code></li>)}</ul>
-            <label><input type="checkbox" checked={savedCodes} onChange={(ev) => setSavedCodes(ev.target.checked)} /> I have saved these recovery codes</label>
-            <style>{`.mfa-add-app{display:block;text-align:center;font-size:18px;padding:16px;margin:8px 0 4px;text-decoration:none}.mfa-add-note{font-size:13px;margin:0 0 12px}@media (max-width:720px){.mfa-add-app{font-size:20px;padding:18px 16px}}`}</style>
-          </div>
-        )}
+        <h1 style={{ fontSize: 24, marginBottom: 4 }}>Email sign-in code</h1>
+        <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>We emailed a 6-digit code to {pending.email}. It expires in 10 minutes. You can switch to Mail, copy the code, and come back to this screen.</p>
         <form onSubmit={onVerify}>
           <div className="field">
             <label htmlFor="mfa-code">6-digit code</label>
             <input id="mfa-code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(ev) => setCode(ev.target.value.replace(/\D/g, "").slice(0, 6))} />
           </div>
-          {!enrollment && (
-            <div className="field">
-              <label htmlFor="recovery-code">Recovery code</label>
-              <input id="recovery-code" autoComplete="off" value={recovery} onChange={(ev) => setRecovery(ev.target.value)} />
-            </div>
-          )}
           {error && <p className="error-text">{error}</p>}
-          <button type="submit" className="btn btn-primary" disabled={submitting || !canSubmit}>{submitting ? "Checking…" : "Continue"}</button>
+          <button type="submit" className="btn btn-primary" disabled={submitting || code.length !== 6}>{submitting ? "Checking…" : "Continue"}</button>
         </form>
-        <button type="button" className="btn" onClick={() => { setChallenge(null); setEnrollment(null); setCode(""); setRecovery(""); setSavedCodes(false); }}>Back to password</button>
+        <button type="button" className="btn" disabled={submitting || wait > 0} onClick={onResend}>{wait > 0 ? `Resend code (${wait}s)` : "Resend code"}</button>
+        <button type="button" className="btn" onClick={forget}>Back to password</button>
       </div>
     );
   }

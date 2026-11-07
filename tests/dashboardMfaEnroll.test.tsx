@@ -7,32 +7,35 @@ const state = vi.hoisted(() => ({ login: vi.fn(), adoptToken: vi.fn() }));
 vi.mock("../dashboard/src/lib/AuthContext", () => {
   class StaffMfaRequired extends Error {
     mfaToken: string;
-    enrollmentRequired: boolean;
-    constructor(mfaToken: string, enrollmentRequired: boolean) {
+    constructor(mfaToken: string) {
       super("mfa_required");
       this.mfaToken = mfaToken;
-      this.enrollmentRequired = enrollmentRequired;
     }
   }
   return { useAuth: () => state, StaffMfaRequired };
 });
 vi.mock("../dashboard/src/lib/api", async (orig) => {
   const actual = await orig<typeof import("../dashboard/src/lib/api")>();
-  return { ...actual, enrollStaffMfa: vi.fn(), verifyStaffMfa: vi.fn() };
+  return { ...actual, resendStaffSignInCode: vi.fn(), verifyStaffMfa: vi.fn() };
 });
 
 import { LoginPage } from "../dashboard/src/pages/LoginPage";
 import { StaffMfaRequired } from "../dashboard/src/lib/AuthContext";
-import { enrollStaffMfa } from "../dashboard/src/lib/api";
+import { resendStaffSignInCode } from "../dashboard/src/lib/api";
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
+const futureToken = () => {
+  const part = (value: object) => btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return `${part({ alg: "none" })}.${part({ exp: Math.floor(Date.now() / 1000) + 600 })}.sig`;
+};
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  sessionStorage.clear();
   state.login.mockReset();
   state.adoptToken.mockReset();
-  vi.mocked(enrollStaffMfa).mockReset();
+  vi.mocked(resendStaffSignInCode).mockReset();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -40,31 +43,34 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
 });
 
-it("offers the iPhone Passwords link and a setup-key copy button while enrolling", async () => {
-  state.login.mockRejectedValueOnce(new StaffMfaRequired("pending-token", true));
-  vi.mocked(enrollStaffMfa).mockResolvedValueOnce({
-    otpauth_url: "otpauth://totp/Opening%20Intelligence:staff%40example.invalid?secret=SETUPKEY&issuer=Opening%20Intelligence&algorithm=SHA1&digits=6&period=30",
-    secret: "SETUPKEY",
-    qr_data_url: "data:image/png;base64,aaaa",
-    recovery_codes: ["ABCDE-FGHIJ"],
-    warning: "These codes are shown only once.",
-  });
+it("keeps the emailed code screen after a reload and does not send another code", async () => {
+  state.login.mockRejectedValueOnce(new StaffMfaRequired(futureToken()));
   await act(async () => { root.render(<MemoryRouter><LoginPage /></MemoryRouter>); });
-  (host.querySelector("#email") as HTMLInputElement).value = "staff@example.invalid";
-  (host.querySelector("#password") as HTMLInputElement).value = "synthetic-test-only";
+  const setInput = (selector: string, value: string) => {
+    const input = host.querySelector(selector) as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+    setter?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  await act(async () => {
+    setInput("#email", "staff@example.invalid");
+    setInput("#password", "synthetic-test-only");
+  });
   await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
-  const add = host.querySelector("a.mfa-add-app");
-  expect(add?.textContent).toBe("Add to authenticator app");
-  expect(add?.getAttribute("href")).toBe("otpauth://totp/Opening%20Intelligence:staff%40example.invalid?secret=SETUPKEY&issuer=Opening%20Intelligence&algorithm=SHA1&digits=6&period=30");
-  expect(add?.getAttribute("target")).toBeNull();
-  expect(host.querySelector("img")?.getAttribute("alt")).toBe("Authenticator setup QR code");
-  expect(host.querySelector("#setup-key")?.textContent).toBe("SETUPKEY");
-  const writeText = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
-  const copy = Array.from(host.querySelectorAll("button")).find((button) => button.textContent === "Copy setup key");
-  await act(async () => { copy!.click(); });
-  expect(writeText).toHaveBeenCalledWith("SETUPKEY");
+  expect(host.textContent).toContain("Email sign-in code");
+  expect(host.textContent).toContain("staff@example.invalid");
+  expect(host.textContent).toContain("Resend code");
+  expect(resendStaffSignInCode).not.toHaveBeenCalled();
+  act(() => root.unmount());
+  root = createRoot(host);
+  await act(async () => { root.render(<MemoryRouter><LoginPage /></MemoryRouter>); });
+  expect(host.textContent).toContain("Email sign-in code");
+  expect(host.textContent).toContain("staff@example.invalid");
+  expect(state.login).toHaveBeenCalledTimes(1);
+  expect(resendStaffSignInCode).not.toHaveBeenCalled();
 });

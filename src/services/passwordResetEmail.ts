@@ -35,6 +35,22 @@ export async function sendPasswordResetEmail(to: string, token: string): Promise
   if (!response.ok) throw new Error("password_reset_email_delivery_failed");
 }
 
+export async function sendStaffSignInEmail(to: string, code: string): Promise<void> {
+  if (!process.env.RESEND_API_KEY || !process.env.PASSWORD_RESET_FROM_EMAIL) throw new Error("staff_sign_in_email_unconfigured");
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: process.env.PASSWORD_RESET_FROM_EMAIL,
+      to: [to],
+      subject: "Your Opening Intelligence sign-in code",
+      text: `Your Opening Intelligence sign-in code is ${code}.\n\nThis code expires in 10 minutes and works once.\n\nIf you didn't try to sign in, you can ignore this email.`,
+    }),
+    signal: AbortSignal.timeout(3000),
+  });
+  if (!response.ok) throw new Error("staff_sign_in_email_delivery_failed");
+}
+
 export async function sendPasswordChangedEmail(to: string): Promise<void> {
   if (!passwordResetConfigured()) return;
   const response = await fetch("https://api.resend.com/emails", {

@@ -64,10 +64,10 @@ function requestPath(req: Request): string {
   return (req.originalUrl || req.url || "").split("?")[0].replace(/\/+$/, "");
 }
 
-// A staff password session may enroll, enter a code, read its own profile, or change its password.
-// It cannot use staff tools or any other company data until the authenticator check succeeds.
+// A staff password session may enter the emailed code, ask for another, read its own profile, or change its password.
+// It cannot use staff tools or any other company data until that code is accepted.
 function staffMfaPath(path: string): boolean {
-  return path.endsWith("/auth/mfa/enroll") || path.endsWith("/auth/mfa/verify") || path.endsWith("/auth/mfa/status")
+  return path.endsWith("/auth/mfa/verify") || path.endsWith("/auth/mfa/resend") || path.endsWith("/auth/mfa/status")
     || path.endsWith("/auth/me") || path.endsWith("/auth/change-password");
 }
 

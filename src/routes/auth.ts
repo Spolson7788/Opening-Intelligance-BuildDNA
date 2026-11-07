@@ -8,7 +8,7 @@ import { requireAuth, requireRole, AuthedRequest, isMissingSchema } from "../mid
 import { auditLog } from "../middleware/auditLog";
 import { membershipOf, activeAdminCount, record, HISTORY_DEFAULT_REASON } from "../services/teamMemberships";
 import { passwordResetConfigured, sendPasswordChangedEmail, sendPasswordResetEmail } from "../services/passwordResetEmail";
-import { enrollStaffFactor, staffLoginGate, StaffMfaError, verifyStaffFactor } from "../services/staffMfa";
+import { isActivePlatformStaff, issueStaffSignInCode, resendStaffSignInCode, StaffMfaError, verifyStaffSignInCode } from "../services/staffMfa";
 
 export const authRouter = Router();
 
@@ -188,7 +188,7 @@ authRouter.post("/login", async (req, res) => {
   const { email, password } = parsed.data;
   try {
     const result = await pool.query(
-      "SELECT id, organization_id, role, password_hash, is_active, session_version, (to_jsonb(users) ->> 'must_change_password')::boolean AS must_change_password FROM public.users WHERE email = $1",
+      "SELECT id, organization_id, email, role, password_hash, is_active, session_version, (to_jsonb(users) ->> 'must_change_password')::boolean AS must_change_password FROM public.users WHERE email = $1",
       [email.toLowerCase()]
     );
     if (result.rows.length === 0) {
@@ -212,16 +212,11 @@ authRouter.post("/login", async (req, res) => {
       report("no_active_membership");
       return res.status(403).json({ error: "membership_inactive", reference });
     }
-    const gate = await staffLoginGate(user.id);
-    if (gate !== "customer") {
+    if (await isActivePlatformStaff(user.id)) {
+      await issueStaffSignInCode(user.id, user.email);
       const mfaToken = issueToken({ ...user, organization_id: active.organization_id, role: active.role, mfaPending: true });
       report("mfa_required");
-      return res.json({
-        mfa_required: true,
-        enrollment_required: gate === "enrollment_required",
-        mfa_token: mfaToken,
-        expiresIn: "10m",
-      });
+      return res.json({ mfa_required: true, mfa_token: mfaToken, expiresIn: "10m", resend_after_seconds: 60 });
     }
     const token = issueToken({ ...user, organization_id: active.organization_id, role: active.role });
     report("success");
@@ -558,10 +553,7 @@ authRouter.post("/change-password", requireAuth, async (req: AuthedRequest, res)
       mfaVerified: req.auth!.mfaVerified === true,
       mfaPending: staffNeedsCode,
     });
-    if (staffNeedsCode) {
-      const gate = await staffLoginGate(req.auth!.userId);
-      return res.json({ token, expiresIn: "10m", mfa_required: true, enrollment_required: gate === "enrollment_required" });
-    }
+    if (staffNeedsCode) return res.json({ token, expiresIn: "10m", mfa_required: true, resend_after_seconds: 60 });
     res.json({ token, expiresIn: TOKEN_EXPIRY });
   } catch {
     res.status(503).json({ error: "authentication_service_unavailable" });
@@ -612,38 +604,33 @@ authRouter.post("/switch-company", requireAuth, async (req: AuthedRequest, res) 
 });
 
 function mfaError(res: { status: (code: number) => { json: (body: unknown) => unknown } }, error: unknown) {
-  if (error instanceof StaffMfaError) return res.status(error.status).json({ error: error.code });
+  if (error instanceof StaffMfaError) {
+    return res.status(error.status).json({ error: error.code, ...(error.retryAfterSeconds ? { retry_after_seconds: error.retryAfterSeconds } : {}) });
+  }
   const code = String((error as { code?: string } | null)?.code ?? "unknown");
   console.info("OI staff mfa", { outcome: "unavailable", code });
   return res.status(503).json({ error: "mfa_unavailable" });
 }
 
-const mfaBody = z.object({
-  code: z.string().regex(/^\d{6}$/).optional(),
-  recovery_code: z.string().trim().min(8).max(64).optional(),
-}).strict();
+const mfaBody = z.object({ code: z.string().regex(/^\d{6}$/) }).strict();
 
-// Staff authenticator step. The pending token is enough to reach these routes and nothing else.
+// Staff email-code step. The pending token can enter or resend a code, and nothing else.
 authRouter.get("/mfa/status", requireAuth, async (req: AuthedRequest, res) => {
   res.setHeader("Cache-Control", "no-store");
   if (req.auth?.staff !== true) return res.status(403).json({ error: "forbidden" });
-  try {
-    const gate = await staffLoginGate(req.auth.userId);
-    res.json({ staff: true, enrolled: gate === "enrolled", mfa_verified: req.auth.mfaVerified === true });
-  } catch (error) { mfaError(res, error); }
+  res.json({ staff: true, mfa_verified: req.auth.mfaVerified === true });
 });
 
-authRouter.post("/mfa/enroll", requireAuth, async (req: AuthedRequest, res) => {
+authRouter.post("/mfa/resend", requireAuth, async (req: AuthedRequest, res) => {
   res.setHeader("Cache-Control", "no-store");
-  if (req.auth?.staff !== true) return res.status(403).json({ error: "forbidden" });
-  if (req.auth.mfaVerified === true) return res.status(409).json({ error: "already_enrolled" });
+  if (req.auth?.staff !== true || req.auth.mfaVerified === true) return res.status(403).json({ error: "forbidden" });
   try {
     const user = await pool.query("SELECT email FROM users WHERE id = $1", [req.auth.userId]);
     const email = user.rows[0]?.email;
     if (!email) return res.status(503).json({ error: "mfa_unavailable" });
-    const enrolled = await enrollStaffFactor(req.auth.userId, email);
-    console.info("OI staff mfa", { outcome: "enrollment_started" });
-    res.json(enrolled);
+    await resendStaffSignInCode(req.auth.userId, email);
+    console.info("OI staff mfa", { outcome: "code_resent" });
+    res.json({ sent: true, resend_after_seconds: 60 });
   } catch (error) { mfaError(res, error); }
 });
 
@@ -651,9 +638,9 @@ authRouter.post("/mfa/verify", requireAuth, async (req: AuthedRequest, res) => {
   res.setHeader("Cache-Control", "no-store");
   if (req.auth?.staff !== true || req.auth.mfaVerified === true) return res.status(403).json({ error: "forbidden" });
   const parsed = mfaBody.safeParse(req.body ?? {});
-  if (!parsed.success || !!parsed.data.code === !!parsed.data.recovery_code) return res.status(400).json({ error: "invalid_mfa_code" });
+  if (!parsed.success) return res.status(400).json({ error: "invalid_mfa_code" });
   try {
-    await verifyStaffFactor(req.auth.userId, { code: parsed.data.code, recoveryCode: parsed.data.recovery_code });
+    await verifyStaffSignInCode(req.auth.userId, parsed.data.code);
     const current = await pool.query(
       `SELECT id, session_version, (to_jsonb(users) ->> 'must_change_password')::boolean AS must_change_password
        FROM users WHERE id = $1`,

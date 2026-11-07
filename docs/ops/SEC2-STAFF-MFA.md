@@ -1,24 +1,21 @@
-# SEC-2 staff authenticator — operator notes
+# SEC-2 staff sign-in code
 
-This is not a production change. The migration file is in the repository and has not been applied.
+Staff (rows in `platform_staff`) enter their password, then a 6-digit code emailed to their account address. Customers are unchanged. There is no authenticator app, QR code, or recovery code.
 
-Staff (rows in `platform_staff`, currently Stephan and Michelle) enter the password they already use, then a 6-digit code from an authenticator app. Customers sign in the same way they do today.
+The email uses the same Resend sender as password reset (`RESEND_API_KEY` and `PASSWORD_RESET_FROM_EMAIL`). Subject: "Your Opening Intelligence sign-in code". The code expires in 10 minutes and works once. A new code replaces the previous one. Resend waits about 60 seconds. The code screen is kept in the browser so leaving for Mail and coming back does not start over or send another code.
 
-The setup QR code, the typed setup key, and the 10 recovery codes are returned only by the enrollment response. Each recovery code works once. Store the codes somewhere safe before leaving that screen. A later sign-in does not show them again. On a phone, Add to authenticator app opens the iPhone Passwords app with that same setup link. Copy setup key copies the key if the QR code cannot be scanned.
+Five wrong codes in 15 minutes lock that person out. The other staff member, already signed in with a code, can clear the lockout from OI staff tools and must give a reason. Nobody can clear their own lockout. The audit record has the reason and no code.
 
-A verified staff member can clear the other person's 15-minute wrong-code lockout from OI staff tools, with a reason. That does not remove the authenticator. Nobody can clear their own lockout. Resetting an authenticator also clears the lockout.
+`STAFF_MFA_ENCRYPTION_KEY` is not used.
 
-If one staff member loses the phone, the other staff member — already signed in with their own authenticator code — opens OI staff tools, chooses Reset authenticator, and records a reason after checking identity on a known phone number. The reset person enrolls again. They cannot reset their own authenticator with a password alone.
+## Staging, only after Stephan approves these steps
 
-## Staging, only after Stephan names the target and approves these steps
+`migrations/20261107130500_staff_mfa.sql` is already applied on staging. Do not edit or re-apply it. Do not use oi-production (`bekaxmatcvxqpjixwsqn`). Do not use `fadihkhdwpfffpelqjtg`, `ytqiulxtiharrplqnuir`, `fdudsigbxumcpbxxxerb`, or `ioqfdcehnhnqpnqawwvo`. Do not run `npm run migrate` against production.
 
-Do not use oi-production (`bekaxmatcvxqpjixwsqn`). Do not use `fadihkhdwpfffpelqjtg`, `ytqiulxtiharrplqnuir`, `fdudsigbxumcpbxxxerb`, or `ioqfdcehnhnqpnqawwvo`. Do not run `npm run migrate` against production.
+1. Confirm the staging API already has `RESEND_API_KEY` and `PASSWORD_RESET_FROM_EMAIL` (the password-reset sender). No new secret is required. `STAFF_MFA_ENCRYPTION_KEY` can be removed; the API does not read it.
+2. Apply only `migrations/20261107143000_staff_sign_in_codes.sql` to the named staging database. It adds the hashed code table and allows email attempts on the existing lockout table.
+3. Deploy this branch's API, dashboard, and field app to the named staging sites. If the API is deployed before the new migration or before the Resend settings, staff cannot finish sign-in. Customers still can.
+4. Stephan and Michelle each sign in on a phone: password, switch to Mail, copy the code, return to the same screen, and enter it. Use Resend only if the first code is not there.
+5. Confirm a customer still signs in with a password only and cannot open staff tools.
 
-1. Set `STAFF_MFA_ENCRYPTION_KEY` on the staging API to a new 32-byte key, standard base64 (44 characters, ending in `=`). Generate it locally. Do not commit it. Do not log it.
-2. Apply only `migrations/20261107130500_staff_mfa.sql` to the named staging database. This adds staff authenticator tables and one audit action. It does not change `platform_staff_regrant`.
-3. Deploy this branch's API, dashboard, and field app to the named staging sites. Deploying the API before the migration and the key locks staff out (the server will not fall back to password-only). Customers can still sign in.
-4. Stephan and Michelle each sign in on the dashboard and the field app, scan the QR code once, save the recovery codes, and enter the current 6-digit code.
-5. Check a customer account still signs in with a password only and cannot open staff tools.
-6. With one staff account signed in, reset the other account's authenticator, confirm the reset person must enroll again, and confirm the audit log has the reason and no codes.
-
-Rollback is `docs/rollback/20261107130500_staff_mfa_rollback.sql`, applied only with the application rolled back in the same approved step. Rolling back the tables while this API stays deployed does not restore password-only staff access.
+Rollback of this step only, with a separate approval and together with rolling back this application build: `docs/rollback/20261107143000_staff_sign_in_codes_rollback.sql`.

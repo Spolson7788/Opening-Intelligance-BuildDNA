@@ -126,15 +126,7 @@ export async function login(email: string, password: string) {
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, body.error || "login_failed", typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
   }
-  return res.json() as Promise<{ token?: string; expiresIn: string; mfa_required?: boolean; enrollment_required?: boolean; mfa_token?: string }>;
-}
-
-export interface StaffMfaEnrollment {
-  otpauth_url: string;
-  secret: string;
-  qr_data_url: string;
-  recovery_codes: string[];
-  warning: string;
+  return res.json() as Promise<{ token?: string; expiresIn: string; mfa_required?: boolean; mfa_token?: string; resend_after_seconds?: number }>;
 }
 
 async function staffMfaFetch(mfaToken: string, path: string, body?: unknown) {
@@ -148,11 +140,11 @@ async function staffMfaFetch(mfaToken: string, path: string, body?: unknown) {
   return payload;
 }
 
-export function enrollStaffMfa(mfaToken: string): Promise<StaffMfaEnrollment> {
-  return staffMfaFetch(mfaToken, "/auth/mfa/enroll", {});
+export function resendStaffSignInCode(mfaToken: string): Promise<{ sent: true; resend_after_seconds: number }> {
+  return staffMfaFetch(mfaToken, "/auth/mfa/resend", {});
 }
 
-export function verifyStaffMfa(mfaToken: string, body: { code?: string; recovery_code?: string }): Promise<{ token: string }> {
+export function verifyStaffMfa(mfaToken: string, body: { code: string }): Promise<{ token: string }> {
   return staffMfaFetch(mfaToken, "/auth/mfa/verify", body);
 }
 

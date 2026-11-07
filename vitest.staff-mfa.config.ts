@@ -6,7 +6,8 @@ export default defineConfig({
     environment: "node",
     env: {
       JWT_SECRET: "test-secret-for-vitest-do-not-use-in-production",
-      STAFF_MFA_ENCRYPTION_KEY: "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+      RESEND_API_KEY: "test-not-a-real-resend-key",
+      PASSWORD_RESET_FROM_EMAIL: "Opening Intelligence <noreply@example.invalid>",
       VITEST: "true",
     },
     fileParallelism: false,
