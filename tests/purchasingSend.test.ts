@@ -105,7 +105,7 @@ describe("send to purchasing", () => {
     expect(download.body.slice(0, 4).toString()).toBe("%PDF");
   });
 
-  it("refuses a send with no document, no purchasing email, another company, a viewer, or an inspector", async () => {
+  it("refuses a send with no document, no purchasing email, another company, or a viewer, and allows an inspector", async () => {
     capture();
     const org = await signupTestOrg();
     const other = await signupTestOrg();
@@ -119,7 +119,7 @@ describe("send to purchasing", () => {
     await request(app).put("/api/purchasing/company-email").set("Authorization", `Bearer ${org.token}`).send({ purchasing_email: "buy@example.com" });
     expect((await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${other.token}`).send(upload)).status).toBe(403);
     expect((await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${await invite(org.token, "viewer")}`).send(upload)).status).toBe(403);
-    expect((await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${await invite(org.token, "inspector")}`).send(upload)).status).toBe(403);
+    expect((await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${await invite(org.token, "inspector")}`).send(upload)).status).toBe(201);
     const tech = await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${await invite(org.token, "technician")}`).send(upload);
     expect(tech.status).toBe(201);
   });

@@ -7,6 +7,7 @@ export function passingFireDoorFields() {
     passed: true,
     signed_by_name: "Test Inspector",
     inspector_qualification: "Fire door inspector",
+    inspector_license_number: "FD-100",
     checklist_result: {
       status: "complete",
       items: Object.fromEntries(NFPA80_ITEMS.map((item) => [item.key, { result: "pass" }])),
@@ -21,6 +22,7 @@ export function failingFireDoorFields(note = "The label is missing") {
     passed: false,
     signed_by_name: "Test Inspector",
     inspector_qualification: "Fire door inspector",
+    inspector_license_number: "FD-100",
     checklist_result: { status: "complete", items },
   };
 }

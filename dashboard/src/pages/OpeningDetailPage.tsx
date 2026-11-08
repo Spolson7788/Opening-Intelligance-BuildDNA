@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl, emailInspectionReport } from "../lib/api";
+import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl, emailInspectionReport, inspectionReportRecipients } from "../lib/api";
 import type { OpeningDetail, DocumentEntry, PurchasingEligibility, HardwareComponent, OpeningPhoto } from "../lib/api";
 import { Sidebar } from "../components/Sidebar";
 import { useLocations } from "../lib/LocationContext";
@@ -105,6 +105,12 @@ export function OpeningDetailPage() {
       // Non-fatal — the rest of the opening page still works without documents loading.
     });
   }
+
+  useEffect(() => {
+    const inspection = opening?.inspection_events?.find((ev: any) => ev.inspection_type === "fire_door_nfpa80" && ev.checklist_result?.status === "complete");
+    if (!inspection) return;
+    inspectionReportRecipients(inspection.id).then((row) => setReportTo(row.to.join(", "))).catch(() => {});
+  }, [opening?.id, opening?.inspection_events?.length]);
 
   useEffect(() => {
     setLoading(true);
@@ -422,10 +428,12 @@ export function OpeningDetailPage() {
                   e.preventDefault();
                   const inspection = opening.inspection_events.find((ev: any) => ev.inspection_type === "fire_door_nfpa80" && ev.checklist_result?.status === "complete");
                   if (!inspection) return;
-                  emailInspectionReport(inspection.id, reportTo).then(() => setReportMessage("Report emailed.")).catch(() => setReportMessage("Could not email the report."));
+                  const to = reportTo.split(/[\s,;]+/).map((item) => item.trim()).filter(Boolean);
+                  emailInspectionReport(inspection.id, to).then(() => setReportMessage("Report emailed.")).catch(() => setReportMessage("Could not email the report."));
                 }} style={{ marginTop: 12 }}>
                   <label htmlFor="report-email">Email this report</label>
-                  <input id="report-email" type="email" value={reportTo} onChange={(e) => setReportTo(e.target.value)} placeholder="facility contact" required />
+                  <textarea id="report-email" value={reportTo} onChange={(e) => setReportTo(e.target.value)} placeholder="facility contact, your email, anyone else" required />
+                  <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>Starts with the facility contact, when one is on file, and your email. Add or remove addresses before sending.</p>
                   <button className="btn btn-secondary" type="submit">Email this report</button>
                   {reportMessage && <p>{reportMessage}</p>}
                 </form>

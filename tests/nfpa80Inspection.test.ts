@@ -5,19 +5,20 @@ import { assessFireDoorChecklist, NFPA80_ITEMS } from "../src/services/nfpa80Che
 import { failingFireDoorFields, passingFireDoorFields } from "./nfpa80Fixture";
 import { setEmailProviderForTests, type OutboundEmail } from "../src/services/email";
 import { pool } from "../src/db/pool";
+import { inflateSync } from "node:zlib";
 
 describe("NFPA 80 checklist", () => {
   it("names 13 original items and rejects an unfinished or photo-less failure", () => {
     expect(NFPA80_ITEMS).toHaveLength(13);
     expect(NFPA80_ITEMS.map((item) => item.section)).toEqual([
-      "5.2.3.1", "5.2.3.2", "5.2.3.3", "5.2.3.4", "5.2.3.5", "5.2.3.6", "5.2.3.7",
-      "5.2.3.8", "5.2.3.9", "5.2.3.10", "5.2.3.11", "5.2.3.12", "5.2.3.13",
+      "5.2.4.2(1)", "5.2.4.2(2)", "5.2.4.2(3)", "5.2.4.2(4)", "5.2.4.2(5)", "5.2.4.2(6)", "5.2.4.2(7)",
+      "5.2.4.2(8)", "5.2.4.2(9)", "5.2.4.2(10)", "5.2.4.2(11)", "5.2.4.2(12)", "5.2.4.2(13)",
     ]);
-    expect(assessFireDoorChecklist({ status: "complete", items: {} }, "Ada", "Inspector").ok).toBe(false);
+    expect(assessFireDoorChecklist({ status: "complete", items: {} }, "Ada", "Inspector", "FD-1").ok).toBe(false);
     const failed = failingFireDoorFields();
     const items = { ...(failed.checklist_result.items as Record<string, any>) };
     delete items.labels.photo_base64;
-    expect(assessFireDoorChecklist({ status: "complete", items }, "Ada", "Inspector").ok).toBe(false);
+    expect(assessFireDoorChecklist({ status: "complete", items }, "Ada", "Inspector", "FD-1").ok).toBe(false);
   });
 });
 
@@ -33,7 +34,7 @@ describe("NFPA 80 fire door inspection", () => {
   }
 
   it("stores a failed item, requires a repair, then clears it on reinspection", async () => {
-    const { org, opening: door } = await opening();
+    const { org, propertyId, opening: door } = await opening();
     const incomplete = await request(app).post("/api/events/inspection-events").set("Authorization", `Bearer ${org.token}`).send({
       opening_id: door.id, event_date: "2026-04-01", inspection_type: "fire_door_nfpa80", passed: false, notes: "no checklist",
     });
@@ -44,6 +45,7 @@ describe("NFPA 80 fire door inspection", () => {
     });
     expect(created.status).toBe(201);
     expect(created.body.inspector_qualification).toBe("Fire door inspector");
+    expect(created.body.inspector_license_number).toBe("FD-100");
     const detail = await request(app).get(`/api/openings/${door.id}`).set("Authorization", `Bearer ${org.token}`);
     const deficiency = detail.body.fire_door_deficiencies[0];
     expect(deficiency.status).toBe("open");
@@ -63,12 +65,24 @@ describe("NFPA 80 fire door inspection", () => {
     const pdf = await request(app).get(`/api/events/inspection-events/${created.body.id}/report.pdf`).set("Authorization", `Bearer ${org.token}`);
     expect(pdf.status).toBe(200);
     expect(pdf.body.slice(0, 4).toString()).toBe("%PDF");
+    const raw = pdf.body.toString("latin1");
+    const streamStart = raw.indexOf("stream\n") + "stream\n".length;
+    const inflated = inflateSync(Buffer.from(raw.slice(streamStart, raw.indexOf("\nendstream", streamStart)), "latin1")).toString("latin1");
+    const visible = inflated.replace(/<([0-9A-Fa-f]+)>/g, (_match, hex) => Buffer.from(hex, "hex").toString("latin1"));
+    expect(visible).toContain("License FD-100");
+    expect(visible).toContain("5.2.4.2(1)");
 
     sent.length = 0;
     setEmailProviderForTests({ name: "fake", send: async (message) => { sent.push(message); return { sent: true }; } });
-    const mailed = await request(app).post(`/api/events/inspection-events/${created.body.id}/email`).set("Authorization", `Bearer ${org.token}`).send({ to: "facility@example.com" });
+    const noContact = await request(app).get(`/api/events/inspection-events/${created.body.id}/email-defaults`).set("Authorization", `Bearer ${org.token}`);
+    expect(noContact.body.to).toEqual([org.email]);
+    const savedContact = await request(app).put(`/api/portfolio/properties/${propertyId}/contact-email`).set("Authorization", `Bearer ${org.token}`).send({ contact_email: "building@example.com" });
+    expect(savedContact.status).toBe(200);
+    const withContact = await request(app).get(`/api/events/inspection-events/${created.body.id}/email-defaults`).set("Authorization", `Bearer ${org.token}`);
+    expect(withContact.body.to).toEqual(["building@example.com", org.email]);
+    const mailed = await request(app).post(`/api/events/inspection-events/${created.body.id}/email`).set("Authorization", `Bearer ${org.token}`).send({ to: ["facility@example.com", org.email, "extra@example.com"] });
     expect(mailed.status).toBe(200);
-    expect(sent[0].to).toBe("facility@example.com");
+    expect(sent[0].to).toEqual(["facility@example.com", org.email, "extra@example.com"]);
     expect(sent[0].attachments?.[0].filename).toBe("fire-door-inspection.pdf");
 
     const photoDelete = await request(app).delete(`/api/photos/${deficiency.photo_id}`).set("Authorization", `Bearer ${org.token}`);

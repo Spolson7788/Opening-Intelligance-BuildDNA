@@ -2,8 +2,8 @@ import { assessFireDoorChecklist, decodePhoto, type AssessedItem } from "./nfpa8
 
 type Queryable = { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[]; rowCount?: number | null }> };
 
-export function prepareFireDoorChecklist(raw: unknown, inspectorName: string | undefined, qualification: string | undefined, passed: boolean) {
-  const assessed = assessFireDoorChecklist(raw, inspectorName, qualification);
+export function prepareFireDoorChecklist(raw: unknown, inspectorName: string | undefined, qualification: string | undefined, licenseNumber: string | undefined, passed: boolean) {
+  const assessed = assessFireDoorChecklist(raw, inspectorName, qualification, licenseNumber);
   if (!assessed.ok) return assessed;
   if (passed === assessed.anyFail) return { ok: false as const, error: "passed_does_not_match_checklist" };
   return assessed;

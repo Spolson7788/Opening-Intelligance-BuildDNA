@@ -97,6 +97,7 @@ const INSPECTOR_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp; body?: (
   { method: "POST", pattern: /^\/api\/documents\/presign$/ },
   { method: "POST", pattern: /^\/api\/documents$/, body: (b) => b?.document_type === "inspection_report" },
   { method: "POST", pattern: /^\/api\/service-requests\/?$/ },
+  { method: "POST", pattern: /^\/api\/purchasing\/send$/ },
   { method: "POST", pattern: /^\/api\/events\/inspection-events\/[^/]+\/email$/ },
   { method: "POST", pattern: /^\/api\/events\/fire-door-deficiencies\/[^/]+\/repair$/ },
 ];

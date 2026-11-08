@@ -84,6 +84,7 @@ const inspectionEventSchema = z.object({
   signature_data: z.string().max(500_000).optional(), // a simple line-drawing PNG data URL is a few KB; 500KB is a generous sanity cap, not a real limit
   signed_by_name: z.string().optional(),
   inspector_qualification: z.string().max(200).optional(),
+  inspector_license_number: z.string().max(80).optional(),
 });
 
 eventsRouter.post("/inspection-events", async (req: AuthedRequest, res) => {
@@ -102,17 +103,17 @@ eventsRouter.post("/inspection-events", async (req: AuthedRequest, res) => {
       const result = await pool.query(
         `INSERT INTO inspection_events
           (opening_id, performed_by_user_id, event_date, inspection_type, checklist_result, passed, notes,
-           signature_data, signed_by_name, signed_at, inspector_qualification)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+           signature_data, signed_by_name, signed_at, inspector_qualification, inspector_license_number)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
         [
           b.opening_id, userId, b.event_date, b.inspection_type, b.checklist_result ?? {}, b.passed, b.notes ?? null,
-          b.signature_data ?? null, b.signed_by_name ?? null, b.signature_data ? new Date().toISOString() : null, null,
+          b.signature_data ?? null, b.signed_by_name ?? null, b.signature_data ? new Date().toISOString() : null, null, null,
         ]
       );
       return res.status(201).json(result.rows[0]);
     }
 
-    const prepared = prepareFireDoorChecklist(b.checklist_result, b.signed_by_name, b.inspector_qualification, b.passed);
+    const prepared = prepareFireDoorChecklist(b.checklist_result, b.signed_by_name, b.inspector_qualification, b.inspector_license_number, b.passed);
     if (!prepared.ok) return res.status(400).json({ error: prepared.error });
     const client = await acquireClient(res); if (!client) return;
     try {
@@ -120,12 +121,12 @@ eventsRouter.post("/inspection-events", async (req: AuthedRequest, res) => {
       const result = await client.query(
         `INSERT INTO inspection_events
           (opening_id, performed_by_user_id, event_date, inspection_type, checklist_result, passed, notes,
-           signature_data, signed_by_name, signed_at, inspector_qualification)
-         VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11) RETURNING *`,
+           signature_data, signed_by_name, signed_at, inspector_qualification, inspector_license_number)
+         VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
         [
           b.opening_id, userId, b.event_date, b.inspection_type, JSON.stringify(prepared.stored), b.passed, b.notes ?? null,
           b.signature_data ?? null, b.signed_by_name ?? null, b.signature_data ? new Date().toISOString() : null,
-          b.inspector_qualification?.trim() ?? null,
+          b.inspector_qualification?.trim() ?? null, b.inspector_license_number?.trim() ?? null,
         ]
       );
       const follow = await applyFireDoorFollowUp(client, {
@@ -174,6 +175,7 @@ eventsRouter.get("/inspection-events/:id/report.pdf", async (req: AuthedRequest,
       eventDate: String(loaded.inspection.event_date).slice(0, 10),
       inspectorName: loaded.inspection.signed_by_name,
       qualification: loaded.inspection.inspector_qualification,
+      licenseNumber: loaded.inspection.inspector_license_number,
       passed: loaded.inspection.passed === true,
       notes: loaded.inspection.notes,
       signatureData: loaded.inspection.signature_data,
@@ -184,9 +186,52 @@ eventsRouter.get("/inspection-events/:id/report.pdf", async (req: AuthedRequest,
   } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
 });
 
+function reportRecipients(value: string | string[]): string[] {
+  const list = Array.isArray(value) ? value : [value];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of list) {
+    const email = item.trim().toLowerCase();
+    if (!email || seen.has(email)) continue;
+    seen.add(email);
+    out.push(item.trim());
+  }
+  return out;
+}
+
+eventsRouter.get("/inspection-events/:id/email-defaults", async (req: AuthedRequest, res) => {
+  if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_inspection" });
+  try {
+    const row = await pool.query(
+      `SELECT p.contact_email, u.email AS inspector_email, i.opening_id
+       FROM inspection_events i
+       JOIN openings o ON o.id = i.opening_id
+       JOIN buildings b ON b.id = o.building_id
+       JOIN properties p ON p.id = b.property_id
+       JOIN users u ON u.id = $3
+       WHERE i.id = $1 AND i.inspection_type = 'fire_door_nfpa80' AND i.checklist_result->>'status' = 'complete'
+         AND i.opening_id IN (${openingsForOrgSubquery(2)})`,
+      [req.params.id, req.auth!.organizationId, req.auth!.userId],
+    );
+    if (!row.rowCount) return res.status(404).json({ error: "not_found" });
+    if (!(await areaAllowsOpening(req.auth!.userId, row.rows[0].opening_id))) return res.status(403).json({ error: "forbidden" });
+    const facility = row.rows[0].contact_email as string | null;
+    const inspector = row.rows[0].inspector_email as string;
+    res.set("Cache-Control", "no-store").json({
+      facility_contact_email: facility,
+      inspector_email: inspector,
+      to: reportRecipients(facility ? [facility, inspector] : [inspector]),
+    });
+  } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
+});
+
 eventsRouter.post("/inspection-events/:id/email", async (req: AuthedRequest, res) => {
-  const body = z.object({ to: z.string().trim().email().max(200) }).strict().safeParse(req.body);
+  const body = z.object({
+    to: z.union([z.string().trim().email().max(200), z.array(z.string().trim().email().max(200)).min(1).max(10)]),
+  }).strict().safeParse(req.body);
   if (!body.success || !z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_email" });
+  const recipients = reportRecipients(body.data.to);
+  if (!recipients.length) return res.status(400).json({ error: "invalid_email" });
   try {
     const loaded = await loadFireDoorReport(req.params.id, req.auth!.organizationId);
     if (!loaded || loaded.inspection.checklist_result?.status !== "complete") return res.status(404).json({ error: "not_found" });
@@ -197,6 +242,7 @@ eventsRouter.post("/inspection-events/:id/email", async (req: AuthedRequest, res
       eventDate: String(loaded.inspection.event_date).slice(0, 10),
       inspectorName: loaded.inspection.signed_by_name,
       qualification: loaded.inspection.inspector_qualification,
+      licenseNumber: loaded.inspection.inspector_license_number,
       passed: loaded.inspection.passed === true,
       notes: loaded.inspection.notes,
       signatureData: loaded.inspection.signature_data,
@@ -208,14 +254,14 @@ eventsRouter.post("/inspection-events/:id/email", async (req: AuthedRequest, res
     const base = emailSettings().baseUrl || "";
     const link = `${base}/api/events/inspection-events/${req.params.id}/report.pdf`;
     const outcome = await sendEmail({
-      to: body.data.to,
+      to: recipients,
       subject: `Fire door inspection ${loaded.inspection.opening_code}`,
       text: attached ? "The inspection report is attached." : `The report is available to a signed-in user at ${link}`,
       html: attached ? "<p>The inspection report is attached.</p>" : `<p>The report is available to a signed-in user at ${link}</p>`,
       attachments: attached ? [{ filename: "fire-door-inspection.pdf", contentBase64: pdf.toString("base64") }] : undefined,
     });
     if (!outcome.sent) return res.status(503).json({ error: outcome.reason });
-    res.json({ sent: true, delivery_mode: attached ? "attachments" : "links" });
+    res.json({ sent: true, to: recipients, delivery_mode: attached ? "attachments" : "links" });
   } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
 });
 

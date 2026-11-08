@@ -33,6 +33,7 @@ export function LogInspectionEventPage() {
   const [notes, setNotes] = useState("");
   const [signedByName, setSignedByName] = useState("");
   const [qualification, setQualification] = useState("");
+  const [licenseNumber, setLicenseNumber] = useState("");
   const [answers, setAnswers] = useState<Record<string, ItemAnswer>>({});
   const [signatureError, setSignatureError] = useState<string | null>(null);
   const signaturePadRef = useRef<SignaturePadHandle>(null);
@@ -59,6 +60,10 @@ export function LogInspectionEventPage() {
     if (inspectionType === "fire_door_nfpa80") {
       if (!qualification.trim()) {
         setSignatureError("Enter your qualification for this fire door inspection.");
+        return;
+      }
+      if (!licenseNumber.trim()) {
+        setSignatureError("Enter your inspector license number.");
         return;
       }
       const items: Record<string, unknown> = {};
@@ -93,6 +98,7 @@ export function LogInspectionEventPage() {
         signature_data: signatureDataUrl,
         signed_by_name: signedByName.trim(),
         inspector_qualification: inspectionType === "fire_door_nfpa80" ? qualification.trim() : undefined,
+        inspector_license_number: inspectionType === "fire_door_nfpa80" ? licenseNumber.trim() : undefined,
         checklist_result: checklist,
     });
 
@@ -149,6 +155,8 @@ export function LogInspectionEventPage() {
               <div className="field">
                 <label htmlFor="qualification">Qualification</label>
                 <input id="qualification" value={qualification} onChange={(e) => setQualification(e.target.value)} placeholder="How you are qualified to inspect fire doors" />
+                <label htmlFor="license-number">License number</label>
+                <input id="license-number" value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} placeholder="License or certificate number" />
                 {NFPA80_ITEMS.map((item) => {
                   const answer = answers[item.key] ?? { result: "", note: "", photo: null };
                   return (

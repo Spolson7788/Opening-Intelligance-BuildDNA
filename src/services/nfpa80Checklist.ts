@@ -1,6 +1,8 @@
-// Swinging fire door annual inspection items. Wording is ours.
-// Section numbers point at NFPA 80 (2022) 5.2.3 so a reader can look up the rule.
-// The standard's sentences are not copied here.
+// Swinging fire door annual inspection items for NFPA 80 (2025), section 5.2.4.2.
+// Wording is ours. The standard's sentences are not copied here.
+// Parenthetical numbers follow the published 13-point order for that section.
+
+export const NFPA80_EDITION = "2025";
 
 export interface Nfpa80Item {
   key: string;
@@ -9,19 +11,19 @@ export interface Nfpa80Item {
 }
 
 export const NFPA80_ITEMS: Nfpa80Item[] = [
-  { key: "labels", section: "5.2.3.1", text: "The fire door and frame labels are in place and can be read." },
-  { key: "holes_breaks", section: "5.2.3.2", text: "The door and frame have no open holes or breaks in their surfaces." },
-  { key: "glazing", section: "5.2.3.3", text: "Glazing and the frames that hold it are intact." },
-  { key: "secure_aligned", section: "5.2.3.4", text: "The door, frame, hinges, hardware, and any noncombustible threshold are secure, aligned, and in working order." },
-  { key: "parts", section: "5.2.3.5", text: "No required parts are missing or broken." },
-  { key: "clearances", section: "5.2.3.6", text: "Clearances are within the limit used for this inspection: the gap under the door is not over 3/4 inch, and the top and side gaps meet the clearance rule for this door." },
-  { key: "self_closing", section: "5.2.3.7", text: "The door closes itself all the way from the open position." },
-  { key: "coordinator", section: "5.2.3.8", text: "On a pair of doors, the coordinator lets the inactive leaf close before the active leaf. Use N/A when there is no coordinator." },
-  { key: "latching", section: "5.2.3.9", text: "The latching hardware holds the door positively latched." },
-  { key: "hold_open", section: "5.2.3.10", text: "No hold-open device is installed unless it is a listed releasing device." },
-  { key: "field_modifications", section: "5.2.3.11", text: "No field change that affects the fire rating was made without a documented approval." },
-  { key: "gasketing", section: "5.2.3.12", text: "Gasketing and edge seals, where this door has them, are in place and not damaged. Use N/A when the door has none." },
-  { key: "signage", section: "5.2.3.13", text: "Signs on the door meet the attachment and coverage limits for a fire door." },
+  { key: "labels", section: "5.2.4.2(1)", text: "The labels on the fire door and frame are in place and can be read." },
+  { key: "holes_breaks", section: "5.2.4.2(2)", text: "The door and frame have no open holes or breaks in their surfaces." },
+  { key: "glazing", section: "5.2.4.2(3)", text: "Any glazing, the frames around it, and the beads that hold it are intact and fastened." },
+  { key: "secure_aligned", section: "5.2.4.2(4)", text: "The door, frame, hinges, hardware, and any noncombustible threshold are secure, aligned, and working, with no obvious damage." },
+  { key: "parts", section: "5.2.4.2(5)", text: "No required parts are missing or broken." },
+  { key: "clearances", section: "5.2.4.2(6)", text: "Gaps meet the clearance rule for this door. The gap under the door is not over 3/4 inch, or 3/8 inch when the bottom of the door sits more than 38 inches above the finished floor. A listed product made to close a larger bottom gap is acceptable. Top and side gaps stay within the limit for this door." },
+  { key: "self_closing", section: "5.2.4.2(7)", text: "From fully open, the door closes all the way by itself, or a listed automatic closer releases it so it can. A wedge or other block holding it open is not acceptable." },
+  { key: "coordinator", section: "5.2.4.2(8)", text: "On a pair, the coordinator lets the inactive leaf close before the active leaf. Use N/A when there is no coordinator." },
+  { key: "latching", section: "5.2.4.2(9)", text: "The latching hardware holds the door positively latched when it is closed." },
+  { key: "hold_open", section: "5.2.4.2(10)", text: "Nothing added to the door or frame stops it from opening, closing, or latching. That includes a hold-open that is not a listed releasing device." },
+  { key: "field_modifications", section: "5.2.4.2(11)", text: "No field change was made that voids the fire door listing." },
+  { key: "gasketing", section: "5.2.4.2(12)", text: "Gasketing, meeting-edge protection, and edge seals, where this door has them, are present and intact. Use N/A when the door has none." },
+  { key: "signage", section: "5.2.4.2(13)", text: "Signs on the door stay within the size and attachment limits for a fire door and are not placed on the glazing." },
 ];
 
 export const COMPLETED_FIRE_DOOR_SQL =
@@ -46,9 +48,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-export function assessFireDoorChecklist(raw: unknown, inspectorName: string | undefined, qualification: string | undefined): ChecklistAssessment {
+export function assessFireDoorChecklist(raw: unknown, inspectorName: string | undefined, qualification: string | undefined, licenseNumber: string | undefined): ChecklistAssessment {
   if (!inspectorName?.trim()) return { ok: false, error: "inspector_name_required" };
   if (!qualification?.trim()) return { ok: false, error: "inspector_qualification_required" };
+  if (!licenseNumber?.trim()) return { ok: false, error: "inspector_license_required" };
   const body = asRecord(raw);
   const itemsIn = asRecord(body?.items);
   if (!body || body.status !== "complete" || !itemsIn) return { ok: false, error: "checklist_incomplete" };

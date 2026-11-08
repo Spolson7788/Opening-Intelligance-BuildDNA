@@ -123,6 +123,7 @@ const createPropertySchema = z.object({
   property_type: z.enum(["multifamily", "senior_living", "healthcare", "university", "hospitality", "other"]).optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
+  contact_email: z.string().trim().email().max(200).nullable().optional(),
 });
 
 portfolioRouter.post("/properties", async (req: AuthedRequest, res) => {
@@ -140,17 +141,34 @@ portfolioRouter.post("/properties", async (req: AuthedRequest, res) => {
 
     const result = await pool.query(
       `INSERT INTO properties
-        (portfolio_id, name, address_line1, city, state, state_code, county_fips, postal_code, property_type, latitude, longitude)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+        (portfolio_id, name, address_line1, city, state, state_code, county_fips, postal_code, property_type, latitude, longitude, contact_email)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
       [b.portfolio_id, b.name, b.address_line1 ?? null, b.city ?? null, b.state ?? null,
        b.state_code ? b.state_code.toUpperCase() : null, b.county_fips ?? null,
-       b.postal_code ?? null, b.property_type ?? null, b.latitude ?? null, b.longitude ?? null]
+       b.postal_code ?? null, b.property_type ?? null, b.latitude ?? null, b.longitude ?? null, b.contact_email ?? null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
   }
+});
+
+portfolioRouter.put("/properties/:id/contact-email", async (req: AuthedRequest, res) => {
+  if (req.auth!.role !== "admin" && req.auth!.role !== "facilities_manager") return res.status(403).json({ error: "insufficient_role_for_action" });
+  const body = z.object({ contact_email: z.string().trim().email().max(200).nullable() }).strict().safeParse(req.body);
+  if (!body.success || !z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_email" });
+  try {
+    const result = await pool.query(
+      `UPDATE properties p SET contact_email=$2
+       FROM portfolios pf
+       WHERE p.id=$1 AND p.portfolio_id=pf.id AND ${orgScope("pf.organization_id", 3)}
+       RETURNING p.id, p.contact_email`,
+      [req.params.id, body.data.contact_email, req.auth!.organizationId],
+    );
+    if (!result.rowCount) return res.status(404).json({ error: "not_found" });
+    res.json(result.rows[0]);
+  } catch { res.status(503).json({ error: "contact_email_save_failed" }); }
 });
 
 portfolioRouter.post("/buildings", async (req: AuthedRequest, res) => {

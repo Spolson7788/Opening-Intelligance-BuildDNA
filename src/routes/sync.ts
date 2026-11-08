@@ -210,6 +210,7 @@ const inspectionPayload = z.object({
   checklist_result: z.record(z.string(), z.unknown()).optional(), passed: z.boolean(), notes: z.string().optional(),
   signature_data: z.string().max(500_000).optional(), signed_by_name: z.string().optional(),
   inspector_qualification: z.string().max(200).optional(),
+  inspector_license_number: z.string().max(80).optional(),
 });
 
 syncRouter.post("/operations", async (req: AuthedRequest, res) => {
@@ -306,19 +307,21 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
     } else if (b.entity_type === "inspection_event") {
       let checklist = payload.checklist_result ?? {};
       let qualification: string | null = null;
+      let licenseNumber: string | null = null;
       let preparedItems = null as ReturnType<typeof prepareFireDoorChecklist> | null;
       if (payload.inspection_type === "fire_door_nfpa80") {
-        const prepared = prepareFireDoorChecklist(payload.checklist_result, payload.signed_by_name as string | undefined, payload.inspector_qualification as string | undefined, payload.passed as boolean);
+        const prepared = prepareFireDoorChecklist(payload.checklist_result, payload.signed_by_name as string | undefined, payload.inspector_qualification as string | undefined, payload.inspector_license_number as string | undefined, payload.passed as boolean);
         if (!prepared.ok) { await client.query("ROLLBACK"); return res.status(400).json({ error: prepared.error }); }
         checklist = prepared.stored;
         qualification = (payload.inspector_qualification as string).trim();
+        licenseNumber = (payload.inspector_license_number as string).trim();
         preparedItems = prepared;
       }
       const result=await client.query(`INSERT INTO inspection_events
-        (id,opening_id,performed_by_user_id,event_date,inspection_type,checklist_result,passed,notes,signature_data,signed_by_name,signed_at,client_operation_id,inspector_qualification)
-        VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+        (id,opening_id,performed_by_user_id,event_date,inspection_type,checklist_result,passed,notes,signature_data,signed_by_name,signed_at,client_operation_id,inspector_qualification,inspector_license_number)
+        VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
       [b.entity_id,b.opening_id,userId,payload.event_date,payload.inspection_type,JSON.stringify(checklist),payload.passed,
-        payload.notes??null,payload.signature_data??null,payload.signed_by_name??null,payload.signature_data?new Date().toISOString():null,b.operation_id,qualification]); record=result.rows[0];
+        payload.notes??null,payload.signature_data??null,payload.signed_by_name??null,payload.signature_data?new Date().toISOString():null,b.operation_id,qualification,licenseNumber]); record=result.rows[0];
       if (preparedItems && preparedItems.ok) {
         const follow = await applyFireDoorFollowUp(client, { inspectionId: record.id, openingId: b.opening_id, organizationId: orgId, userId, items: preparedItems.items });
         if (follow.error) { await client.query("ROLLBACK"); return res.status(400).json({ error: follow.error }); }

@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import { NFPA80_ITEMS } from "./nfpa80Checklist";
+import { NFPA80_EDITION, NFPA80_ITEMS } from "./nfpa80Checklist";
 
 export interface NfpaReportDeficiency {
   item_key: string;
@@ -15,6 +15,7 @@ export interface NfpaReportData {
   eventDate: string;
   inspectorName: string | null;
   qualification: string | null;
+  licenseNumber: string | null;
   passed: boolean;
   notes: string | null;
   signatureData: string | null;
@@ -35,13 +36,14 @@ export function generateNfpaInspectionPdf(data: NfpaReportData): Promise<Buffer>
 
     doc.fillColor(NAVY).fontSize(9).font("Helvetica-Bold").text("OPENING INTELLIGENCE PLATFORM");
     doc.moveDown(0.3);
-    doc.fontSize(18).text("Fire Door Inspection Report");
+    doc.fontSize(18).text(`Fire Door Inspection Report (NFPA 80 ${NFPA80_EDITION})`);
     doc.moveDown(0.3);
     doc.fillColor("#000").fontSize(12).font("Helvetica-Bold").text(data.openingCode);
     if (data.location) doc.fillColor(GRAY).fontSize(10).font("Helvetica").text(data.location);
     doc.fillColor(GRAY).fontSize(9).text(`Inspection date ${data.eventDate}`);
     doc.text(`Inspector ${data.inspectorName || "Not named"}`);
     doc.text(`Qualification ${data.qualification || "Not recorded"}`);
+    doc.text(`License ${data.licenseNumber || "Not recorded"}`);
     doc.fillColor(data.passed ? "#2F8F47" : "#C93838").font("Helvetica-Bold").text(data.passed ? "Result: passed" : "Result: failed");
     if (data.notes) doc.fillColor("#000").font("Helvetica").text(data.notes);
     doc.moveDown(0.6);
