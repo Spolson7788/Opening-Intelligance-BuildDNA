@@ -3,6 +3,7 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { emailFailureText } from "../field-app/src/components/EmailInspectionReport";
 import { NFPA80_ITEMS } from "../field-app/src/lib/nfpa80Items";
 
 const api = vi.hoisted(() => ({
@@ -104,6 +105,12 @@ it("prefills the facility and signer, sends the edited list, and reports success
   api.send.mockRejectedValueOnce(new Error("nope"));
   await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
   expect(host.textContent).toContain("Could not email the report.");
+
+  const configured = new Error("email_not_configured") as Error & { missing: string[] };
+  configured.missing = ["EMAIL_FROM", "not a secret"];
+  expect(emailFailureText(configured)).toBe("Email is not set up on this server. Missing EMAIL_FROM.");
+  expect(emailFailureText(configured)).not.toContain("secret");
+  expect(emailFailureText(new Error("email_send_failed"))).toBe("The email service rejected the report.");
 });
 
 it("does not queue an email while offline", async () => {

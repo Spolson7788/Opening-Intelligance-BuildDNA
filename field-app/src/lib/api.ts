@@ -55,6 +55,7 @@ export async function listOpeningPhotos(openingId: string): Promise<StoredPhoto[
 export class ApiError extends Error {
   status: number;
   reference?: string;
+  missing?: string[];
   constructor(status: number, message: string, reference?: string) {
     super(message);
     this.status = status;
@@ -136,7 +137,9 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
         redirectToFieldLogin(import.meta.env.BASE_URL || "/field/", window.location.pathname, (url) => window.location.assign(url));
       }
     }
-    throw new ApiError(res.status, body.error || `request_failed_${res.status}`, typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
+    const failure = new ApiError(res.status, typeof body.error === "string" ? body.error : `request_failed_${res.status}`, typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
+    if (Array.isArray(body.missing)) failure.missing = body.missing.filter((name: unknown) => typeof name === "string" && /^[A-Z][A-Z0-9_]+$/.test(name));
+    throw failure;
   }
   const current=await loadAuth();
   if(!auth||!current||current.userId!==auth.userId||current.organizationId!==auth.organizationId)throw new PrincipalChangedError();

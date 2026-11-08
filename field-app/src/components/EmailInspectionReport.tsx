@@ -15,6 +15,23 @@ export function reportRecipientList(value: string): string[] {
 }
 
 const OFFLINE = "Emailing this report needs a connection.";
+const EMAIL_SETTING_NAMES = new Set(["EMAIL_PROVIDER", "EMAIL_PROVIDER_API_KEY", "EMAIL_FROM", "APP_BASE_URL", "RESEND_API_KEY", "PASSWORD_RESET_FROM_EMAIL", "PASSWORD_RESET_PUBLIC_URL"]);
+
+export function emailFailureText(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  const missing = error && typeof error === "object" && "missing" in error && Array.isArray(error.missing)
+    ? error.missing.filter((name): name is string => typeof name === "string" && EMAIL_SETTING_NAMES.has(name))
+    : [];
+  if (message === "email_not_configured") {
+    return missing.length ? `Email is not set up on this server. Missing ${missing.join(", ")}.` : "Email is not set up on this server.";
+  }
+  if (message === "email_send_failed") return "The email service rejected the report.";
+  if (message === "internal_error") return "The server could not build the report.";
+  if (message === "invalid_email") return "Enter a valid email address.";
+  if (message === "forbidden") return "You do not have access to email this report.";
+  if (message === "not_found") return "This inspection is not on the server yet.";
+  return "Could not email the report.";
+}
 
 export function EmailInspectionReport({ inspectionId, syncStatus = "ready", syncReason = null }: { inspectionId: string; syncStatus?: "syncing" | "ready" | "failed"; syncReason?: string | null }) {
   const [to, setTo] = useState("");
@@ -68,8 +85,8 @@ export function EmailInspectionReport({ inspectionId, syncStatus = "ready", sync
       await emailInspectionReport(inspectionId, recipients);
       setNotice("Report emailed.");
       setNoticeRole("status");
-    } catch {
-      setNotice(typeof navigator !== "undefined" && navigator.onLine === false ? OFFLINE : "Could not email the report.");
+    } catch (error) {
+      setNotice(typeof navigator !== "undefined" && navigator.onLine === false ? OFFLINE : emailFailureText(error));
       setNoticeRole("alert");
     } finally {
       setSending(false);

@@ -10,7 +10,7 @@ import { acquireClient } from "../db/acquireClient";
 import { prepareFireDoorChecklist, applyFireDoorFollowUp } from "../services/nfpa80Inspection";
 import { generalPassCarriesChecklist } from "../services/nfpa80Checklist";
 import { generateNfpaInspectionPdf } from "../services/nfpa80Report";
-import { sendEmail, emailSettings } from "../services/email";
+import { sendEmail, reportEmailBlockers, reportLinkBase } from "../services/email";
 import { dashboardInspectionLink } from "../services/inspectionReportLink";
 import { attachmentByteLimit } from "../services/purchasingSend";
 
@@ -259,7 +259,7 @@ eventsRouter.post("/inspection-events/:id/email", async (req: AuthedRequest, res
     });
     const limit = attachmentByteLimit();
     const attached = pdf.length <= limit;
-    const dashboardLink = dashboardInspectionLink(emailSettings().baseUrl, loaded.inspection.opening_id, req.params.id);
+    const dashboardLink = dashboardInspectionLink(reportLinkBase(), loaded.inspection.opening_id, req.params.id);
     const text = [
       attached ? "The inspection report is attached." : "The inspection report is ready.",
       dashboardLink
@@ -273,7 +273,11 @@ eventsRouter.post("/inspection-events/:id/email", async (req: AuthedRequest, res
       html: `<p>${text.replace(/\n/g, "<br>")}</p>`,
       attachments: attached ? [{ filename: "fire-door-inspection.pdf", contentBase64: pdf.toString("base64") }] : undefined,
     });
-    if (!outcome.sent) return res.status(503).json({ error: outcome.reason });
+    if (!outcome.sent) {
+      const missing = outcome.reason === "email_not_configured" ? reportEmailBlockers() : undefined;
+      if (missing) console.error("OI email", { outcome: "not_configured", missing });
+      return res.status(503).json(missing ? { error: outcome.reason, missing } : { error: outcome.reason });
+    }
     res.json({ sent: true, to: recipients, delivery_mode: attached ? "attachments" : "links" });
   } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
 });
