@@ -28,14 +28,26 @@ export interface PurchasingSendInput {
   uploads: PurchasingUpload[];
 }
 
-function decodePdf(base64: string): Buffer | null {
+export type SheetFile = { bytes: Buffer; contentType: "application/pdf" | "image/jpeg" | "image/png"; extension: "pdf" | "jpg" | "png" };
+
+// iOS Files often delivers a PDF with an empty type and a name that has no
+// extension. The bytes decide what it is, not the picker label.
+export function decodePurchasingSheet(base64: string, maxBytes = MAX_UPLOAD_BYTES): SheetFile | null {
   try {
     const bytes = Buffer.from(base64, "base64");
-    if (bytes.length < 5 || bytes.subarray(0, 4).toString() !== "%PDF") return null;
-    return bytes;
+    if (bytes.length < 8 || bytes.length > maxBytes) return null;
+    if (bytes.subarray(0, 4).toString() === "%PDF") return { bytes, contentType: "application/pdf", extension: "pdf" };
+    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return { bytes, contentType: "image/jpeg", extension: "jpg" };
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return { bytes, contentType: "image/png", extension: "png" };
+    return null;
   } catch {
     return null;
   }
+}
+
+export function purchasingFilename(name: string, extension: SheetFile["extension"]): string {
+  const base = name.replace(/\.[^./\\]+$/, "").replace(/[^\w.\- ]+/g, "_").trim().slice(0, 80) || "sheet";
+  return `${base}.${extension}`;
 }
 
 export async function resolvePurchasingEmail(db: Queryable, organizationId: string, userId: string): Promise<string | null> {
@@ -60,7 +72,7 @@ export async function sendPurchasingPackage(db: Queryable, input: PurchasingSend
   const to = await resolvePurchasingEmail(db, input.organizationId, input.userId);
   if (!to) return { error: "purchasing_email_missing", status: 409 };
 
-  const files: Array<{ filename: string; bytes: Buffer | null; link: string | null; documentId: string | null }> = [];
+  const files: Array<{ filename: string; bytes: Buffer | null; link: string | null; documentId: string | null; contentType: string }> = [];
   if (input.documentIds.length) {
     const docs = await db.query(
       `SELECT id, title, storage_url FROM documents WHERE id = ANY($1::uuid[]) AND opening_id=$2`,
@@ -69,7 +81,7 @@ export async function sendPurchasingPackage(db: Queryable, input: PurchasingSend
     if (docs.rows.length !== input.documentIds.length) return { error: "document_not_on_opening", status: 400 };
     for (const doc of docs.rows) {
       const link = typeof doc.storage_url === "string" && doc.storage_url.startsWith("https://") ? doc.storage_url : null;
-      files.push({ filename: `${doc.title}.pdf`, bytes: null, link, documentId: doc.id });
+      files.push({ filename: `${doc.title}.pdf`, bytes: null, link, documentId: doc.id, contentType: "application/pdf" });
     }
   }
   if (input.referenceSha256s.length) {
@@ -78,7 +90,7 @@ export async function sendPurchasingPackage(db: Queryable, input: PurchasingSend
       [input.referenceSha256s],
     );
     if (refs.rows.length !== input.referenceSha256s.length) return { error: "reference_not_approved", status: 400 };
-    for (const ref of refs.rows) files.push({ filename: `${ref.title}.pdf`, bytes: null, link: null, documentId: null });
+    for (const ref of refs.rows) files.push({ filename: `${ref.title}.pdf`, bytes: null, link: null, documentId: null, contentType: "application/pdf" });
   }
   if (input.includeApproved) {
     const approval = await db.query(
@@ -88,13 +100,12 @@ export async function sendPurchasingPackage(db: Queryable, input: PurchasingSend
     );
     if (!approval.rows.length) return { error: "approved_document_missing", status: 400 };
     const url = approval.rows[0].document_url as string;
-    files.push({ filename: "approved-document.pdf", bytes: null, link: url.startsWith("https://") ? url : null, documentId: null });
+    files.push({ filename: "approved-document.pdf", bytes: null, link: url.startsWith("https://") ? url : null, documentId: null, contentType: "application/pdf" });
   }
   for (const upload of input.uploads) {
-    if (!upload.filename.toLowerCase().endsWith(".pdf")) return { error: "pdf_required", status: 400 };
-    const bytes = decodePdf(upload.content_base64);
-    if (!bytes || bytes.length > MAX_UPLOAD_BYTES) return { error: "pdf_required", status: 400 };
-    files.push({ filename: upload.filename.replace(/[^\w.\- ]+/g, "_").slice(0, 120), bytes, link: null, documentId: null });
+    const sheet = decodePurchasingSheet(upload.content_base64);
+    if (!sheet) return { error: "sheet_unreadable", status: 400 };
+    files.push({ filename: purchasingFilename(upload.filename, sheet.extension), bytes: sheet.bytes, link: null, documentId: null, contentType: sheet.contentType });
   }
 
   const limit = attachmentByteLimit();
@@ -115,8 +126,8 @@ export async function sendPurchasingPackage(db: Queryable, input: PurchasingSend
   for (const file of files) {
     const saved = await db.query(
       `INSERT INTO purchasing_send_files (send_id, filename, content_type, byte_size, content, link_url, source_document_id)
-       VALUES ($1,$2,'application/pdf',$3,$4,$5,$6) RETURNING id`,
-      [send.id, file.filename, file.bytes?.length ?? 0, file.bytes, file.link, file.documentId],
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [send.id, file.filename, file.contentType, file.bytes?.length ?? 0, file.bytes, file.link, file.documentId],
     );
     const secureLink = file.bytes ? `${base}/api/purchasing/sends/${send.id}/files/${saved.rows[0].id}` : file.link;
     if (file.bytes && uploadsFit) attachments.push({ filename: file.filename, contentBase64: file.bytes.toString("base64") });

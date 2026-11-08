@@ -974,6 +974,8 @@ export const createProviderFacility = (providerId: string, name: string, reason:
 
 export const fetchPurchasingEmail = (): Promise<{ purchasing_email: string | null }> => authedFetch("/purchasing/company-email");
 export const savePurchasingEmail = (purchasing_email: string | null): Promise<{ purchasing_email: string | null }> => post("/purchasing/company-email", { purchasing_email }, "PUT");
+export const fetchPurchasingBranchEmails = (): Promise<{ branches: Array<{ id: string; name: string; purchasing_email: string | null }> }> => authedFetch("/purchasing/branch-emails");
+export const savePurchasingBranchEmail = (id: string, purchasing_email: string | null) => post(`/purchasing/branches/${id}/email`, { purchasing_email }, "PUT");
 export const fetchBranches = (): Promise<{ branches: Array<{ id: string; name: string; default_state: string; default_territory: string | null; is_active: boolean; purchasing_email: string | null }> }> => authedFetch("/branches");
 export const saveBranch = (id: string, body: { name: string; default_state: string; default_territory: string | null; is_active: boolean; purchasing_email: string | null }) => post(`/branches/${id}`, body, "PUT");
 export const inspectionReportRecipients = (id: string): Promise<{ to: string[]; facility_contact_email: string | null; inspector_email: string }> => authedFetch(`/events/inspection-events/${id}/email-defaults`);

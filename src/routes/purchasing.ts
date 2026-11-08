@@ -43,8 +43,37 @@ purchasingRouter.get('/company-email', async (req: AuthedRequest, res) => {
     res.set('Cache-Control', 'no-store').json({ purchasing_email: r.rows[0]?.purchasing_email ?? null });
   } catch { res.status(503).json({ error: 'purchasing_email_read_failed' }); }
 });
+function canSetPurchasingEmail(role: string | undefined) {
+  return role === 'admin' || role === 'facilities_manager';
+}
+
+purchasingRouter.get('/branch-emails', async (req: AuthedRequest, res) => {
+  if (!canSetPurchasingEmail(req.auth!.role)) return res.status(403).json({ error: 'insufficient_role_for_action' });
+  try {
+    const r = await pool.query(
+      'SELECT id, name, purchasing_email FROM company_branches WHERE organization_id=$1 AND is_active=true ORDER BY name',
+      [req.auth!.organizationId],
+    );
+    res.set('Cache-Control', 'no-store').json({ branches: r.rows });
+  } catch { res.status(503).json({ error: 'purchasing_email_read_failed' }); }
+});
+
+purchasingRouter.put('/branches/:id/email', async (req: AuthedRequest, res) => {
+  if (!canSetPurchasingEmail(req.auth!.role)) return res.status(403).json({ error: 'insufficient_role_for_action' });
+  const body = z.object({ purchasing_email: purchasingEmail.nullable() }).strict().safeParse(req.body);
+  if (!body.success || !z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: 'invalid_email' });
+  try {
+    const r = await pool.query(
+      'UPDATE company_branches SET purchasing_email=$3 WHERE id=$1 AND organization_id=$2 RETURNING id, name, purchasing_email',
+      [req.params.id, req.auth!.organizationId, body.data.purchasing_email],
+    );
+    if (!r.rowCount) return res.status(404).json({ error: 'not_found' });
+    res.json(r.rows[0]);
+  } catch { res.status(503).json({ error: 'purchasing_email_save_failed' }); }
+});
+
 purchasingRouter.put('/company-email', async (req: AuthedRequest, res) => {
-  if (req.auth!.role !== 'admin') return res.status(403).json({ error: 'owner_admin_required' });
+  if (!canSetPurchasingEmail(req.auth!.role)) return res.status(403).json({ error: 'insufficient_role_for_action' });
   const body = z.object({ purchasing_email: purchasingEmail.nullable() }).strict().safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'invalid_email' });
   try {

@@ -62,7 +62,7 @@ export function Sidebar() {
       <div className="nav-admin">
         <div className="nav-label">Admin</div>
         <NavLink to="/team" className={({ isActive }) => itemClass(isActive)}>Team</NavLink>
-        {auth?.role === "admin" && <NavLink to="/purchasing-email" className={({ isActive }) => itemClass(isActive)}>Purchasing email</NavLink>}
+        {canManage && <NavLink to="/purchasing-email" className={({ isActive }) => itemClass(isActive)}>Purchasing email</NavLink>}
         {canManage && <NavLink to="/audit-log" className={({ isActive }) => itemClass(isActive)}>Audit Log</NavLink>}
         {canManage && (
           <Link to="/coverage" className="nav-item">State and county</Link>

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
 import { setEmailProviderForTests, resendProvider, type OutboundEmail } from "../src/services/email";
+import { decodePurchasingSheet } from "../src/services/purchasingSend";
+import { sheetKind } from "../field-app/src/lib/purchasingSheet";
 import { pool } from "../src/db/pool";
 
 const TINY_PDF = Buffer.from("%PDF-1.1\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF").toString("base64");
@@ -122,6 +124,50 @@ describe("send to purchasing", () => {
     expect((await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${await invite(org.token, "inspector")}`).send(upload)).status).toBe(201);
     const tech = await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${await invite(org.token, "technician")}`).send(upload);
     expect(tech.status).toBe(201);
+  });
+
+  it("accepts an iPhone PDF with no extension and a photo of the sheet", async () => {
+    capture();
+    const org = await signupTestOrg();
+    const manager = await invite(org.token, "facilities_manager");
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId);
+    const componentId = await hardware(org.token, opening.id);
+    expect((await request(app).put("/api/purchasing/company-email").set("Authorization", `Bearer ${manager}`).send({ purchasing_email: "buy@example.com" })).status).toBe(200);
+    expect((await request(app).put("/api/purchasing/company-email").set("Authorization", `Bearer ${await invite(org.token, "technician")}`).send({ purchasing_email: "nope@example.com" })).status).toBe(403);
+    const branchId = crypto.randomUUID();
+    await request(app).put(`/api/branches/${branchId}`).set("Authorization", `Bearer ${org.token}`).send({
+      name: "West", default_state: "AZ", default_territory: null, is_active: true,
+    });
+    const branchEmail = await request(app).put(`/api/purchasing/branches/${branchId}/email`).set("Authorization", `Bearer ${manager}`).send({ purchasing_email: "west@example.com" });
+    expect(branchEmail.status).toBe(200);
+    expect((await request(app).get("/api/purchasing/branch-emails").set("Authorization", `Bearer ${manager}`)).body.branches[0].purchasing_email).toBe("west@example.com");
+
+    const unnamed = await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: opening.id, hardware_component_id: componentId,
+      uploads: [{ filename: "Cut sheet", content_base64: TINY_PDF }],
+    });
+    expect(unnamed.status).toBe(201);
+    expect(sent.at(-1)?.attachments?.[0].filename).toBe("Cut sheet.pdf");
+
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1]).toString("base64");
+    const photo = await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: opening.id, hardware_component_id: componentId,
+      uploads: [{ filename: "sheet", content_base64: jpeg }],
+    });
+    expect(photo.status).toBe(201);
+    expect(sent.at(-1)?.attachments?.[0].filename).toBe("sheet.jpg");
+    const stored = await pool.query("SELECT content_type FROM purchasing_send_files WHERE send_id=$1", [photo.body.id]);
+    expect(stored.rows[0].content_type).toBe("image/jpeg");
+
+    const refused = await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: opening.id, hardware_component_id: componentId,
+      uploads: [{ filename: "notes.txt", content_base64: Buffer.from("not a sheet").toString("base64") }],
+    });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toBe("sheet_unreadable");
+    expect(sheetKind(Uint8Array.from(Buffer.from(TINY_PDF, "base64")))).toBe("pdf");
+    expect(decodePurchasingSheet(Buffer.from("hello").toString("base64"))).toBeNull();
   });
 
   it("puts attachments on the Resend request body", async () => {

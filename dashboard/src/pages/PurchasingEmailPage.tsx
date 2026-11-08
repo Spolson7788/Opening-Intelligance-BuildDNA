@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Sidebar } from "../components/Sidebar";
-import { fetchPurchasingEmail, savePurchasingEmail, fetchBranches, saveBranch } from "../lib/api";
+import { fetchPurchasingEmail, savePurchasingEmail, fetchPurchasingBranchEmails, savePurchasingBranchEmail } from "../lib/api";
 
-type Branch = { id: string; name: string; default_state: string; default_territory: string | null; is_active: boolean; purchasing_email: string | null };
+type Branch = { id: string; name: string; purchasing_email: string | null };
 
 export function PurchasingEmailPage() {
   const [companyEmail, setCompanyEmail] = useState("");
@@ -12,7 +12,7 @@ export function PurchasingEmailPage() {
 
   useEffect(() => {
     fetchPurchasingEmail().then((row) => setCompanyEmail(row.purchasing_email || "")).catch(() => setMessage("Could not load the purchasing email."));
-    fetchBranches().then((payload) => setBranches(payload.branches || [])).catch(() => setBranches([]));
+    fetchPurchasingBranchEmails().then((payload) => setBranches(payload.branches || [])).catch(() => setBranches([]));
   }, []);
 
   async function saveCompany(e: FormEvent) {
@@ -30,13 +30,8 @@ export function PurchasingEmailPage() {
   async function saveBranchEmail(branch: Branch, email: string) {
     setMessage(null);
     try {
-      await saveBranch(branch.id, {
-        name: branch.name,
-        default_state: branch.default_state,
-        default_territory: branch.default_territory,
-        is_active: branch.is_active,
-        purchasing_email: email.trim() || null,
-      });
+      const saved = await savePurchasingBranchEmail(branch.id, email.trim() || null);
+      setBranches((current) => current.map((item) => item.id === branch.id ? { ...item, purchasing_email: saved.purchasing_email } : item));
       setMessage(`Saved the purchasing email for ${branch.name}.`);
     } catch {
       setMessage("Could not save the branch email.");
