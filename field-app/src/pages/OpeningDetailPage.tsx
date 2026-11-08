@@ -4,6 +4,7 @@ import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchP
 import { mediaAssociationLabel } from "../lib/mediaAssociationLabel";
 import { openingLoadFailure } from "../lib/openingLoadFailure";
 import { siteAccessRenewalUrl } from "../lib/siteAccess";
+import { RenewPrivateSiteAccess } from "../components/RenewPrivateSiteAccess";
 import { getAllOfflineMedia, getSyncOperationsForOpening, loadAuth, updateCachedOpening } from "../lib/db";
 import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
@@ -203,7 +204,7 @@ export function OpeningDetailPage() {
         </div>
         <div className="screen empty-state">
           <p role="alert">{error?.message}</p>
-          {error?.siteAccess && renewalUrl && <a className="btn btn-primary" href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a>}
+          {error?.siteAccess && renewalUrl && <RenewPrivateSiteAccess className="btn btn-primary">Renew private site access</RenewPrivateSiteAccess>}
           {error?.signIn ? (
             <button className="btn btn-primary" onClick={() => navigate("/login", { state: { from: location.pathname } })}>Sign in again</button>
           ) : error?.retry ? (
@@ -233,7 +234,7 @@ export function OpeningDetailPage() {
         <div>
           {error?.retry && <div role="alert">
             <p>{error.message}</p>
-            {error.siteAccess && renewalUrl && <a className="btn btn-primary" href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a>}
+            {error.siteAccess && renewalUrl && <RenewPrivateSiteAccess className="btn btn-primary">Renew private site access</RenewPrivateSiteAccess>}
             <button className="btn btn-secondary" onClick={() => reload()}>Check access again</button>
           </div>}
         </div>

@@ -67,8 +67,12 @@ describe('session expiry never wipes the device', () => {
       const failure: any = await fetchMe().catch((e: unknown) => e);
       expect(isSessionEnded(failure)).toBe(false);
       expect(failure?.status).toBe(401);
-      expect(await counts()).toEqual(before);
-      expect((await loadAuth())?.userId).toBe(account.userId);
+      const after = await counts();
+      expect(after.outbox).toBe(before.outbox);
+      expect(after.photoOutbox).toBe(before.photoOutbox);
+      expect(after.operations).toBe(before.operations);
+      expect(after.media).toBe(before.media);
+      expect(await loadAuth()).toBeFalsy();
       // Local writes are still allowed (no wipe latch).
       await putSyncOperation({ operationId: randomUUID(), openingId: randomUUID(), state: 'pending' } as any);
       expect((await counts()).operations).toBe(2);

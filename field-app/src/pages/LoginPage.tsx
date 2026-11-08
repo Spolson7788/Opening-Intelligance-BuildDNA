@@ -9,6 +9,7 @@ import { loginFailureMessage } from "../lib/authResponse";
 import { loginReturnPath } from "../lib/qrPayload";
 import { isQrDetailsPath } from '../lib/qrLanding';
 import { siteAccessRenewalUrl } from '../lib/siteAccess';
+import { RenewPrivateSiteAccess } from '../components/RenewPrivateSiteAccess';
 import { isSiteAccessLoginFailure } from '../lib/authResponse';
 
 function mfaMessage(code: string): string {
@@ -181,7 +182,7 @@ export function LoginPage() {
           />
         </div>
         {error && <p className="error-text">{error}</p>}
-        {error && isSiteAccessLoginFailure(error) && renewalUrl && <a className="btn btn-primary" href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a>}
+        {error && isSiteAccessLoginFailure(error) && renewalUrl && <RenewPrivateSiteAccess className="btn btn-primary">Renew private site access</RenewPrivateSiteAccess>}
         {reference && <p>Support reference: {reference}</p>}
         <button type="submit" className="btn btn-primary" disabled={submitting}>
           {submitting ? "Signing in…" : "Sign In"}
@@ -190,7 +191,7 @@ export function LoginPage() {
       <p style={{ textAlign: "center", marginTop: 16 }}>
         <Link to="/forgot-password" style={{ color: "#ff6a1a", fontWeight: 700 }}>Forgot password?</Link>
       </p>
-      {renewalUrl && <p style={{ fontSize: 13, marginTop: 16 }}><a href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a> if this private preview asks for access again.</p>}
+      {renewalUrl && <p style={{ fontSize: 13, marginTop: 16 }}><RenewPrivateSiteAccess>Renew private site access</RenewPrivateSiteAccess> if this private preview asks for access again.</p>}
     </div>
   );
 }

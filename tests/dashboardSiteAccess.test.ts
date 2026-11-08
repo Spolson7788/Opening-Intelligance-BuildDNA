@@ -22,12 +22,14 @@ describe('dashboard sign-in: private gate detection and renew link', () => {
   it('builds the same allow-listed URL as the field app', () => {
     for (const o of ['https://oi-video-workflows-staging.netlify.app', 'https://oi-connected-release-candidate.netlify.app', 'https://evil.example'])
       expect(siteAccessRenewalUrl(o)).toBe(fieldRenewalUrl(o));
-    expect(siteAccessRenewalUrl('https://oi-video-workflows-staging.netlify.app')).toBe('https://app.netlify.com/edge-access?domain=oi-video-workflows-staging.netlify.app');
+    expect(siteAccessRenewalUrl('https://oi-video-workflows-staging.netlify.app')).toBe('https://oi-video-workflows-staging.netlify.app/');
+    expect(siteAccessRenewalUrl('https://oi-video-workflows-staging.netlify.app')).not.toContain('?');
   });
   it('renders the gate message, the renew button and a standing link on the sign-in page', () => {
     expect(SITE_ACCESS_LOGIN_MESSAGE).toContain('password has not been rejected');
     expect(page).toContain('siteAccessRenewalUrl(window.location.origin)');
-    expect(page).toMatch(/siteAccess && renewalUrl && <a [^>]*href=\{renewalUrl\} target="_blank" rel="noreferrer">Renew private site access<\/a>/);
-    expect(page).toMatch(/\{renewalUrl && <p[^>]*><a href=\{renewalUrl\} target="_blank" rel="noreferrer">Renew private site access<\/a>/);
+    expect(page).toMatch(/siteAccess && renewalUrl && <a [^>]*href=\{renewalUrl\}>Renew private site access<\/a>/);
+    expect(page).toMatch(/\{renewalUrl && <p[^>]*><a href=\{renewalUrl\}>Renew private site access<\/a>/);
+    expect(page).not.toContain('target="_blank"');
   });
 });

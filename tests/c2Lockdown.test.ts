@@ -155,11 +155,21 @@ describe('C2 field app wipes all OI data when access ends', () => {
       expect((await storeCounts()).operations).toBe(1);
     });
   }
-  it('does not wipe on other refusals (invalid token, missing reference, hosting gate HTML)', async () => {
+  it('an expired app token drops only the saved sign-in and leaves unsynced work', async () => {
+    await seedDevice();
+    const before = await storeCounts();
+    vi.stubGlobal('fetch', vi.fn(async () => json(401, { error: 'invalid_token', reference: randomUUID() })));
+    const failure = await fetchMe().catch((e: unknown) => e);
+    expect(isSessionEnded(failure)).toBe(false);
+    expect(await loadAuth()).toBeUndefined();
+    const after = await storeCounts();
+    expect(after.auth).toBe(0);
+    for (const name of Object.keys(before)) if (name !== 'auth') expect(after[name]).toBe(before[name]);
+  });
+  it('does not wipe on other refusals (missing reference, hosting gate HTML)', async () => {
     await seedDevice();
     const before = total(await storeCounts());
     const responses = [
-      () => json(401, { error: 'invalid_token', reference: randomUUID() }),
       () => json(401, { error: 'session_revoked' }),
       () => json(403, { error: 'forbidden', reference: randomUUID() }),
       () => new Response('<html>sign in</html>', { status: 401, headers: { 'content-type': 'text/html' } }),

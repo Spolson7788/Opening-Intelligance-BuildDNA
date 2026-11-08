@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { fetchPublicOpening, QrInformationError, type QrFailureKind, type PublicOpeningSummary } from '../lib/qrLanding';
 import { siteAccessRenewalUrl } from '../lib/siteAccess';
+import { RenewPrivateSiteAccess } from '../components/RenewPrivateSiteAccess';
 
 export function QrInformationPage() {
   const { qrToken = '' } = useParams();
@@ -24,7 +25,7 @@ export function QrInformationPage() {
       : current.failed === 'network' ? 'Opening information could not be reached. Check your connection and try again later.'
       : current.failed === 'service' ? 'Opening information is temporarily unavailable. Please try again later.'
       : 'Opening information is unavailable. Check your connection or contact the facility.'}</p>}
-    {renewal && <a className="btn btn-primary" href={renewal} target="_blank" rel="noreferrer">Renew private site access</a>}
+    {renewal && <RenewPrivateSiteAccess className="btn btn-primary">Renew private site access</RenewPrivateSiteAccess>}
     {current?.value && <>
       <dl>
         <dt>Facility</dt><dd>{current.value.facility_name}</dd>

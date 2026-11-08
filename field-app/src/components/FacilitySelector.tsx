@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { fetchMe, fetchOpening, listFieldProperties, listOpenings, searchFieldFacilities } from "../lib/api";
+import { isAppSessionFailure } from "../lib/siteAccess";
 import { ALL_AREAS, areaFilterKey, defaultAreaFilter, filterFacilitiesByArea, type AreaFilter, type AreaPreferences } from "../lib/facilityArea";
 import { getOfflineSetting, putOfflineSetting } from "../lib/db";
 import { useAuth } from "../lib/AuthContext";
@@ -42,7 +43,7 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
     setRunning(true); setError(null);
     syncFacility(deps, principal, property, { signal: ac.signal, onProgress: (p) => { if (!ac.signal.aborted) setProgress(p); } })
       .then((r) => { if (!ac.signal.aborted) { setResult(r); setProgress(null); } })
-      .catch(() => { if (!ac.signal.aborted) setError("Download failed. Retry when you have a connection."); })
+      .catch((error) => { if (!ac.signal.aborted && !isAppSessionFailure(error)) setError("Download failed. Retry when you have a connection."); })
       .finally(() => { if (abortRef.current === ac) setRunning(false); });
   }, [pkey, properties]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -55,7 +56,7 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
       const stored = await getOfflineSetting(selectedFacilityKey(principal)).catch(() => null);
       let list: FacilityProperty[] | null = null;
       try { list = await listFieldProperties(); await putOfflineSetting({ key: `facilities:${principal.userId}:${principal.organizationId}`, value: list, updatedAt: new Date().toISOString() }); }
-      catch { const c = await getOfflineSetting(`facilities:${principal.userId}:${principal.organizationId}`).catch(() => null); list = (c?.value as FacilityProperty[]) ?? null; if (!list) setError("Couldn't load your facilities. Check your connection."); }
+      catch (error) { const c = await getOfflineSetting(`facilities:${principal.userId}:${principal.organizationId}`).catch(() => null); list = (c?.value as FacilityProperty[]) ?? null; if (!list && !isAppSessionFailure(error)) setError("Couldn't load your facilities. Check your connection."); }
       if (stop || !list) return;
       setProperties(list);
       let prefs: AreaPreferences | null = null;

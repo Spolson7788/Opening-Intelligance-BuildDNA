@@ -5,6 +5,7 @@
 // Edits are unaffected: they still go through the existing offline queue and
 // expected_revision checks; this only reads.
 import { facilityOpeningsCacheKey, type FacilityOpening, type FacilityProperty } from "./facilityOpenings";
+import { isAppSessionFailure } from "./siteAccess";
 
 export interface Principal { userId: string; organizationId: string }
 export const selectedFacilityKey = (p: Principal) => `selected-facility:${p.userId}:${p.organizationId}`;
@@ -62,7 +63,10 @@ export async function syncFacility(deps: FacilitySyncDeps, principal: Principal,
       const rows = await withRetry(() => deps.listOpenings(b.id), retries, backoff, sleep, opts.signal);
       await deps.putSetting(facilityOpeningsCacheKey(principal, b.id), rows);
       for (const o of rows) if (!ids.includes(o.id)) ids.push(o.id);
-    } catch { buildingsFailed.push(b.id); }
+    } catch (error) {
+      if (isAppSessionFailure(error)) throw error;
+      buildingsFailed.push(b.id);
+    }
     p.buildingsDone++; p.openingsTotal = ids.length; emit();
   }
   p.phase = "downloading"; emit();
@@ -72,7 +76,10 @@ export async function syncFacility(deps: FacilitySyncDeps, principal: Principal,
     while (next < ids.length && !opts.signal?.aborted) {
       const id = ids[next++];
       try { await withRetry(() => deps.fetchOpening(id), retries, backoff, sleep, opts.signal); saved++; }
-      catch { failedIds.push(id); p.failed++; }
+      catch (error) {
+        if (isAppSessionFailure(error)) throw error;
+        failedIds.push(id); p.failed++;
+      }
       p.openingsDone++; emit();
     }
   };

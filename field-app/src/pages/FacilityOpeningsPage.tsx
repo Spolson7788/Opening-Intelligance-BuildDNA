@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { listFieldProperties, listOpenings } from "../lib/api";
+import { isAppSessionFailure } from "../lib/siteAccess";
 import { FacilitySelector, useFacilitySync } from "../components/FacilitySelector";
 import { getOfflineSetting, putOfflineSetting } from "../lib/db";
 import { useAuth } from "../lib/AuthContext";
@@ -23,7 +24,7 @@ export function FacilityOpeningsPage() {
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { if (!buildingId && sync?.selectedId) { const p = sync.properties?.find((x) => x.id === sync.selectedId); if (p?.buildings?.length === 1) setBuildingId(p.buildings[0].id); } }, [sync?.selectedId, sync?.properties]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { listFieldProperties().then(setProperties).catch(() => setError("Couldn't load your facilities. Check your connection.")); }, []);
+  useEffect(() => { listFieldProperties().then(setProperties).catch((error) => { if (!isAppSessionFailure(error)) setError("Couldn't load your facilities. Check your connection."); }); }, []);
   useEffect(() => {
     if (!buildingId || !auth) return;
     sessionStorage.setItem("oi-field-building", buildingId);
@@ -34,11 +35,11 @@ export function FacilityOpeningsPage() {
       if (stop) return;
       setOpenings(rows); setFromCache(false);
       await putOfflineSetting({ key, value: rows, updatedAt: new Date().toISOString() });
-    }).catch(async () => {
+    }).catch(async (error) => {
       const cached = await getOfflineSetting(key);
       if (stop) return;
       if (cached && Array.isArray(cached.value)) { setOpenings(cached.value as FacilityOpening[]); setFromCache(true); }
-      else setError("Couldn't load openings for this building. Check your connection.");
+      else if (!isAppSessionFailure(error)) setError("Couldn't load openings for this building. Check your connection.");
     });
     return () => { stop = true; };
   }, [buildingId, auth?.userId, auth?.organizationId]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -1,5 +1,5 @@
 import { loadAuth, cacheOpening, getCachedOpening, wipeAllOiData, clearAuth } from "./db";
-import { isNetlifyAccessResponse, SITE_ACCESS_REQUIRED } from "./siteAccess";
+import { isNetlifyAccessResponse, redirectToFieldLogin, SITE_ACCESS_REQUIRED } from "./siteAccess";
 import {diagnosticActor,diagnosticAvailable,PROBES,readBoundedProbe,runPhotoProbes} from './photoDiagnostic';
 import type {Principal,ProbeResponse} from './photoDiagnostic';
 import { assertSyncDispatchAllowed } from './syncNavigation';
@@ -124,6 +124,15 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
       if (auth && now && now.userId === auth.userId && now.organizationId === auth.organizationId && now.token === auth.token) {
         await wipeAllOiData();
         throw new SessionEndedError(res.status, body.error, endedReference);
+      }
+    }
+    if (res.status === 401 && body.error !== "session_revoked") {
+      const now = await loadAuth();
+      if (!auth || (now && now.userId === auth.userId && now.organizationId === auth.organizationId && now.token === auth.token)) {
+        await clearAuth();
+      }
+      if (typeof window !== "undefined") {
+        redirectToFieldLogin(import.meta.env.BASE_URL || "/field/", window.location.pathname, (url) => window.location.assign(url));
       }
     }
     throw new ApiError(res.status, body.error || `request_failed_${res.status}`, typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
