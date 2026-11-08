@@ -5,6 +5,7 @@ import { assessFireDoorChecklist, NFPA80_ITEMS } from "../src/services/nfpa80Che
 import { fireDoorOutcome } from "../field-app/src/lib/nfpa80Items";
 import { failingFireDoorFields, passingFireDoorFields } from "./nfpa80Fixture";
 import { setEmailProviderForTests, type OutboundEmail } from "../src/services/email";
+import { dashboardInspectionLink } from "../src/services/inspectionReportLink";
 import { pool } from "../src/db/pool";
 import { inflateSync } from "node:zlib";
 
@@ -94,10 +95,19 @@ describe("NFPA 80 fire door inspection", () => {
     expect(savedContact.status).toBe(200);
     const withContact = await request(app).get(`/api/events/inspection-events/${created.body.id}/email-defaults`).set("Authorization", `Bearer ${org.token}`);
     expect(withContact.body.to).toEqual(["building@example.com", org.email]);
+    const previousBase = process.env.APP_BASE_URL;
+    process.env.APP_BASE_URL = "https://oi-video-workflows-staging.netlify.app";
     const mailed = await request(app).post(`/api/events/inspection-events/${created.body.id}/email`).set("Authorization", `Bearer ${org.token}`).send({ to: ["facility@example.com", org.email, "extra@example.com"] });
+    process.env.APP_BASE_URL = previousBase;
     expect(mailed.status).toBe(200);
     expect(sent[0].to).toEqual(["facility@example.com", org.email, "extra@example.com"]);
     expect(sent[0].attachments?.[0].filename).toBe("fire-door-inspection.pdf");
+    const dashboardLink = dashboardInspectionLink("https://oi-video-workflows-staging.netlify.app", door.id, created.body.id);
+    expect(sent[0].text).toContain(dashboardLink);
+    expect(sent[0].text).not.toContain("token=");
+    expect(sent[0].html).not.toContain("?");
+    const emailed = await pool.query("SELECT action, request_body FROM audit_log WHERE organization_id=$1 AND action=$2", [org.organizationId, "Emailed fire door inspection report"]);
+    expect(emailed.rows.some((row) => row.request_body.to.includes("facility@example.com"))).toBe(true);
 
     const photoDelete = await request(app).delete(`/api/photos/${deficiency.photo_id}`).set("Authorization", `Bearer ${org.token}`);
     expect(photoDelete.status).toBe(409);
@@ -186,6 +196,47 @@ describe("NFPA 80 fire door inspection", () => {
     const report = await request(app).get(`/api/export/compliance-report.pdf?property_id=${propertyId}`).set("Authorization", `Bearer ${org.token}`);
     expect(report.status).toBe(200);
     expect(report.body.slice(0, 4).toString()).toBe("%PDF");
+  });
+
+  it("saves one facility copy of the report and keeps it inside that facility", async () => {
+    const { org, opening: door } = await opening();
+    const created = await request(app).post("/api/events/inspection-events").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: door.id, event_date: "2026-04-01", inspection_type: "fire_door_nfpa80", ...passingFireDoorFields(),
+    });
+    expect(created.status).toBe(201);
+    const managerEmail = `manager-${Date.now()}@example.com`;
+    const viewerEmail = `viewer-${Date.now()}@example.com`;
+    const inspectorEmail = `inspector-${Date.now()}@example.com`;
+    await request(app).post("/api/auth/register").set("Authorization", `Bearer ${org.token}`).send({ email: managerEmail, password: "password12345", full_name: "Facility Manager", role: "facilities_manager" });
+    await request(app).post("/api/auth/register").set("Authorization", `Bearer ${org.token}`).send({ email: viewerEmail, password: "password12345", full_name: "Facility Viewer", role: "viewer" });
+    await request(app).post("/api/auth/register").set("Authorization", `Bearer ${org.token}`).send({ email: inspectorEmail, password: "password12345", full_name: "Inspector", role: "inspector" });
+    const manager = await request(app).post("/api/auth/login").send({ email: managerEmail, password: "password12345" });
+    const viewer = await request(app).post("/api/auth/login").send({ email: viewerEmail, password: "password12345" });
+    const inspector = await request(app).post("/api/auth/login").send({ email: inspectorEmail, password: "password12345" });
+    const outsider = await signupTestOrg("Other Facility");
+
+    const denied = await request(app).post(`/api/events/inspection-events/${created.body.id}/facility-record`).set("Authorization", `Bearer ${inspector.body.token}`);
+    expect(denied.status).toBe(403);
+    const first = await request(app).post(`/api/events/inspection-events/${created.body.id}/facility-record`).set("Authorization", `Bearer ${manager.body.token}`);
+    expect(first.status).toBe(201);
+    expect(first.body.already_saved).toBe(false);
+    const second = await request(app).post(`/api/events/inspection-events/${created.body.id}/facility-record`).set("Authorization", `Bearer ${org.token}`);
+    expect(second.status).toBe(200);
+    expect(second.body.already_saved).toBe(true);
+    expect(second.body.document.id).toBe(first.body.document.id);
+    const listed = await request(app).get(`/api/documents/by-opening/${door.id}`).set("Authorization", `Bearer ${viewer.body.token}`);
+    expect(listed.body).toHaveLength(1);
+    expect(listed.body[0].id).toBe(first.body.document.id);
+    expect(JSON.stringify(listed.body)).not.toContain("content");
+    const file = await request(app).get(`/api/documents/${first.body.document.id}/file`).set("Authorization", `Bearer ${viewer.body.token}`);
+    expect(file.status).toBe(200);
+    expect(file.body.slice(0, 4).toString()).toBe("%PDF");
+    expect((await request(app).get(`/api/documents/${first.body.document.id}/file`).set("Authorization", `Bearer ${outsider.token}`)).status).toBe(404);
+    expect((await request(app).post(`/api/events/inspection-events/${created.body.id}/facility-record`).set("Authorization", `Bearer ${outsider.token}`)).status).toBe(404);
+    const copies = await pool.query("SELECT id FROM documents WHERE inspection_event_id=$1", [created.body.id]);
+    expect(copies.rowCount).toBe(1);
+    const audit = await pool.query("SELECT action FROM audit_log WHERE organization_id=$1 AND action=$2", [org.organizationId, "Saved fire door inspection to facility records"]);
+    expect(audit.rowCount).toBeGreaterThan(0);
   });
 
   it("allows deletion only after the three-year hold", async () => {

@@ -443,6 +443,14 @@ export async function submitInspectionEvent(payload: any) {
   return authedFetch("/events/inspection-events", { method: "POST", body: JSON.stringify(payload) });
 }
 
+export function inspectionReportRecipients(id: string): Promise<{ to: string[]; facility_contact_email: string | null; inspector_email: string }> {
+  return authedFetch(`/events/inspection-events/${id}/email-defaults`);
+}
+
+export function emailInspectionReport(id: string, to: string[]): Promise<{ sent: boolean; delivery_mode: string }> {
+  return authedFetch(`/events/inspection-events/${id}/email`, { method: "POST", body: JSON.stringify({ to }) });
+}
+
 export async function recomputeHealthScore(openingId: string) {
   return authedFetch(`/openings/${openingId}/recompute-health-score`, { method: "POST" });
 }

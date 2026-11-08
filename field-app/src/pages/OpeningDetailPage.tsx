@@ -9,6 +9,7 @@ import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
 import { SyncBadge } from "../components/SyncBadge";
 import { PhotoCapture } from "../components/PhotoCapture";
+import { EmailInspectionReport } from "../components/EmailInspectionReport";
 import { openingCompletionRequirements } from "../lib/openingCompletion";
 import { splitServiceHistory } from "../lib/serviceHistory";
 import type { ServiceEventRow } from "../lib/serviceHistory";
@@ -446,6 +447,9 @@ export function OpeningDetailPage() {
                   </span>
                 </div>
                 {ev.notes && <p style={{ margin: "4px 0 0", fontSize: 14 }}>{ev.notes}</p>}
+                {ev.inspection_type === "fire_door_nfpa80" && ev.checklist_result?.status === "complete" && (
+                  <EmailInspectionReport inspectionId={ev.id} />
+                )}
               </div>
             ))}
           </>

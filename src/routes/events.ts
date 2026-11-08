@@ -10,6 +10,7 @@ import { acquireClient } from "../db/acquireClient";
 import { prepareFireDoorChecklist, applyFireDoorFollowUp } from "../services/nfpa80Inspection";
 import { generateNfpaInspectionPdf } from "../services/nfpa80Report";
 import { sendEmail, emailSettings } from "../services/email";
+import { dashboardInspectionLink } from "../services/inspectionReportLink";
 import { attachmentByteLimit } from "../services/purchasingSend";
 
 export const eventsRouter = Router();
@@ -254,17 +255,70 @@ eventsRouter.post("/inspection-events/:id/email", async (req: AuthedRequest, res
     });
     const limit = attachmentByteLimit();
     const attached = pdf.length <= limit;
-    const base = emailSettings().baseUrl || "";
-    const link = `${base}/api/events/inspection-events/${req.params.id}/report.pdf`;
+    const dashboardLink = dashboardInspectionLink(emailSettings().baseUrl, loaded.inspection.opening_id, req.params.id);
+    const text = [
+      attached ? "The inspection report is attached." : "The inspection report is ready.",
+      dashboardLink
+        ? `Sign in to review this inspection and save it to facility records: ${dashboardLink}`
+        : "Sign in on the dashboard and open this opening to review the inspection and save it to facility records.",
+    ].join("\n");
     const outcome = await sendEmail({
       to: recipients,
       subject: `Fire door inspection ${loaded.inspection.opening_code}`,
-      text: attached ? "The inspection report is attached." : `The report is available to a signed-in user at ${link}`,
-      html: attached ? "<p>The inspection report is attached.</p>" : `<p>The report is available to a signed-in user at ${link}</p>`,
+      text,
+      html: `<p>${text.replace(/\n/g, "<br>")}</p>`,
       attachments: attached ? [{ filename: "fire-door-inspection.pdf", contentBase64: pdf.toString("base64") }] : undefined,
     });
     if (!outcome.sent) return res.status(503).json({ error: outcome.reason });
     res.json({ sent: true, to: recipients, delivery_mode: attached ? "attachments" : "links" });
+  } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
+});
+
+eventsRouter.post("/inspection-events/:id/facility-record", async (req: AuthedRequest, res) => {
+  if (req.auth!.role !== "admin" && req.auth!.role !== "facilities_manager") return res.status(403).json({ error: "insufficient_role_for_action" });
+  if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_inspection" });
+  try {
+    const loaded = await loadFireDoorReport(req.params.id, req.auth!.organizationId);
+    if (!loaded || loaded.inspection.inspection_type !== "fire_door_nfpa80" || loaded.inspection.checklist_result?.status !== "complete") {
+      return res.status(404).json({ error: "not_found" });
+    }
+    if (!(await areaAllowsOpening(req.auth!.userId, loaded.inspection.opening_id))) return res.status(403).json({ error: "forbidden" });
+    const existing = await pool.query(
+      `SELECT id, title, opening_id, document_type, inspection_event_id, created_at
+       FROM documents WHERE inspection_event_id=$1`,
+      [req.params.id],
+    );
+    if (existing.rowCount) return res.json({ document: existing.rows[0], already_saved: true });
+    const pdf = await generateNfpaInspectionPdf({
+      openingCode: loaded.inspection.opening_code,
+      location: loaded.inspection.location_description,
+      eventDate: String(loaded.inspection.event_date).slice(0, 10),
+      inspectorName: loaded.inspection.signed_by_name,
+      qualification: loaded.inspection.inspector_qualification,
+      licenseNumber: loaded.inspection.inspector_license_number,
+      passed: loaded.inspection.passed === true,
+      notes: loaded.inspection.notes,
+      signatureData: loaded.inspection.signature_data,
+      checklist: loaded.inspection.checklist_result,
+      deficiencies: loaded.deficiencies,
+    });
+    const title = `Fire door inspection ${loaded.inspection.opening_code} ${String(loaded.inspection.event_date).slice(0, 10)}`;
+    const inserted = await pool.query(
+      `INSERT INTO documents
+        (opening_id, document_type, title, storage_url, file_size_bytes, uploaded_by_user_id, inspection_event_id, content, content_type)
+       VALUES ($1,'inspection_report',$2,$3,$4,$5,$6,$7,'application/pdf')
+       ON CONFLICT (inspection_event_id) DO NOTHING
+       RETURNING id, title, opening_id, document_type, inspection_event_id, created_at`,
+      [loaded.inspection.opening_id, title, `oi-record://inspection-report/${req.params.id}`, pdf.length, req.auth!.userId, req.params.id, pdf],
+    );
+    if (!inserted.rowCount) {
+      const again = await pool.query(
+        `SELECT id, title, opening_id, document_type, inspection_event_id, created_at FROM documents WHERE inspection_event_id=$1`,
+        [req.params.id],
+      );
+      return res.json({ document: again.rows[0], already_saved: true });
+    }
+    res.status(201).json({ document: inserted.rows[0], already_saved: false });
   } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
 });
 

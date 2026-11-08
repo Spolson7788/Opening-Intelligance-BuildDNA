@@ -180,6 +180,7 @@ export interface DocumentEntry {
   storage_url: string;
   file_size_bytes: number | null;
   created_at: string;
+  inspection_event_id?: string | null;
 }
 
 export async function fetchDocumentsForOpening(openingId: string): Promise<DocumentEntry[]> {
@@ -976,3 +977,22 @@ export const fetchBranches = (): Promise<{ branches: Array<{ id: string; name: s
 export const saveBranch = (id: string, body: { name: string; default_state: string; default_territory: string | null; is_active: boolean; purchasing_email: string | null }) => post(`/branches/${id}`, body, "PUT");
 export const inspectionReportRecipients = (id: string): Promise<{ to: string[]; facility_contact_email: string | null; inspector_email: string }> => authedFetch(`/events/inspection-events/${id}/email-defaults`);
 export const emailInspectionReport = (id: string, to: string[]): Promise<{ sent: boolean; delivery_mode: string }> => post(`/events/inspection-events/${id}/email`, { to });
+export const saveInspectionToFacilityRecords = (id: string): Promise<{ document: { id: string; title: string }; already_saved: boolean }> => post(`/events/inspection-events/${id}/facility-record`, {});
+
+export async function downloadAuthedFile(path: string, filename: string) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (res.status === 401) {
+    handleUnauthorized(typeof localStorage !== "undefined" ? localStorage : null,
+      typeof window !== "undefined" ? { pathname: window.location.pathname, assign: (u) => window.location.assign(u) } : null,
+      import.meta.env.BASE_URL || "/");
+  }
+  if (!res.ok) throw new ApiError(res.status, "download_failed");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}

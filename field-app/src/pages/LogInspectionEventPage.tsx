@@ -6,6 +6,7 @@ import { recomputeHealthScore } from "../lib/api";
 import { SyncBadge } from "../components/SyncBadge";
 import { SignaturePad } from "../components/SignaturePad";
 import type { SignaturePadHandle } from "../components/SignaturePad";
+import { EmailInspectionReport } from "../components/EmailInspectionReport";
 import { NFPA80_ITEMS, fireDoorOutcome } from "../lib/nfpa80Items";
 
 type ItemAnswer = { result: "" | "pass" | "fail" | "na"; note: string; photo: File | null };
@@ -39,6 +40,7 @@ export function LogInspectionEventPage() {
   const signaturePadRef = useRef<SignaturePadHandle>(null);
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savedInspectionId, setSavedInspectionId] = useState<string | null>(null);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -94,7 +96,7 @@ export function LogInspectionEventPage() {
 
     setSubmitting(true);
 
-    await queueOpeningMutation("inspection_event", id!, {
+    const inspectionId = await queueOpeningMutation("inspection_event", id!, {
         opening_id: id,
         event_date: eventDate,
         inspection_type: inspectionType,
@@ -109,9 +111,16 @@ export function LogInspectionEventPage() {
 
     setSaved(true);
     setSubmitting(false);
+    if (inspectionType === "fire_door_nfpa80") {
+      setSavedInspectionId(inspectionId);
+      if (navigator.onLine) {
+        flushOutbox().then(() => Promise.resolve(recomputeHealthScore(id!)).catch(() => {}));
+      }
+      return;
+    }
 
     flushOutbox().then(() => {
-      if (navigator.onLine) recomputeHealthScore(id!).catch(() => {});
+      if (navigator.onLine) Promise.resolve(recomputeHealthScore(id!)).catch(() => {});
     });
 
     setTimeout(() => navigate(`/opening/${id}`), 700);
@@ -132,8 +141,11 @@ export function LogInspectionEventPage() {
         </p>
 
         {saved ? (
-          <div className="card" style={{ textAlign: "center", color: "var(--success)" }}>
-            Saved. Returning to the opening…
+          <div className="card">
+            <p style={{ textAlign: "center", color: "var(--success)" }}>Saved.</p>
+            {savedInspectionId && <EmailInspectionReport inspectionId={savedInspectionId} />}
+            {!savedInspectionId && <p style={{ textAlign: "center" }}>Returning to the opening…</p>}
+            <button type="button" className="btn btn-secondary" onClick={() => navigate(`/opening/${id}`)}>Back to the opening</button>
           </div>
         ) : (
           <form onSubmit={onSubmit}>

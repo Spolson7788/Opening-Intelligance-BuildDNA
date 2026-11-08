@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl, emailInspectionReport, inspectionReportRecipients } from "../lib/api";
+import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl, emailInspectionReport, inspectionReportRecipients, saveInspectionToFacilityRecords, downloadAuthedFile } from "../lib/api";
+import { useAuth } from "../lib/AuthContext";
 import type { OpeningDetail, DocumentEntry, PurchasingEligibility, HardwareComponent, OpeningPhoto } from "../lib/api";
 import { Sidebar } from "../components/Sidebar";
 import { useLocations } from "../lib/LocationContext";
@@ -85,9 +86,12 @@ export function OpeningDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const loc = useLocations();
+  const { auth } = useAuth();
+  const canSaveRecords = auth?.role === "admin" || auth?.role === "facilities_manager";
   const [opening, setOpening] = useState<OpeningDetail | null>(null);
   const [reportTo, setReportTo] = useState("");
   const [reportMessage, setReportMessage] = useState<string | null>(null);
+  const [recordMessage, setRecordMessage] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [purchasing, setPurchasing] = useState<PurchasingEligibility | null>(null);
@@ -103,6 +107,15 @@ export function OpeningDetailPage() {
   function loadDocuments() {
     fetchDocumentsForOpening(id!).then(setDocuments).catch(() => {
       // Non-fatal — the rest of the opening page still works without documents loading.
+    });
+  }
+
+  function saveReport(inspectionId: string) {
+    saveInspectionToFacilityRecords(inspectionId).then((result) => {
+      setRecordMessage((current) => ({ ...current, [inspectionId]: result.already_saved ? "Already in facility records." : "Saved to facility records." }));
+      loadDocuments();
+    }).catch(() => {
+      setRecordMessage((current) => ({ ...current, [inspectionId]: "Could not save the report." }));
     });
   }
 
@@ -349,11 +362,11 @@ export function OpeningDetailPage() {
               ) : (
                 <table>
                   <thead>
-                    <tr><th>Date</th><th>Type</th><th>Result</th><th>Notes</th><th>Signed By</th></tr>
+                    <tr><th>Date</th><th>Type</th><th>Result</th><th>Notes</th><th>Signed By</th><th>Report</th></tr>
                   </thead>
                   <tbody>
                     {opening.inspection_events.map((ev: any) => (
-                      <tr key={ev.id}>
+                      <tr key={ev.id} id={`inspection-${ev.id}`}>
                         <td>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</td>
                         <td style={{ textTransform: "capitalize" }}>{ev.inspection_type.replace(/_/g, " ")}</td>
                         <td>
@@ -375,6 +388,15 @@ export function OpeningDetailPage() {
                               )}
                             </div>
                           ) : "—"}
+                        </td>
+                        <td>
+                          {ev.inspection_type === "fire_door_nfpa80" && ev.checklist_result?.status === "complete" && (
+                            <div>
+                              <button className="btn btn-secondary" type="button" style={{ width: "auto", padding: "0 10px", height: 28, fontSize: 12 }} onClick={() => downloadAuthedFile(`/events/inspection-events/${ev.id}/report.pdf`, "fire-door-inspection.pdf").catch(() => setRecordMessage((current) => ({ ...current, [ev.id]: "Could not download the report." })))}>Download PDF</button>
+                              {canSaveRecords && <button className="btn btn-secondary" type="button" style={{ width: "auto", padding: "0 10px", height: 28, fontSize: 12, marginLeft: 8 }} onClick={() => saveReport(ev.id)}>Save to facility records</button>}
+                              {recordMessage[ev.id] && <p role={recordMessage[ev.id].startsWith("Could not") ? "alert" : "status"}>{recordMessage[ev.id]}</p>}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -491,7 +513,10 @@ export function OpeningDetailPage() {
                   <tbody>
                     {documents.map((d) => (
                       <tr key={d.id}>
-                        <td><a href={d.storage_url} target="_blank" rel="noreferrer">{d.title}</a></td>
+                        <td>{d.inspection_event_id
+                          ? <button type="button" className="btn btn-secondary" style={{ width: "auto", padding: "0 10px", height: 28, fontSize: 12 }} onClick={() => downloadAuthedFile(`/documents/${d.id}/file`, `${d.title}.pdf`).catch(() => setUploadError("Could not download the report."))}>{d.title}</button>
+                          : <a href={d.storage_url} target="_blank" rel="noreferrer">{d.title}</a>}
+                        </td>
                         <td style={{ textTransform: "capitalize" }}>{d.document_type.replace(/_/g, " ")}</td>
                         <td>{new Date(d.created_at).toLocaleDateString()}</td>
                         <td>
