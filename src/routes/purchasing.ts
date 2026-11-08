@@ -8,7 +8,7 @@ import {auditLog} from '../middleware/auditLog';
 import {purchasingReview} from '../services/purchasingReview';
 import {openingsForOrgSubquery} from '../db/tenantScope';
 import {areaAllowsOpening} from '../db/areaAccess';
-import {sendPurchasingPackage} from '../services/purchasingSend';
+import {resolvePurchasingDestination, sendPurchasingPackage} from '../services/purchasingSend';
 export const purchasingRouter=Router();
 purchasingRouter.use(requireAuth,enforceRolePermissions,auditLog);
 purchasingRouter.post('/review',async(req:AuthedRequest,res)=>{
@@ -89,8 +89,28 @@ const sendBody = z.object({
   document_ids: z.array(z.string().uuid()).max(5).optional(),
   reference_sha256s: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(5).optional(),
   include_approved_document: z.boolean().optional(),
+  branch_id: z.string().uuid().optional(),
   uploads: z.array(z.object({ filename: z.string().trim().min(1).max(180), content_base64: z.string().min(8).max(20_000_000) }).strict()).max(5).optional(),
 }).strict();
+
+purchasingRouter.get('/destination', async (req: AuthedRequest, res) => {
+  const query = z.object({ opening_id: z.string().uuid(), branch_id: z.string().uuid().optional() }).safeParse(req.query);
+  if (!query.success) return res.status(400).json({ error: 'invalid_destination' });
+  try {
+    const owned = await pool.query(
+      `SELECT 1 FROM openings o WHERE o.id=$1 AND o.id IN (${openingsForOrgSubquery(2)})`,
+      [query.data.opening_id, req.auth!.organizationId],
+    );
+    if (!owned.rowCount || !(await areaAllowsOpening(req.auth!.userId, query.data.opening_id))) return res.status(403).json({ error: 'forbidden' });
+    const destination = await resolvePurchasingDestination(pool, {
+      organizationId: req.auth!.organizationId,
+      openingId: query.data.opening_id,
+      branchId: query.data.branch_id,
+    });
+    if (!destination.ok) return res.json({ ready: false, error: destination.error, choices: destination.choices ?? [] });
+    res.set('Cache-Control', 'no-store').json({ ready: true, to: destination.to, source: destination.source, branch: destination.branch });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'purchasing_destination_failed' }); }
+});
 
 purchasingRouter.post('/send', async (req: AuthedRequest, res) => {
   const body = sendBody.safeParse(req.body);
@@ -112,8 +132,9 @@ purchasingRouter.post('/send', async (req: AuthedRequest, res) => {
       referenceSha256s: b.reference_sha256s ?? [],
       includeApproved: b.include_approved_document === true,
       uploads: b.uploads ?? [],
+      branchId: b.branch_id,
     });
-    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    if (result.error) return res.status(result.status || 400).json({ error: result.error, choices: result.choices });
     res.status(201).json(result.send);
   } catch (e) { console.error(e); res.status(500).json({ error: 'purchasing_send_failed' }); }
 });

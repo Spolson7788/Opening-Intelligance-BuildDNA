@@ -26,6 +26,7 @@ export interface PurchasingSendInput {
   referenceSha256s: string[];
   includeApproved: boolean;
   uploads: PurchasingUpload[];
+  branchId?: string | null;
 }
 
 export type SheetFile = { bytes: Buffer; contentType: "application/pdf" | "image/jpeg" | "image/png"; extension: "pdf" | "jpg" | "png" };
@@ -50,27 +51,82 @@ export function purchasingFilename(name: string, extension: SheetFile["extension
   return `${base}.${extension}`;
 }
 
-export async function resolvePurchasingEmail(db: Queryable, organizationId: string, userId: string): Promise<string | null> {
-  const row = await db.query(
-    `SELECT o.purchasing_email AS org_email, b.purchasing_email AS branch_email
-     FROM organizations o
-     LEFT JOIN user_branch_assignments a ON a.user_id=$2 AND a.organization_id=o.id
-     LEFT JOIN company_branches b ON b.id=a.branch_id AND b.organization_id=o.id AND b.is_active=true
-     WHERE o.id=$1`,
-    [organizationId, userId],
+export type PurchasingBranch = { id: string; name: string; purchasing_email: string | null };
+
+export type PurchasingDestination =
+  | { ok: true; to: string; source: "branch" | "company"; branch: { id: string; name: string } | null }
+  | { ok: false; error: "branch_unknown" | "branch_choice_required" | "branch_not_authorized" | "purchasing_email_missing"; status: number; choices?: PurchasingBranch[] };
+
+// The job's branch is the provider branch whose declared area covers the
+// facility. The technician's own branch is not used. No declared areas means
+// purchasing is centralized at the company. Several covering branches must be
+// chosen. None covering a located job blocks the send.
+export async function resolvePurchasingDestination(
+  db: Queryable,
+  args: { organizationId: string; openingId: string; branchId?: string | null },
+): Promise<PurchasingDestination> {
+  const place = await db.query(
+    `SELECT p.state_code, p.county_fips, org.purchasing_email AS org_email
+     FROM openings o
+     JOIN buildings b ON b.id = o.building_id
+     JOIN properties p ON p.id = b.property_id
+     JOIN organizations org ON org.id = $2
+     WHERE o.id = $1`,
+    [args.openingId, args.organizationId],
   );
-  const branch = row.rows[0]?.branch_email as string | null;
-  const org = row.rows[0]?.org_email as string | null;
-  return branch || org || null;
+  const orgEmail = (place.rows[0]?.org_email as string | null) ?? null;
+  const state = place.rows[0]?.state_code as string | null;
+  const county = place.rows[0]?.county_fips as string | null;
+  let declared = false;
+  let covering: PurchasingBranch[] = [];
+  try {
+    const areas = await db.query(
+      `SELECT EXISTS (
+         SELECT 1 FROM company_branches b
+         JOIN company_branch_areas a ON a.branch_id = b.id
+         WHERE b.organization_id = $1 AND b.is_active
+       ) AS declared`,
+      [args.organizationId],
+    );
+    declared = areas.rows[0]?.declared === true;
+    if (declared) {
+      const rows = await db.query(
+        `SELECT DISTINCT b.id, b.name, b.purchasing_email
+         FROM company_branches b
+         JOIN company_branch_areas a ON a.branch_id = b.id
+         WHERE b.organization_id = $1 AND b.is_active
+           AND oi_private.area_row_covers($2, $3, a.state_code, a.county_fips)
+         ORDER BY b.name`,
+        [args.organizationId, state, county],
+      );
+      covering = rows.rows as PurchasingBranch[];
+    }
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? String((error as { code?: string }).code) : "";
+    if (code !== "42883" && code !== "3F000") throw error;
+  }
+  if (!declared) return finish(null, orgEmail);
+  if (covering.length === 0) return { ok: false, error: "branch_unknown", status: 409 };
+  if (covering.length > 1 && !args.branchId) return { ok: false, error: "branch_choice_required", status: 409, choices: covering };
+  const chosen = covering.length === 1 ? covering[0] : covering.find((branch) => branch.id === args.branchId);
+  if (!chosen) return { ok: false, error: "branch_not_authorized", status: 403 };
+  return finish(chosen, orgEmail);
 }
 
-export async function sendPurchasingPackage(db: Queryable, input: PurchasingSendInput): Promise<{ error?: string; status?: number; send?: any }> {
+function finish(branch: PurchasingBranch | null, orgEmail: string | null): PurchasingDestination {
+  if (branch?.purchasing_email) return { ok: true, to: branch.purchasing_email, source: "branch", branch: { id: branch.id, name: branch.name } };
+  if (orgEmail) return { ok: true, to: orgEmail, source: "company", branch: branch ? { id: branch.id, name: branch.name } : null };
+  return { ok: false, error: "purchasing_email_missing", status: 409 };
+}
+
+export async function sendPurchasingPackage(db: Queryable, input: PurchasingSendInput): Promise<{ error?: string; status?: number; send?: any; choices?: PurchasingBranch[] }> {
   if (input.documentIds.length + input.referenceSha256s.length + input.uploads.length + (input.includeApproved ? 1 : 0) === 0) {
     return { error: "document_required", status: 400 };
   }
   if (input.uploads.length > MAX_FILES) return { error: "too_many_files", status: 400 };
-  const to = await resolvePurchasingEmail(db, input.organizationId, input.userId);
-  if (!to) return { error: "purchasing_email_missing", status: 409 };
+  const destination = await resolvePurchasingDestination(db, { organizationId: input.organizationId, openingId: input.openingId, branchId: input.branchId });
+  if (!destination.ok) return { error: destination.error, status: destination.status, choices: destination.choices };
+  const to = destination.to;
 
   const files: Array<{ filename: string; bytes: Buffer | null; link: string | null; documentId: string | null; contentType: string }> = [];
   if (input.documentIds.length) {

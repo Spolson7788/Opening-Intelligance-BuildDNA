@@ -416,12 +416,28 @@ export async function listOpeningDocuments(openingId: string, principal?: Expect
   return authedFetch(`/documents/by-opening/${openingId}`, {}, principal);
 }
 
+export type PurchasingDestination = {
+  ready: boolean;
+  error?: string;
+  to?: string;
+  source?: "branch" | "company";
+  branch?: { id: string; name: string } | null;
+  choices?: { id: string; name: string }[];
+};
+
+export function purchasingDestination(openingId: string, branchId?: string, principal?: ExpectedPrincipal) {
+  const query = new URLSearchParams({ opening_id: openingId });
+  if (branchId) query.set("branch_id", branchId);
+  return authedFetch(`/purchasing/destination?${query}`, {}, principal) as Promise<PurchasingDestination>;
+}
+
 export async function sendHardwareToPurchasing(payload: {
   opening_id: string;
   hardware_component_id: string;
   note?: string;
   document_ids?: string[];
   uploads?: { filename: string; content_base64: string }[];
+  branch_id?: string;
 }, principal?: ExpectedPrincipal) {
   return authedFetch("/purchasing/send", { method: "POST", body: JSON.stringify(payload) }, principal);
 }

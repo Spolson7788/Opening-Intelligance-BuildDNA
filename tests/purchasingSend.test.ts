@@ -54,28 +54,34 @@ describe("send to purchasing", () => {
     expect(detail.body.purchasing_sends[0].note).toBe("Need the closer");
   });
 
-  it("uses the branch purchasing email when the sender is assigned to that branch", async () => {
+  it("uses the branch that covers the job, not the technician's home branch", async () => {
     capture();
     const org = await signupTestOrg();
-    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const { propertyId, buildingId } = await createPortfolioHierarchy(org.token);
+    await pool.query("UPDATE properties SET state_code='AZ', county_fips='04013' WHERE id=$1", [propertyId]);
     const opening = await createTestOpening(org.token, buildingId);
     const componentId = await hardware(org.token, opening.id);
     await request(app).put("/api/purchasing/company-email").set("Authorization", `Bearer ${org.token}`).send({ purchasing_email: "company@example.com" });
-    const branchId = crypto.randomUUID();
-    const branch = await request(app).put(`/api/branches/${branchId}`).set("Authorization", `Bearer ${org.token}`).send({
-      name: "West", default_state: "AZ", default_territory: null, is_active: true, purchasing_email: "branch@example.com",
+    const west = crypto.randomUUID();
+    const east = crypto.randomUUID();
+    await request(app).put(`/api/branches/${west}`).set("Authorization", `Bearer ${org.token}`).send({
+      name: "West", default_state: "AZ", default_territory: null, is_active: true, purchasing_email: "west@example.com",
     });
-    expect(branch.status).toBe(200);
+    await request(app).put(`/api/branches/${east}`).set("Authorization", `Bearer ${org.token}`).send({
+      name: "East", default_state: "AZ", default_territory: null, is_active: true, purchasing_email: "east@example.com",
+    });
+    await pool.query("INSERT INTO company_branch_areas (branch_id, state_code, county_fips) VALUES ($1,'AZ','04013')", [west]);
     const me = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${org.token}`);
-    const assignment = await request(app).put(`/api/branches/assignments/${me.body.id}`).set("Authorization", `Bearer ${org.token}`).send({ branch_id: branchId });
-    expect(assignment.status).toBe(200);
+    await request(app).put(`/api/branches/assignments/${me.body.id}`).set("Authorization", `Bearer ${org.token}`).send({ branch_id: east });
 
+    const preview = await request(app).get(`/api/purchasing/destination?opening_id=${opening.id}`).set("Authorization", `Bearer ${org.token}`);
+    expect(preview.body).toMatchObject({ ready: true, to: "west@example.com", source: "branch", branch: { id: west, name: "West" } });
     const res = await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${org.token}`).send({
       opening_id: opening.id, hardware_component_id: componentId,
       uploads: [{ filename: "install.pdf", content_base64: TINY_PDF }],
     });
     expect(res.status).toBe(201);
-    expect(res.body.sent_to).toBe("branch@example.com");
+    expect(res.body.sent_to).toBe(preview.body.to);
   });
 
   it("links an existing opening document and a PDF that is over the attachment limit", async () => {
@@ -175,7 +181,8 @@ describe("send to purchasing", () => {
     setEmailProviderForTests({ name: "fake", send: async () => ({ sent: false, reason: "email_not_configured" }) });
     const db = {
       query: async (sql: string) => {
-        if (sql.includes("purchasing_email")) return { rows: [{ org_email: "buy@example.com", branch_email: null }] };
+        if (sql.includes("state_code")) return { rows: [{ state_code: null, county_fips: null, org_email: "buy@example.com" }] };
+        if (sql.includes("AS declared")) return { rows: [{ declared: false }] };
         if (sql.includes("INSERT INTO purchasing_sends")) return { rows: [{ id: "11111111-1111-4111-8111-111111111111" }] };
         if (sql.includes("INSERT INTO purchasing_send_files")) return { rows: [{ id: "22222222-2222-4222-8222-222222222222" }] };
         if (sql.startsWith("DELETE")) {
@@ -232,6 +239,88 @@ describe("send to purchasing", () => {
       await client.query("ROLLBACK").catch(() => {});
       client.release();
     }
+  });
+
+  it("falls back to the company address, and blocks an unknown, ambiguous, or unauthorized branch", async () => {
+    capture();
+    const org = await signupTestOrg();
+    const other = await signupTestOrg();
+    const { propertyId, buildingId } = await createPortfolioHierarchy(org.token);
+    await pool.query("UPDATE properties SET state_code='AZ', county_fips='04013' WHERE id=$1", [propertyId]);
+    const opening = await createTestOpening(org.token, buildingId);
+    const componentId = await hardware(org.token, opening.id);
+    await request(app).put("/api/purchasing/company-email").set("Authorization", `Bearer ${org.token}`).send({ purchasing_email: "company@example.com" });
+    const covered = crypto.randomUUID();
+    const otherCovered = crypto.randomUUID();
+    const outsider = crypto.randomUUID();
+    for (const [id, name, email] of [[covered, "West", null], [otherCovered, "Central", "central@example.com"], [outsider, "Other", "other@example.com"]] as const) {
+      await request(app).put(`/api/branches/${id}`).set("Authorization", `Bearer ${org.token}`).send({
+        name, default_state: "AZ", default_territory: null, is_active: true, purchasing_email: email,
+      });
+    }
+    await request(app).put(`/api/branches/${outsider}`).set("Authorization", `Bearer ${other.token}`).send({
+      name: "Foreign", default_state: "AZ", default_territory: null, is_active: true, purchasing_email: "foreign@example.com",
+    });
+    await pool.query("INSERT INTO company_branch_areas (branch_id, state_code, county_fips) VALUES ($1,'AZ','04013'),($2,'AZ',NULL)", [covered, otherCovered]);
+
+    const choice = await request(app).get(`/api/purchasing/destination?opening_id=${opening.id}`).set("Authorization", `Bearer ${org.token}`);
+    expect(choice.status).toBe(200);
+    expect(choice.body.error).toBe("branch_choice_required");
+    expect(choice.body.choices.map((branch: { id: string }) => branch.id).sort()).toEqual([covered, otherCovered].sort());
+    const blocked = await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: opening.id, hardware_component_id: componentId, uploads: [{ filename: "a.pdf", content_base64: TINY_PDF }],
+    });
+    expect(blocked.body.error).toBe("branch_choice_required");
+    expect((await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: opening.id, hardware_component_id: componentId, branch_id: outsider,
+      uploads: [{ filename: "a.pdf", content_base64: TINY_PDF }],
+    })).body.error).toBe("branch_not_authorized");
+    expect((await request(app).get(`/api/purchasing/destination?opening_id=${opening.id}`).set("Authorization", `Bearer ${other.token}`)).status).toBe(403);
+
+    const fallback = await request(app).get(`/api/purchasing/destination?opening_id=${opening.id}&branch_id=${covered}`).set("Authorization", `Bearer ${org.token}`);
+    expect(fallback.body).toMatchObject({ ready: true, to: "company@example.com", source: "company", branch: { id: covered, name: "West" } });
+    const sentFallback = await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: opening.id, hardware_component_id: componentId, branch_id: covered,
+      uploads: [{ filename: "a.pdf", content_base64: TINY_PDF }],
+    });
+    expect(sentFallback.status).toBe(201);
+    expect(sentFallback.body.sent_to).toBe(fallback.body.to);
+
+    await pool.query("DELETE FROM company_branch_areas WHERE branch_id=$1", [otherCovered]);
+    await pool.query("UPDATE organizations SET purchasing_email=NULL WHERE id=$1", [org.organizationId]);
+    await pool.query("UPDATE company_branches SET purchasing_email=NULL WHERE id=$1", [covered]);
+    const missing = await request(app).get(`/api/purchasing/destination?opening_id=${opening.id}`).set("Authorization", `Bearer ${org.token}`);
+    expect(missing.body.error).toBe("purchasing_email_missing");
+
+    await pool.query("DELETE FROM company_branch_areas WHERE branch_id=$1", [covered]);
+    await pool.query("INSERT INTO company_branch_areas (branch_id, state_code, county_fips) VALUES ($1,'NV',NULL)", [covered]);
+    const unknown = await request(app).get(`/api/purchasing/destination?opening_id=${opening.id}`).set("Authorization", `Bearer ${org.token}`);
+    expect(unknown.body.error).toBe("branch_unknown");
+    expect((await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: opening.id, hardware_component_id: componentId, uploads: [{ filename: "a.pdf", content_base64: TINY_PDF }],
+    })).body.error).toBe("branch_unknown");
+  });
+
+  it("keeps a company with no branch areas on the company purchasing address", async () => {
+    capture();
+    const org = await signupTestOrg();
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId);
+    const componentId = await hardware(org.token, opening.id);
+    await request(app).put("/api/purchasing/company-email").set("Authorization", `Bearer ${org.token}`).send({ purchasing_email: "company@example.com" });
+    const branchId = crypto.randomUUID();
+    await request(app).put(`/api/branches/${branchId}`).set("Authorization", `Bearer ${org.token}`).send({
+      name: "Home", default_state: "AZ", default_territory: null, is_active: true, purchasing_email: "home@example.com",
+    });
+    const me = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${org.token}`);
+    await request(app).put(`/api/branches/assignments/${me.body.id}`).set("Authorization", `Bearer ${org.token}`).send({ branch_id: branchId });
+    const preview = await request(app).get(`/api/purchasing/destination?opening_id=${opening.id}`).set("Authorization", `Bearer ${org.token}`);
+    expect(preview.body).toMatchObject({ ready: true, to: "company@example.com", source: "company", branch: null });
+    const res = await request(app).post("/api/purchasing/send").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: opening.id, hardware_component_id: componentId, uploads: [{ filename: "a.pdf", content_base64: TINY_PDF }],
+    });
+    expect(res.body.sent_to).toBe("company@example.com");
+    expect((await request(app).put("/api/purchasing/company-email").set("Authorization", `Bearer ${org.token}`).send({ purchasing_email: "not-an-email" })).status).toBe(400);
   });
 
   it("puts attachments on the Resend request body", async () => {

@@ -44,7 +44,7 @@ export function PurchasingEmailPage() {
       <div className="main">
         <div className="panel">
           <h2>Purchasing email</h2>
-          <p>Cut sheets are sent to this address. A branch address, when set, is used instead of the company address.</p>
+          <p>Cut sheets go to the branch that covers the job. If that branch has no address of its own, they go to the company address. A company with no branch areas uses only the company address.</p>
           <form onSubmit={saveCompany}>
             <label htmlFor="company-purchasing-email">Company purchasing email</label>
             <input id="company-purchasing-email" type="email" value={companyEmail} onChange={(e) => setCompanyEmail(e.target.value)} placeholder="purchasing@example.com" />
