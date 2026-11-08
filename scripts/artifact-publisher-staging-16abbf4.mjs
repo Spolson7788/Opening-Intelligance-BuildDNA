@@ -18,7 +18,7 @@ const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r10');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r11');
 const resumePath = resolve(journalDir, 'resume-attempt.json');
 const ROLLBACK_DEPLOY_ID = '6aef3f786cc2af03c2ef1cd0';
 const rollbackDir = resolve(root, 'dist/staging-publish-journal-16abbf4-rollback');
@@ -34,6 +34,7 @@ const PRIOR_JOURNALS = [
   'dist/staging-publish-journal-16abbf4-r8/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r9/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r10/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r11/publication-attempt.json',
 ];
 const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
