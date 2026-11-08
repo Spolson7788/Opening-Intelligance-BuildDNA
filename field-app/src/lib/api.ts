@@ -15,6 +15,38 @@ export type RecognitionRun = { id: string; status: string; failure_code: string 
 export async function startRecognitionRun(openingId: string, photoIds: string[], clientRequestId: string): Promise<{ run: RecognitionRun; replayed?: boolean }> {
   return authedFetch('/recognition/runs', { method: 'POST', body: JSON.stringify({ opening_id: openingId, photo_ids: photoIds, client_request_id: clientRequestId }) });
 }
+
+export type DoorHardwareItem = {
+  id: string;
+  ordinal: number;
+  hardware_type: string;
+  component_type: string;
+  subtype: string | null;
+  manufacturer: string | null;
+  exact_model: string | null;
+  finish: string | null;
+  supporting_photos: number[];
+  visible_evidence: string | null;
+  confidence: 'high' | 'medium' | 'low' | null;
+  next_photo: string | null;
+  model_unknown: boolean;
+  review_state?: string;
+  hardware_component_id?: string | null;
+};
+export type DoorHardwareRun = {
+  id: string;
+  opening_id: string;
+  status: string;
+  failure_code: string | null;
+  photo_count: number;
+  items: DoorHardwareItem[];
+};
+export async function identifyDoorHardware(openingId: string, photoIds: string[], clientRequestId: string): Promise<{ run: DoorHardwareRun; replayed?: boolean }> {
+  return authedFetch('/hardware-recognition/runs', { method: 'POST', body: JSON.stringify({ opening_id: openingId, photo_ids: photoIds, client_request_id: clientRequestId }) });
+}
+export async function confirmDoorHardware(runId: string, items: { id: string; include: boolean; component_type: string; subtype: string | null; manufacturer: string | null; model_number: string | null; finish: string | null }[]): Promise<{ run: DoorHardwareRun; training_labels?: number; hardware_components?: { id: string; tracker_id: string; component_type: string }[]; replayed?: boolean }> {
+  return authedFetch(`/hardware-recognition/runs/${runId}/confirm`, { method: 'POST', body: JSON.stringify({ items }) });
+}
 export type StoredPhoto = { id: string; media_type: string; upload_state: string; content_type: string | null; byte_size: number | null; created_at: string; original_filename?: string | null };
 export async function listOpeningPhotos(openingId: string): Promise<StoredPhoto[]> {
   return authedFetch(`/photos/by-opening/${encodeURIComponent(openingId)}`);

@@ -8,6 +8,7 @@ import {conditionHistoryRouter} from './routes/conditionHistory';
 import {accountRecoveryRouter} from "./routes/accountRecovery";
 import {recognitionRouter} from "./routes/recognition";
 import {recognitionRunsRouter} from "./routes/recognitionRuns";
+import {doorHardwareRecognitionRouter} from "./routes/doorHardwareRecognition";
 import {recordRecognitionAccessDenials} from "./middleware/recognitionAccessDenials";
 import {branchesRouter} from "./routes/branches";
 import { geoRouter } from "./routes/geo";
@@ -126,11 +127,13 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
     app.use("/api/recognition", recordRecognitionAccessDenials); // 401/403 records, before auth
     app.use("/api/recognition/runs", recognitionRunsRouter);
     app.use("/api/recognition", recognitionRouter);
+    app.use("/api/hardware-recognition", doorHardwareRecognitionRouter);
   }else{
     const off=(_req:express.Request,res:express.Response)=>{res.status(404).json({error:"feature_disabled"});};
     app.use("/api/recognition",off);
     app.use("/api/platform/recognition-usage",off);
     app.use("/api/platform/recognition-run-records",off);
+    app.use("/api/hardware-recognition",off);
   }
   if (options.accountRecoveryEnabled) app.use("/api/account-recovery", accountRecoveryRouter);
   app.use("/api/provider-assignments",providerAssignmentsRouter);

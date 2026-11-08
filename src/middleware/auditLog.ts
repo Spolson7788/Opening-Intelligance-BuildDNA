@@ -13,6 +13,8 @@ const AUDIT_ACTIONS: Array<{ method: string; pattern: RegExp; label: string }> =
   { method: "POST", pattern: /^\/api\/openings$/, label: "Created opening" },
   { method: "POST", pattern: /^\/api\/openings\/bulk-import$/, label: "Bulk imported openings" },
   { method: "POST", pattern: /^\/api\/hardware$/, label: "Added hardware" },
+  { method: "POST", pattern: /^\/api\/hardware-recognition\/runs$/, label: "Identified door hardware" },
+  { method: "POST", pattern: /^\/api\/hardware-recognition\/runs\/[^/]+\/confirm$/, label: "Confirmed door hardware identification" },
   { method: "POST", pattern: /^\/api\/hardware\/bulk-import$/, label: "Bulk imported hardware" },
   { method: "PATCH", pattern: /^\/api\/hardware\/[^/]+$/, label: "Updated hardware" },
   { method: "DELETE", pattern: /^\/api\/hardware\/[^/]+$/, label: "Removed hardware" },
@@ -43,7 +45,7 @@ function redact(body: unknown): unknown {
   if (!body || typeof body !== "object") return body;
   const clone: Record<string, unknown> = { ...(body as Record<string, unknown>) };
   for (const key of Object.keys(clone)) {
-    if (key.toLowerCase().includes("password")) clone[key] = "[redacted]";
+    if (key.toLowerCase().includes("password") || key.toLowerCase() === "api_key" || key.toLowerCase().includes("secret")) clone[key] = "[redacted]";
   }
   return clone;
 }

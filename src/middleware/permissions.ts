@@ -64,6 +64,8 @@ const FIELD_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp }> = [
   { method: "POST", pattern: /^\/api\/events\/inspection-events$/ },
   { method: "POST", pattern: /^\/api\/condition-history\/observations$/ },
   { method: "POST", pattern: /^\/api\/hardware$/ },
+  { method: "POST", pattern: /^\/api\/hardware-recognition\/runs$/ },
+  { method: "POST", pattern: /^\/api\/hardware-recognition\/runs\/[^/]+\/confirm$/ },
   { method: "PATCH", pattern: /^\/api\/hardware\/[^/]+$/ },
   { method: "DELETE", pattern: /^\/api\/hardware\/[^/]+$/ },
   { method: "POST", pattern: /^\/api\/photos\/presign$/ },
