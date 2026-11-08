@@ -11,6 +11,14 @@ function parseDbName(url: string): string {
 }
 
 export async function setup() {
+  if (process.env.OI_PGLITE_TEST === "1") {
+    execSync("node scripts/migrate-pglite.js", {
+      cwd: process.cwd(),
+      env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
+      stdio: "inherit",
+    });
+    return;
+  }
   const dbName = parseDbName(TEST_DATABASE_URL);
   const adminUrl = TEST_DATABASE_URL.replace(`/${dbName}`, "/postgres");
 

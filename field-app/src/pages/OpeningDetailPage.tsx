@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto } from "../lib/api";
-import { getPhotoOutboxForOpening } from "../lib/db";
-import type { PhotoOutboxItem } from "../lib/db";
-import { onSyncStateChange } from "../lib/sync";
+import { getAllOfflineMedia, updateCachedOpening } from "../lib/db";
+import type { OfflineMediaRecord } from "../lib/offlineTypes";
+import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
 import { SyncBadge } from "../components/SyncBadge";
 import { PhotoCapture } from "../components/PhotoCapture";
 
@@ -21,7 +21,7 @@ export function OpeningDetailPage() {
   const [fromCache, setFromCache] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [queuedPhotos, setQueuedPhotos] = useState<(PhotoOutboxItem & { previewUrl: string })[]>([]);
+  const [queuedPhotos, setQueuedPhotos] = useState<(OfflineMediaRecord & { previewUrl: string })[]>([]);
   const openingIdRef = useRef<string | null>(id ?? null);
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export function OpeningDetailPage() {
   async function loadQueuedPhotos() {
     const openingId = openingIdRef.current;
     if (!openingId) return;
-    const items = await getPhotoOutboxForOpening(openingId);
+    const items = (await getAllOfflineMedia()).filter((item) => item.openingId === openingId && item.uploadState !== "verified");
     setQueuedPhotos((prev) => {
       prev.forEach((p) => URL.revokeObjectURL(p.previewUrl)); // avoid leaking object URLs
       return items.map((item) => ({ ...item, previewUrl: URL.createObjectURL(item.blob) }));
@@ -53,6 +53,16 @@ export function OpeningDetailPage() {
       reload(); // re-fetch so the grid reflects the deletion
     } catch {
       window.alert("Couldn't delete that photo — please try again.");
+    }
+  }
+
+  async function handleCompleteOpening() {
+    try {
+      await queueOpeningMutation("complete_opening", opening.id, {});
+      await updateCachedOpening(opening.id, (cached) => ({ ...cached, completion_state: "pending_sync" }));
+      setOpening({ ...opening, completion_state: "pending_sync" });
+    } catch (err: any) {
+      window.alert(err?.message === "opening_incomplete" ? "Save the frame, every door leaf, and review all hardware first." : "Opening could not be completed.");
     }
   }
 
@@ -140,11 +150,25 @@ export function OpeningDetailPage() {
           </Link>
         </div>
 
+        <div className="section-label">Opening Structure</div>
+        <div className="card">
+          <strong>{opening.opening_configuration === "pair" ? "Door pair" : "Single door"}</strong>
+          <p style={{ margin: "6px 0", fontSize: 13, color: "var(--text-secondary)" }}>
+            Frame: {opening.frame?.material || "not saved"} · Door leaves: {opening.door_leaves?.length || 0}
+          </p>
+          <Link to={`/opening/${opening.id}/structure`} state={{ opening }} className="btn btn-secondary" style={{ textDecoration: "none" }}>
+            Door &amp; frame details
+          </Link>
+          <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={handleCompleteOpening} disabled={opening.completion_state === "complete"}>
+            {opening.completion_state === "complete" ? "Opening complete" : opening.completion_state === "pending_sync" ? "Completion pending sync" : "Finish the opening"}
+          </button>
+        </div>
+
         <div className="section-label" style={{ marginTop: 20 }}>Photos &amp; Videos</div>
         {((opening.photos && opening.photos.length > 0) || queuedPhotos.length > 0) && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 10 }}>
             {queuedPhotos.map((p) => (
-              <div key={p.id} style={{ position: "relative" }}>
+              <div key={p.photoId} style={{ position: "relative" }}>
                 {p.contentType.startsWith("video/") ? (
                   <video
                     src={p.previewUrl}
@@ -162,7 +186,7 @@ export function OpeningDetailPage() {
                   className="badge badge-offline"
                   style={{ position: "absolute", bottom: 4, left: 4, fontSize: 10, padding: "2px 6px" }}
                 >
-                  {p.attempts > 0 ? "Retrying…" : "Queued"}
+                  {p.uploadState === "retry_wait" ? "Retrying…" : p.uploadState === "conflict" ? "Conflict" : "Queued"}
                 </span>
               </div>
             ))}
@@ -205,13 +229,8 @@ export function OpeningDetailPage() {
           <>
             <div className="section-label">Hardware</div>
             {opening.hardware_components.map((hw: any) => (
-              <Link
-                to={`/opening/${opening.id}/edit-hardware/${hw.id}`}
-                state={{ hardware: hw }}
-                key={hw.id}
-                className="card"
-                style={{ display: "block", textDecoration: "none", color: "inherit" }}
-              >
+              <div key={hw.id} className="card">
+              <Link to={`/opening/${opening.id}/edit-hardware/${hw.id}`} state={{ hardware: hw }} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div>
                     <strong style={{ textTransform: "capitalize" }}>{hw.component_type.replace(/_/g, " ")}</strong>
@@ -242,6 +261,10 @@ export function OpeningDetailPage() {
                   <span style={{ color: "var(--text-secondary)", fontSize: 13 }}>Edit ›</span>
                 </div>
               </Link>
+              <div style={{ marginTop: 10 }}>
+                <PhotoCapture openingId={opening.id} relatedEntityType="hardware_component" relatedEntityId={hw.id} onQueued={loadQueuedPhotos} />
+              </div>
+              </div>
             ))}
           </>
         )}

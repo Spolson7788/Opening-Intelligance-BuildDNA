@@ -1,9 +1,13 @@
 import { useState } from "react";
-import { enqueuePhotoOutboxItem } from "../lib/db";
-import { flushOutbox } from "../lib/sync";
+import { getAllSyncOperations, loadAuth, saveMediaAndOperation } from "../lib/db";
+import { checksumBlob, dependencyIdsForOperation, flushOutbox, getOrCreateDeviceId } from "../lib/sync";
+import { OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "../lib/offlineTypes";
+import type { OfflineMediaRecord, SyncOperation } from "../lib/offlineTypes";
 
 interface Props {
   openingId: string;
+  relatedEntityType?: "opening" | "frame" | "door_leaf" | "hardware_component";
+  relatedEntityId?: string;
   onQueued: () => void; // fires the instant a photo/video is saved locally, not once it's uploaded
 }
 
@@ -13,8 +17,9 @@ interface Props {
 // 400 back after already being queued locally (still safe, just a wasted
 // round trip surfaced as an error later rather than caught at capture time).
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100MB, matches the server-side constant
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 
-export function PhotoCapture({ openingId, onQueued }: Props) {
+export function PhotoCapture({ openingId, relatedEntityType = "opening", relatedEntityId, onQueued }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,6 +45,10 @@ export function PhotoCapture({ openingId, onQueued }: Props) {
       setError(`That video is too large (${Math.round(file.size / 1024 / 1024)}MB) — 100MB max. Try a shorter clip.`);
       return;
     }
+    if (!isVideo && file.size > MAX_IMAGE_BYTES) {
+      setError(`That photograph is too large (${Math.round(file.size / 1024 / 1024)}MB) — 25MB max.`);
+      return;
+    }
 
     setSaving(true);
     try {
@@ -49,13 +58,38 @@ export function PhotoCapture({ openingId, onQueued }: Props) {
       // of the app regardless of connectivity, and regardless of whether it's
       // a photo or a video.
       const location = await getLocation();
-      await enqueuePhotoOutboxItem({
-        id: crypto.randomUUID(),
-        openingId,
-        blob: file,
-        contentType: file.type,
-        ...location,
+      const auth = await loadAuth();
+      if (!auth) throw new Error("auth_required");
+      const now = new Date().toISOString();
+      const photoId = crypto.randomUUID();
+      const operationId = crypto.randomUUID();
+      const deviceId = await getOrCreateDeviceId();
+      const checksum = await checksumBlob(file);
+      const targetId = relatedEntityId ?? openingId;
+      const dependencies = dependencyIdsForOperation(await getAllSyncOperations(), "photo", openingId, {
+        target_type: relatedEntityType, target_id: targetId,
       });
+      const media: OfflineMediaRecord = {
+        photoId, openingId, organizationId: auth.organizationId,
+        targetType: relatedEntityType, targetId, capturedAtDevice: now,
+        capturedByUserId: auth.userId, capturedByDeviceId: deviceId,
+        originalFilename: file.name, generatedCaptureName: `${photoId}.${file.type.split("/")[1] || "bin"}`,
+        contentType: file.type, byteSize: file.size, sha256Checksum: checksum, blob: file,
+        latitude: location.latitude, longitude: location.longitude,
+        localBlobState: "retained", uploadState: "queued", provenanceState: "original",
+        reviewState: "pending", createdAtLocal: now, updatedAtLocal: now,
+      };
+      const operation: SyncOperation = {
+        operationId, operationType: "confirm_media", entityType: "photo", entityId: photoId,
+        openingId, organizationId: auth.organizationId, actorUserId: auth.userId, deviceId,
+        baseServerRevision: null, payload: { target_type: relatedEntityType, target_id: targetId,
+          original_filename: file.name, content_type: file.type, byte_size: file.size, sha256_checksum: checksum,
+          latitude: location.latitude, longitude: location.longitude },
+        payloadHash: checksum, dependencyOperationIds: dependencies, createdAtLocal: now,
+        state: dependencies.length ? "blocked_dependency" : "queued", attemptCount: 0,
+        schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: "offline-protocol-1", protocolVersion: SYNC_PROTOCOL_VERSION,
+      };
+      await saveMediaAndOperation(media, operation);
       onQueued();
       flushOutbox(); // fire-and-forget: uploads now if online, otherwise sits queued
     } finally {
