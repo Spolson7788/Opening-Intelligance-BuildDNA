@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl } from "../lib/api";
+import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl, emailInspectionReport } from "../lib/api";
 import type { OpeningDetail, DocumentEntry, PurchasingEligibility, HardwareComponent, OpeningPhoto } from "../lib/api";
 import { Sidebar } from "../components/Sidebar";
 import { useLocations } from "../lib/LocationContext";
@@ -86,6 +86,8 @@ export function OpeningDetailPage() {
   const navigate = useNavigate();
   const loc = useLocations();
   const [opening, setOpening] = useState<OpeningDetail | null>(null);
+  const [reportTo, setReportTo] = useState("");
+  const [reportMessage, setReportMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [purchasing, setPurchasing] = useState<PurchasingEligibility | null>(null);
@@ -372,6 +374,61 @@ export function OpeningDetailPage() {
                     ))}
                   </tbody>
                 </table>
+              )}
+            </div>
+
+            <div className="panel">
+              <h2>Sent to purchasing</h2>
+              {(opening.purchasing_sends || []).length === 0 ? (
+                <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>Nothing has been sent to purchasing for this opening.</p>
+              ) : (
+                <table>
+                  <thead><tr><th>When</th><th>To</th><th>How</th><th>Note</th></tr></thead>
+                  <tbody>
+                    {(opening.purchasing_sends || []).map((send) => (
+                      <tr key={send.id}>
+                        <td>{new Date(send.created_at).toLocaleString()}</td>
+                        <td>{send.sent_to}</td>
+                        <td>{send.delivery_mode}</td>
+                        <td>{send.note || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="panel">
+              <h2>Fire door deficiencies</h2>
+              {(opening.fire_door_deficiencies || []).length === 0 ? (
+                <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No fire door deficiencies are on file.</p>
+              ) : (
+                <table>
+                  <thead><tr><th>Item</th><th>Status</th><th>Note</th><th>Repair</th></tr></thead>
+                  <tbody>
+                    {(opening.fire_door_deficiencies || []).map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.item_key}</td>
+                        <td>{row.status}</td>
+                        <td>{row.note}</td>
+                        <td>{row.repair_note || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {opening.inspection_events.some((ev: any) => ev.inspection_type === "fire_door_nfpa80" && ev.checklist_result?.status === "complete") && (
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const inspection = opening.inspection_events.find((ev: any) => ev.inspection_type === "fire_door_nfpa80" && ev.checklist_result?.status === "complete");
+                  if (!inspection) return;
+                  emailInspectionReport(inspection.id, reportTo).then(() => setReportMessage("Report emailed.")).catch(() => setReportMessage("Could not email the report."));
+                }} style={{ marginTop: 12 }}>
+                  <label htmlFor="report-email">Email this report</label>
+                  <input id="report-email" type="email" value={reportTo} onChange={(e) => setReportTo(e.target.value)} placeholder="facility contact" required />
+                  <button className="btn btn-secondary" type="submit">Email this report</button>
+                  {reportMessage && <p>{reportMessage}</p>}
+                </form>
               )}
             </div>
 

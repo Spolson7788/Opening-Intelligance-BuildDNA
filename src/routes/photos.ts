@@ -4,7 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { pool } from "../db/pool";
-import { requireAuth, AuthedRequest } from "../middleware/auth";
+import { requireAuth, AuthedRequest, isMissingSchema } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
 import { openingsForOrgSubquery, photoVisibleSql } from "../db/tenantScope";
@@ -659,6 +659,15 @@ photosRouter.delete("/:id", async (req: AuthedRequest, res) => {
       [id, orgId]
     );
     if (photoResult.rows.length === 0) return res.status(404).json({ error: "not_found" });
+    try {
+      const held = await pool.query(
+        "SELECT 1 FROM fire_door_deficiencies WHERE photo_id=$1 AND created_at > now() - interval '3 years' LIMIT 1",
+        [id],
+      );
+      if (held.rowCount) return res.status(409).json({ error: "retained_for_three_years" });
+    } catch (error) {
+      if (!isMissingSchema(error)) throw error;
+    }
 
     const photo = photoResult.rows[0];
     const key = photo.storage_object_key as string | null;

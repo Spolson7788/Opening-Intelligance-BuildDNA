@@ -483,7 +483,8 @@ portfolioRouter.get("/compliance-alerts", databaseRoute(async (req: AuthedReques
          JOIN portfolios pf ON pf.id = p.portfolio_id
          LEFT JOIN LATERAL (
            SELECT event_date FROM inspection_events
-           WHERE opening_id = o.id ORDER BY event_date DESC LIMIT 1
+           WHERE opening_id = o.id AND inspection_type = 'fire_door_nfpa80' AND checklist_result->>'status' = 'complete'
+           ORDER BY event_date DESC LIMIT 1
          ) li ON true
          WHERE ${conditions.join(" AND ")}
        )

@@ -5,7 +5,8 @@
 //   EMAIL_FROM              verified sender, e.g. "Opening Intelligence <invites@example.com>"
 //   APP_BASE_URL            public origin used to build links, e.g. https://example.netlify.app
 // Nothing here logs recipients, bodies, links, keys or provider responses.
-export interface OutboundEmail { to: string; subject: string; text: string; html: string }
+export interface EmailAttachment { filename: string; contentBase64: string }
+export interface OutboundEmail { to: string; subject: string; text: string; html: string; attachments?: EmailAttachment[] }
 export type SendOutcome = { sent: true } | { sent: false; reason: "email_not_configured" | "email_send_failed" };
 export interface EmailProvider { readonly name: string; send(msg: OutboundEmail): Promise<SendOutcome> }
 type Env = Record<string, string | undefined>;
@@ -30,7 +31,10 @@ export function resendProvider(apiKey: string, from: string, fetchImpl: FetchLik
         const res = await fetchImpl("https://api.resend.com/emails", {
           method: "POST",
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ from, to: [msg.to], subject: msg.subject, text: msg.text, html: msg.html }),
+          body: JSON.stringify({
+            from, to: [msg.to], subject: msg.subject, text: msg.text, html: msg.html,
+            ...(msg.attachments?.length ? { attachments: msg.attachments.map((file) => ({ filename: file.filename, content: file.contentBase64 })) } : {}),
+          }),
           signal: AbortSignal.timeout(10_000),
         });
         if (res.ok) return { sent: true };
@@ -49,6 +53,10 @@ const notConfigured: EmailProvider = { name: "none", send: async () => ({ sent: 
 let override: EmailProvider | null = null;
 /** Tests only. */
 export function setEmailProviderForTests(p: EmailProvider | null) { override = p; }
+export async function sendEmail(msg: OutboundEmail): Promise<SendOutcome> {
+  return getEmailProvider().send(msg);
+}
+
 export function getEmailProvider(env: Env = process.env): EmailProvider {
   if (override) return override;
   const s = emailSettings(env);

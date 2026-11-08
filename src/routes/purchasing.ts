@@ -6,6 +6,9 @@ import {requireAuth,AuthedRequest} from '../middleware/auth';
 import {enforceRolePermissions} from '../middleware/permissions';
 import {auditLog} from '../middleware/auditLog';
 import {purchasingReview} from '../services/purchasingReview';
+import {openingsForOrgSubquery} from '../db/tenantScope';
+import {areaAllowsOpening} from '../db/areaAccess';
+import {sendPurchasingPackage} from '../services/purchasingSend';
 export const purchasingRouter=Router();
 purchasingRouter.use(requireAuth,enforceRolePermissions,auditLog);
 purchasingRouter.post('/review',async(req:AuthedRequest,res)=>{
@@ -31,4 +34,72 @@ purchasingRouter.put('/approvals/:id',async(req:AuthedRequest,res)=>{
  ON CONFLICT(component_id) DO UPDATE SET manufacturer=$2,model_number=$3,component_type=$4,document_url=$5,document_sha256=$6,provenance=$7,approved_by_user_id=$8,approved_at=now(),revoked_at=CASE WHEN $9 THEN NULL ELSE now() END RETURNING *`,[row.id,row.manufacturer,row.model_number,row.component_type,d.document_url,d.document_sha256,d.provenance,req.auth!.userId,d.active]);
  await c.query('COMMIT');res.json(result.rows[0]);
  }catch(e){await c.query('ROLLBACK');console.error(e);res.status(500).json({error:'approval_failed'});}finally{c.release();}
+});
+
+const purchasingEmail = z.string().trim().email().max(200);
+purchasingRouter.get('/company-email', async (req: AuthedRequest, res) => {
+  try {
+    const r = await pool.query('SELECT purchasing_email FROM organizations WHERE id=$1', [req.auth!.organizationId]);
+    res.set('Cache-Control', 'no-store').json({ purchasing_email: r.rows[0]?.purchasing_email ?? null });
+  } catch { res.status(503).json({ error: 'purchasing_email_read_failed' }); }
+});
+purchasingRouter.put('/company-email', async (req: AuthedRequest, res) => {
+  if (req.auth!.role !== 'admin') return res.status(403).json({ error: 'owner_admin_required' });
+  const body = z.object({ purchasing_email: purchasingEmail.nullable() }).strict().safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: 'invalid_email' });
+  try {
+    const r = await pool.query('UPDATE organizations SET purchasing_email=$2 WHERE id=$1 RETURNING purchasing_email', [req.auth!.organizationId, body.data.purchasing_email]);
+    res.json({ purchasing_email: r.rows[0]?.purchasing_email ?? null });
+  } catch { res.status(503).json({ error: 'purchasing_email_save_failed' }); }
+});
+
+const sendBody = z.object({
+  opening_id: z.string().uuid(),
+  hardware_component_id: z.string().uuid(),
+  note: z.string().max(2000).optional(),
+  document_ids: z.array(z.string().uuid()).max(5).optional(),
+  reference_sha256s: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(5).optional(),
+  include_approved_document: z.boolean().optional(),
+  uploads: z.array(z.object({ filename: z.string().trim().min(1).max(180), content_base64: z.string().min(8).max(20_000_000) }).strict()).max(5).optional(),
+}).strict();
+
+purchasingRouter.post('/send', async (req: AuthedRequest, res) => {
+  const body = sendBody.safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: 'invalid_send' });
+  const b = body.data;
+  try {
+    const owned = await pool.query(
+      `SELECT 1 FROM hardware_components h WHERE h.id=$1 AND h.opening_id=$2 AND h.opening_id IN (${openingsForOrgSubquery(3)})`,
+      [b.hardware_component_id, b.opening_id, req.auth!.organizationId],
+    );
+    if (!owned.rowCount || !(await areaAllowsOpening(req.auth!.userId, b.opening_id))) return res.status(403).json({ error: 'forbidden' });
+    const result = await sendPurchasingPackage(pool, {
+      openingId: b.opening_id,
+      hardwareComponentId: b.hardware_component_id,
+      organizationId: req.auth!.organizationId,
+      userId: req.auth!.userId,
+      note: b.note,
+      documentIds: b.document_ids ?? [],
+      referenceSha256s: b.reference_sha256s ?? [],
+      includeApproved: b.include_approved_document === true,
+      uploads: b.uploads ?? [],
+    });
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.status(201).json(result.send);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'purchasing_send_failed' }); }
+});
+
+purchasingRouter.get('/sends/:sendId/files/:fileId', async (req: AuthedRequest, res) => {
+  if (!z.string().uuid().safeParse(req.params.sendId).success || !z.string().uuid().safeParse(req.params.fileId).success) return res.status(400).json({ error: 'invalid_file' });
+  try {
+    const file = await pool.query(
+      `SELECT f.content, f.filename, f.content_type, s.opening_id
+       FROM purchasing_send_files f JOIN purchasing_sends s ON s.id=f.send_id
+       WHERE f.id=$1 AND s.id=$2 AND s.opening_id IN (${openingsForOrgSubquery(3)})`,
+      [req.params.fileId, req.params.sendId, req.auth!.organizationId],
+    );
+    if (!file.rows[0]?.content) return res.status(404).json({ error: 'not_found' });
+    if (!(await areaAllowsOpening(req.auth!.userId, file.rows[0].opening_id))) return res.status(403).json({ error: 'forbidden' });
+    res.set('Content-Type', 'application/pdf').set('Content-Disposition', `attachment; filename="${file.rows[0].filename}"`).send(file.rows[0].content);
+  } catch { res.status(503).json({ error: 'file_read_failed' }); }
 });

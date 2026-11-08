@@ -574,6 +574,8 @@ export interface OpeningDetail extends Opening {
   service_events: any[];
   inspection_events: any[];
   photos: OpeningPhoto[];
+  purchasing_sends?: Array<{ id: string; sent_to: string; note: string | null; delivery_mode: string; created_at: string }>;
+  fire_door_deficiencies?: Array<{ id: string; item_key: string; note: string; status: string; repair_note: string | null }>;
 }
 
 export interface OpeningFrame {
@@ -967,3 +969,9 @@ export const platformUsageSettings = (): Promise<{ settings: UsageSettings; caps
 export const updateUsageSettings = (change: Partial<Omit<UsageSettings, "updated_at" | "updated_reason">> & { reason: string }): Promise<{ settings: UsageSettings }> => post("/platform/recognition-usage/settings", change, "PUT");
 export const setSafetyCap = (orgId: string, monthly_photo_cap: number | null, reason: string): Promise<unknown> => post(`/platform/recognition-usage/caps/${orgId}`, { monthly_photo_cap, reason }, "PUT");
 export const createProviderFacility = (providerId: string, name: string, reason: string): Promise<{ facility: { id: string; name: string } }> => post(`/platform/providers/${providerId}/facilities`, { name, reason });
+
+export const fetchPurchasingEmail = (): Promise<{ purchasing_email: string | null }> => authedFetch("/purchasing/company-email");
+export const savePurchasingEmail = (purchasing_email: string | null): Promise<{ purchasing_email: string | null }> => post("/purchasing/company-email", { purchasing_email }, "PUT");
+export const fetchBranches = (): Promise<{ branches: Array<{ id: string; name: string; default_state: string; default_territory: string | null; is_active: boolean; purchasing_email: string | null }> }> => authedFetch("/branches");
+export const saveBranch = (id: string, body: { name: string; default_state: string; default_territory: string | null; is_active: boolean; purchasing_email: string | null }) => post(`/branches/${id}`, body, "PUT");
+export const emailInspectionReport = (id: string, to: string): Promise<{ sent: boolean; delivery_mode: string }> => post(`/events/inspection-events/${id}/email`, { to });

@@ -4,6 +4,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { ApiError, editHardwareComponent, deleteHardwareComponent, fetchHardwareForOpening } from "../lib/api";
 import { CARRIER_OPTIONS, carrierTrackingUrl } from "../lib/tracking";
 import { SyncBadge } from "../components/SyncBadge";
+import { SendToPurchasing } from "../components/SendToPurchasing";
 import { useAuth } from '../lib/AuthContext';
 
 const COMPONENT_TYPES = [
@@ -279,6 +280,7 @@ export function EditHardwarePage() {
               </button>
             </form>
 
+            <SendToPurchasing openingId={id!} hardwareId={hardwareId!} principal={principal} />
             <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
               {!confirmingDelete ? (
                 <button

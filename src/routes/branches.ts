@@ -13,10 +13,10 @@ branchesRouter.get('/',async(req:AuthedRequest,res)=>{
  res.set('Cache-Control','no-store').json({branches:branches.rows,users:users.rows});
  }catch{res.status(503).json({error:'branch_read_failed'});}
 });
-const branch=z.object({name:z.string().trim().min(1).max(120),default_state:z.string().regex(/^[A-Z]{2}$/),default_territory:z.string().trim().min(1).max(120).nullable(),is_active:z.boolean()}).strict();
+const branch=z.object({name:z.string().trim().min(1).max(120),default_state:z.string().regex(/^[A-Z]{2}$/),default_territory:z.string().trim().min(1).max(120).nullable(),is_active:z.boolean(),purchasing_email:z.string().trim().email().max(200).nullable().optional()}).strict();
 branchesRouter.put('/:id',async(req:AuthedRequest,res)=>{
  const body=branch.safeParse(req.body);if(!body.success||!z.string().uuid().safeParse(req.params.id).success)return res.status(400).json({error:'invalid_branch'});
- try{const b=body.data;const r=await pool.query(`INSERT INTO company_branches(id,organization_id,name,default_state,default_territory,is_active) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET name=$3,default_state=$4,default_territory=$5,is_active=$6 WHERE company_branches.organization_id=$2 RETURNING *`,[req.params.id,req.auth!.organizationId,b.name,b.default_state,b.default_territory,b.is_active]);
+ try{const b=body.data;const emailProvided=Object.prototype.hasOwnProperty.call(req.body,'purchasing_email');const r=await pool.query(`INSERT INTO company_branches(id,organization_id,name,default_state,default_territory,is_active,purchasing_email) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET name=$3,default_state=$4,default_territory=$5,is_active=$6,purchasing_email=CASE WHEN $8 THEN $7 ELSE company_branches.purchasing_email END WHERE company_branches.organization_id=$2 RETURNING *`,[req.params.id,req.auth!.organizationId,b.name,b.default_state,b.default_territory,b.is_active,b.purchasing_email??null,emailProvided]);
  if(!r.rowCount)return res.status(404).json({error:'not_found'});res.json(r.rows[0]);
  }catch(e:any){res.status(e.code==='23505'?409:503).json({error:'branch_save_failed'});}
 });

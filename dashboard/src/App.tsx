@@ -38,6 +38,7 @@ import { StaffToolsPage } from "./pages/StaffToolsPage";
 import { WorkOrdersPage } from "./pages/WorkOrdersPage";
 import { MaintenanceSchedulesPage } from "./pages/MaintenanceSchedulesPage";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
+import { PurchasingEmailPage } from "./pages/PurchasingEmailPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { CoveragePage } from "./pages/CoveragePage";
 
@@ -70,6 +71,7 @@ function AppRoutes() {
       <Route path="/compliance-alerts" element={<RequireAuth><ComplianceAlertsPage /></RequireAuth>} />
       <Route path="/staff-tools" element={<RequireAuth><StaffToolsPage /></RequireAuth>} />
       <Route path="/team" element={<RequireAuth><TeamPage /></RequireAuth>} />
+      <Route path="/purchasing-email" element={<RequireAuth><PurchasingEmailPage /></RequireAuth>} />
       <Route path="/coverage" element={<RequireAuth><CoveragePage /></RequireAuth>} />
       <Route path="/audit-log" element={<RequireAuth><AuditLogPage /></RequireAuth>} />
       <Route path="/work-orders" element={<RequireAuth><WorkOrdersPage /></RequireAuth>} />

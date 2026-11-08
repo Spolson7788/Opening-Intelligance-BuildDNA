@@ -399,6 +399,20 @@ export async function deleteHardwareComponent(id: string, principal?: ExpectedPr
   return authedFetch(`/hardware/${id}`, { method: "DELETE" }, principal);
 }
 
+export async function listOpeningDocuments(openingId: string, principal?: ExpectedPrincipal) {
+  return authedFetch(`/documents/by-opening/${openingId}`, {}, principal);
+}
+
+export async function sendHardwareToPurchasing(payload: {
+  opening_id: string;
+  hardware_component_id: string;
+  note?: string;
+  document_ids?: string[];
+  uploads?: { filename: string; content_base64: string }[];
+}, principal?: ExpectedPrincipal) {
+  return authedFetch("/purchasing/send", { method: "POST", body: JSON.stringify(payload) }, principal);
+}
+
 export function fetchLabelConfig(principal: ExpectedPrincipal) { return authedFetch('/labels/config', {}, principal); }
 export function fetchServiceRequestContext(id: string, principal: ExpectedPrincipal) { return authedFetch(`/service-requests/context/${id}`, {}, principal); }
 export function submitServiceRequest(payload: Record<string, unknown>, principal: ExpectedPrincipal) {

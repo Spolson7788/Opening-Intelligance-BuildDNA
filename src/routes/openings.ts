@@ -23,6 +23,15 @@ function forbidden(res: Response) {
   return res.status(403).json({ error: "forbidden" });
 }
 
+async function rowsOrEmpty(sql: string, params: unknown[]) {
+  try {
+    return await pool.query(sql, params);
+  } catch (error) {
+    if (isMissingSchema(error)) return { rows: [] as any[] };
+    throw error;
+  }
+}
+
 // Load an opening together with its hardware, service/inspection history, and
 // photos so every single-opening endpoint returns the same shape the field-app
 // and dashboard detail views expect. by-qr and by-code (the field app's scan
@@ -30,7 +39,7 @@ function forbidden(res: Response) {
 // so a scanned/looked-up opening showed no photos, hardware, or history at all.
 async function hydrateOpening(openingRow: any, orgId: string) {
   const openingId = openingRow.id;
-  const [frame, leaves, hardware, serviceEvents, inspections, photos, retiredHardware] = await Promise.all([
+  const [frame, leaves, hardware, serviceEvents, inspections, photos, retiredHardware, purchasingSends, deficiencies] = await Promise.all([
     pool.query("SELECT * FROM opening_frames WHERE opening_id = $1", [openingId]),
     pool.query("SELECT * FROM door_leaves WHERE opening_id = $1 ORDER BY CASE leaf_role WHEN 'single' THEN 0 WHEN 'active' THEN 1 ELSE 2 END", [openingId]),
     pool.query("SELECT * FROM current_hardware_components WHERE opening_id = $1 ORDER BY install_date", [openingId]),
@@ -38,6 +47,8 @@ async function hydrateOpening(openingRow: any, orgId: string) {
     pool.query("SELECT * FROM inspection_events WHERE opening_id = $1 ORDER BY event_date DESC", [openingId]),
     pool.query(`SELECT * FROM photos WHERE opening_id = $1 AND ${photoVisibleSql("photos", 2)} ORDER BY created_at DESC`, [openingId, orgId]),
     pool.query("SELECT * FROM hardware_components WHERE opening_id=$1 AND lifecycle_state='retired' ORDER BY id", [openingId]),
+    rowsOrEmpty("SELECT id, hardware_component_id, sent_by_user_id, sent_to, note, delivery_mode, document_ids, reference_sha256s, created_at FROM purchasing_sends WHERE opening_id=$1 ORDER BY created_at DESC", [openingId]),
+    rowsOrEmpty("SELECT * FROM fire_door_deficiencies WHERE opening_id=$1 ORDER BY created_at DESC", [openingId]),
   ]);
   return {
     ...openingRow,
@@ -48,6 +59,8 @@ async function hydrateOpening(openingRow: any, orgId: string) {
     service_events: serviceEvents.rows,
     inspection_events: inspections.rows,
     photos: photos.rows,
+    purchasing_sends: purchasingSends.rows,
+    fire_door_deficiencies: deficiencies.rows,
   };
 }
 

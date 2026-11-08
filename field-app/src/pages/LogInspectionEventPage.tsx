@@ -6,6 +6,16 @@ import { recomputeHealthScore } from "../lib/api";
 import { SyncBadge } from "../components/SyncBadge";
 import { SignaturePad } from "../components/SignaturePad";
 import type { SignaturePadHandle } from "../components/SignaturePad";
+import { NFPA80_ITEMS } from "../lib/nfpa80Items";
+
+type ItemAnswer = { result: "" | "pass" | "fail" | "na"; note: string; photo: File | null };
+
+async function fileToBase64(file: File): Promise<string> {
+  const data = await file.arrayBuffer();
+  let binary = "";
+  for (const byte of new Uint8Array(data)) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
 
 const INSPECTION_TYPES = [
   { value: "general", label: "General" },
@@ -22,6 +32,8 @@ export function LogInspectionEventPage() {
   const [passed, setPassed] = useState<"pass" | "fail" | null>(null);
   const [notes, setNotes] = useState("");
   const [signedByName, setSignedByName] = useState("");
+  const [qualification, setQualification] = useState("");
+  const [answers, setAnswers] = useState<Record<string, ItemAnswer>>({});
   const [signatureError, setSignatureError] = useState<string | null>(null);
   const signaturePadRef = useRef<SignaturePadHandle>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -29,7 +41,7 @@ export function LogInspectionEventPage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (passed === null) return;
+    if (inspectionType !== "fire_door_nfpa80" && passed === null) return;
     setSignatureError(null);
 
     const signatureDataUrl = signaturePadRef.current?.getDataUrl();
@@ -42,16 +54,46 @@ export function LogInspectionEventPage() {
       return;
     }
 
+    let checklist: Record<string, unknown> | undefined;
+    let resultPassed = passed === "pass";
+    if (inspectionType === "fire_door_nfpa80") {
+      if (!qualification.trim()) {
+        setSignatureError("Enter your qualification for this fire door inspection.");
+        return;
+      }
+      const items: Record<string, unknown> = {};
+      for (const item of NFPA80_ITEMS) {
+        const answer = answers[item.key];
+        if (!answer?.result) {
+          setSignatureError("Answer every fire door item before saving.");
+          return;
+        }
+        if (answer.result === "fail" && (!answer.note.trim() || !answer.photo)) {
+          setSignatureError("A failed item needs a note and a photo.");
+          return;
+        }
+        items[item.key] = {
+          result: answer.result,
+          note: answer.note.trim() || undefined,
+          photo_base64: answer.photo ? await fileToBase64(answer.photo) : undefined,
+        };
+      }
+      resultPassed = !NFPA80_ITEMS.some((item) => answers[item.key]?.result === "fail");
+      checklist = { status: "complete", items };
+    }
+
     setSubmitting(true);
 
     await queueOpeningMutation("inspection_event", id!, {
         opening_id: id,
         event_date: eventDate,
         inspection_type: inspectionType,
-        passed: passed === "pass",
+        passed: resultPassed,
         notes: notes || undefined,
         signature_data: signatureDataUrl,
         signed_by_name: signedByName.trim(),
+        inspector_qualification: inspectionType === "fire_door_nfpa80" ? qualification.trim() : undefined,
+        checklist_result: checklist,
     });
 
     setSaved(true);
@@ -103,7 +145,38 @@ export function LogInspectionEventPage() {
               </select>
             </div>
 
-            <div className="field">
+            {inspectionType === "fire_door_nfpa80" && (
+              <div className="field">
+                <label htmlFor="qualification">Qualification</label>
+                <input id="qualification" value={qualification} onChange={(e) => setQualification(e.target.value)} placeholder="How you are qualified to inspect fire doors" />
+                {NFPA80_ITEMS.map((item) => {
+                  const answer = answers[item.key] ?? { result: "", note: "", photo: null };
+                  return (
+                    <div key={item.key} style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 14 }}><strong>{item.section}</strong> {item.text}</div>
+                      <select
+                        aria-label={item.key}
+                        value={answer.result}
+                        onChange={(e) => setAnswers((current) => ({ ...current, [item.key]: { ...answer, result: e.target.value as ItemAnswer["result"] } }))}
+                      >
+                        <option value="">Choose</option>
+                        <option value="pass">Pass</option>
+                        <option value="fail">Fail</option>
+                        <option value="na">N/A</option>
+                      </select>
+                      {answer.result === "fail" && (
+                        <>
+                          <textarea aria-label={`${item.key}-note`} value={answer.note} onChange={(e) => setAnswers((current) => ({ ...current, [item.key]: { ...answer, note: e.target.value } }))} placeholder="What failed" />
+                          <input aria-label={`${item.key}-photo`} type="file" accept="image/*" onChange={(e) => setAnswers((current) => ({ ...current, [item.key]: { ...answer, photo: e.target.files?.[0] ?? null } }))} />
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {inspectionType !== "fire_door_nfpa80" && <div className="field">
               <label>Result</label>
               <div style={{ display: "flex", gap: 10 }}>
                 <button
@@ -131,7 +204,7 @@ export function LogInspectionEventPage() {
                   Failed
                 </button>
               </div>
-            </div>
+            </div>}
 
             <div className="field">
               <label htmlFor="notes">Notes</label>
@@ -166,7 +239,7 @@ export function LogInspectionEventPage() {
             </div>
             {signatureError && <p className="error-text">{signatureError}</p>}
 
-            <button type="submit" className="btn btn-primary" disabled={submitting || passed === null}>
+            <button type="submit" className="btn btn-primary" disabled={submitting || (inspectionType !== "fire_door_nfpa80" && passed === null)}>
               {submitting ? "Saving…" : "Save"}
             </button>
           </form>

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
+import { failingFireDoorFields } from "./nfpa80Fixture";
 
 describe("events", () => {
   it("logs a service event and updates the opening's last_service_date", async () => {
@@ -33,7 +34,7 @@ describe("events", () => {
         opening_id: opening.id,
         event_date: "2026-02-01",
         inspection_type: "fire_door_nfpa80",
-        passed: false,
+        ...failingFireDoorFields(),
         notes: "Gap exceeds tolerance",
       });
     expect(res.status).toBe(201);
@@ -70,7 +71,7 @@ describe("events", () => {
         opening_id: opening.id,
         event_date: new Date().toISOString().slice(0, 10),
         inspection_type: "fire_door_nfpa80",
-        passed: false,
+        ...failingFireDoorFields("Failed"),
         notes: "Failed",
       });
 

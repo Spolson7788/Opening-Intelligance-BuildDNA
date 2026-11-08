@@ -14,6 +14,7 @@ import {
   findSyncReceipt,
   writeSyncReceiptAndAudit,
 } from "../services/syncProtocol";
+import { prepareFireDoorChecklist, applyFireDoorFollowUp } from "../services/nfpa80Inspection";
 
 export const syncRouter = Router();
 syncRouter.use(requireAuth);
@@ -208,6 +209,7 @@ const inspectionPayload = z.object({
   event_date: z.string(), inspection_type: z.enum(["general", "fire_door_nfpa80", "ada_compliance", "access_control"]),
   checklist_result: z.record(z.string(), z.unknown()).optional(), passed: z.boolean(), notes: z.string().optional(),
   signature_data: z.string().max(500_000).optional(), signed_by_name: z.string().optional(),
+  inspector_qualification: z.string().max(200).optional(),
 });
 
 syncRouter.post("/operations", async (req: AuthedRequest, res) => {
@@ -302,11 +304,25 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
         payload.work_performed,payload.parts_used??[],payload.cost??null,b.operation_id]); record=result.rows[0];
       await client.query(`UPDATE openings SET last_service_date=GREATEST(COALESCE(last_service_date,$1),$1) WHERE id=$2`,[payload.event_date,b.opening_id]);
     } else if (b.entity_type === "inspection_event") {
+      let checklist = payload.checklist_result ?? {};
+      let qualification: string | null = null;
+      let preparedItems = null as ReturnType<typeof prepareFireDoorChecklist> | null;
+      if (payload.inspection_type === "fire_door_nfpa80") {
+        const prepared = prepareFireDoorChecklist(payload.checklist_result, payload.signed_by_name as string | undefined, payload.inspector_qualification as string | undefined, payload.passed as boolean);
+        if (!prepared.ok) { await client.query("ROLLBACK"); return res.status(400).json({ error: prepared.error }); }
+        checklist = prepared.stored;
+        qualification = (payload.inspector_qualification as string).trim();
+        preparedItems = prepared;
+      }
       const result=await client.query(`INSERT INTO inspection_events
-        (id,opening_id,performed_by_user_id,event_date,inspection_type,checklist_result,passed,notes,signature_data,signed_by_name,signed_at,client_operation_id)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-      [b.entity_id,b.opening_id,userId,payload.event_date,payload.inspection_type,payload.checklist_result??{},payload.passed,
-        payload.notes??null,payload.signature_data??null,payload.signed_by_name??null,payload.signature_data?new Date().toISOString():null,b.operation_id]); record=result.rows[0];
+        (id,opening_id,performed_by_user_id,event_date,inspection_type,checklist_result,passed,notes,signature_data,signed_by_name,signed_at,client_operation_id,inspector_qualification)
+        VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      [b.entity_id,b.opening_id,userId,payload.event_date,payload.inspection_type,JSON.stringify(checklist),payload.passed,
+        payload.notes??null,payload.signature_data??null,payload.signed_by_name??null,payload.signature_data?new Date().toISOString():null,b.operation_id,qualification]); record=result.rows[0];
+      if (preparedItems && preparedItems.ok) {
+        const follow = await applyFireDoorFollowUp(client, { inspectionId: record.id, openingId: b.opening_id, organizationId: orgId, userId, items: preparedItems.items });
+        if (follow.error) { await client.query("ROLLBACK"); return res.status(400).json({ error: follow.error }); }
+      }
     } else {
       const [frame,leaves,hardware]=await Promise.all([
         client.query("SELECT condition FROM opening_frames WHERE opening_id=$1",[b.opening_id]),
