@@ -45,15 +45,32 @@ export async function applyFireDoorFollowUp(
     args.inspectionId,
     JSON.stringify({ status: "complete", items: stored }),
   ]);
-  const closed = Object.entries(stored).filter(([, item]) => item.result !== "fail").map(([key]) => key);
-  if (closed.length) {
-    await db.query(
-      `UPDATE fire_door_deficiencies
-       SET status='reinspected', reinspection_event_id=$2
-       WHERE opening_id=$1 AND status IN ('open','repaired') AND item_key = ANY($3::text[])
-         AND inspection_event_id <> $2`,
-      [args.openingId, args.inspectionId, closed],
+  const passedKeys = Object.entries(stored).filter(([, item]) => item.result === "pass").map(([key]) => key);
+  if (passedKeys.length) {
+    const prior = await db.query(
+      `SELECT id, item_key, status FROM fire_door_deficiencies
+       WHERE opening_id=$1 AND status IN ('open','repaired') AND item_key = ANY($2::text[])
+         AND inspection_event_id <> $3`,
+      [args.openingId, passedKeys, args.inspectionId],
     );
+    if (prior.rows.length) {
+      await db.query(
+        `UPDATE fire_door_deficiencies
+         SET status='reinspected', reinspection_event_id=$2
+         WHERE id = ANY($1::uuid[])`,
+        [prior.rows.map((row) => row.id), args.inspectionId],
+      );
+      for (const row of prior.rows) {
+        await db.query(
+          `INSERT INTO audit_log (organization_id, user_id, action, method, path, request_body, status_code)
+           VALUES ($1,$2,'Cleared fire door deficiency on re-inspection','POST',$3,$4,201)`,
+          [args.organizationId, args.userId, `/api/events/inspection-events/${args.inspectionId}`, JSON.stringify({
+            deficiency_id: row.id, item_key: row.item_key, previous_status: row.status,
+            reinspection_event_id: args.inspectionId, result: "pass",
+          })],
+        );
+      }
+    }
   }
   return {};
 }

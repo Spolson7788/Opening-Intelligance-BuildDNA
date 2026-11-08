@@ -6,7 +6,7 @@ import { recomputeHealthScore } from "../lib/api";
 import { SyncBadge } from "../components/SyncBadge";
 import { SignaturePad } from "../components/SignaturePad";
 import type { SignaturePadHandle } from "../components/SignaturePad";
-import { NFPA80_ITEMS } from "../lib/nfpa80Items";
+import { NFPA80_ITEMS, fireDoorOutcome } from "../lib/nfpa80Items";
 
 type ItemAnswer = { result: "" | "pass" | "fail" | "na"; note: string; photo: File | null };
 
@@ -83,7 +83,12 @@ export function LogInspectionEventPage() {
           photo_base64: answer.photo ? await fileToBase64(answer.photo) : undefined,
         };
       }
-      resultPassed = !NFPA80_ITEMS.some((item) => answers[item.key]?.result === "fail");
+      const outcome = fireDoorOutcome(answers);
+      if (outcome.ok === false) {
+        setSignatureError(outcome.error);
+        return;
+      }
+      resultPassed = outcome.passed;
       checklist = { status: "complete", items };
     }
 
@@ -170,7 +175,7 @@ export function LogInspectionEventPage() {
                         <option value="">Choose</option>
                         <option value="pass">Pass</option>
                         <option value="fail">Fail</option>
-                        <option value="na">N/A</option>
+                        {item.allowsNa && <option value="na">N/A</option>}
                       </select>
                       {answer.result === "fail" && (
                         <>

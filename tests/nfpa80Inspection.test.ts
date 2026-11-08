@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
 import { assessFireDoorChecklist, NFPA80_ITEMS } from "../src/services/nfpa80Checklist";
+import { fireDoorOutcome } from "../field-app/src/lib/nfpa80Items";
 import { failingFireDoorFields, passingFireDoorFields } from "./nfpa80Fixture";
 import { setEmailProviderForTests, type OutboundEmail } from "../src/services/email";
 import { pool } from "../src/db/pool";
@@ -21,6 +22,15 @@ describe("NFPA 80 checklist", () => {
     const items = { ...(failed.checklist_result.items as Record<string, any>) };
     delete items.labels.photo_base64;
     expect(assessFireDoorChecklist({ status: "complete", items }, "Ada", "Inspector", "FD-1").ok).toBe(false);
+    const allNa = Object.fromEntries(NFPA80_ITEMS.map((item) => [item.key, { result: "na" }]));
+    const naResult = assessFireDoorChecklist({ status: "complete", items: allNa }, "Ada", "Inspector", "FD-1");
+    expect(naResult.ok).toBe(false);
+    if (!naResult.ok) expect(naResult.error).toBe("checklist_incomplete");
+    const coreNa = Object.fromEntries(NFPA80_ITEMS.map((item) => [item.key, { result: item.allowsNa ? "na" : "pass" }]));
+    coreNa.labels = { result: "na" };
+    expect(assessFireDoorChecklist({ status: "complete", items: coreNa }, "Ada", "Inspector", "FD-1").ok).toBe(false);
+    expect(fireDoorOutcome(allNa).ok).toBe(false);
+    expect(fireDoorOutcome(Object.fromEntries(NFPA80_ITEMS.map((item) => [item.key, { result: item.allowsNa ? "na" : "pass" }]))).ok).toBe(true);
   });
 });
 
@@ -63,6 +73,8 @@ describe("NFPA 80 fire door inspection", () => {
     expect(again.status).toBe(201);
     const after = await request(app).get(`/api/openings/${door.id}`).set("Authorization", `Bearer ${org.token}`);
     expect(after.body.fire_door_deficiencies.find((row: any) => row.id === deficiency.id).status).toBe("reinspected");
+    const cleared = await pool.query("SELECT request_body FROM audit_log WHERE organization_id=$1 AND action=$2", [org.organizationId, "Cleared fire door deficiency on re-inspection"]);
+    expect(cleared.rows.some((row) => row.request_body.deficiency_id === deficiency.id && row.request_body.item_key === "labels" && row.request_body.result === "pass")).toBe(true);
 
     const pdf = await request(app).get(`/api/events/inspection-events/${created.body.id}/report.pdf`).set("Authorization", `Bearer ${org.token}`);
     expect(pdf.status).toBe(200);
@@ -118,6 +130,42 @@ describe("NFPA 80 fire door inspection", () => {
     await pool.query("UPDATE inspection_events SET performed_by_user_id = NULL WHERE id=$1", [created.body.id]);
     const fallback = await request(app).get(`/api/events/inspection-events/${created.body.id}/email-defaults`).set("Authorization", `Bearer ${org.token}`);
     expect(fallback.body.to).toEqual(["building@example.com", org.email]);
+  });
+
+  it("does not pass an all-N/A inspection, and N/A does not clear an open deficiency", async () => {
+    const { org, opening: door } = await opening();
+    const allNa = {
+      ...passingFireDoorFields(),
+      passed: true,
+      checklist_result: { status: "complete", items: Object.fromEntries(NFPA80_ITEMS.map((item) => [item.key, { result: "na" }])) },
+    };
+    const rejected = await request(app).post("/api/events/inspection-events").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: door.id, event_date: "2026-04-01", inspection_type: "fire_door_nfpa80", ...allNa,
+    });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.error).toBe("checklist_incomplete");
+
+    const failedSeal = passingFireDoorFields();
+    (failedSeal.checklist_result.items as Record<string, any>).gasketing = { result: "fail", note: "The seal is torn", photo_base64: failingFireDoorFields().checklist_result.items.labels.photo_base64 };
+    failedSeal.passed = false;
+    const created = await request(app).post("/api/events/inspection-events").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: door.id, event_date: "2026-04-01", inspection_type: "fire_door_nfpa80", ...failedSeal,
+    });
+    expect(created.status).toBe(201);
+    const detail = await request(app).get(`/api/openings/${door.id}`).set("Authorization", `Bearer ${org.token}`);
+    const deficiency = detail.body.fire_door_deficiencies[0];
+    expect(deficiency.item_key).toBe("gasketing");
+
+    const markedNa = passingFireDoorFields();
+    (markedNa.checklist_result.items as Record<string, any>).gasketing = { result: "na" };
+    const again = await request(app).post("/api/events/inspection-events").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: door.id, event_date: "2026-05-01", inspection_type: "fire_door_nfpa80", ...markedNa,
+    });
+    expect(again.status).toBe(201);
+    const afterNa = await request(app).get(`/api/openings/${door.id}`).set("Authorization", `Bearer ${org.token}`);
+    expect(afterNa.body.fire_door_deficiencies.find((row: any) => row.id === deficiency.id).status).toBe("open");
+    const audits = await pool.query("SELECT request_body FROM audit_log WHERE organization_id=$1 AND action=$2", [org.organizationId, "Cleared fire door deficiency on re-inspection"]);
+    expect(audits.rows.some((row) => row.request_body.deficiency_id === deficiency.id)).toBe(false);
   });
 
   it("counts only a completed fire door inspection for annual alerts", async () => {
