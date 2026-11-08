@@ -105,53 +105,66 @@ export function SendToPurchasing({ openingId, hardwareId, principal }: { opening
     }
   }
 
+  const needsBranch = (destination?.choices?.length ?? 0) > 1;
+  const blocked = destination && !destination.ready ? sendFailure(new Error(destination.error || "purchasing_destination_failed")) : null;
   return (
-    <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
-      <div className="section-label">Send to purchasing</div>
+    <section className="c04-purchasing" aria-label="Send to purchasing">
+      <h2>Send to purchasing</h2>
+      {destination === null && <p id="purchasing-block" role="status">Checking where this job should be sent.</p>}
+      {blocked && <p id="purchasing-block" className="c04-alert" role="alert">{blocked}</p>}
+      {needsBranch && (
+        <div className="c04-step c04-step-alert">
+          <h3><span>1</span> Choose a recipient</h3>
+          <div className="field">
+            <label htmlFor="purchasing-branch">Branch for this job <span className="c04-required">Required</span></label>
+            <select id="purchasing-branch" value={branchId} aria-required="true" aria-invalid={branchId === ""} onChange={(e) => setBranchId(e.target.value)}>
+              <option value="">Choose a branch</option>
+              {destination?.choices?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+            </select>
+          </div>
+          <p>Recipient appears after branch selection.</p>
+        </div>
+      )}
       {destination?.ready && (
-        <p role="status" style={{ fontSize: 15, margin: "8px 0" }}>
+        <p className="c04-recipient" role="status">
           {destination.branch ? `${destination.branch.name}: ` : "Company purchasing: "}
           {destination.to}
           {destination.source === "company" && destination.branch ? " (company address; this branch has none of its own)" : ""}
         </p>
       )}
-      {destination && !destination.ready && <p role="alert" style={{ fontSize: 15 }}>{sendFailure(new Error(destination.error || "purchasing_destination_failed"))}</p>}
-      {(destination?.choices?.length ?? 0) > 1 && (
-        <div className="field">
-          <label htmlFor="purchasing-branch">Branch for this job</label>
-          <select id="purchasing-branch" value={branchId} onChange={(e) => setBranchId(e.target.value)} style={{ width: "100%", minHeight: 44 }}>
-            <option value="">Choose a branch</option>
-            {destination?.choices?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-          </select>
-        </div>
-      )}
-      <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>
-        Choose a PDF from Files or Downloads, or take a photo of the sheet. iPhone names the file from its contents, not from the picker label.
-      </p>
-      {docs.map((doc) => (
-        <label key={doc.id} style={{ display: "block", fontSize: 14, marginBottom: 6 }}>
-          <input
-            type="checkbox"
-            checked={selected.includes(doc.id)}
-            onChange={(e) => setSelected((current) => e.target.checked ? [...current, doc.id] : current.filter((id) => id !== doc.id))}
-          />{" "}
-          {doc.title}
+      <div className="c04-step">
+        <h3><span>2</span> Add a PDF or photo</h3>
+        <p>Use Files or Downloads, or photograph the sheet. On iPhone, the file name comes from its contents, not from the picker label.</p>
+        {docs.length > 0 && <p>Saved sheets on this opening</p>}
+        {docs.map((doc) => (
+          <label key={doc.id} className="c04-check">
+            <input
+              type="checkbox"
+              checked={selected.includes(doc.id)}
+              onChange={(e) => setSelected((current) => e.target.checked ? [...current, doc.id] : current.filter((id) => id !== doc.id))}
+            />
+            {doc.title}
+          </label>
+        ))}
+        <label className="btn c04-btn-blue c04-file">
+          Choose PDF or photo
+          <input id="purchasing-pdf" type="file" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif" onChange={(e) => choose(e.target.files?.[0] ?? null)} />
         </label>
-      ))}
-      <div className="field">
-        <label htmlFor="purchasing-pdf">PDF or photo</label>
-        <input id="purchasing-pdf" type="file" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif" onChange={(e) => choose(e.target.files?.[0] ?? null)} />
+        <label className="btn c04-btn-cyan c04-file">
+          Take a photo of the sheet
+          <input id="purchasing-camera" type="file" accept="image/*" capture="environment" onChange={(e) => choose(e.target.files?.[0] ?? null)} />
+        </label>
       </div>
-      <div className="field">
-        <label htmlFor="purchasing-camera">Take a photo of the sheet</label>
-        <input id="purchasing-camera" type="file" accept="image/*" capture="environment" onChange={(e) => choose(e.target.files?.[0] ?? null)} />
+      <div className="c04-step c04-step-note">
+        <h3><span>3</span> Add a note <em>Optional</em></h3>
+        <div className="field">
+          <label htmlFor="purchasing-note">Note</label>
+          <textarea id="purchasing-note" value={note} onChange={(e) => setNote(e.target.value)} />
+        </div>
       </div>
-      <div className="field">
-        <label htmlFor="purchasing-note">Note (optional)</label>
-        <textarea id="purchasing-note" value={note} onChange={(e) => setNote(e.target.value)} />
-      </div>
-      <button type="button" className="btn btn-primary" onClick={send} disabled={busy || !destination?.ready}>{busy ? "Sending…" : "Send to purchasing"}</button>
-      {message && <p role={alert ? "alert" : "status"} style={{ fontSize: 14 }}>{message}</p>}
-    </div>
+      <button type="button" className="btn btn-primary" onClick={send} disabled={busy || !destination?.ready} aria-describedby={blocked || destination === null ? "purchasing-block" : undefined}>{busy ? "Sending…" : "Send to purchasing"}</button>
+      {needsBranch && !destination?.ready && !busy && <p className="c04-note">Choose a branch to enable sending.</p>}
+      {message && <p role={alert ? "alert" : "status"} className={alert ? "c04-alert" : undefined}>{message}</p>}
+    </section>
   );
 }

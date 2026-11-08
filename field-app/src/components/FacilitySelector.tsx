@@ -122,27 +122,35 @@ export function FacilitySelector() {
     return map;
   }, new Map<string, NonNullable<typeof properties>>())].sort((a, b) => a[0].localeCompare(b[0]));
   return (
-    <section className="card" aria-label="Facilities by state and county" style={{ marginBottom: 12 }}>
+    <section className="c04-facilities" aria-label="Facilities by state and county">
       {properties === null && !error && <p>Loading your facilities...</p>}
       {properties && properties.length === 0 && <p>No facilities are assigned to your account yet.</p>}
       {needsChoice && <p><strong>Select your facility to download its openings</strong></p>}
       {groups.map(([label, facilities]) => (
         <div key={label}>
           <div className="section-label">{label}</div>
-          {facilities.map((facility) => (
-            <button key={facility.id} type="button" className="btn btn-secondary" style={{ textAlign: "left", marginBottom: 8 }}
-              onClick={() => s.select(facility.id)} aria-current={facility.id === selectedId ? "true" : undefined}>
-              {facility.name}{facility.city ? `, ${facility.city}` : ""}
-            </button>
-          ))}
+          {facilities.map((facility) => {
+            const selected = facility.id === selectedId;
+            const place = [facility.city, label].filter(Boolean).join(" · ");
+            return (
+              <button key={facility.id} type="button" className={selected ? "c04-facility" : "btn c04-choice"}
+                onClick={() => s.select(facility.id)} aria-current={selected ? "true" : undefined}>
+                {selected ? <>
+                  <span className="c04-eyebrow">Facility</span>
+                  <strong>{facility.name}</strong>
+                  {place && <span>{place}</span>}
+                </> : <>{facility.name}{facility.city ? `, ${facility.city}` : ""}</>}
+              </button>
+            );
+          })}
         </div>
       ))}
-      {error && <p role="alert">{error}</p>}
+      {error && <p className="c04-alert" role="alert">{error}</p>}
       {(progress || result) && <p role="status">{describeSync(progress, result)}</p>}
       {progress && progress.openingsTotal > 0 && <progress max={progress.openingsTotal} value={progress.openingsDone} style={{ width: "100%" }} />}
-      {selectedId && !running && <div style={{ display: "flex", gap: 8 }}>
-        <button type="button" className="btn btn-secondary" onClick={() => s.refresh()}>Refresh download</button>
-        {result && result.status !== "complete" && result.status !== "cancelled" && <button type="button" className="btn btn-secondary" onClick={() => s.retryFailed()}>Retry failed</button>}
+      {selectedId && !running && <div className="c04-actions">
+        <button type="button" className="btn c04-btn-cyan" onClick={() => s.refresh()}>Refresh download</button>
+        {result && result.status !== "complete" && result.status !== "cancelled" && <button type="button" className="btn c04-choice" onClick={() => s.retryFailed()}>Retry failed</button>}
       </div>}
     </section>
   );

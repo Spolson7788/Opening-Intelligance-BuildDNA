@@ -28,7 +28,7 @@ export function CompanySwitcher() {
     } finally { setBusy(false); }
   }
 
-  return <div className="no-print" style={{ padding: "4px 16px" }}>
+  return <div className="company-switch no-print">
     <label>Company{" "}
       <select aria-label="Company" value={auth.organizationId} disabled={busy} onChange={(e) => void choose(e.target.value)}>
         {companies.map((c) => <option key={c.organization_id} value={c.organization_id}>{c.name || c.organization_id}{c.access === "tree_view" ? " (view only)" : ""}</option>)}

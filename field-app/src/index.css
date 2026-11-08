@@ -302,3 +302,243 @@ h1, h2, h3 {
 .lifecycle-screen article { border-bottom:1px solid #637078; padding:10px 0; }
 .lifecycle-screen p { overflow-wrap:anywhere; }
 .lifecycle-screen h1 { font-size:18px; }
+
+/* Concept 04. Scoped to the scan screen, the facility openings list, and the
+   purchasing section. Green panels are #A8D978. The logo file is unchanged. */
+body.c04-on {
+  background: #E7F4F8;
+  color: #142C3C;
+}
+body.c04-on aside[aria-label="Current account"],
+body.c04-on .company-switch {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 8px 16px;
+  color: #142C3C;
+  background: #fff;
+}
+body.c04-on .company-switch select {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 4px;
+  padding: 0 12px;
+  font-size: 16px;
+  color: #142C3C;
+  background: #fff;
+  border: 1px solid #B7C9D4;
+  border-radius: 10px;
+}
+.c04 {
+  color: #142C3C;
+  background: #E7F4F8;
+}
+.c04-brand {
+  background: #fff;
+  display: flex;
+  justify-content: center;
+  padding: 8px 16px;
+}
+.c04-brand img {
+  display: block;
+  height: 56px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+.c04-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px 0;
+}
+.c04-kicker {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #3A4E5C;
+}
+.c04 h1 { font-size: 28px; line-height: 1.2; color: #142C3C; margin: 4px 0 12px; }
+.c04 h2 { font-size: 18px; color: #142C3C; margin: 16px 0 8px; }
+.c04 .section-label { color: #3A4E5C; }
+.c04 .badge { background: #fff; color: #142C3C; border-color: #B7C9D4; }
+.c04 .badge-offline { background: #FFF4E5; color: #7A4E00; border-color: #E0A72E; }
+.c04 .field label, .c04-purchasing .field label { color: #142C3C; font-size: 16px; }
+.c04 .field input, .c04 .field select, .c04 .field textarea,
+.c04-purchasing .field input, .c04-purchasing .field select, .c04-purchasing .field textarea {
+  background: #fff;
+  color: #142C3C;
+  border: 1px solid #B7C9D4;
+  font-size: 16px;
+  width: 100%;
+}
+.c04 .btn, .c04-purchasing .btn { margin-bottom: 10px; }
+.c04 .c04-back { width: auto; margin: 0; }
+.c04-back {
+  width: auto;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 4px;
+  background: transparent;
+  color: #00689C;
+  border: none;
+  font-size: 16px;
+}
+.c04-btn-blue, .c04-purchasing .btn-primary {
+  background: #00689C;
+  border-color: #00689C;
+  color: #fff;
+}
+.c04-btn-cyan {
+  background: #70D0E8;
+  border-color: #70D0E8;
+  color: #142C3C;
+}
+.c04-btn-green, .c04-facility, .c04-step-note {
+  background: #A8D978;
+  border-color: #A8D978;
+  color: #142C3C;
+}
+.c04-choice {
+  background: #fff;
+  border: 1px solid #B7C9D4;
+  color: #142C3C;
+  text-align: left;
+}
+.c04-facility {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 48px;
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.c04-facility strong { font-size: 18px; }
+.c04-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.c04-facilities { margin-bottom: 12px; }
+.c04-actions { display: flex; flex-direction: column; }
+.c04-note { color: #3A4E5C; font-size: 16px; }
+.c04-alert {
+  color: #8E1B22;
+  background: #FDECEE;
+  border: 2px solid #E5484D;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 16px;
+}
+.c04-link { color: #00689C; font-weight: 700; }
+.c04-scan {
+  position: relative;
+  min-height: 180px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #D5E3EA;
+  border-radius: 16px;
+}
+.c04-scan #qr-reader { width: 100%; min-height: 180px; }
+.c04-finder {
+  pointer-events: none;
+  position: absolute;
+  inset: 28px;
+  border: 2px dashed #00689C;
+  border-radius: 12px;
+}
+.c04-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  margin: 8px 0;
+  font-size: 16px;
+}
+.c04-openings { list-style: none; padding: 0; margin: 0; }
+.c04-opening {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  margin-bottom: 8px;
+  padding: 12px 14px;
+  text-align: left;
+  color: #142C3C;
+  background: #fff;
+  border: 1px solid #D5E3EA;
+  border-radius: 12px;
+  font: inherit;
+  cursor: pointer;
+}
+.c04-opening span { display: flex; flex-direction: column; }
+.c04 :focus, .c04 :focus-visible,
+.c04-purchasing :focus, .c04-purchasing :focus-visible,
+body.c04-on :focus, body.c04-on :focus-visible {
+  outline: 3px solid #00689C !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px #00689C;
+}
+.c04-purchasing {
+  margin-top: 24px;
+  padding: 16px;
+  color: #142C3C;
+  background: #E7F4F8;
+  border: 1px solid #D5E3EA;
+  border-radius: 16px;
+}
+.c04-purchasing h2 { margin: 0 0 8px; font-size: 22px; color: #142C3C; }
+.c04-purchasing h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 16px; color: #142C3C; }
+.c04-purchasing h3 span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #00689C;
+  color: #fff;
+  font-size: 14px;
+}
+.c04-purchasing h3 em { font-style: normal; font-weight: 600; color: #142C3C; }
+.c04-step { margin: 12px 0; padding: 12px; background: #fff; border-radius: 12px; }
+.c04-step-alert { background: #FDECEE; border: 2px solid #E5484D; }
+.c04-step-note { background: #A8D978; }
+.c04-required { color: #8E1B22; font-weight: 700; }
+.c04-purchasing select[aria-invalid="true"] { border: 2px solid #E5484D; }
+.c04-recipient {
+  margin: 8px 0;
+  padding: 12px;
+  background: #fff;
+  border-left: 4px solid #00689C;
+  border-radius: 10px;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.c04-file { position: relative; overflow: hidden; }
+.c04-file input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px;
+}
+.c04-purchasing .btn-primary:disabled {
+  opacity: 1;
+  background: #D5DEE4;
+  border: 2px solid #5C7382;
+  color: #142C3C;
+}
+@media (min-width: 800px) {
+  .c04.app-shell { max-width: 480px; }
+}
