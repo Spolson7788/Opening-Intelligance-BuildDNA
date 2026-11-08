@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { syncIssueMessage } from "../lib/syncIssueMessage";
+import { syncIssueCanDiscard, syncIssueMessage } from "../lib/syncIssueMessage";
 import { useAuth } from "../lib/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { discardPermanentFailure, getOfflineMedia, getOfflineMediaForPrincipal, getOpenConflictsForPrincipal, getSyncOperationsForPrincipal, loadAuth, recoverOrphanedMediaOperation, removeRejectedMedia, replaceRejectedMediaWithReducedCopy, retrySyncOperationAfterReview } from "../lib/db";
@@ -125,16 +125,19 @@ export function SyncIssuesPage() {
           </div>
           {!issue.contentType?.startsWith("video/") && <p style={{ margin: "6px 0", color: "var(--text-secondary)" }}>Reducing replaces this local copy with a smaller JPEG that fits the limit. Save a copy first if you need the full-resolution original.</p>}
         </> : <>
-          <p style={{ margin: "6px 0", color: "var(--text-secondary)" }}>{syncIssueMessage(issue.status, issue.error)}</p>
-          <button className="btn btn-secondary" onClick={() => retry(issue)}>{issue.conflict ? "Keep local change and retry"
-            : issue.kind === "orphaned_media" ? "Restore upload operation"
-              : ["in_flight", "verifying"].includes(issue.status) ? "Recover interrupted operation"
-              : issue.status === "retry_wait" ? "Retry retained operation" : "Retry after authorization is restored"}</button>
-          {issue.status === "permanent_failure" && (confirmRemove === issue.id
-            ? <><button className="btn btn-secondary" disabled={busy === issue.id} onClick={() => discard(issue)}>Confirm discard from this device</button>
-                <button className="btn btn-secondary" onClick={() => setConfirmRemove(null)}>Keep it</button>
-                <p style={{ margin: "6px 0", color: "var(--text-secondary)" }}>Discarding removes this change from this device only. It does not change the server.</p></>
-            : <button className="btn btn-secondary" onClick={() => setConfirmRemove(issue.id)}>Discard this saved change</button>)}
+          <p role="alert" style={{ margin: "6px 0" }}>{syncIssueMessage(issue.status, issue.error)}</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button className="btn btn-secondary" onClick={() => retry(issue)}>{issue.conflict ? "Keep local change and retry"
+              : issue.kind === "orphaned_media" ? "Restore upload operation"
+                : ["in_flight", "verifying"].includes(issue.status) ? "Recover interrupted operation"
+                : issue.status === "retry_wait" && !syncIssueCanDiscard(issue) ? "Retry retained operation"
+                : syncIssueCanDiscard(issue) ? "Retry this saved change" : "Retry after authorization is restored"}</button>
+            {syncIssueCanDiscard(issue) && (confirmRemove === issue.id
+              ? <><button className="btn btn-secondary" disabled={busy === issue.id} onClick={() => discard(issue)}>Confirm discard from this device</button>
+                  <button className="btn btn-secondary" onClick={() => setConfirmRemove(null)}>Keep it</button>
+                  <p style={{ margin: "6px 0", color: "var(--text-secondary)" }}>Discarding removes this change from this device only. It does not change the server.</p></>
+              : <button className="btn btn-secondary" onClick={() => setConfirmRemove(issue.id)}>Discard this saved change</button>)}
+          </div>
         </>}
         {notes[issue.id] && <p className="error-text" role="status">{notes[issue.id]}</p>}
       </div>)}

@@ -49,6 +49,11 @@ it("discards a permanently failed inspection and leaves a queued one in place", 
   await discardPermanentFailure(ids.operation);
   expect(await getSyncOperationsForPrincipal(ids.user, ids.organization)).toHaveLength(0);
 
+  await saveAuth({ token: "t", userId: ids.user, organizationId: ids.organization, role: "technician" });
+  await putSyncOperation({ ...operation("retry_wait"), lastErrorCode: "photo_unreadable" });
+  await discardPermanentFailure(ids.operation);
+  expect(await getSyncOperationsForPrincipal(ids.user, ids.organization)).toHaveLength(0);
+
   await saveAuth({ token: "t", userId: "99999999-9999-4999-8999-999999999999", organizationId: ids.organization, role: "technician" });
   await putSyncOperation(operation("permanent_failure"));
   await expect(discardPermanentFailure(ids.operation)).rejects.toThrow("operation_principal_mismatch");

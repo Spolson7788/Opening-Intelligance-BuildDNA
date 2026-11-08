@@ -21,7 +21,14 @@ it('does not claim success before a checked principal; zero work is scoped',()=>
 it('hides old account and queue immediately on switch and rejects stale observations',()=>{render();emit({pending:7});expect(el.textContent).toContain('7 pending');state.auth=account('B');render();expect(el.textContent).not.toContain('A@example');expect(el.textContent).not.toContain('7 pending');expect(el.textContent).toContain('Checking sync');emit({pending:9});expect(el.textContent).not.toContain('9 pending');emit({userId:'B',organizationId:'org-B'});expect(el.textContent).toContain('No pending changes for this account');});
 it('has explicit error, signed-out and auth-loading states',()=>{render();emit({checked:false,checkFailed:true});expect(el.textContent).toContain('Unable to check');state.auth=null;render();expect(el.textContent).toContain('Sign in to check');expect(el.textContent).not.toContain('A@example');state.loading=true;render();expect(el.textContent).toContain('Checking sync');});
 it('legacy sessions display current principal instead of another account email',()=>{state.auth={userId:'legacy',organizationId:'org'};render();expect(el.textContent).toContain('Account legacy');expect(el.textContent).toContain('Organization org');});
-it('explains recovery without exposing raw errors or relaxing authorization',()=>{expect(syncIssueMessage('auth_required')).toContain('will not retry automatically');const text=syncIssueMessage('auth_required','unexpected_response');expect(text).toContain('unexpected response');expect(text).not.toContain('unexpected_response');expect(syncIssueMessage('retry_wait','SECRET-response')).not.toContain('SECRET');});
+it('explains recovery without exposing raw errors or relaxing authorization',()=>{expect(syncIssueMessage('auth_required')).toContain('will not retry automatically');const text=syncIssueMessage('auth_required','unexpected_response');expect(text).toContain('unexpected response');expect(text).not.toContain('unexpected_response');expect(syncIssueMessage('retry_wait','SECRET-response')).not.toContain('SECRET');expect(syncIssueMessage('permanent_failure','photo_unreadable')).toContain('could not be read');});
+it('shows the reason and discard for a permanently failed inspection',async()=>{
+  records.read.mockResolvedValueOnce([{operationId:'insp',entityType:'inspection_event',state:'permanent_failure',createdAtLocal:new Date().toISOString(),lastErrorCode:'photo_unreadable'}]);
+  await act(async()=>root.render(<SyncIssuesPage/>));
+  expect(el.textContent).toContain('could not be read');
+  expect(el.textContent).toContain('Discard this saved change');
+  expect(el.textContent).not.toContain('Retry after authorization is restored');
+});
 it('review hides previous account items while the next account loads',async()=>{
   records.read.mockResolvedValueOnce([{operationId:'one',entityType:'photo',state:'auth_required',createdAtLocal:new Date().toISOString(),lastErrorCode:'unexpected_response'}]);
   await act(async()=>root.render(<SyncIssuesPage/>));

@@ -11,6 +11,7 @@ import type {
   SyncReceipt,
 } from "./offlineTypes";
 import { interruptedOperationIsRecoverable } from "./offlineSyncModel";
+import { DISCARDABLE_SYNC_ERRORS } from "./syncIssueMessage";
 
 interface FieldAppDB extends DBSchema {
   // Local cache of the last-seen version of each opening, so a technician can
@@ -432,7 +433,9 @@ export async function discardPermanentFailure(operationId: string) {
   if (!auth || !operation || operation.actorUserId !== auth.userId || operation.organizationId !== auth.organizationId) {
     throw new Error("operation_principal_mismatch");
   }
-  if (operation.state !== "permanent_failure") throw new Error("operation_not_permanent_failure");
+  const terminalError = Boolean(operation.lastErrorCode && DISCARDABLE_SYNC_ERRORS.has(operation.lastErrorCode));
+  const stuck = ["retry_wait", "schema_blocked", "storage_pressure"].includes(operation.state);
+  if (operation.state !== "permanent_failure" && !(terminalError && stuck)) throw new Error("operation_not_permanent_failure");
   const operations: SyncOperation[] = await tx.objectStore("operations").getAll();
   if (operations.some((item) => item.dependencyOperationIds.includes(operation.operationId))) {
     throw new Error("operation_has_dependents");
