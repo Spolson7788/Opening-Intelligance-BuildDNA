@@ -190,6 +190,8 @@ export function LoginPage() {
       </form>
       <p style={{ textAlign: "center", marginTop: 16 }}>
         <Link to="/forgot-password" style={{ color: "#ff6a1a", fontWeight: 700 }}>Forgot password?</Link>
+        {" · "}
+        <Link to="/how-to-use" style={{ color: "#ff6a1a", fontWeight: 700 }}>How to use</Link>
       </p>
       {renewalUrl && <p style={{ fontSize: 13, marginTop: 16 }}><RenewPrivateSiteAccess>Renew private site access</RenewPrivateSiteAccess> if this private preview asks for access again.</p>}
     </div>

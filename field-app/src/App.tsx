@@ -9,6 +9,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import { AuthProvider, useAuth } from "./lib/AuthContext";
 import { initSync } from "./lib/sync";
 import { LoginPage } from "./pages/LoginPage";
+import { HowToUsePage } from "./pages/HowToUsePage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ScanPage } from "./pages/ScanPage";
 import { OpeningDetailPage } from "./pages/OpeningDetailPage";
@@ -69,6 +70,7 @@ function AppRoutes() {
     <Routes>
       {PhotoIsolationPage&&<Route path="/diagnostics/photo-isolation" element={<RequireAuth><Suspense fallback={<p>Loading check.</p>}><PhotoIsolationPage/></Suspense></RequireAuth>}/>}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/how-to-use" element={<HowToUsePage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/account-recovery" element={<AccountRecoveryPage />} />
       <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />

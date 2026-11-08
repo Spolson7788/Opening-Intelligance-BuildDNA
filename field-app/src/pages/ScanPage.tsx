@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
 import { SyncBadge } from "../components/SyncBadge";
 import { FacilitySelector } from "../components/FacilitySelector";
@@ -83,6 +83,7 @@ export function ScanPage() {
 
         <button className="btn btn-secondary" onClick={() => navigate("/setup-opening")}>Facilities and openings</button>
         <a className="btn btn-secondary" href="/facility-dashboard/">Facility Dashboard</a>
+        <Link className="btn btn-secondary" to="/how-to-use">How to use</Link>
         <div className="section-label" style={{ marginTop: 24 }}>Or enter the opening code</div>
         <form onSubmit={onManualSubmit}>
           <div className="field">

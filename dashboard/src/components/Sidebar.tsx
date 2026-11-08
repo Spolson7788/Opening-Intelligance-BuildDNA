@@ -31,6 +31,7 @@ export function Sidebar() {
           <NavLink to="/" end className={({ isActive }) => (isActive ? "sidebar-home active" : "sidebar-home")}>
             Portfolio Overview
           </NavLink>
+          <NavLink to="/how-to-use" className={({ isActive }) => itemClass(isActive)}>How to use</NavLink>
           <LocationBar />
         </div>
         <div className="nav-group">

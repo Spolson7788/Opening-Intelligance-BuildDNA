@@ -39,6 +39,7 @@ import { WorkOrdersPage } from "./pages/WorkOrdersPage";
 import { MaintenanceSchedulesPage } from "./pages/MaintenanceSchedulesPage";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { PurchasingEmailPage } from "./pages/PurchasingEmailPage";
+import { HowToUsePage } from "./pages/HowToUsePage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { CoveragePage } from "./pages/CoveragePage";
 
@@ -57,6 +58,7 @@ function AppRoutes() {
   return (
     <Routes key={scopeKey}>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/how-to-use" element={<HowToUsePage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/accept-invite" element={<AcceptInvitePage />} />
