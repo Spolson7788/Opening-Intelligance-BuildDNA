@@ -1,4 +1,4 @@
-// One staging publish of the PR 19 app commit 47136cc26becd951f8de9cda78debfa4ccdaef0f.
+// One staging publish of the PR 19 app commit 7b446074ff1dd174a905825fdd0fb6649a6a7f27.
 // Publisher-file commits after that pin are allowed. App changes are not.
 // Hard-locked to oi-video-workflows-staging. Refuses production. One attempt.
 // Does not print secrets. Default is a dry run; publish requires --publish-approved.
@@ -9,7 +9,7 @@ import https from 'node:https';
 import { resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
-export const PINNED_COMMIT = '47136cc26becd951f8de9cda78debfa4ccdaef0f';
+export const PINNED_COMMIT = '7b446074ff1dd174a905825fdd0fb6649a6a7f27';
 export const STAGING_SITE_ID = 'b64bf33c-a131-4ae2-b2b0-9aec16e9f77b';
 export const STAGING_SITE_NAME = 'oi-video-workflows-staging';
 export const STAGING_URL = 'https://oi-video-workflows-staging.netlify.app';
