@@ -110,8 +110,8 @@ interface CancellableEvent {
 }
 
 export interface SignatureSurface {
-  addEventListener(type: string, listener: (event: never) => void, options?: AddEventListenerOptions): void;
-  removeEventListener(type: string, listener: (event: never) => void): void;
+  addEventListener(type: string, listener: EventListener, options?: boolean | AddEventListenerOptions): void;
+  removeEventListener(type: string, listener: EventListener, options?: boolean | EventListenerOptions): void;
   setPointerCapture?(pointerId: number): void;
 }
 
@@ -119,8 +119,10 @@ function blockScroll(event: CancellableEvent) {
   if (event.cancelable) event.preventDefault?.();
 }
 
-function touchPoint(event: TouchEvent, readRect: () => SignatureRect): SignaturePoint | null {
-  const touch = event.touches[0] || event.changedTouches[0];
+function touchPoint(event: Event, readRect: () => SignatureRect): SignaturePoint | null {
+  if (!("touches" in event) && !("changedTouches" in event)) return null;
+  const record = event as TouchEvent;
+  const touch = record.touches?.[0] || record.changedTouches?.[0];
   if (!touch) return null;
   return signaturePoint(touch.clientX, touch.clientY, readRect());
 }
@@ -132,44 +134,51 @@ export function bindSignatureSurface(
   stroke: SignatureStroke,
   readRect: () => SignatureRect,
 ) {
-  const onPointerDown = (event: PointerEvent) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    blockScroll(event);
-    try { surface.setPointerCapture?.(event.pointerId); } catch { /* iOS Safari can reject capture */ }
-    stroke.pointerDown(signaturePoint(event.clientX, event.clientY, readRect()));
+  const pointer = (event: Event): PointerEvent | null => {
+    if (!("clientX" in event) || !("clientY" in event)) return null;
+    return event as PointerEvent;
   };
-  const onPointerMove = (event: PointerEvent) => {
+  const onPointerDown: EventListener = (event) => {
+    const point = pointer(event);
+    if (!point || (point.pointerType === "mouse" && point.button !== 0)) return;
+    blockScroll(point);
+    try { surface.setPointerCapture?.(point.pointerId); } catch { /* iOS Safari can reject capture */ }
+    stroke.pointerDown(signaturePoint(point.clientX, point.clientY, readRect()));
+  };
+  const onPointerMove: EventListener = (event) => {
     if (!stroke.isDrawing) return;
-    blockScroll(event);
-    stroke.pointerMove(signaturePoint(event.clientX, event.clientY, readRect()));
+    const point = pointer(event);
+    if (!point) return;
+    blockScroll(point);
+    stroke.pointerMove(signaturePoint(point.clientX, point.clientY, readRect()));
   };
-  const onPointerUp = (event: PointerEvent) => {
+  const onPointerUp: EventListener = (event) => {
     blockScroll(event);
     stroke.pointerUp();
   };
-  const onTouchStart = (event: TouchEvent) => {
+  const onTouchStart: EventListener = (event) => {
     blockScroll(event);
     const point = touchPoint(event, readRect);
     if (point) stroke.touchStart(point);
   };
-  const onTouchMove = (event: TouchEvent) => {
+  const onTouchMove: EventListener = (event) => {
     blockScroll(event);
     const point = touchPoint(event, readRect);
     if (point) stroke.touchMove(point);
   };
-  const onTouchEnd = (event: TouchEvent) => {
+  const onTouchEnd: EventListener = (event) => {
     blockScroll(event);
     stroke.touchEnd();
   };
-  const listeners: Array<[string, (event: never) => void]> = [
-    ["pointerdown", onPointerDown as (event: never) => void],
-    ["pointermove", onPointerMove as (event: never) => void],
-    ["pointerup", onPointerUp as (event: never) => void],
-    ["pointercancel", onPointerUp as (event: never) => void],
-    ["touchstart", onTouchStart as (event: never) => void],
-    ["touchmove", onTouchMove as (event: never) => void],
-    ["touchend", onTouchEnd as (event: never) => void],
-    ["touchcancel", onTouchEnd as (event: never) => void],
+  const listeners: Array<[string, EventListener]> = [
+    ["pointerdown", onPointerDown],
+    ["pointermove", onPointerMove],
+    ["pointerup", onPointerUp],
+    ["pointercancel", onPointerUp],
+    ["touchstart", onTouchStart],
+    ["touchmove", onTouchMove],
+    ["touchend", onTouchEnd],
+    ["touchcancel", onTouchEnd],
   ];
   for (const [type, listener] of listeners) surface.addEventListener(type, listener, { passive: false });
   return () => {
