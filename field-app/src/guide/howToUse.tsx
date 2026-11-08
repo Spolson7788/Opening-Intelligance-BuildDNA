@@ -1,5 +1,5 @@
 // Keep field-app/src/guide/howToUse.tsx and dashboard/src/guide/howToUse.tsx identical.
-import type { CSSProperties } from "react";
+import { useEffect, type CSSProperties } from "react";
 
 export const GUIDE_VERSION = "2026-11-08";
 export const GUIDE_DATE = "8 November 2026";
@@ -158,7 +158,7 @@ const printCss = `
   .how-to-use .toc { padding-left: 1.1rem; }
   @media print {
     .no-print, aside[aria-label="Current account"] { display: none !important; }
-    .how-to-use, .how-to-use details, .how-to-use details > * { display: block !important; }
+    .how-to-use, .how-to-use details, .how-to-use details > *, .how-to-use details::details-content { display: block !important; content-visibility: visible !important; }
     .how-to-use summary { list-style: none; }
     .how-to-use details { break-inside: avoid; page-break-inside: avoid; }
     .how-to-use h2 { break-before: page; page-break-before: always; }
@@ -176,6 +176,26 @@ export function HowToUse({
   onAudience: (audience: GuideAudience) => void;
   onBack?: () => void;
 }) {
+  useEffect(() => {
+    const nodes = () => [...document.querySelectorAll(".how-to-use details")] as HTMLDetailsElement[];
+    function openAll() {
+      nodes().forEach((details) => {
+        details.dataset.printWasOpen = details.open ? "1" : "0";
+        details.open = true;
+      });
+    }
+    function restore() {
+      nodes().forEach((details) => {
+        if (details.dataset.printWasOpen === "0") details.open = false;
+      });
+    }
+    window.addEventListener("beforeprint", openAll);
+    window.addEventListener("afterprint", restore);
+    return () => {
+      window.removeEventListener("beforeprint", openAll);
+      window.removeEventListener("afterprint", restore);
+    };
+  }, [audience]);
   const sections = guideSections(audience);
   const title = audience === "field" ? "Technicians and inspectors" : "Facility staff";
   const backStyle: CSSProperties = { width: "auto", minHeight: 44, marginBottom: 12 };

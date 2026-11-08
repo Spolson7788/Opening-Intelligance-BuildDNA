@@ -37,6 +37,11 @@ it("keeps every section in the page while the sections are collapsed, and hides 
   expect(host.innerHTML).toContain("@media print");
   expect(host.innerHTML).toContain(".no-print, aside[aria-label=\"Current account\"] { display: none");
   expect(host.querySelector(".no-print")).toBeTruthy();
+  window.dispatchEvent(new Event("beforeprint"));
+  details.forEach((item) => expect((item as HTMLDetailsElement).open).toBe(true));
+  expect(host.textContent).toContain("N/A does not mean Pass");
+  window.dispatchEvent(new Event("afterprint"));
+  details.forEach((item) => expect((item as HTMLDetailsElement).open).toBe(false));
   expect(host.textContent).not.toContain("@example.com");
 });
 
