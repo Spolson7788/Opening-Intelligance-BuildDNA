@@ -2,7 +2,7 @@
 
 One publish of pull request 18 to **oi-video-workflows-staging** only. The staging migration is already applied. Do not apply it again. Do not publish to production. Do not run `npm run migrate`.
 
-Pinned app commit: `1f7457d2e3a07956b2aa5436cb2df2672d552e9b`. A later commit is accepted only when its diff from that pin is publisher files.
+Pinned app commit: `4322bb36de164037fd463639a2b0b2fc5a17a345`. A later commit is accepted only when its diff from that pin is publisher files.
 
 Site: `oi-video-workflows-staging` (`b64bf33c-a131-4ae2-b2b0-9aec16e9f77b`), https://oi-video-workflows-staging.netlify.app
 
@@ -18,7 +18,7 @@ node scripts/build-staging-package-16abbf4.mjs
 node scripts/artifact-publisher-staging-16abbf4.mjs --upload-check
 ```
 
-Rebuild `dist/staging-package-16abbf4` with that command. The old package records commit `16abbf4` and is refused. The build writes a new `packageSha256` into `package-pin.json`. There is no checksum to paste back into git. The publisher recomputes it from the built files and the commit recorded in that pin. The recorded commit must be `1f7457d2e3a07956b2aa5436cb2df2672d552e9b` or a publisher-only descendant. Any other change is refused.
+Rebuild `dist/staging-package-16abbf4` with that command. The old package records commit `16abbf4` and is refused. The build writes a new `packageSha256` into `package-pin.json`. There is no checksum to paste back into git. The publisher recomputes it from the built files and the commit recorded in that pin. The recorded commit must be `4322bb36de164037fd463639a2b0b2fc5a17a345` or a publisher-only descendant. Any other change is refused.
 
 Install the API dependencies before the upload check. From the repo root:
 
@@ -50,7 +50,7 @@ node scripts/artifact-publisher-staging-16abbf4.mjs --inspect-deploy 6aef3f786cc
 node scripts/artifact-publisher-staging-16abbf4.mjs --check-deploy 6aefb27ce9feb6a9e881d55d
 ```
 
-`--check-deploy` only reads. It POSTs `{}` to that deploy's permalink `/api/auth/login` with no token. `publishable` is true when the deploy is `ready`, its context is `production`, and the probe status is not 404. An empty `routes` list matches the known-good deploy. `rollbackDeployId` is always `6af0d6bf1dfb22798eb09b94`. The journal `commit` is the publisher HEAD, and `packageCommit` stays `1f7457d2e3a07956b2aa5436cb2df2672d552e9b`.
+`--check-deploy` only reads. It POSTs `{}` to that deploy's permalink `/api/auth/login` with no token. `publishable` is true when the deploy is `ready`, its context is `production`, and the probe status is not 404. An empty `routes` list matches the known-good deploy. `rollbackDeployId` is always `6af0d6bf1dfb22798eb09b94`. The journal `commit` is the publisher HEAD, and `packageCommit` stays `4322bb36de164037fd463639a2b0b2fc5a17a345`.
 
 Resume waits until the deploy state is `prepared` before any file or function PUT. A 401 that says the deploy is still `preparing` is not an authentication failure. The same in-memory token is reused, and a function retry sends `X-Nf-Retry-Count`. After the deploy is ready, resume calls restore and records success only when `published_deploy.id` is that deploy and its context is `production`.
 

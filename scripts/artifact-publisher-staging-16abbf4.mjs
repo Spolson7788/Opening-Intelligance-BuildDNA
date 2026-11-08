@@ -1,4 +1,4 @@
-// One staging publish of the dashboard photo and inspection-link commit 1f7457d2e3a07956b2aa5436cb2df2672d552e9b.
+// One staging publish of the dashboard photo and inspection-link commit 4322bb36de164037fd463639a2b0b2fc5a17a345.
 // Publisher-file commits after that pin are allowed. App changes are not.
 // Hard-locked to oi-video-workflows-staging. Refuses production. One attempt.
 // Does not print secrets. Default is a dry run; publish requires --publish-approved.
@@ -9,7 +9,7 @@ import https from 'node:https';
 import { resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
-export const PINNED_COMMIT = '1f7457d2e3a07956b2aa5436cb2df2672d552e9b';
+export const PINNED_COMMIT = '4322bb36de164037fd463639a2b0b2fc5a17a345';
 export const STAGING_SITE_ID = 'b64bf33c-a131-4ae2-b2b0-9aec16e9f77b';
 export const STAGING_SITE_NAME = 'oi-video-workflows-staging';
 export const STAGING_URL = 'https://oi-video-workflows-staging.netlify.app';
