@@ -124,17 +124,15 @@ export async function sendPurchasingPackage(db: Queryable, input: PurchasingSend
   const attachments: EmailAttachment[] = [];
   const links: string[] = [];
   for (const file of files) {
-    const saved = await db.query(
-      `INSERT INTO purchasing_send_files (send_id, filename, content_type, byte_size, content, link_url, source_document_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [send.id, file.filename, file.contentType, file.bytes?.length ?? 0, file.bytes, file.link, file.documentId],
+    const fileId = crypto.randomUUID();
+    const secureLink = file.bytes ? `${base}/api/purchasing/sends/${send.id}/files/${fileId}` : file.link;
+    await db.query(
+      `INSERT INTO purchasing_send_files (id, send_id, filename, content_type, byte_size, content, link_url, source_document_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [fileId, send.id, file.filename, file.contentType, file.bytes?.length ?? 0, file.bytes, file.bytes && !uploadsFit ? secureLink : file.link, file.documentId],
     );
-    const secureLink = file.bytes ? `${base}/api/purchasing/sends/${send.id}/files/${saved.rows[0].id}` : file.link;
     if (file.bytes && uploadsFit) attachments.push({ filename: file.filename, contentBase64: file.bytes.toString("base64") });
     if (!(file.bytes && uploadsFit)) links.push(`${file.filename}: ${secureLink || "on file in Opening Intelligence"}`);
-    if (file.bytes && !uploadsFit) {
-      await db.query("UPDATE purchasing_send_files SET link_url=$2 WHERE id=$1", [saved.rows[0].id, secureLink]);
-    }
   }
 
   const subject = "Cut sheets for purchasing";
@@ -153,8 +151,12 @@ export async function sendPurchasingPackage(db: Queryable, input: PurchasingSend
     attachments: attachments.length ? attachments : undefined,
   });
   if (!outcome.sent) {
-    await db.query("DELETE FROM purchasing_send_files WHERE send_id=$1", [send.id]);
-    await db.query("DELETE FROM purchasing_sends WHERE id=$1", [send.id]);
+    try {
+      await db.query("DELETE FROM purchasing_send_files WHERE send_id=$1", [send.id]);
+      await db.query("DELETE FROM purchasing_sends WHERE id=$1", [send.id]);
+    } catch (error) {
+      console.error("OI purchasing", { outcome: "cleanup_failed", code: error instanceof Error && "code" in error ? String((error as { code?: string }).code || "") : "" });
+    }
     return { error: outcome.reason, status: 503 };
   }
   return { send };

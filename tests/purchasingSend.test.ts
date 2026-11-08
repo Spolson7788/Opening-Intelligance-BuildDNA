@@ -1,8 +1,9 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
 import { setEmailProviderForTests, resendProvider, type OutboundEmail } from "../src/services/email";
-import { decodePurchasingSheet } from "../src/services/purchasingSend";
+import { decodePurchasingSheet, sendPurchasingPackage } from "../src/services/purchasingSend";
 import { sheetKind } from "../field-app/src/lib/purchasingSheet";
 import { pool } from "../src/db/pool";
 
@@ -168,6 +169,69 @@ describe("send to purchasing", () => {
     expect(refused.body.error).toBe("sheet_unreadable");
     expect(sheetKind(Uint8Array.from(Buffer.from(TINY_PDF, "base64")))).toBe("pdf");
     expect(decodePurchasingSheet(Buffer.from("hello").toString("base64"))).toBeNull();
+  });
+
+  it("still reports the email failure when cleanup is not permitted", async () => {
+    setEmailProviderForTests({ name: "fake", send: async () => ({ sent: false, reason: "email_not_configured" }) });
+    const db = {
+      query: async (sql: string) => {
+        if (sql.includes("purchasing_email")) return { rows: [{ org_email: "buy@example.com", branch_email: null }] };
+        if (sql.includes("INSERT INTO purchasing_sends")) return { rows: [{ id: "11111111-1111-4111-8111-111111111111" }] };
+        if (sql.includes("INSERT INTO purchasing_send_files")) return { rows: [{ id: "22222222-2222-4222-8222-222222222222" }] };
+        if (sql.startsWith("DELETE")) {
+          const denied = new Error("permission denied for table purchasing_sends");
+          throw Object.assign(denied, { code: "42501" });
+        }
+        return { rows: [] };
+      },
+    };
+    const result = await sendPurchasingPackage(db, {
+      openingId: "33333333-3333-4333-8333-333333333333",
+      hardwareComponentId: "44444444-4444-4444-8444-444444444444",
+      organizationId: "55555555-5555-4555-8555-555555555555",
+      userId: "66666666-6666-4666-8666-666666666666",
+      documentIds: [],
+      referenceSha256s: [],
+      includeApproved: false,
+      uploads: [{ filename: "Cut sheet", content_base64: TINY_PDF }],
+    });
+    expect(result).toEqual({ error: "email_not_configured", status: 503 });
+  });
+
+  it("lets the API role update a file link, delete a send, and set the company email", async () => {
+    await pool.query("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'oi_pr2_api') THEN CREATE ROLE oi_pr2_api NOLOGIN; END IF; END $$");
+    await pool.query(readFileSync("migrations/20261108180000_purchasing_api_policies.sql", "utf8"));
+    const org = await signupTestOrg();
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId);
+    const componentId = await hardware(org.token, opening.id);
+    await request(app).put("/api/purchasing/company-email").set("Authorization", `Bearer ${org.token}`).send({ purchasing_email: "buy@example.com" });
+    const sentRow = await pool.query(
+      `INSERT INTO purchasing_sends (organization_id, opening_id, hardware_component_id, sent_by_user_id, sent_to, delivery_mode)
+       VALUES ($1,$2,$3,$4,'buy@example.com','links') RETURNING id`,
+      [org.organizationId, opening.id, componentId, (await request(app).get("/api/auth/me").set("Authorization", `Bearer ${org.token}`)).body.id],
+    );
+    const file = await pool.query(
+      `INSERT INTO purchasing_send_files (send_id, filename, content_type, byte_size) VALUES ($1,'sheet.pdf','application/pdf',0) RETURNING id`,
+      [sentRow.rows[0].id],
+    );
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL ROLE oi_pr2_api");
+      const updated = await client.query("UPDATE purchasing_send_files SET link_url='https://example.test/sheet' WHERE id=$1 RETURNING id", [file.rows[0].id]);
+      expect(updated.rowCount).toBe(1);
+      const removedFiles = await client.query("DELETE FROM purchasing_send_files WHERE send_id=$1", [sentRow.rows[0].id]);
+      expect(removedFiles.rowCount).toBe(1);
+      const removed = await client.query("DELETE FROM purchasing_sends WHERE id=$1", [sentRow.rows[0].id]);
+      expect(removed.rowCount).toBe(1);
+      const email = await client.query("UPDATE organizations SET purchasing_email='desk@example.com' WHERE id=$1 RETURNING purchasing_email", [org.organizationId]);
+      expect(email.rows[0].purchasing_email).toBe("desk@example.com");
+      await client.query("ROLLBACK");
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      client.release();
+    }
   });
 
   it("puts attachments on the Resend request body", async () => {
