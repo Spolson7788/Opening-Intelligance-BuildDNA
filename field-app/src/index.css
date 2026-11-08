@@ -533,12 +533,54 @@ body.c04-on :focus, body.c04-on :focus-visible {
   cursor: pointer;
   font-size: 16px;
 }
-.c04-purchasing .btn-primary:disabled {
+.c04-purchasing .btn-primary:disabled,
+.c04 .c04-btn-blue:disabled,
+.c04 .c04-danger:disabled,
+.c04 .c04-danger-fill:disabled {
   opacity: 1;
   background: #D5DEE4;
   border: 2px solid #5C7382;
   color: #142C3C;
 }
+.c04-panel {
+  background: #fff;
+  border: 1px solid #D5E3EA;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 12px 0;
+}
+.c04-editor h2 { font-size: 18px; }
+.c04-optional { font-style: normal; font-weight: 600; color: #3A4E5C; }
+.c04-plate {
+  display: inline-block;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  color: #142C3C;
+  background: #fff;
+  border: 1px solid #B7C9D4;
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.c04 .asset-plate {
+  color: #142C3C;
+  background: #fff;
+  border: 1px solid #B7C9D4;
+  border-left: 3px solid #00689C;
+}
+.c04-danger {
+  background: #fff;
+  color: #8E1B22;
+  border: 2px solid #8E1B22;
+}
+.c04-danger-fill {
+  background: #8E1B22;
+  border-color: #8E1B22;
+  color: #fff;
+}
+.c04-row { display: flex; gap: 10px; }
+.c04-row .btn { flex: 1; width: auto; }
+.c04-editor .c04-purchasing { background: transparent; border: 0; padding: 0; }
 @media (min-width: 800px) {
   .c04.app-shell { max-width: 480px; }
 }

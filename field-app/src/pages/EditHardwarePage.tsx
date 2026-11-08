@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { ApiError, editHardwareComponent, deleteHardwareComponent, fetchHardwareForOpening } from "../lib/api";
 import { CARRIER_OPTIONS, carrierTrackingUrl } from "../lib/tracking";
+import { FieldBrand } from "../components/FieldBrand";
 import { SyncBadge } from "../components/SyncBadge";
 import { SendToPurchasing } from "../components/SendToPurchasing";
 import { useAuth } from '../lib/AuthContext';
@@ -63,6 +64,11 @@ export function EditHardwarePage() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  useEffect(() => {
+    document.body.classList.add("c04-on");
+    return () => document.body.classList.remove("c04-on");
+  }, []);
 
   useEffect(() => {
     // Fast path: the hardware object was passed via router state when the
@@ -154,8 +160,13 @@ export function EditHardwarePage() {
 
   if (loading) {
     return (
-      <div className="app-shell">
-        <div className="top-bar"><h1>Loading…</h1></div>
+      <div className="app-shell c04 c04-editor">
+        <FieldBrand />
+        <div className="c04-toolbar">
+          <p className="c04-kicker">Field app</p>
+          <SyncBadge />
+        </div>
+        <div className="screen"><h1>Loading…</h1></div>
       </div>
     );
   }
@@ -163,27 +174,24 @@ export function EditHardwarePage() {
   const trackingUrl = carrierTrackingUrl(carrier, trackingNumber);
 
   return (
-    <div className="app-shell">
-      <div className="top-bar">
-        <button className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13 }} onClick={() => navigate(-1)}>
-          ← Back
-        </button>
+    <div className="app-shell c04 c04-editor">
+      <FieldBrand />
+      <div className="c04-toolbar">
+        <button className="btn c04-back" type="button" onClick={() => navigate(-1)}>Back</button>
         <SyncBadge />
       </div>
       <div className="screen">
-        <h2 style={{ marginBottom: 4 }}>Edit Hardware</h2>
-        {trackerId && <div className="asset-plate" style={{ marginBottom: 12 }}>{trackerId}</div>}
-        <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 20 }}>
-          Editing saved hardware requires a connection.
-        </p>
+        <p className="c04-kicker">Field app</p>
+        <h1>Edit hardware</h1>
+        {trackerId && <p className="c04-plate">{trackerId}</p>}
+        <p className="c04-note">Editing saved hardware requires a connection.</p>
 
         {saved ? (
-          <div className="card" style={{ textAlign: "center", color: "var(--success)" }}>
-            Saved. Returning to the opening…
-          </div>
+          <div className="c04-panel" role="status">Saved. Returning to the opening…</div>
         ) : (
           <>
             <form onSubmit={onSubmit}>
+              <section className="c04-panel" aria-label="Hardware identity">
               <div className="field">
                 <label htmlFor="component-type">Component type</label>
                 <select id="component-type" value={componentType} onChange={(e) => setComponentType(e.target.value)}>
@@ -210,7 +218,7 @@ export function EditHardwarePage() {
                   <option value="pending">Pending</option><option value="reviewed">Reviewed</option>
                 </select>
               </div>
-              <label><input type="checkbox" checked={replacementRequired} onChange={(e) => setReplacementRequired(e.target.checked)} /> Replacement required</label>
+              <label className="c04-check"><input type="checkbox" checked={replacementRequired} onChange={(e) => setReplacementRequired(e.target.checked)} /> Replacement required</label>
               <div className="field">
                 <label htmlFor="manufacturer">Manufacturer</label>
                 <input id="manufacturer" value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} placeholder="e.g. Cal-Royal" />
@@ -223,8 +231,9 @@ export function EditHardwarePage() {
                 <label htmlFor="serial-number">Serial number</label>
                 <input id="serial-number" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} placeholder="e.g. SC-88213-A" />
               </div>
-
-              <div className="section-label" style={{ marginTop: 4 }}>Replacement info (optional)</div>
+              </section>
+              <section className="c04-panel" aria-label="Replacement info">
+              <h2>Replacement info <em className="c04-optional">Optional</em></h2>
               <div className="field">
                 <label htmlFor="unit-cost">Replacement cost ($)</label>
                 <input
@@ -247,7 +256,9 @@ export function EditHardwarePage() {
                 <input id="supplier-contact" value={supplierContact} onChange={(e) => setSupplierContact(e.target.value)} placeholder="e.g. (602) 555-0134" />
               </div>
 
-              <div className="section-label" style={{ marginTop: 4 }}>Shipment tracking (optional)</div>
+              </section>
+              <section className="c04-panel" aria-label="Shipment tracking">
+              <h2>Shipment tracking <em className="c04-optional">Optional</em></h2>
               <div className="field">
                 <label htmlFor="shipment-status">Status</label>
                 <select id="shipment-status" value={shipmentStatus} onChange={(e) => setShipmentStatus(e.target.value)}>
@@ -269,49 +280,38 @@ export function EditHardwarePage() {
                 <input id="tracking-number" value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} placeholder="e.g. 1Z999AA10123456784" />
               </div>
               {trackingUrl && (
-                <a href={trackingUrl} target="_blank" rel="noreferrer" className="btn btn-secondary" style={{ textDecoration: "none", display: "block", textAlign: "center", marginBottom: 16 }}>
-                  Track Shipment ↗
+                <a href={trackingUrl} target="_blank" rel="noreferrer" className="btn c04-btn-cyan">
+                  Track shipment
                 </a>
               )}
+              </section>
 
-              {error && <p className="error-text">{error}</p>}
-              <button type="submit" className="btn btn-primary" disabled={submitting}>
+              {error && <p className="c04-alert" role="alert">{error}</p>}
+              <button type="submit" className="btn c04-btn-blue" disabled={submitting}>
                 {submitting ? "Saving…" : "Save Changes"}
               </button>
             </form>
 
             <SendToPurchasing openingId={id!} hardwareId={hardwareId!} principal={principal} />
-            <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
+            <section className="c04-panel" aria-label="Remove hardware">
               {!confirmingDelete ? (
-                <button
-                  className="btn btn-secondary"
-                  style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
-                  onClick={() => setConfirmingDelete(true)}
-                  disabled={submitting}
-                >
+                <button className="btn c04-danger" type="button" onClick={() => setConfirmingDelete(true)} disabled={submitting}>
                   Remove This Hardware
                 </button>
               ) : (
                 <>
-                  <p style={{ fontSize: 14, color: "var(--danger)", marginBottom: 12 }}>
-                    Remove this hardware record? This can't be undone.
-                  </p>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <button
-                      className="btn"
-                      style={{ background: "var(--danger)", borderColor: "var(--danger)", color: "#1a0b0c" }}
-                      onClick={onDelete}
-                      disabled={submitting}
-                    >
+                  <p className="c04-alert" role="alert">Remove this hardware record? This can't be undone.</p>
+                  <div className="c04-row">
+                    <button className="btn c04-danger-fill" type="button" onClick={onDelete} disabled={submitting}>
                       {submitting ? "Removing…" : "Yes, Remove It"}
                     </button>
-                    <button className="btn btn-secondary" onClick={() => setConfirmingDelete(false)} disabled={submitting}>
+                    <button className="btn c04-choice" type="button" onClick={() => setConfirmingDelete(false)} disabled={submitting}>
                       Cancel
                     </button>
                   </div>
                 </>
               )}
-            </div>
+            </section>
           </>
         )}
       </div>
