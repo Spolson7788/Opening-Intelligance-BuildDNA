@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { flushOutbox, queueOpeningMutation } from "../lib/sync";
@@ -8,10 +8,13 @@ import { SignaturePad } from "../components/SignaturePad";
 import type { SignaturePadHandle } from "../components/SignaturePad";
 import { EmailInspectionReport } from "../components/EmailInspectionReport";
 import { NFPA80_ITEMS, checklistStarted, fireDoorOutcome, resolveInspectionType } from "../lib/nfpa80Items";
+import { checklistPhotoJpeg } from "../lib/photoPreparation";
+import { awaitInspectionSynced } from "../lib/sync";
+import { scrollPageToTop } from "../lib/scrollPage";
 
 type ItemAnswer = { result: "" | "pass" | "fail" | "na"; note: string; photo: File | null };
 
-async function fileToBase64(file: File): Promise<string> {
+async function fileToBase64(file: Blob): Promise<string> {
   const data = await file.arrayBuffer();
   let binary = "";
   for (const byte of new Uint8Array(data)) binary += String.fromCharCode(byte);
@@ -41,6 +44,33 @@ export function LogInspectionEventPage() {
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savedInspectionId, setSavedInspectionId] = useState<string | null>(null);
+  const [emailSync, setEmailSync] = useState<"syncing" | "ready" | "failed">("syncing");
+  const [emailReason, setEmailReason] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!saved) return;
+    scrollPageToTop();
+  }, [saved]);
+
+  useEffect(() => {
+    if (!savedInspectionId) return;
+    let live = true;
+    const watch = async () => {
+      const result = await awaitInspectionSynced(savedInspectionId);
+      if (!live) return;
+      if (result.ok) setEmailSync("ready");
+      else if (result.waiting) {
+        setEmailSync("syncing");
+        setEmailReason(result.reason);
+      } else {
+        setEmailSync("failed");
+        setEmailReason(result.reason);
+      }
+    };
+    void watch();
+    const timer = window.setInterval(() => { void watch(); }, 2000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [savedInspectionId]);
 
   const chosenType = resolveInspectionType(inspectionType, answers);
 
@@ -72,21 +102,26 @@ export function LogInspectionEventPage() {
         return;
       }
       const items: Record<string, unknown> = {};
-      for (const item of NFPA80_ITEMS) {
-        const answer = answers[item.key];
-        if (!answer?.result) {
-          setSignatureError("Answer every fire door item before saving.");
-          return;
+      try {
+        for (const item of NFPA80_ITEMS) {
+          const answer = answers[item.key];
+          if (!answer?.result) {
+            setSignatureError("Answer every fire door item before saving.");
+            return;
+          }
+          if (answer.result === "fail" && (!answer.note.trim() || !answer.photo)) {
+            setSignatureError("A failed item needs a note and a photo.");
+            return;
+          }
+          items[item.key] = {
+            result: answer.result,
+            note: answer.note.trim() || undefined,
+            photo_base64: answer.photo ? await fileToBase64(await checklistPhotoJpeg(answer.photo)) : undefined,
+          };
         }
-        if (answer.result === "fail" && (!answer.note.trim() || !answer.photo)) {
-          setSignatureError("A failed item needs a note and a photo.");
-          return;
-        }
-        items[item.key] = {
-          result: answer.result,
-          note: answer.note.trim() || undefined,
-          photo_base64: answer.photo ? await fileToBase64(answer.photo) : undefined,
-        };
+      } catch {
+        setSignatureError("A failure photo could not be prepared for sync. Retake it and save again.");
+        return;
       }
       const outcome = fireDoorOutcome(answers);
       if (outcome.ok === false) {
@@ -98,7 +133,6 @@ export function LogInspectionEventPage() {
     }
 
     setSubmitting(true);
-
     const inspectionId = await queueOpeningMutation("inspection_event", id!, {
         opening_id: id,
         event_date: eventDate,
@@ -146,7 +180,7 @@ export function LogInspectionEventPage() {
         {saved ? (
           <div className="card">
             <p style={{ textAlign: "center", color: "var(--success)" }}>Saved.</p>
-            {savedInspectionId && <EmailInspectionReport inspectionId={savedInspectionId} />}
+            {savedInspectionId && <EmailInspectionReport inspectionId={savedInspectionId} syncStatus={emailSync} syncReason={emailReason} />}
             {!savedInspectionId && <p style={{ textAlign: "center" }}>Returning to the opening…</p>}
             <button type="button" className="btn btn-secondary" onClick={() => navigate(`/opening/${id}`)}>Back to the opening</button>
           </div>

@@ -25,6 +25,7 @@ vi.mock("../field-app/src/lib/api", () => ({
 vi.mock("../field-app/src/lib/sync", () => ({
   queueOpeningMutation: vi.fn(async () => "insp-1"),
   flushOutbox: vi.fn(async () => {}),
+  awaitInspectionSynced: vi.fn(async () => ({ ok: true })),
   onSyncStateChange: (cb: (state: { syncing: boolean }) => void) => { cb({ syncing: false }); return () => {}; },
 }));
 vi.mock("../field-app/src/lib/db", () => ({
@@ -46,6 +47,7 @@ import { EmailInspectionReport } from "../field-app/src/components/EmailInspecti
 import { LogInspectionEventPage } from "../field-app/src/pages/LogInspectionEventPage";
 import { OpeningDetailPage } from "../field-app/src/pages/OpeningDetailPage";
 import { queueOpeningMutation } from "../field-app/src/lib/sync";
+import { scrollPageToTop } from "../field-app/src/lib/scrollPage";
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -65,6 +67,20 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   vi.unstubAllGlobals();
+});
+
+it("does not ask for recipients until the inspection has synced", async () => {
+  await act(async () => root.render(<EmailInspectionReport inspectionId="local-1" syncStatus="syncing" />));
+  expect(api.recipients).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Syncing… email will be available once synced");
+});
+
+it("scrolls the document to the top", () => {
+  document.documentElement.scrollTop = 240;
+  document.body.scrollTop = 240;
+  scrollPageToTop();
+  expect(document.documentElement.scrollTop).toBe(0);
+  expect(document.body.scrollTop).toBe(0);
 });
 
 it("prefills the facility and signer, sends the edited list, and reports success or failure", async () => {
@@ -127,6 +143,7 @@ it("shows email this report after a signed fire door inspection is saved, and on
     }
   });
   await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  await act(async () => {});
   expect(host.textContent).toContain("Saved.");
   expect(queueOpeningMutation).toHaveBeenCalledWith("inspection_event", "door-1", expect.objectContaining({
     inspection_type: "fire_door_nfpa80",

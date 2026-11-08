@@ -16,7 +16,7 @@ export function reportRecipientList(value: string): string[] {
 
 const OFFLINE = "Emailing this report needs a connection.";
 
-export function EmailInspectionReport({ inspectionId }: { inspectionId: string }) {
+export function EmailInspectionReport({ inspectionId, syncStatus = "ready", syncReason = null }: { inspectionId: string; syncStatus?: "syncing" | "ready" | "failed"; syncReason?: string | null }) {
   const [to, setTo] = useState("");
   const [ready, setReady] = useState(false);
   const [sending, setSending] = useState(false);
@@ -24,6 +24,7 @@ export function EmailInspectionReport({ inspectionId }: { inspectionId: string }
   const [noticeRole, setNoticeRole] = useState<"status" | "alert">("status");
 
   useEffect(() => {
+    if (syncStatus !== "ready") return;
     let live = true;
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       setNotice(OFFLINE);
@@ -40,7 +41,14 @@ export function EmailInspectionReport({ inspectionId }: { inspectionId: string }
       setNoticeRole("alert");
     });
     return () => { live = false; };
-  }, [inspectionId]);
+  }, [inspectionId, syncStatus]);
+
+  if (syncStatus === "syncing") {
+    return <p role="status">{syncReason && syncReason.startsWith("Sync failed") ? syncReason : "Syncing… email will be available once synced"}</p>;
+  }
+  if (syncStatus === "failed") {
+    return <p role="alert">{syncReason || "The inspection could not sync."}</p>;
+  }
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();

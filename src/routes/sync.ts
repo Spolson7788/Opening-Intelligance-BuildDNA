@@ -209,7 +209,7 @@ const servicePayload = z.object({
 const inspectionPayload = z.object({
   event_date: z.string(), inspection_type: z.enum(["general", "fire_door_nfpa80", "ada_compliance", "access_control"]),
   checklist_result: z.record(z.string(), z.unknown()).optional(), passed: z.boolean(), notes: z.string().optional(),
-  signature_data: z.string().max(500_000).optional(), signed_by_name: z.string().optional(),
+  signature_data: z.string().max(2_000_000).optional(), signed_by_name: z.string().optional(),
   inspector_qualification: z.string().max(200).optional(),
   inspector_license_number: z.string().max(80).optional(),
 });

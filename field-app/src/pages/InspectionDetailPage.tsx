@@ -42,13 +42,21 @@ export function InspectionDetailPage() {
             <p>{new Date(event.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</p>
             <p style={{ textTransform: "capitalize" }}>{String(event.inspection_type || "general").replace(/_/g, " ")}</p>
             <p style={{ color: event.passed ? "var(--success)" : "var(--danger)" }}>{event.passed ? "Passed" : "Failed"}</p>
-            {event.signed_by_name && <p>Signed by {event.signed_by_name}</p>}
+            {event.signed_by_name && <p>Inspector {event.signed_by_name}</p>}
+            {event.inspector_qualification && <p>Qualification {event.inspector_qualification}</p>}
             {event.inspector_license_number && <p>License {event.inspector_license_number}</p>}
-            {event.notes && <p>{event.notes}</p>}
+            {event.notes && <p>Notes {event.notes}</p>}
+            {event.signature_data && <img src={event.signature_data} alt="Inspection signature" style={{ display: "block", maxWidth: "100%", background: "#fff", margin: "8px 0" }} />}
             {items && (
               <div>
+                <h3>Checklist</h3>
                 {NFPA80_ITEMS.map((item) => (
-                  <p key={item.key}><strong>{item.section}</strong> {items[item.key]?.result || "—"}{items[item.key]?.note ? ` — ${items[item.key].note}` : ""}</p>
+                  <p key={item.key}>
+                    <strong>{item.section}</strong> {item.text}
+                    <br />
+                    Result: {items[item.key]?.result || "—"}
+                    {items[item.key]?.note ? ` — ${items[item.key].note}` : ""}
+                  </p>
                 ))}
               </div>
             )}

@@ -106,6 +106,7 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
     return response;
   }
   if (!res.ok) {
+    if (res.status === 413) throw new ApiError(413, "media_too_large");
     if ((res.headers.get("content-type") || "").toLowerCase().startsWith("text/html")) {
       const text = await res.text();
       throw new ApiError(res.status, isNetlifyAccessResponse(res.status, res.headers.get("content-type") || "", text)

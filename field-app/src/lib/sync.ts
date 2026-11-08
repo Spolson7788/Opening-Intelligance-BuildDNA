@@ -216,7 +216,8 @@ async function recordFailure(operation: SyncOperation, error: unknown) {
   const principalChange = isClientPrincipalChange(error);
   const siteAccess = error instanceof ApiError && error.message === SITE_ACCESS_REQUIRED;
   const authRequired = principalChange || (!siteAccess && error instanceof ApiError && (error.status === 401 || error.status === 403));
-  const state: SyncOperationState = tooLarge ? "permanent_failure" : conflict ? "conflict" : authRequired ? "auth_required" : "retry_wait";
+  const rejected = error instanceof ApiError && (error.status === 400 || error.status === 413 || error.status === 422);
+  const state: SyncOperationState = tooLarge || rejected ? "permanent_failure" : conflict ? "conflict" : authRequired ? "auth_required" : "retry_wait";
   const message = tooLarge ? MEDIA_TOO_LARGE : error instanceof Error ? error.message : "unknown_error";
   if (conflict) {
     const item: SyncConflict = { conflictId: crypto.randomUUID(), operationId: operation.operationId,
@@ -228,6 +229,32 @@ async function recordFailure(operation: SyncOperation, error: unknown) {
     lastAttemptAt: new Date().toISOString(), nextAttemptAt: authRequired || tooLarge ? undefined : new Date(Date.now() + retryDelayMs(operation.attemptCount)).toISOString(),
     dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined, lastErrorCode: message, principalChangeStop: principalChange ? true : undefined });
   currentState = { ...currentState, lastError: message };
+  notify();
+}
+
+export async function awaitInspectionSynced(entityId: string): Promise<{ ok: true } | { ok: false; waiting: boolean; reason: string }> {
+  const syncing = "Syncing… email will be available once synced";
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return { ok: false, waiting: false, reason: "Emailing this report needs a connection." };
+  }
+  const idle = () => new Promise<void>((resolve) => {
+    const stop = onSyncStateChange((state) => {
+      if (!state.syncing) { stop(); resolve(); }
+    });
+  });
+  await idle();
+  await flushOutbox();
+  await idle();
+  const auth = await loadAuth();
+  if (!auth) return { ok: false, waiting: false, reason: "Sign in to sync this inspection." };
+  const operations = await getSyncOperationsForPrincipal(auth.userId, auth.organizationId);
+  const operation = operations.find((item) => item.entityId === entityId && item.entityType === "inspection_event");
+  if (!operation || operation.state === "verified") return { ok: true };
+  if (operation.state === "permanent_failure" || operation.state === "auth_required" || operation.state === "conflict" || operation.state === "schema_blocked") {
+    return { ok: false, waiting: false, reason: `Sync failed: ${operation.lastErrorCode || operation.state}` };
+  }
+  if (operation.lastErrorCode) return { ok: false, waiting: true, reason: `Sync failed: ${operation.lastErrorCode}. It will try again.` };
+  return { ok: false, waiting: true, reason: syncing };
 }
 export async function flushVersionedOperations() {
   try { assertSyncDispatchAllowed(); } catch { return; }

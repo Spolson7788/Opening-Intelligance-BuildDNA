@@ -46,11 +46,16 @@ export function SyncBadge() {
   }
 
   if (syncState.failed > 0) {
-    return <Link to="/sync-issues" className="badge badge-offline" title="Saved on this device; open Synchronization review to choose what happens next">{syncState.failed} need{syncState.failed === 1 ? "s" : ""} review</Link>;
+    return <Link to="/sync-issues" className="badge badge-offline" title={syncState.lastError || "Saved on this device; open Synchronization review to choose what happens next"}>{syncState.failed} need{syncState.failed === 1 ? "s" : ""} review{syncState.lastError ? ` — ${syncState.lastError}` : ""}</Link>;
   }
 
   if (syncState.pending > 0) {
-    return <span className="badge badge-offline">{syncState.pending} pending sync</span>;
+    return (
+      <span className="badge badge-offline">
+        {syncState.pending} pending sync
+        {syncState.lastError ? ` — ${syncState.lastError}` : ""}
+      </span>
+    );
   }
 
   return <span className="badge">No pending changes for this account</span>;

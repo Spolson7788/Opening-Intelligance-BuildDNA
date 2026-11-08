@@ -4,6 +4,7 @@ import {CompanySwitcher} from "./components/CompanySwitcher";
 import {AccountScope} from "./components/AccountScope";
 import {BranchesPage} from "./pages/BranchesPage";
 import { lazy, Suspense, useEffect, useLayoutEffect } from "react";
+import { scrollPageToTop } from "./lib/scrollPage";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/AuthContext";
 import { initSync } from "./lib/sync";
@@ -33,6 +34,12 @@ import { QrInformationPage } from './pages/QrInformationPage';
 import { isQrLandingPath, isQrLogin, isQrDetailsPath } from './lib/qrLanding';
 import { setSyncReadOnly } from './lib/syncNavigation';
 const PhotoIsolationPage=__PHOTO_ISOLATION_ENABLED__?lazy(()=>import('./pages/PhotoIsolationPage')):null;
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useLayoutEffect(() => { scrollPageToTop(); }, [pathname]);
+  return null;
+}
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { auth, loading } = useAuth();
@@ -112,5 +119,5 @@ export function FieldApplication() {
 }
 
 export default function App() {
-  return <BrowserRouter basename={import.meta.env.BASE_URL}><FieldApplication /></BrowserRouter>;
+  return <BrowserRouter basename={import.meta.env.BASE_URL}><ScrollToTop /><FieldApplication /></BrowserRouter>;
 }

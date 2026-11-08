@@ -38,6 +38,18 @@ export const REDUCTION_LADDER: ReadonlyArray<{ longEdge: number; quality: number
   { longEdge: 1280, quality: 0.7 },
 ];
 
+/** Always a JPEG, small enough to travel with an inspection sync. HEIC stays unreadable on the server. */
+export async function checklistPhotoJpeg(file: Blob): Promise<Blob> {
+  const decoded = await decodeWithCanvas(file);
+  try {
+    const encoded = await decoded.encode(1600, 0.72);
+    if (!encoded.blob.size) throw new Error("encode_failed");
+    return encoded.blob;
+  } finally {
+    decoded.close();
+  }
+}
+
 export async function prepareImageForUpload(
   file: Blob,
   limit = MAX_IMAGE_BYTES,
