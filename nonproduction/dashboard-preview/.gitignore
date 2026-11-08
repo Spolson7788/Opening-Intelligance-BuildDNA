@@ -1,0 +1,4 @@
+*.private.*
+tests/mock-check.mjs
+node_modules/
+site/portal-check.mjs
