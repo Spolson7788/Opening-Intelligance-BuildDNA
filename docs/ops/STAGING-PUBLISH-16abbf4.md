@@ -36,7 +36,10 @@ The Netlify CLI install is loaded from `C:\Users\spols\Documents\Codex\2026-10-2
 Read-only view of the routes on the working deploy. It GETs that deploy and prints `deployState`, `context`, `apiRoutes`, and `invocationMode` from `ro`/`routes` and `im`:
 
 ```
+node scripts/artifact-publisher-staging-16abbf4.mjs --diagnose 6aefbbdaf23ff8bc7521d5ba
 node scripts/artifact-publisher-staging-16abbf4.mjs --inspect-deploy 6aef3f786cc2af03c2ef1cd0
+
+`--diagnose` only sends GET requests. It compares function name, sha, runtime, invocationMode, routes, and size with `6aef3f786cc2af03c2ef1cd0`, tries the function log endpoints, and prints whether this deploy id is `published_deploy.id`. Tokens are redacted.
 node scripts/artifact-publisher-staging-16abbf4.mjs --check-deploy 6aefb27ce9feb6a9e881d55d
 ```
 

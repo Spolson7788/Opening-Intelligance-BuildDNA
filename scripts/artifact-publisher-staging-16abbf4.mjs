@@ -368,6 +368,67 @@ export function apiFunctionView(deploy) {
   }));
 }
 
+export function functionMetadata(fn) {
+  const size = [fn?.s, fn?.size, fn?.bytes, fn?.a].find((value) => typeof value === 'number') ?? null;
+  return scrubDeployValue({
+    name: fn?.n || fn?.name || null,
+    sha: fn?.d || fn?.sha || fn?.digest || null,
+    runtime: fn?.runtime || fn?.runtime_version || null,
+    invocationMode: fn?.im || fn?.invoke_mode || fn?.invocation_mode || fn?.invocationMode || null,
+    routes: routeList(fn || {}).map(routePattern).filter(Boolean),
+    size,
+    memory: fn?.m || fn?.memory || null,
+    id: typeof fn?.id === 'string' ? fn.id : null,
+  });
+}
+
+function mergeFunctionMetadata(current, next) {
+  const merged = { ...(current || {}) };
+  for (const [key, value] of Object.entries(next)) {
+    if (value == null) continue;
+    if (Array.isArray(value) && value.length === 0 && Array.isArray(merged[key]) && merged[key].length) continue;
+    merged[key] = value;
+  }
+  return merged;
+}
+
+export function functionsFromDeploy(deploy, lists = []) {
+  const sources = [];
+  if (Array.isArray(deploy?.available_functions)) sources.push(...deploy.available_functions);
+  if (Array.isArray(deploy?.functions)) sources.push(...deploy.functions);
+  for (const list of lists) if (Array.isArray(list)) sources.push(...list);
+  if (deploy?.functions_config && typeof deploy.functions_config === 'object') {
+    for (const [name, config] of Object.entries(deploy.functions_config)) sources.push({ name, ...(config || {}) });
+  }
+  const byName = new Map();
+  for (const source of sources) {
+    const meta = functionMetadata(source);
+    if (!meta.name) continue;
+    byName.set(meta.name, mergeFunctionMetadata(byName.get(meta.name), meta));
+  }
+  return [...byName.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+export function compareFunctionLists(knownGood, candidate) {
+  const good = new Map((knownGood || []).map((fn) => [fn.name, fn]));
+  const bad = new Map((candidate || []).map((fn) => [fn.name, fn]));
+  const differences = [];
+  for (const name of [...new Set([...good.keys(), ...bad.keys()])].sort()) {
+    if (!good.has(name)) differences.push({ name, change: 'only-in-candidate' });
+    else if (!bad.has(name)) differences.push({ name, change: 'only-in-known-good' });
+    else {
+      const fields = {};
+      for (const key of ['sha', 'runtime', 'invocationMode', 'routes', 'size', 'memory']) {
+        if (JSON.stringify(good.get(name)[key] ?? null) !== JSON.stringify(bad.get(name)[key] ?? null)) {
+          fields[key] = { knownGood: good.get(name)[key] ?? null, candidate: bad.get(name)[key] ?? null };
+        }
+      }
+      if (Object.keys(fields).length) differences.push({ name, change: 'different', fields });
+    }
+  }
+  return differences;
+}
+
 export function apiInvocationMode(deploy) {
   const modes = apiFunctionView(deploy).map((fn) => fn.invocationMode).filter(Boolean);
   return modes[0] || null;
@@ -1293,11 +1354,85 @@ async function checkDeploy(deployId) {
   if (!record.publishable) process.exitCode = 1;
 }
 
+function logSummary(response) {
+  if (!response || response.status !== 200) return { status: response?.status ?? 0, available: false };
+  const text = response.body.toString('utf8');
+  let messages = [];
+  try {
+    const parsed = JSON.parse(text);
+    const rows = Array.isArray(parsed) ? parsed : parsed.logs || parsed.messages || [];
+    messages = rows.slice(-15).map((row) => sanitize(typeof row === 'string' ? row : JSON.stringify({
+      timestamp: row.ts || row.timestamp || row.created_at || null,
+      level: row.level || null,
+      message: row.message || row.msg || row.log || null,
+    })));
+  } catch {
+    messages = [sanitize(text).slice(0, 500)];
+  }
+  return { status: 200, available: true, messages };
+}
+
+async function diagnoseDeploy(deployId) {
+  if (!/^[0-9a-f]{24}$/.test(deployId)) throw fail('invalid_deploy_id');
+  const token = await authorize(netlifyCliDir());
+  const siteResponse = await readJsonGet(`/api/v1/sites/${STAGING_SITE_ID}`, token);
+  if (siteResponse.status !== 200 || !siteResponse.body) throw fail('site_lookup_failed');
+  assertSite({ id: siteResponse.body.id, name: siteResponse.body.name, url: siteResponse.body.ssl_url || siteResponse.body.url });
+  const load = async (id) => {
+    const deployRes = await readJsonGet(`/api/v1/sites/${STAGING_SITE_ID}/deploys/${id}`, token);
+    if (deployRes.status !== 200 || !deployRes.body) throw fail('inspect_failed');
+    if (deployRes.body.site_id && deployRes.body.site_id !== STAGING_SITE_ID) throw fail('refusing_site_mismatch');
+    const lists = [];
+    const listStatus = {};
+    for (const path of [`/api/v1/deploys/${id}/functions`, `/api/v1/sites/${STAGING_SITE_ID}/deploys/${id}/functions`, `/api/v1/sites/${STAGING_SITE_ID}/functions`]) {
+      const got = await readJsonGet(path, token);
+      listStatus[path] = got.status;
+      if (got.status === 200 && Array.isArray(got.body)) lists.push(got.body);
+    }
+    return { deploy: deployRes.body, functions: functionsFromDeploy(deployRes.body, lists), listStatus };
+  };
+  const candidate = await load(deployId);
+  const knownGood = await load(ROLLBACK_DEPLOY_ID);
+  const logPaths = [
+    `/api/v1/sites/${STAGING_SITE_ID}/deploys/${deployId}/functions/api/log`,
+    `/api/v1/deploys/${deployId}/functions/api/log`,
+    `/api/v1/sites/${STAGING_SITE_ID}/functions/api/log`,
+  ];
+  const logs = [];
+  for (const path of logPaths) {
+    const got = await readJsonGet(path, token);
+    const summary = logSummary(got);
+    logs.push({ path, ...summary });
+    if (summary.available) break;
+  }
+  const publishedDeployId = siteResponse.body.published_deploy?.id || null;
+  const record = scrubDeployValue({
+    state: 'diagnose',
+    readsOnly: true,
+    deployId,
+    deployState: candidate.deploy.state || null,
+    context: candidate.deploy.context || null,
+    published: publishedDeployId === deployId,
+    publishedDeployId,
+    knownGoodDeployId: ROLLBACK_DEPLOY_ID,
+    functions: candidate.functions,
+    knownGoodFunctions: knownGood.functions,
+    differences: compareFunctionLists(knownGood.functions, candidate.functions),
+    functionListStatus: candidate.listStatus,
+    apiLogs: logs,
+  });
+  mkdirSync(journalDir, { recursive: true });
+  writeJson(resolve(journalDir, `diagnose-${deployId}.json`), record);
+  console.log(JSON.stringify(record, null, 2));
+}
+
 async function main() {
   const inspectIndex = process.argv.indexOf('--inspect-deploy');
   const inspectId = inspectIndex >= 0 ? process.argv[inspectIndex + 1] : '';
   const checkIndex = process.argv.indexOf('--check-deploy');
   const checkId = checkIndex >= 0 ? process.argv[checkIndex + 1] : '';
+  const diagnoseIndex = process.argv.indexOf('--diagnose');
+  const diagnoseId = diagnoseIndex >= 0 ? process.argv[diagnoseIndex + 1] : '';
   const publishReadyIndex = process.argv.indexOf('--publish-ready');
   const publishReadyId = publishReadyIndex >= 0 ? process.argv[publishReadyIndex + 1] : '';
   const resumeIndex = process.argv.indexOf('--resume-deploy');
@@ -1309,8 +1444,8 @@ async function main() {
   const uploadCheckMode = process.argv.includes('--upload-check');
   const rollback = process.argv.includes('--rollback-approved');
   const publish = process.argv.includes('--publish-approved');
-  const dryRun = process.argv.includes('--dry-run') || (!publish && !uploadCheckMode && !inspectId && !resumeId && !rollback && !compareMode && !checkId && !publishReadyId);
-  if ([Boolean(inspectId), Boolean(checkId), Boolean(publishReadyId), Boolean(resumeId), uploadCheckMode, publish, rollback, compareMode, process.argv.includes('--dry-run')].filter(Boolean).length > 1) throw fail('choose_one_mode');
+  const dryRun = process.argv.includes('--dry-run') || (!publish && !uploadCheckMode && !inspectId && !resumeId && !rollback && !compareMode && !checkId && !publishReadyId && !diagnoseId);
+  if ([Boolean(inspectId), Boolean(checkId), Boolean(diagnoseId), Boolean(publishReadyId), Boolean(resumeId), uploadCheckMode, publish, rollback, compareMode, process.argv.includes('--dry-run')].filter(Boolean).length > 1) throw fail('choose_one_mode');
   assertHeadCommit(root);
   assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL });
   let productionRefused = false;
@@ -1318,6 +1453,7 @@ async function main() {
   catch (error) { productionRefused = error.code === 'refusing_production'; }
   if (!productionRefused) throw new Error('production_guard_failed');
   if (compareMode) return compareDeploys(compareGood, compareBad);
+  if (diagnoseId) return diagnoseDeploy(diagnoseId);
   if (checkId) return checkDeploy(checkId);
   if (publishReadyId) return publishExisting(publishReadyId);
   if (inspectId) return inspectDeploy(inspectId);

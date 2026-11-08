@@ -4,7 +4,21 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, stageFunctionSources, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionsFromDeploy, stageFunctionSources, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+
+test('diagnose compares function metadata without keeping secrets', () => {
+  const knownGood = functionsFromDeploy({ available_functions: [{ n: 'api', d: 'sha-good', runtime: 'nodejs22.x', im: 'stream', ro: [], a: 100 }] });
+  const candidate = functionsFromDeploy({
+    available_functions: [{ n: 'api', d: 'sha-bad', runtime: 'nodejs22.x', im: 'stream', ro: [], a: 528289, authorization: 'Bearer secret-token' }],
+    functions_config: { api: { routes: [{ pattern: '/health' }, { pattern: '/api/*' }] } },
+  });
+  const differences = compareFunctionLists(knownGood, candidate);
+  const api = differences.find((item) => item.name === 'api');
+  assert.equal(api.fields.sha.knownGood, 'sha-good');
+  assert.equal(api.fields.size.candidate, 528289);
+  assert.deepEqual(candidate[0].routes, ['/health', '/api/*']);
+  assert.equal(JSON.stringify(differences).includes('secret-token'), false);
+});
 
 test('staging site is the only accepted target', () => {
   assert.deepEqual(assertSite({ id: STAGING_SITE_ID, name: STAGING_SITE_NAME, url: STAGING_URL }), {
