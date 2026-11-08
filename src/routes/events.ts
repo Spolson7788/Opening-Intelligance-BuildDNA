@@ -203,12 +203,15 @@ eventsRouter.get("/inspection-events/:id/email-defaults", async (req: AuthedRequ
   if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_inspection" });
   try {
     const row = await pool.query(
-      `SELECT p.contact_email, u.email AS inspector_email, i.opening_id
+      `SELECT p.contact_email,
+              COALESCE(NULLIF(btrim(signer.email), ''), sender.email) AS inspector_email,
+              i.opening_id
        FROM inspection_events i
        JOIN openings o ON o.id = i.opening_id
        JOIN buildings b ON b.id = o.building_id
        JOIN properties p ON p.id = b.property_id
-       JOIN users u ON u.id = $3
+       JOIN users sender ON sender.id = $3
+       LEFT JOIN users signer ON signer.id = i.performed_by_user_id
        WHERE i.id = $1 AND i.inspection_type = 'fire_door_nfpa80' AND i.checklist_result->>'status' = 'complete'
          AND i.opening_id IN (${openingsForOrgSubquery(2)})`,
       [req.params.id, req.auth!.organizationId, req.auth!.userId],

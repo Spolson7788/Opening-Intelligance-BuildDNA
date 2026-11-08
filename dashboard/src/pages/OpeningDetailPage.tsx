@@ -433,7 +433,7 @@ export function OpeningDetailPage() {
                 }} style={{ marginTop: 12 }}>
                   <label htmlFor="report-email">Email this report</label>
                   <textarea id="report-email" value={reportTo} onChange={(e) => setReportTo(e.target.value)} placeholder="facility contact, your email, anyone else" required />
-                  <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>Starts with the facility contact, when one is on file, and your email. Add or remove addresses before sending.</p>
+                  <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>Starts with the facility contact, when one is on file, and the email of the person who signed. Add or remove addresses before sending.</p>
                   <button className="btn btn-secondary" type="submit">Email this report</button>
                   {reportMessage && <p>{reportMessage}</p>}
                 </form>

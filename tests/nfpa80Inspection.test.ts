@@ -9,6 +9,8 @@ import { inflateSync } from "node:zlib";
 
 describe("NFPA 80 checklist", () => {
   it("names 13 original items and rejects an unfinished or photo-less failure", () => {
+    expect(NFPA80_ITEMS.find((item) => item.key === "clearances")?.text).toContain("1/8 inch");
+    expect(NFPA80_ITEMS.find((item) => item.key === "signage")?.text).toContain("5%");
     expect(NFPA80_ITEMS).toHaveLength(13);
     expect(NFPA80_ITEMS.map((item) => item.section)).toEqual([
       "5.2.4.2(1)", "5.2.4.2(2)", "5.2.4.2(3)", "5.2.4.2(4)", "5.2.4.2(5)", "5.2.4.2(6)", "5.2.4.2(7)",
@@ -89,6 +91,33 @@ describe("NFPA 80 fire door inspection", () => {
     expect(photoDelete.status).toBe(409);
     const removed = await request(app).delete(`/api/events/inspection-events/${created.body.id}`).set("Authorization", `Bearer ${org.token}`);
     expect(removed.status).toBe(409);
+  });
+
+  it("prefills the signer, and the sender when the signer has no email", async () => {
+    const { org, propertyId, opening: door } = await opening();
+    const missingLicense = await request(app).post("/api/events/inspection-events").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: door.id, event_date: "2026-04-01", inspection_type: "fire_door_nfpa80", ...passingFireDoorFields(), inspector_license_number: " ",
+    });
+    expect(missingLicense.status).toBe(400);
+    expect(missingLicense.body.error).toBe("inspector_license_required");
+
+    const signerEmail = `signer-${Date.now()}@example.com`;
+    await request(app).post("/api/auth/register").set("Authorization", `Bearer ${org.token}`).send({
+      email: signerEmail, password: "password12345", full_name: "Signing Inspector", role: "inspector",
+    });
+    const login = await request(app).post("/api/auth/login").send({ email: signerEmail, password: "password12345" });
+    const created = await request(app).post("/api/events/inspection-events").set("Authorization", `Bearer ${login.body.token}`).send({
+      opening_id: door.id, event_date: "2026-04-01", inspection_type: "fire_door_nfpa80", ...passingFireDoorFields(),
+    });
+    expect(created.status).toBe(201);
+    await request(app).put(`/api/portfolio/properties/${propertyId}/contact-email`).set("Authorization", `Bearer ${org.token}`).send({ contact_email: "building@example.com" });
+    const defaults = await request(app).get(`/api/events/inspection-events/${created.body.id}/email-defaults`).set("Authorization", `Bearer ${org.token}`);
+    expect(defaults.body.inspector_email).toBe(signerEmail);
+    expect(defaults.body.to).toEqual(["building@example.com", signerEmail]);
+
+    await pool.query("UPDATE inspection_events SET performed_by_user_id = NULL WHERE id=$1", [created.body.id]);
+    const fallback = await request(app).get(`/api/events/inspection-events/${created.body.id}/email-defaults`).set("Authorization", `Bearer ${org.token}`);
+    expect(fallback.body.to).toEqual(["building@example.com", org.email]);
   });
 
   it("counts only a completed fire door inspection for annual alerts", async () => {
