@@ -66,6 +66,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   display: flex;
   align-items: stretch;
   min-height: 100vh;
+  min-width: 0;
   background: #e8eef5;
 }
 
@@ -266,8 +267,57 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 
 .main {
   flex: 1;
+  min-width: 0;
+  max-width: 100%;
   padding: 28px 32px;
+  overflow-x: hidden;
+}
+
+.table-scroll {
   overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.inspection-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: var(--surface);
+}
+
+.inspection-card.is-linked {
+  border-color: #c45a1a;
+  box-shadow: 0 0 0 2px #c45a1a;
+}
+
+.inspection-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.inspection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.inspection-actions .btn {
+  width: auto;
+  min-height: 36px;
+  height: auto;
+  padding: 6px 12px;
 }
 
 .page-header {

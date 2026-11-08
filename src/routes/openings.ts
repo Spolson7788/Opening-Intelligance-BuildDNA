@@ -58,7 +58,7 @@ async function hydrateOpening(openingRow: any, orgId: string) {
     retired_hardware_components: retiredHardware.rows,
     service_events: serviceEvents.rows,
     inspection_events: inspections.rows,
-    photos: photos.rows,
+    photos: photos.rows.map(({ inline_bytes: _inline, ...photo }: { inline_bytes?: Buffer }) => photo),
     purchasing_sends: purchasingSends.rows,
     fire_door_deficiencies: deficiencies.rows,
   };

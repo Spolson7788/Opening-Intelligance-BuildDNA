@@ -1,19 +1,20 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl, emailInspectionReport, inspectionReportRecipients, saveInspectionToFacilityRecords, downloadAuthedFile } from "../lib/api";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl, fetchAuthedBlob, emailInspectionReport, inspectionReportRecipients, saveInspectionToFacilityRecords, downloadAuthedFile } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import type { OpeningDetail, DocumentEntry, PurchasingEligibility, HardwareComponent, OpeningPhoto } from "../lib/api";
 import { Sidebar } from "../components/Sidebar";
 import { useLocations } from "../lib/LocationContext";
 import { HealthPill } from "../components/HealthPill";
 import { carrierTrackingUrl, SHIPMENT_STATUS_LABELS } from "../lib/tracking";
+import { linkedInspectionId } from "../lib/inspectionLink";
 import { componentLabel, splitServiceHistory } from "../lib/serviceHistory";
 import type { ServiceEventRow } from "../lib/serviceHistory";
 
 function ServiceTable({ events }: { events: ServiceEventRow[] }) {
   return (
-    <table>
+    <div className="table-scroll"><table>
       <thead>
         <tr><th>Date</th><th>Work Performed</th><th>Cost</th></tr>
       </thead>
@@ -26,7 +27,7 @@ function ServiceTable({ events }: { events: ServiceEventRow[] }) {
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 }
 
@@ -49,17 +50,31 @@ function photoScopeLabel(photo: OpeningPhoto, opening: OpeningDetail) {
     return leaf ? `${leaf.leaf_role} leaf` : "Door leaf";
   }
   if (photo.frame_id) return "Frame";
+  if (photo.related_entity_type === "inspection_event") return "Inspection failure";
   return "Opening";
 }
 
 function PrivateMedia({ photo }: { photo: OpeningPhoto }) {
-  const [url, setUrl] = useState<string | null>(photo.storage_url.startsWith("private:") ? null : photo.storage_url);
+  const inline = photo.storage_url.startsWith("inline:");
+  const stored = photo.storage_url.startsWith("private:");
+  const [url, setUrl] = useState<string | null>(inline || stored ? null : photo.storage_url);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
+    let objectUrl: string | null = null;
     setFailed(false);
-    if (!photo.storage_url.startsWith("private:")) {
+    if (inline) {
+      setUrl(null);
+      fetchAuthedBlob(`/photos/${photo.id}/content`)
+        .then((blob) => {
+          objectUrl = URL.createObjectURL(blob);
+          if (active) setUrl(objectUrl);
+        })
+        .catch(() => { if (active) setFailed(true); });
+      return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    }
+    if (!stored) {
       setUrl(photo.storage_url);
       return () => { active = false; };
     }
@@ -68,14 +83,14 @@ function PrivateMedia({ photo }: { photo: OpeningPhoto }) {
       .then(({ url }) => { if (active) setUrl(url); })
       .catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
-  }, [photo.id, photo.storage_url]);
+  }, [photo.id, photo.storage_url, inline, stored]);
 
   if (failed) return <div role="status" style={{ color: "var(--danger)", fontSize: 12 }}>Photo unavailable</div>;
   if (!url) return <div style={{ aspectRatio: "1", display: "grid", placeItems: "center", fontSize: 12 }}>Loading…</div>;
   if (photo.media_type === "video") {
     return <video src={url} controls style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} />;
   }
-  return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Opening photo" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} /></a>;
+  return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={inline ? "Inspection failure photo" : "Opening photo"} onError={() => setFailed(true)} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", background: "#fff" }} /></a>;
 }
 
 function formatReason(reason: string) {
@@ -85,6 +100,8 @@ function formatReason(reason: string) {
 export function OpeningDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const linkedInspection = linkedInspectionId(location.hash);
   const loc = useLocations();
   const { auth } = useAuth();
   const canSaveRecords = auth?.role === "admin" || auth?.role === "facilities_manager";
@@ -103,6 +120,11 @@ export function OpeningDetailPage() {
   const [uploadType, setUploadType] = useState("warranty");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!opening || !linkedInspection) return;
+    document.getElementById(`inspection-${linkedInspection}`)?.scrollIntoView({ block: "start" });
+  }, [opening, linkedInspection]);
 
   function loadDocuments() {
     fetchDocumentsForOpening(id!).then(setDocuments).catch(() => {
@@ -221,7 +243,7 @@ export function OpeningDetailPage() {
               {opening.door_leaves.length === 0 ? (
                 <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No door-leaf records have synchronized for this opening.</p>
               ) : (
-                <table>
+                <div className="table-scroll"><table>
                   <thead><tr><th>Leaf</th><th>Handing</th><th>Material</th><th>Size</th><th>Condition</th></tr></thead>
                   <tbody>
                     {opening.door_leaves.map((leaf) => (
@@ -234,14 +256,14 @@ export function OpeningDetailPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
               )}
             </div>
 
             {opening.photos.length > 0 && (
               <div className="panel">
                 <h2>Photos &amp; Videos</h2>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
+                <div className="photo-grid">
                   {opening.photos.map((p) =>
                     <div key={p.id}>
                       <PrivateMedia photo={p} />
@@ -257,7 +279,7 @@ export function OpeningDetailPage() {
               {opening.hardware_components.length === 0 ? (
                 <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No hardware recorded yet.</p>
               ) : (
-                <table>
+                <div className="table-scroll"><table>
                   <thead>
                     <tr>
                       <th>Location</th>
@@ -317,7 +339,7 @@ export function OpeningDetailPage() {
                       );
                     })}
                   </tbody>
-                </table>
+                </table></div>
               )}
             </div>
 
@@ -360,48 +382,27 @@ export function OpeningDetailPage() {
               {opening.inspection_events.length === 0 ? (
                 <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No inspections recorded yet.</p>
               ) : (
-                <table>
-                  <thead>
-                    <tr><th>Date</th><th>Type</th><th>Result</th><th>Notes</th><th>Signed By</th><th>Report</th></tr>
-                  </thead>
-                  <tbody>
-                    {opening.inspection_events.map((ev: any) => (
-                      <tr key={ev.id} id={`inspection-${ev.id}`}>
-                        <td>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</td>
-                        <td style={{ textTransform: "capitalize" }}>{ev.inspection_type.replace(/_/g, " ")}</td>
-                        <td>
-                          <span className={`health-pill ${ev.passed ? "health-good" : "health-poor"}`}>
-                            {ev.passed ? "Passed" : "Failed"}
-                          </span>
-                        </td>
-                        <td>{ev.notes || "—"}</td>
-                        <td>
-                          {ev.signed_by_name ? (
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ fontSize: 12.5 }}>{ev.signed_by_name}</span>
-                              {ev.signature_data && (
-                                <img
-                                  src={ev.signature_data}
-                                  alt={`${ev.signed_by_name}'s signature`}
-                                  style={{ height: 24, background: "#fff", border: "1px solid var(--border)", borderRadius: 4, padding: 2 }}
-                                />
-                              )}
-                            </div>
-                          ) : "—"}
-                        </td>
-                        <td>
-                          {ev.inspection_type === "fire_door_nfpa80" && ev.checklist_result?.status === "complete" && (
-                            <div>
-                              <button className="btn btn-secondary" type="button" style={{ width: "auto", padding: "0 10px", height: 28, fontSize: 12 }} onClick={() => downloadAuthedFile(`/events/inspection-events/${ev.id}/report.pdf`, "fire-door-inspection.pdf").catch(() => setRecordMessage((current) => ({ ...current, [ev.id]: "Could not download the report." })))}>Download PDF</button>
-                              {canSaveRecords && <button className="btn btn-secondary" type="button" style={{ width: "auto", padding: "0 10px", height: 28, fontSize: 12, marginLeft: 8 }} onClick={() => saveReport(ev.id)}>Save to facility records</button>}
-                              {recordMessage[ev.id] && <p role={recordMessage[ev.id].startsWith("Could not") ? "alert" : "status"}>{recordMessage[ev.id]}</p>}
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="inspection-list">
+                  {opening.inspection_events.map((ev: any) => (
+                    <article key={ev.id} id={`inspection-${ev.id}`} className={linkedInspection === ev.id ? "inspection-card is-linked" : "inspection-card"}>
+                      <div className="inspection-card-head">
+                        <strong>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
+                        <span style={{ textTransform: "capitalize" }}>{String(ev.inspection_type).replace(/_/g, " ")}</span>
+                        <span className={`health-pill ${ev.passed ? "health-good" : "health-poor"}`}>{ev.passed ? "Passed" : "Failed"}</span>
+                      </div>
+                      <p>{ev.notes || "No notes."}</p>
+                      {ev.signed_by_name && <p>Inspector {ev.signed_by_name}{ev.inspector_qualification ? ` · ${ev.inspector_qualification}` : ""}{ev.inspector_license_number ? ` · License ${ev.inspector_license_number}` : ""}</p>}
+                      {ev.signature_data && <img src={ev.signature_data} alt={`${ev.signed_by_name || "Inspector"} signature`} style={{ height: 48, background: "#fff", border: "1px solid var(--border)", borderRadius: 4 }} />}
+                      {ev.inspection_type === "fire_door_nfpa80" && ev.checklist_result?.status === "complete" && (
+                        <div className="inspection-actions">
+                          <button className="btn btn-secondary" type="button" onClick={() => downloadAuthedFile(`/events/inspection-events/${ev.id}/report.pdf`, "fire-door-inspection.pdf").catch(() => setRecordMessage((current) => ({ ...current, [ev.id]: "Could not download the report." })))}>Download PDF</button>
+                          {canSaveRecords && <button className="btn btn-secondary" type="button" onClick={() => saveReport(ev.id)}>Save to facility records</button>}
+                          {recordMessage[ev.id] && <p role={recordMessage[ev.id].startsWith("Could not") ? "alert" : "status"}>{recordMessage[ev.id]}</p>}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
               )}
             </div>
 

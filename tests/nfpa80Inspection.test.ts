@@ -8,6 +8,7 @@ import { fireDoorOutcome } from "../field-app/src/lib/nfpa80Items";
 import { failingFireDoorFields, passingFireDoorFields } from "./nfpa80Fixture";
 import { setEmailProviderForTests, type OutboundEmail } from "../src/services/email";
 import { dashboardInspectionLink } from "../src/services/inspectionReportLink";
+import { linkedInspectionId } from "../dashboard/src/lib/inspectionLink";
 import { pool } from "../src/db/pool";
 import { inflateSync } from "node:zlib";
 
@@ -291,6 +292,25 @@ describe("NFPA 80 fire door inspection", () => {
       await writer.query("ROLLBACK").catch(() => {});
       writer.release();
     }
+  });
+
+  it("serves a stored inspection failure photo without putting the bytes in the opening", async () => {
+    const { org, opening: door } = await opening();
+    const created = await request(app).post("/api/events/inspection-events").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: door.id, event_date: "2026-04-01", inspection_type: "fire_door_nfpa80", ...failingFireDoorFields(),
+    });
+    expect(created.status).toBe(201);
+    const detail = await request(app).get(`/api/openings/${door.id}`).set("Authorization", `Bearer ${org.token}`);
+    const photo = detail.body.photos[0];
+    expect(photo.storage_url.startsWith("inline:")).toBe(true);
+    expect(photo.inline_bytes).toBeUndefined();
+    const file = await request(app).get(`/api/photos/${photo.id}/content`).set("Authorization", `Bearer ${org.token}`);
+    expect(file.status).toBe(200);
+    expect(file.headers["content-type"]).toBe("image/png");
+    expect(file.body[0]).toBe(0x89);
+    expect((await request(app).get(`/api/photos/${photo.id}/content`)).status).toBe(401);
+    expect(linkedInspectionId(`#inspection-${created.body.id}`)).toBe(created.body.id);
+    expect(linkedInspectionId("#inspection-not-an-id")).toBeNull();
   });
 
   it("rejects a passed general inspection that still carries checklist answers", async () => {

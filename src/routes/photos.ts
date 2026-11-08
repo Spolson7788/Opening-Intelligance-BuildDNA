@@ -429,6 +429,24 @@ photosRouter.post("/offline/confirm", databaseRoute(async (req: AuthedRequest, r
   }
 }));
 
+photosRouter.get("/:id/content", async (req: AuthedRequest, res) => {
+  if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_photo" });
+  try {
+    const photo = await pool.query(
+      `SELECT p.content_type, p.inline_bytes FROM photos p
+       WHERE p.id=$1 AND p.opening_id IN (${openingsForOrgSubquery(2)}) AND ${photoVisibleSql("p", 2)}`,
+      [req.params.id, req.auth!.organizationId],
+    );
+    const row = photo.rows[0];
+    if (!row?.inline_bytes) return res.status(404).json({ error: "not_found" });
+    const type = typeof row.content_type === "string" && row.content_type.startsWith("image/") ? row.content_type : "application/octet-stream";
+    res.set("Content-Type", type).set("Cache-Control", "private, no-store").send(row.inline_bytes);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
 photosRouter.get("/:id/access", databaseRoute(async (req: AuthedRequest, res) => {
   const photo = await pool.query(
     `SELECT p.* FROM photos p WHERE p.id=$1 AND p.opening_id IN (${openingsForOrgSubquery(2)}) AND ${photoVisibleSql("p", 2)}`,

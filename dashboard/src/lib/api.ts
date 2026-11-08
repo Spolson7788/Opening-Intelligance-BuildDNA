@@ -627,6 +627,7 @@ export interface OpeningPhoto {
   media_type: "photo" | "video";
   storage_url: string;
   entity_type: string;
+  related_entity_type?: string | null;
   frame_id: string | null;
   door_leaf_id: string | null;
   hardware_component_id: string | null;
@@ -978,6 +979,18 @@ export const saveBranch = (id: string, body: { name: string; default_state: stri
 export const inspectionReportRecipients = (id: string): Promise<{ to: string[]; facility_contact_email: string | null; inspector_email: string }> => authedFetch(`/events/inspection-events/${id}/email-defaults`);
 export const emailInspectionReport = (id: string, to: string[]): Promise<{ sent: boolean; delivery_mode: string }> => post(`/events/inspection-events/${id}/email`, { to });
 export const saveInspectionToFacilityRecords = (id: string): Promise<{ document: { id: string; title: string }; already_saved: boolean }> => post(`/events/inspection-events/${id}/facility-record`, {});
+
+export async function fetchAuthedBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (res.status === 401) {
+    handleUnauthorized(typeof localStorage !== "undefined" ? localStorage : null,
+      typeof window !== "undefined" ? { pathname: window.location.pathname, assign: (u) => window.location.assign(u) } : null,
+      import.meta.env.BASE_URL || "/");
+  }
+  if (!res.ok) throw new ApiError(res.status, "download_failed");
+  return res.blob();
+}
 
 export async function downloadAuthedFile(path: string, filename: string) {
   const token = getToken();
