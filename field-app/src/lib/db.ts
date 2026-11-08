@@ -420,6 +420,34 @@ export async function replaceRejectedMediaWithReducedCopy(photoId: string, reduc
   return { photoId: newPhotoId, operationId: newOperationId };
 }
 
+// A permanently failed change stays on the device until the technician discards it.
+// This removes only that local operation. It does not write to the server, and it
+// refuses anything that is still queued, retrying, or already verified.
+export async function discardPermanentFailure(operationId: string) {
+  assertNotWiped();
+  const db = await getDb();
+  const tx = db.transaction(["auth", "operations", "entities", "media"], "readwrite");
+  const auth = await tx.objectStore("auth").get("current");
+  const operation: SyncOperation | undefined = await tx.objectStore("operations").get(operationId);
+  if (!auth || !operation || operation.actorUserId !== auth.userId || operation.organizationId !== auth.organizationId) {
+    throw new Error("operation_principal_mismatch");
+  }
+  if (operation.state !== "permanent_failure") throw new Error("operation_not_permanent_failure");
+  const operations: SyncOperation[] = await tx.objectStore("operations").getAll();
+  if (operations.some((item) => item.dependencyOperationIds.includes(operation.operationId))) {
+    throw new Error("operation_has_dependents");
+  }
+  await tx.objectStore("operations").delete(operation.operationId);
+  if (operation.entityType === "photo") {
+    await tx.objectStore("media").delete(operation.entityId);
+  } else {
+    const stillUsed = operations.some((item) => item.operationId !== operation.operationId
+      && item.entityType === operation.entityType && item.entityId === operation.entityId);
+    if (!stillUsed) await tx.objectStore("entities").delete(entityKey(operation.entityType, operation.entityId));
+  }
+  await tx.done;
+}
+
 export async function removeRejectedMedia(photoId: string) {
   const db = await getDb();
   const tx = db.transaction(["auth", "media", "operations"], "readwrite");

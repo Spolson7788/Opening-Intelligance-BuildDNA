@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { syncIssueMessage } from "../lib/syncIssueMessage";
 import { useAuth } from "../lib/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { getOfflineMedia, getOfflineMediaForPrincipal, getOpenConflictsForPrincipal, getSyncOperationsForPrincipal, loadAuth, recoverOrphanedMediaOperation, removeRejectedMedia, replaceRejectedMediaWithReducedCopy, retrySyncOperationAfterReview } from "../lib/db";
+import { discardPermanentFailure, getOfflineMedia, getOfflineMediaForPrincipal, getOpenConflictsForPrincipal, getSyncOperationsForPrincipal, loadAuth, recoverOrphanedMediaOperation, removeRejectedMedia, replaceRejectedMediaWithReducedCopy, retrySyncOperationAfterReview } from "../lib/db";
 import { checksumBlob, flushOutbox } from "../lib/sync";
 import { syncIssuesForRecords } from "../lib/syncIssuesModel";
 import type { SyncIssueView } from "../lib/syncIssuesModel";
@@ -86,6 +86,18 @@ export function SyncIssuesPage() {
     note(issue.id, `A copy named ${link.download} was offered to this device's downloads.`);
   }
 
+  async function discard(issue: SyncIssueView) {
+    setBusy(issue.id);
+    try {
+      await discardPermanentFailure(issue.id);
+      setConfirmRemove(null);
+      await flushOutbox();
+      await load();
+    } catch (error) {
+      note(issue.id, error instanceof Error ? error.message : "This change could not be discarded.");
+    } finally { setBusy(null); }
+  }
+
   async function remove(issue: SyncIssueView) {
     if (!issue.photoId) return;
     await removeRejectedMedia(issue.photoId);
@@ -118,6 +130,11 @@ export function SyncIssuesPage() {
             : issue.kind === "orphaned_media" ? "Restore upload operation"
               : ["in_flight", "verifying"].includes(issue.status) ? "Recover interrupted operation"
               : issue.status === "retry_wait" ? "Retry retained operation" : "Retry after authorization is restored"}</button>
+          {issue.status === "permanent_failure" && (confirmRemove === issue.id
+            ? <><button className="btn btn-secondary" disabled={busy === issue.id} onClick={() => discard(issue)}>Confirm discard from this device</button>
+                <button className="btn btn-secondary" onClick={() => setConfirmRemove(null)}>Keep it</button>
+                <p style={{ margin: "6px 0", color: "var(--text-secondary)" }}>Discarding removes this change from this device only. It does not change the server.</p></>
+            : <button className="btn btn-secondary" onClick={() => setConfirmRemove(issue.id)}>Discard this saved change</button>)}
         </>}
         {notes[issue.id] && <p className="error-text" role="status">{notes[issue.id]}</p>}
       </div>)}

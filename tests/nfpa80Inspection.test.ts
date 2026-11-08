@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
@@ -243,6 +244,53 @@ describe("NFPA 80 fire door inspection", () => {
     expect(copies.rowCount).toBe(1);
     const audit = await pool.query("SELECT action FROM audit_log WHERE organization_id=$1 AND action=$2", [org.organizationId, "Saved fire door inspection to facility records"]);
     expect(audit.rowCount).toBeGreaterThan(0);
+  });
+
+  it("lets the API role write a deficiency, update the inspection, and store the report", async () => {
+    await pool.query("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'oi_pr2_api') THEN CREATE ROLE oi_pr2_api NOLOGIN; END IF; END $$");
+    const { org, opening: door } = await opening();
+    const created = await request(app).post("/api/events/inspection-events").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: door.id, event_date: "2026-04-01", inspection_type: "fire_door_nfpa80", ...failingFireDoorFields(),
+    });
+    expect(created.status).toBe(201);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("DROP POLICY IF EXISTS oi_pr2_api_insert ON fire_door_deficiencies");
+      await client.query("SET LOCAL ROLE oi_pr2_api");
+      await expect(client.query(
+        `INSERT INTO fire_door_deficiencies (organization_id, opening_id, inspection_event_id, item_key, note)
+         VALUES ($1,$2,$3,'labels','stuck')`,
+        [org.organizationId, door.id, created.body.id],
+      )).rejects.toMatchObject({ code: "42501" });
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      client.release();
+    }
+
+    await pool.query(readFileSync("migrations/20261108171000_fire_door_api_policies.sql", "utf8"));
+    const writer = await pool.connect();
+    try {
+      await writer.query("BEGIN");
+      await writer.query("SET LOCAL ROLE oi_pr2_api");
+      const deficiency = await writer.query(
+        `INSERT INTO fire_door_deficiencies (organization_id, opening_id, inspection_event_id, item_key, note)
+         VALUES ($1,$2,$3,'labels','stuck') RETURNING id`,
+        [org.organizationId, door.id, created.body.id],
+      );
+      expect(deficiency.rowCount).toBe(1);
+      const updated = await writer.query("UPDATE inspection_events SET notes = notes WHERE id=$1 RETURNING id", [created.body.id]);
+      expect(updated.rowCount).toBe(1);
+      const document = await writer.query(
+        `INSERT INTO documents (opening_id, document_type, title, storage_url, inspection_event_id, content, content_type)
+         VALUES ($1,'inspection_report','Fire door inspection','oi-record://test',$2,$3,'application/pdf') RETURNING id`,
+        [door.id, created.body.id, Buffer.from("%PDF")],
+      );
+      expect(document.rowCount).toBe(1);
+    } finally {
+      await writer.query("ROLLBACK").catch(() => {});
+      writer.release();
+    }
   });
 
   it("rejects a passed general inspection that still carries checklist answers", async () => {
