@@ -8,6 +8,7 @@ import { openingsForOrgSubquery } from "../db/tenantScope";
 import { areaAllowsOpening } from "../db/areaAccess";
 import { acquireClient } from "../db/acquireClient";
 import { prepareFireDoorChecklist, applyFireDoorFollowUp } from "../services/nfpa80Inspection";
+import { generalPassCarriesChecklist } from "../services/nfpa80Checklist";
 import { generateNfpaInspectionPdf } from "../services/nfpa80Report";
 import { sendEmail, emailSettings } from "../services/email";
 import { dashboardInspectionLink } from "../services/inspectionReportLink";
@@ -100,6 +101,9 @@ eventsRouter.post("/inspection-events", async (req: AuthedRequest, res) => {
       return res.status(403).json({ error: "forbidden" });
     }
 
+    if (generalPassCarriesChecklist(b.inspection_type, b.passed, b.checklist_result)) {
+      return res.status(400).json({ error: "inspection_type_mismatch" });
+    }
     if (b.inspection_type !== "fire_door_nfpa80") {
       const result = await pool.query(
         `INSERT INTO inspection_events

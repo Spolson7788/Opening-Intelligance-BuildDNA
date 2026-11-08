@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
-import { assessFireDoorChecklist, NFPA80_ITEMS } from "../src/services/nfpa80Checklist";
+import { assessFireDoorChecklist, generalPassCarriesChecklist, NFPA80_ITEMS } from "../src/services/nfpa80Checklist";
+import { resolveInspectionType } from "../field-app/src/lib/nfpa80Items";
 import { fireDoorOutcome } from "../field-app/src/lib/nfpa80Items";
 import { failingFireDoorFields, passingFireDoorFields } from "./nfpa80Fixture";
 import { setEmailProviderForTests, type OutboundEmail } from "../src/services/email";
@@ -32,6 +33,11 @@ describe("NFPA 80 checklist", () => {
     expect(assessFireDoorChecklist({ status: "complete", items: coreNa }, "Ada", "Inspector", "FD-1").ok).toBe(false);
     expect(fireDoorOutcome(allNa).ok).toBe(false);
     expect(fireDoorOutcome(Object.fromEntries(NFPA80_ITEMS.map((item) => [item.key, { result: item.allowsNa ? "na" : "pass" }]))).ok).toBe(true);
+    expect(resolveInspectionType("general", { labels: { result: "fail" } })).toBe("fire_door_nfpa80");
+    expect(resolveInspectionType("general", {})).toBe("general");
+    expect(generalPassCarriesChecklist("general", true, { status: "complete", items: { labels: { result: "fail" } } })).toBe(true);
+    expect(generalPassCarriesChecklist("general", true, {})).toBe(false);
+    expect(generalPassCarriesChecklist("fire_door_nfpa80", true, { status: "complete" })).toBe(false);
   });
 });
 
@@ -237,6 +243,19 @@ describe("NFPA 80 fire door inspection", () => {
     expect(copies.rowCount).toBe(1);
     const audit = await pool.query("SELECT action FROM audit_log WHERE organization_id=$1 AND action=$2", [org.organizationId, "Saved fire door inspection to facility records"]);
     expect(audit.rowCount).toBeGreaterThan(0);
+  });
+
+  it("rejects a passed general inspection that still carries checklist answers", async () => {
+    const { org, opening: door } = await opening();
+    const rejected = await request(app).post("/api/events/inspection-events").set("Authorization", `Bearer ${org.token}`).send({
+      opening_id: door.id, event_date: "2026-04-01", inspection_type: "general", passed: true,
+      checklist_result: { status: "complete", items: { labels: { result: "fail", note: "Label missing" } } },
+      signed_by_name: "Ada",
+    });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.error).toBe("inspection_type_mismatch");
+    const listed = await request(app).get(`/api/openings/${door.id}`).set("Authorization", `Bearer ${org.token}`);
+    expect(listed.body.inspection_events).toHaveLength(0);
   });
 
   it("allows deletion only after the three-year hold", async () => {

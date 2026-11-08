@@ -10,7 +10,6 @@ import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
 import { SyncBadge } from "../components/SyncBadge";
 import { PhotoCapture } from "../components/PhotoCapture";
-import { EmailInspectionReport } from "../components/EmailInspectionReport";
 import { openingCompletionRequirements } from "../lib/openingCompletion";
 import { splitServiceHistory } from "../lib/serviceHistory";
 import type { ServiceEventRow } from "../lib/serviceHistory";
@@ -437,7 +436,7 @@ export function OpeningDetailPage() {
           <>
             <div className="section-label" style={{ marginTop: 20 }}>Recent Inspections</div>
             {opening.inspection_events.slice(0, 5).map((ev: any) => (
-              <div className="card" key={ev.id}>
+              <Link className="card" key={ev.id} to={`/opening/${opening.id}/inspection/${ev.id}`} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
                   <span
@@ -447,11 +446,9 @@ export function OpeningDetailPage() {
                     {ev.passed ? "Passed" : "Failed"}
                   </span>
                 </div>
+                <p style={{ margin: "4px 0 0", fontSize: 14, textTransform: "capitalize" }}>{String(ev.inspection_type || "general").replace(/_/g, " ")}</p>
                 {ev.notes && <p style={{ margin: "4px 0 0", fontSize: 14 }}>{ev.notes}</p>}
-                {ev.inspection_type === "fire_door_nfpa80" && ev.checklist_result?.status === "complete" && (
-                  <EmailInspectionReport inspectionId={ev.id} />
-                )}
-              </div>
+              </Link>
             ))}
           </>
         )}

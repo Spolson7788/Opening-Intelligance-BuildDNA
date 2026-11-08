@@ -45,6 +45,7 @@ vi.mock("../field-app/src/components/SignaturePad", () => ({
 import { EmailInspectionReport } from "../field-app/src/components/EmailInspectionReport";
 import { LogInspectionEventPage } from "../field-app/src/pages/LogInspectionEventPage";
 import { OpeningDetailPage } from "../field-app/src/pages/OpeningDetailPage";
+import { queueOpeningMutation } from "../field-app/src/lib/sync";
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -127,6 +128,10 @@ it("shows email this report after a signed fire door inspection is saved, and on
   });
   await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
   expect(host.textContent).toContain("Saved.");
+  expect(queueOpeningMutation).toHaveBeenCalledWith("inspection_event", "door-1", expect.objectContaining({
+    inspection_type: "fire_door_nfpa80",
+    checklist_result: expect.objectContaining({ status: "complete" }),
+  }));
   expect(host.textContent).toContain("Email this report");
   expect(host.textContent).not.toContain("Returning to the opening");
   expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toContain("building@example.com");
@@ -136,7 +141,10 @@ it("shows email this report after a signed fire door inspection is saved, and on
   api.fetchOpening.mockResolvedValue({
     opening: {
       id: "door-1", opening_code: "D-1", opening_type: "door", photos: [], hardware_components: [],
-      inspection_events: [{ id: "insp-9", event_date: "2026-04-01", inspection_type: "fire_door_nfpa80", passed: true, checklist_result: { status: "complete" } }],
+      inspection_events: [
+        { id: "insp-9", event_date: "2026-04-01", inspection_type: "fire_door_nfpa80", passed: true, checklist_result: { status: "complete" } },
+        { id: "insp-general", event_date: "2026-03-01", inspection_type: "general", passed: false },
+      ],
       service_events: [], completion_state: "complete",
     },
     fromCache: false,
@@ -146,6 +154,7 @@ it("shows email this report after a signed fire door inspection is saved, and on
       <Routes><Route path="/opening/:id" element={<OpeningDetailPage />} /></Routes>
     </MemoryRouter>,
   ));
-  expect(host.textContent).toContain("Email this report");
-  expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toContain("signer@example.com");
+  const links = Array.from(host.querySelectorAll("a")).map((link) => link.getAttribute("href"));
+  expect(links).toContain("/opening/door-1/inspection/insp-9");
+  expect(links).toContain("/opening/door-1/inspection/insp-general");
 });

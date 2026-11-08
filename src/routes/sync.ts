@@ -15,6 +15,7 @@ import {
   writeSyncReceiptAndAudit,
 } from "../services/syncProtocol";
 import { prepareFireDoorChecklist, applyFireDoorFollowUp } from "../services/nfpa80Inspection";
+import { generalPassCarriesChecklist } from "../services/nfpa80Checklist";
 
 export const syncRouter = Router();
 syncRouter.use(requireAuth);
@@ -305,6 +306,10 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
         payload.work_performed,payload.parts_used??[],payload.cost??null,b.operation_id]); record=result.rows[0];
       await client.query(`UPDATE openings SET last_service_date=GREATEST(COALESCE(last_service_date,$1),$1) WHERE id=$2`,[payload.event_date,b.opening_id]);
     } else if (b.entity_type === "inspection_event") {
+      if (generalPassCarriesChecklist(payload.inspection_type, payload.passed === true, payload.checklist_result)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "inspection_type_mismatch" });
+      }
       let checklist = payload.checklist_result ?? {};
       let qualification: string | null = null;
       let licenseNumber: string | null = null;

@@ -7,7 +7,7 @@ import { SyncBadge } from "../components/SyncBadge";
 import { SignaturePad } from "../components/SignaturePad";
 import type { SignaturePadHandle } from "../components/SignaturePad";
 import { EmailInspectionReport } from "../components/EmailInspectionReport";
-import { NFPA80_ITEMS, fireDoorOutcome } from "../lib/nfpa80Items";
+import { NFPA80_ITEMS, checklistStarted, fireDoorOutcome, resolveInspectionType } from "../lib/nfpa80Items";
 
 type ItemAnswer = { result: "" | "pass" | "fail" | "na"; note: string; photo: File | null };
 
@@ -42,9 +42,12 @@ export function LogInspectionEventPage() {
   const [saved, setSaved] = useState(false);
   const [savedInspectionId, setSavedInspectionId] = useState<string | null>(null);
 
+  const chosenType = resolveInspectionType(inspectionType, answers);
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (inspectionType !== "fire_door_nfpa80" && passed === null) return;
+    const type = resolveInspectionType(inspectionType, answers);
+    if (type !== "fire_door_nfpa80" && passed === null) return;
     setSignatureError(null);
 
     const signatureDataUrl = signaturePadRef.current?.getDataUrl();
@@ -59,7 +62,7 @@ export function LogInspectionEventPage() {
 
     let checklist: Record<string, unknown> | undefined;
     let resultPassed = passed === "pass";
-    if (inspectionType === "fire_door_nfpa80") {
+    if (type === "fire_door_nfpa80") {
       if (!qualification.trim()) {
         setSignatureError("Enter your qualification for this fire door inspection.");
         return;
@@ -99,19 +102,19 @@ export function LogInspectionEventPage() {
     const inspectionId = await queueOpeningMutation("inspection_event", id!, {
         opening_id: id,
         event_date: eventDate,
-        inspection_type: inspectionType,
+        inspection_type: type,
         passed: resultPassed,
         notes: notes || undefined,
         signature_data: signatureDataUrl,
         signed_by_name: signedByName.trim(),
-        inspector_qualification: inspectionType === "fire_door_nfpa80" ? qualification.trim() : undefined,
-        inspector_license_number: inspectionType === "fire_door_nfpa80" ? licenseNumber.trim() : undefined,
-        checklist_result: checklist,
+        inspector_qualification: type === "fire_door_nfpa80" ? qualification.trim() : undefined,
+        inspector_license_number: type === "fire_door_nfpa80" ? licenseNumber.trim() : undefined,
+        checklist_result: type === "fire_door_nfpa80" ? checklist : undefined,
     });
 
     setSaved(true);
     setSubmitting(false);
-    if (inspectionType === "fire_door_nfpa80") {
+    if (type === "fire_door_nfpa80") {
       setSavedInspectionId(inspectionId);
       if (navigator.onLine) {
         flushOutbox().then(() => Promise.resolve(recomputeHealthScore(id!)).catch(() => {}));
@@ -161,14 +164,18 @@ export function LogInspectionEventPage() {
             </div>
             <div className="field">
               <label htmlFor="inspection-type">Inspection type</label>
-              <select id="inspection-type" value={inspectionType} onChange={(e) => setInspectionType(e.target.value)}>
+              <select id="inspection-type" value={chosenType} onChange={(e) => {
+                const next = e.target.value;
+                if (checklistStarted(answers) && next !== "fire_door_nfpa80") return;
+                setInspectionType(next);
+              }}>
                 {INSPECTION_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
               </select>
             </div>
 
-            {inspectionType === "fire_door_nfpa80" && (
+            {chosenType === "fire_door_nfpa80" && (
               <div className="field">
                 <label htmlFor="qualification">Qualification</label>
                 <input id="qualification" value={qualification} onChange={(e) => setQualification(e.target.value)} placeholder="How you are qualified to inspect fire doors" />
@@ -201,7 +208,7 @@ export function LogInspectionEventPage() {
               </div>
             )}
 
-            {inspectionType !== "fire_door_nfpa80" && <div className="field">
+            {chosenType !== "fire_door_nfpa80" && <div className="field">
               <label>Result</label>
               <div style={{ display: "flex", gap: 10 }}>
                 <button
@@ -264,7 +271,7 @@ export function LogInspectionEventPage() {
             </div>
             {signatureError && <p className="error-text">{signatureError}</p>}
 
-            <button type="submit" className="btn btn-primary" disabled={submitting || (inspectionType !== "fire_door_nfpa80" && passed === null)}>
+            <button type="submit" className="btn btn-primary" disabled={submitting || (chosenType !== "fire_door_nfpa80" && passed === null)}>
               {submitting ? "Saving…" : "Save"}
             </button>
           </form>

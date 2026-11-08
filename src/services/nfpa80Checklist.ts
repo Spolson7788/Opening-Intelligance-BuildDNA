@@ -44,6 +44,14 @@ export const NFPA80_ITEMS: Nfpa80Item[] = [
 export const COMPLETED_FIRE_DOOR_SQL =
   "inspection_type = 'fire_door_nfpa80' AND checklist_result->>'status' = 'complete'";
 
+// A general inspection marked passed must not also carry checklist answers.
+// That combination is a fire door save whose type was dropped.
+export function generalPassCarriesChecklist(inspectionType: string, passed: boolean, checklist: unknown): boolean {
+  if (inspectionType !== "general" || passed !== true) return false;
+  if (!checklist || typeof checklist !== "object" || Array.isArray(checklist)) return false;
+  return Object.keys(checklist as Record<string, unknown>).length > 0;
+}
+
 const RESULTS = new Set(["pass", "fail", "na"]);
 const MAX_PHOTO_CHARS = 2_000_000;
 

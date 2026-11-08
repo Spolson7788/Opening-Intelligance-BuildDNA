@@ -19,6 +19,16 @@ export const NFPA80_ITEMS = [
   { key: "signage", section: "5.2.4.2(13)", allowsNa: true, text: "Signs cover no more than 5% of the door face, are not placed on the glazing, and are not held on with fasteners that go through the door. Use N/A when this door has no sign." },
 ] as const;
 
+export function checklistStarted(answers: Record<string, { result?: string } | undefined>): boolean {
+  return Object.values(answers).some((answer) => answer?.result === "pass" || answer?.result === "fail" || answer?.result === "na");
+}
+
+// A started checklist is a fire door inspection even if the type selector
+// has fallen back to its first option.
+export function resolveInspectionType(selected: string, answers: Record<string, { result?: string } | undefined>): string {
+  return checklistStarted(answers) || selected === "fire_door_nfpa80" ? "fire_door_nfpa80" : selected;
+}
+
 export function fireDoorOutcome(answers: Record<string, { result?: string } | undefined>): { ok: true; passed: boolean } | { ok: false; error: string } {
   for (const item of NFPA80_ITEMS) {
     const result = answers[item.key]?.result;
