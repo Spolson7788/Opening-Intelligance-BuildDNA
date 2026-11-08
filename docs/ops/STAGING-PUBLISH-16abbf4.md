@@ -2,7 +2,7 @@
 
 One publish of pull request 18 to **oi-video-workflows-staging** only. The staging migration is already applied. Do not apply it again. Do not publish to production. Do not run `npm run migrate`.
 
-Pinned commit: `16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5`
+Pinned app commit: `1dcbf817e1b483fc8611bb2b6de3bad6b1f30e81`. A later commit is accepted only when its diff from that pin is publisher files.
 
 Site: `oi-video-workflows-staging` (`b64bf33c-a131-4ae2-b2b0-9aec16e9f77b`), https://oi-video-workflows-staging.netlify.app
 
@@ -11,13 +11,14 @@ The publisher refuses `oi-production` (`b4e0fc62-86ce-4a26-9ebf-26d7386f4b01`) a
 Build this on the PC that will publish. This environment does not build or upload the package.
 
 ```
-git fetch origin cursor/roboflow-door-hardware-9550
-git checkout cursor/roboflow-door-hardware-9550
+git fetch origin cursor/purchasing-nfpa80-9550
+git checkout cursor/purchasing-nfpa80-9550
+git pull origin cursor/purchasing-nfpa80-9550
 node scripts/build-staging-package-16abbf4.mjs
-node scripts/artifact-publisher-staging-16abbf4.mjs --dry-run
+node scripts/artifact-publisher-staging-16abbf4.mjs --upload-check
 ```
 
-The application tree must be `16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5`. The branch tip may also contain only these publisher files. Any other change is refused.
+Rebuild `dist/staging-package-16abbf4` with that command. The old package records commit `16abbf4` and is refused. The build writes a new `packageSha256` into `package-pin.json`. There is no checksum to paste back into git. The publisher recomputes it from the built files and the commit recorded in that pin. The recorded commit must be `1dcbf817e1b483fc8611bb2b6de3bad6b1f30e81` or a publisher-only descendant. Any other change is refused.
 
 Install the API dependencies before the upload check. From the repo root:
 
@@ -25,7 +26,7 @@ Install the API dependencies before the upload check. From the repo root:
 npm ci
 ```
 
-The function zip is built from that `node_modules`. `@supabase/supabase-js` is not imported by the api function. The check requires `express`, `pg`, and `jsonwebtoken` inside the zip, and an api zip of at least 5 MB. The build prints `packageSha256`. Do not rebuild if that value is still `ab779e93cffb8f8958dbf95409dcad60891ae3e96281a2ad3809494b40bb3c2d`. This attempt uses `dist/staging-publish-journal-16abbf4-r11/`. Leave `dist/staging-publish-journal-16abbf4-r10/` untouched. Leave the earlier journal directories untouched. Do not publish `6aefb27ce9feb6a9e881d55d` or `6aefb45b48f193074a694e72`. Before creating a deploy, the publisher locks the deploy that is already published so a `draft: false` deploy cannot go live on its own. Restore runs only after `invocationMode` is `stream`. A function is publishable only when its `invocationMode` is `stream`, the same field the known-good deploy exposes. A Netlify privacy-gate `401` HTML page is not a pass. The deploy is created with `draft: false`, the same switch `netlify deploy --prod` uses, so its context is `production`. The file manifest includes `/netlify.toml`. Publish is refused unless the created deploy reports context `production` and the `api` function's `invocationMode` is `stream`. `functions_config` includes `invocation_mode: stream` and `build_data.runtimeAPIVersion: 2`, and the function PUT query includes `invocation_mode=stream`. `--upload-check` fails unless those routes are present, whether each route is a string or an object with `pattern`. The objects are sent unchanged. To put the previous live deploy back, once:
+The function zip is built from that `node_modules`. `@supabase/supabase-js` is not imported by the api function. The check requires `express`, `pg`, and `jsonwebtoken` inside the zip, and an api zip of at least 5 MB. The build prints a new `packageSha256`. Do not reuse `ab779e93cffb8f8958dbf95409dcad60891ae3e96281a2ad3809494b40bb3c2d`; that checksum belongs to the PR 18 package. This attempt uses `dist/staging-publish-journal-16abbf4-r12/`. Leave `dist/staging-publish-journal-16abbf4-r11/` and the earlier journal directories untouched. Do not publish `6aefb27ce9feb6a9e881d55d` or `6aefb45b48f193074a694e72`. Before creating a deploy, the publisher locks the deploy that is already published so a `draft: false` deploy cannot go live on its own. Restore runs only after `invocationMode` is `stream`. A function is publishable only when its `invocationMode` is `stream`, the same field the known-good deploy exposes. A Netlify privacy-gate `401` HTML page is not a pass. The deploy is created with `draft: false`, the same switch `netlify deploy --prod` uses, so its context is `production`. The file manifest includes `/netlify.toml`. Publish is refused unless the created deploy reports context `production` and the `api` function's `invocationMode` is `stream`. `functions_config` includes `invocation_mode: stream` and `build_data.runtimeAPIVersion: 2`, and the function PUT query includes `invocation_mode=stream`. `--upload-check` fails unless those routes are present, whether each route is a string or an object with `pattern`. The objects are sent unchanged. To put the previous live deploy back, once:
 
 ```
 node scripts/artifact-publisher-staging-16abbf4.mjs --rollback-approved

@@ -1,16 +1,15 @@
-// Offline package for one staging publish of commit 16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5.
+// Offline package for the PR 19 app commit, or a publisher-only commit after it.
 // Does not deploy, does not read or print secrets, and does not migrate.
-import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildFacilityDashboard } from './build-facility-dashboard.mjs';
-import { PINNED_COMMIT, hashTree, assertHeadCommit } from './artifact-publisher-staging-16abbf4.mjs';
+import { hashTree, assertHeadCommit, packageChecksum } from './artifact-publisher-staging-16abbf4.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 if (process.env.NETLIFY === 'true') throw new Error('This package is built on a PC. Refusing to run inside Netlify.');
-assertHeadCommit(root);
+const builtCommit = assertHeadCommit(root);
 
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 function run(args, dir = root, extra = {}) {
@@ -41,7 +40,7 @@ buildFacilityDashboard(resolve(publish, 'facility-dashboard'), { production: fal
 writeFileSync(resolve(publish, 'build-info.json'), JSON.stringify({
   environment: 'staging',
   site: 'oi-video-workflows-staging',
-  commit: PINNED_COMMIT,
+  commit: builtCommit,
   releaseStatus: 'staging-publish-prepared',
 }, null, 2) + '\n');
 writeFileSync(resolve(publish, '_redirects'),
@@ -52,10 +51,9 @@ const files = {
   ...hashTree(publish, 'publish'),
 };
 for (const source of trackedSources) files[`source:${source}`] = { tree: hashTree(resolve(root, source), source) };
-const canonical = JSON.stringify({ commit: PINNED_COMMIT, files });
-const packageSha256 = createHash('sha256').update(canonical).digest('hex');
-const pin = { commit: PINNED_COMMIT, packageSha256, files };
+const packageSha256 = packageChecksum(builtCommit, files);
+const pin = { commit: builtCommit, packageSha256, files };
 writeFileSync(resolve(staging, 'package-pin.json'), JSON.stringify(pin, null, 2) + '\n');
 rmSync(output, { recursive: true, force: true });
 renameSync(staging, output);
-console.log(JSON.stringify({ package: 'dist/staging-package-16abbf4', commit: PINNED_COMMIT, packageSha256 }, null, 2));
+console.log(JSON.stringify({ package: 'dist/staging-package-16abbf4', commit: builtCommit, packageSha256 }, null, 2));

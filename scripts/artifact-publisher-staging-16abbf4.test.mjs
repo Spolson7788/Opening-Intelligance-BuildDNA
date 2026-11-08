@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, functionsFromDeploy, missingBundledModules, stageFunctionSources, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, functionsFromDeploy, missingBundledModules, stageFunctionSources, packageCommitAllowed, packageChecksum, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('diagnose compares function metadata without keeping secrets', () => {
   const knownGood = functionsFromDeploy({ available_functions: [{ n: 'api', d: 'sha-good', runtime: 'nodejs22.x', im: 'stream', ro: [], a: 100 }] });
@@ -30,6 +30,13 @@ test('production and any other site are refused', () => {
   assert.throws(() => assertSite({ id: PRODUCTION_SITE_ID, name: 'oi-production', url: 'https://oi-production.netlify.app' }), /refusing_production/);
   assert.throws(() => assertSite({ id: '80fbbee8-b9d3-4b16-b93f-d2d8396591ec', name: 'oi-connected-release-candidate', url: 'https://oi-connected-release-candidate.netlify.app' }), /refusing_site_mismatch/);
   assert.equal(PINNED_COMMIT, '1dcbf817e1b483fc8611bb2b6de3bad6b1f30e81');
+  assert.equal(packageCommitAllowed(PINNED_COMMIT), true);
+  assert.equal(packageCommitAllowed('16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5'), false);
+  assert.equal(packageCommitAllowed('9c0256e1b92182a55246bc7e6460ab456098a48d'), false);
+  const files = { 'publish/index.html': { sha256: 'abc', bytes: 3 } };
+  const recorded = packageChecksum(PINNED_COMMIT, files);
+  assert.equal(packageChecksum(PINNED_COMMIT, files), recorded);
+  assert.notEqual(packageChecksum('16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5', files), recorded);
   assert.equal(assertStagingApiPath(`/api/v1/sites/${STAGING_SITE_ID}`), `/api/v1/sites/${STAGING_SITE_ID}`);
   assert.throws(() => assertStagingApiPath(`/api/v1/sites/${PRODUCTION_SITE_ID}`), /refusing_production/);
   assert.throws(() => assertStagingApiPath('/api/v1/deploys/other/files/index.html', 'ours'), /refusing_site_mismatch/);

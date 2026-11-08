@@ -70,13 +70,28 @@ const PUBLISHER_FILES = new Set([
   'scripts/build-staging-package-16abbf4.mjs',
 ]);
 
+export function packageCommitAllowed(commit, repo = root) {
+  if (typeof commit !== 'string' || !/^[0-9a-f]{40}$/.test(commit)) return false;
+  if (commit === PINNED_COMMIT) return true;
+  const ancestor = spawnSync('git', ['merge-base', '--is-ancestor', PINNED_COMMIT, commit], { cwd: repo });
+  if (ancestor.status !== 0) return false;
+  let diff;
+  try {
+    diff = execFileSync('git', ['diff', '--name-only', PINNED_COMMIT, commit], { cwd: repo, encoding: 'utf8' })
+      .split('\n').map((line) => line.trim()).filter(Boolean);
+  } catch {
+    return false;
+  }
+  return diff.every((path) => PUBLISHER_FILES.has(path));
+}
+
+export function packageChecksum(commit, files) {
+  return createHash('sha256').update(JSON.stringify({ commit, files })).digest('hex');
+}
+
 export function assertHeadCommit(repo = root) {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
-  if (head === PINNED_COMMIT) return head;
-  const ancestor = spawnSync('git', ['merge-base', '--is-ancestor', PINNED_COMMIT, head], { cwd: repo });
-  const diff = execFileSync('git', ['diff', '--name-only', PINNED_COMMIT, head], { cwd: repo, encoding: 'utf8' })
-    .split('\n').map((line) => line.trim()).filter(Boolean);
-  if (ancestor.status !== 0 || diff.some((path) => !PUBLISHER_FILES.has(path))) {
+  if (!packageCommitAllowed(head, repo)) {
     const error = new Error('refusing_commit_mismatch');
     error.code = 'refusing_commit_mismatch';
     throw error;
@@ -116,7 +131,7 @@ function readPin() {
     throw error;
   }
   const pin = JSON.parse(readFileSync(pinPath, 'utf8'));
-  if (pin.commit !== PINNED_COMMIT) {
+  if (!packageCommitAllowed(pin.commit)) {
     const error = new Error('refusing_package_commit');
     error.code = 'refusing_package_commit';
     throw error;
@@ -127,7 +142,7 @@ function readPin() {
   for (const source of ['netlify.toml', 'netlify/functions', 'plugins/function-evidence']) {
     files[`source:${source}`] = { tree: hashTree(resolve(root, source), source) };
   }
-  const packageSha256 = createHash('sha256').update(JSON.stringify({ commit: PINNED_COMMIT, files })).digest('hex');
+  const packageSha256 = packageChecksum(pin.commit, files);
   if (packageSha256 !== pin.packageSha256) {
     const error = new Error('refusing_package_checksum');
     error.code = 'refusing_package_checksum';
