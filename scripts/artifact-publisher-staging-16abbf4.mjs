@@ -526,14 +526,67 @@ export function invocationStampComment(stamp) {
   return `\n// oi-invocation-stamp ${stamp}\nglobalThis.OI_INVOCATION_STAMP=${value};\n`;
 }
 
+function linkDirectory(target, destination) {
+  symlinkSync(target, destination, process.platform === 'win32' ? 'junction' : 'dir');
+}
+
 export function stageFunctionSources(repoRoot, stamp, destination = mkdtempSync(resolve(repoRoot, 'dist/function-src-'))) {
   const functionsDest = resolve(destination, 'netlify/functions');
   mkdirSync(resolve(destination, 'netlify'), { recursive: true });
   cpSync(resolve(repoRoot, 'netlify/functions'), functionsDest, { recursive: true });
+  cpSync(resolve(repoRoot, 'package.json'), resolve(destination, 'package.json'));
   const apiPath = resolve(functionsDest, 'api.ts');
   writeFileSync(apiPath, readFileSync(apiPath, 'utf8') + invocationStampComment(stamp), 'utf8');
-  symlinkSync(resolve(repoRoot, 'src'), resolve(destination, 'src'), process.platform === 'win32' ? 'junction' : 'dir');
+  linkDirectory(resolve(repoRoot, 'src'), resolve(destination, 'src'));
+  linkDirectory(resolve(repoRoot, 'node_modules'), resolve(destination, 'node_modules'));
   return functionsDest;
+}
+
+export const API_ZIP_MIN_BYTES = 5 * 1024 * 1024;
+export const RETRY_ZIP_MIN_BYTES = 1000 * 1000;
+export const REQUIRED_API_ZIP_MODULES = ['express', 'pg', 'jsonwebtoken'];
+
+export function missingBundledModules(entryNames, modules = REQUIRED_API_ZIP_MODULES) {
+  const normalized = (entryNames || []).map((name) => String(name).replace(/\\/g, '/'));
+  return modules.filter((mod) => !normalized.some((name) => name.includes(`node_modules/${mod}/`)));
+}
+
+export function listZipEntryNames(buffer) {
+  const maxBack = Math.min(buffer.length, 22 + 65535);
+  let eocd = -1;
+  for (let offset = buffer.length - 22; offset >= buffer.length - maxBack; offset -= 1) {
+    if (offset < 0) break;
+    if (buffer.readUInt32LE(offset) !== 0x06054b50) continue;
+    const commentLength = buffer.readUInt16LE(offset + 20);
+    if (offset + 22 + commentLength === buffer.length) {
+      eocd = offset;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error('zip end of central directory not found');
+  const count = buffer.readUInt16LE(eocd + 10);
+  let cursor = buffer.readUInt32LE(eocd + 16);
+  if (cursor === 0xffffffff) throw new Error('zip64 central directory is not listed by this check');
+  const names = [];
+  for (let index = 0; index < count; index += 1) {
+    if (buffer.readUInt32LE(cursor) !== 0x02014b50) throw new Error('zip central directory is truncated');
+    const nameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const commentLength = buffer.readUInt16LE(cursor + 32);
+    names.push(buffer.subarray(cursor + 46, cursor + 46 + nameLength).toString('utf8'));
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  return names;
+}
+
+export function functionZipProblems(name, byteLength, entryNames) {
+  const problems = [];
+  if (name === 'api' && byteLength < API_ZIP_MIN_BYTES) problems.push(`api zip is ${byteLength} bytes, under ${API_ZIP_MIN_BYTES}`);
+  if (name === 'photo-deletion-retry' && byteLength < RETRY_ZIP_MIN_BYTES) problems.push(`photo-deletion-retry zip is ${byteLength} bytes, under ${RETRY_ZIP_MIN_BYTES}`);
+  if (name === 'api') {
+    for (const mod of missingBundledModules(entryNames)) problems.push(`api zip is missing node_modules/${mod}/`);
+  }
+  return problems;
 }
 
 async function bundleFunctionsUncaught(cliDir) {
@@ -546,12 +599,19 @@ async function bundleFunctionsUncaught(cliDir) {
     wrapped.detail = 'zip-it-and-ship-it was not found in the Netlify CLI directory';
     throw wrapped;
   }
+  const modulesDir = resolve(root, 'node_modules');
+  const missingModules = REQUIRED_API_ZIP_MODULES.filter((mod) => !existsSync(resolve(modulesDir, ...mod.split('/'))));
+  if (missingModules.length) {
+    const wrapped = fail('functions_bundle_failed');
+    wrapped.detail = `Missing ${missingModules.join(', ')} in ${modulesDir}. From the repo root run: npm ci`;
+    throw wrapped;
+  }
   const { zipFunctions } = await import(pathToFileURL(entry).href);
   const tmp = mkdtempSync(resolve(root, 'dist/function-zip-'));
   const stamp = `${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`;
   const functionsDir = stageFunctionSources(root, stamp);
   const zipConfig = functionsZipConfig(readFileSync(resolve(root, 'netlify.toml'), 'utf8'));
-  const built = await zipFunctions([functionsDir], tmp, { basePath: root, config: zipConfig });
+  const built = await zipFunctions([functionsDir], tmp, { basePath: root, repositoryRoot: root, config: zipConfig });
   const functions = {};
   const byHash = {};
   for (const fn of built) {
@@ -1083,6 +1143,16 @@ async function uploadCheck() {
     return;
   }
   const missing = checkLocalLookups(fileMap, functionMap);
+  const zipProblems = [];
+  for (const [name, sha] of Object.entries(functionMap.functions)) {
+    const entry = (functionMap.byHash[sha] || []).find((item) => item.name === name);
+    if (!entry) continue;
+    const bytes = readFileSync(entry.path);
+    let names = [];
+    try { names = listZipEntryNames(bytes); }
+    catch (error) { zipProblems.push(`${name} zip could not be listed: ${error.message}`); }
+    zipProblems.push(...functionZipProblems(name, bytes.length, names));
+  }
   const routesOk = apiRoutesOk(functionMap);
   const apiInvocationMode = functionMap.functionsConfig?.api?.invocation_mode || null;
   const invocationOk = apiInvocationMode === 'stream';
@@ -1090,7 +1160,7 @@ async function uploadCheck() {
   const productionContext = productionDeployBody({ files: fileMap.files, functions: functionMap.functions, functionsConfig: functionMap.functionsConfig }).draft === false;
   mkdirSync(journalDir, { recursive: true });
   const record = {
-    state: missing.length || !routesOk || !invocationOk || !netlifyToml || !productionContext ? 'upload-check-failed' : 'upload-check',
+    state: missing.length || zipProblems.length || !routesOk || !invocationOk || !netlifyToml || !productionContext ? 'upload-check-failed' : 'upload-check',
     commit: assertHeadCommit(root),
     packageCommit: PINNED_COMMIT,
     packageSha256: pin.packageSha256,
@@ -1104,12 +1174,13 @@ async function uploadCheck() {
     draft: false,
     context: 'production',
     missing,
+    zipProblems,
     productionRefused: true,
     createdAt: new Date().toISOString(),
   };
   writeJson(resolve(journalDir, 'upload-check.json'), record);
   console.log(JSON.stringify(record, null, 2));
-  if (missing.length || !routesOk || !invocationOk || !netlifyToml || !productionContext) process.exitCode = 1;
+  if (missing.length || zipProblems.length || !routesOk || !invocationOk || !netlifyToml || !productionContext) process.exitCode = 1;
 }
 
 async function rollbackApproved() {

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionsFromDeploy, stageFunctionSources, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, functionsFromDeploy, missingBundledModules, stageFunctionSources, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('diagnose compares function metadata without keeping secrets', () => {
   const knownGood = functionsFromDeploy({ available_functions: [{ n: 'api', d: 'sha-good', runtime: 'nodejs22.x', im: 'stream', ro: [], a: 100 }] });
@@ -158,6 +158,14 @@ test('a preparing deploy is not uploaded, and a function retry keeps the same to
   const zipConfig = functionsZipConfig('[functions]\n  directory = "netlify/functions"\n  node_bundler = "esbuild"\n  external_node_modules = ["express"]\n');
   assert.equal(zipConfig['*'].nodeBundler, 'esbuild_zisi');
   assert.deepEqual(zipConfig['*'].externalNodeModules, ['express']);
+});
+
+test('upload-check refuses a small api zip that is missing dependencies', () => {
+  assert.deepEqual(missingBundledModules(['node_modules/express/index.js', 'node_modules/pg/lib/index.js'], ['express', 'pg', 'jsonwebtoken']), ['jsonwebtoken']);
+  const problems = functionZipProblems('api', 528437, ['dist/function-src/netlify/functions/api.cjs']);
+  assert.ok(problems.some((problem) => problem.includes('under')));
+  assert.ok(problems.some((problem) => problem.includes('node_modules/express/')));
+  assert.deepEqual(functionZipProblems('api', 11_540_456, ['node_modules/express/index.js', 'node_modules/pg/lib/index.js', 'node_modules/jsonwebtoken/index.js']), []);
 });
 
 test('the invocation stamp is appended only to a temp copy of the api function', () => {
