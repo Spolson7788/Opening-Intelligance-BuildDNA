@@ -1,9 +1,24 @@
+import { createHash } from "node:crypto";
 import { pool } from "../db/pool";
 import { getObjectBytes } from "./storage";
 import { NFPA80_ITEMS } from "./nfpa80Checklist";
+import { prepareReportPhoto } from "./nfpa80Report";
 import type { VisitDoor, VisitReportData } from "./inspectionVisits";
 
-const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+const PHOTO_FETCH_CONCURRENCY = 4;
+
+async function mapLimited<T>(items: T[], limit: number, run: (item: T) => Promise<void>) {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      await run(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
 
 async function photoBytes(row: { inline_bytes?: Buffer | null; storage_url?: string | null }): Promise<Buffer | null> {
   if (row.inline_bytes && row.inline_bytes.length) return row.inline_bytes;
@@ -51,6 +66,21 @@ export async function loadInspectionVisit(visitId: string, organizationId: strin
     list.push(row);
     byInspection.set(row.inspection_event_id, list);
   }
+  const preparedPhotos = new Map<string, Promise<Buffer | null>>();
+  await mapLimited(deficiencies.rows, PHOTO_FETCH_CONCURRENCY, async (row) => {
+    const raw = await photoBytes(row);
+    if (!raw) {
+      row.prepared = null;
+      return;
+    }
+    const key = createHash("sha256").update(raw).digest("hex");
+    let pending = preparedPhotos.get(key);
+    if (!pending) {
+      pending = prepareReportPhoto(raw);
+      preparedPhotos.set(key, pending);
+    }
+    row.prepared = await pending;
+  });
   const doors: VisitDoor[] = [];
   for (const row of inspections.rows) {
     const answers = (row.checklist_result?.items ?? {}) as Record<string, { result?: string; note?: string | null }>;
@@ -61,7 +91,7 @@ export async function loadInspectionVisit(visitId: string, organizationId: strin
         section: spec?.section || deficiency.item_key,
         description: spec?.text || deficiency.item_key,
         note: deficiency.note as string,
-        photo: await photoBytes(deficiency),
+        photo: deficiency.prepared ?? null,
       });
     }
     doors.push({

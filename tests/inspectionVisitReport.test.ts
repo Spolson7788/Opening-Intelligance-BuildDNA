@@ -2,7 +2,7 @@ import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { NFPA80_ITEMS } from "../src/services/nfpa80Checklist";
 import { orderVisitDoors, visitReportOutline, type VisitDoor } from "../src/services/inspectionVisits";
-import { CONCEPT, drawablePhoto, generateNfpaVisitPdf, pdfRgb } from "../src/services/nfpa80Report";
+import { CONCEPT, drawablePhoto, generateNfpaVisitPdf, pdfRgb, prepareReportPhoto } from "../src/services/nfpa80Report";
 
 function door(code: string, passed: boolean, note?: string): VisitDoor {
   return {
@@ -91,5 +91,32 @@ describe("combined fire door visit report", () => {
     expect(visible).toContain("210A, inspection 1 of 2 at 10:57");
     expect(visible).toContain("Lobby");
     expect(visible).not.toContain("Location not recorded");
+  });
+
+  it("builds a two-door failure report from shrunk photos", async () => {
+    const sharp = (await import("sharp")).default;
+    const pixels = Buffer.alloc(1800 * 1400 * 3);
+    for (let i = 0; i < pixels.length; i += 1) pixels[i] = (i * 17) % 251;
+    const raw = await sharp(pixels, { raw: { width: 1800, height: 1400, channels: 3 } }).jpeg({ quality: 95 }).toBuffer();
+    const prepared = await prepareReportPhoto(raw);
+    expect(prepared).toBeTruthy();
+    const size = drawablePhoto(prepared);
+    expect(Math.max(size!.width, size!.height)).toBeLessThanOrEqual(1200);
+    expect(prepared!.length).toBeLessThan(raw.length);
+    const first = door("310A", false);
+    const second = door("310B", false);
+    first.deficiencies[0].photo = prepared;
+    second.deficiencies[0].photo = prepared;
+    const started = Date.now();
+    const pdf = await generateNfpaVisitPdf({
+      facilityName: "North Clinic", eventDate: "2026-11-09", inspectorName: "Ada Inspector",
+      qualification: "Fire door inspector", licenseNumber: "FD-100", doors: [first, second],
+    });
+    const ms = Date.now() - started;
+    console.info(JSON.stringify({ event: "visit_pdf_measure", ms, bytes: pdf.length, rawPhotoBytes: raw.length, preparedPhotoBytes: prepared!.length }));
+    expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
+    expect(prepared!.length).toBeLessThan(raw.length / 2);
+    expect(pdf.length).toBeLessThan(raw.length);
+    expect(ms).toBeLessThan(15000);
   });
 });

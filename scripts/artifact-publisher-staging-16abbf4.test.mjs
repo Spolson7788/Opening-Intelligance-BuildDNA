@@ -165,6 +165,7 @@ test('a preparing deploy is not uploaded, and a function retry keeps the same to
   );
   assert.equal(functionConfigFromBuild({ name: 'api', routes: [{ pattern: '/health' }, { pattern: '/api/*' }] }).invocation_mode, 'stream');
   const zipConfig = functionsZipConfig('[functions]\n  directory = "netlify/functions"\n  node_bundler = "esbuild"\n  external_node_modules = ["express"]\n');
+  assert.equal(functionsZipConfig('[functions]\n  timeout = 26\n  node_bundler = "esbuild"\n  external_node_modules = ["express"]\n')['*'].timeout, 26);
   assert.equal(zipConfig['*'].nodeBundler, 'esbuild_zisi');
   assert.deepEqual(zipConfig['*'].externalNodeModules, ['express']);
 });

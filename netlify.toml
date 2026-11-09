@@ -8,6 +8,9 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
   external_node_modules = ["express"]
+  # Synchronous Netlify functions accept at most 26 seconds. Background
+  # functions run longer but do not return the stored PDF to the phone.
+  timeout = 26
 [context.production.environment]
   NODE_ENV = "production"
 [[plugins]]

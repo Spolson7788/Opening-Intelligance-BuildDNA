@@ -95,6 +95,7 @@ it("groups two openings into one visit and keeps the combined report inside the 
 
   const sent: { subject?: string; attachments?: { filename: string }[] }[] = [];
   setEmailProviderForTests({ name: "fake", send: async (message) => { sent.push(message); return { sent: true }; } });
+  expect((await request(app).post(`/api/events/inspection-visits/${visitId}/official-pdf`).set(auth).send({})).status).toBe(200);
   const mailed = await request(app).post(`/api/events/inspection-visits/${visitId}/email`).set(auth).send({ to: ["building@example.com", org.email] });
   expect(mailed.status).toBe(200);
   expect(sent[0].attachments?.[0].filename).toBe("fire-door-inspection-visit.pdf");
@@ -143,8 +144,7 @@ it("does not freeze the official PDF when a later door in the visit has not reac
   const lateId = randomUUID();
   setEmailProviderForTests({ name: "fake", send: async () => ({ sent: true }) });
   const puts = storage.puts;
-  const blocked = await request(app).post(`/api/events/inspection-visits/${visitId}/email`).set(auth).send({
-    to: ["building@example.com"],
+  const blocked = await request(app).post(`/api/events/inspection-visits/${visitId}/official-pdf`).set(auth).send({
     expected_inspection_ids: [early.body.id, lateId],
   });
   expect(blocked.status).toBe(409);
@@ -156,6 +156,9 @@ it("does not freeze the official PDF when a later door in the visit has not reac
     opening_id: second.id, event_date: "2026-11-09", inspection_type: "fire_door_nfpa80", visit_id: visitId, ...passingFireDoorFields(),
   });
   expect(arrived.status).toBe(201);
+  expect((await request(app).post(`/api/events/inspection-visits/${visitId}/official-pdf`).set(auth).send({
+    expected_inspection_ids: [early.body.id, arrived.body.id],
+  })).status).toBe(200);
   const mailed = await request(app).post(`/api/events/inspection-visits/${visitId}/email`).set(auth).send({
     to: ["building@example.com"],
     expected_inspection_ids: [early.body.id, arrived.body.id],
@@ -183,6 +186,12 @@ it("rejects a new inspection on a finished visit and keeps the official PDF", as
   expect(saved.status).toBe(201);
   setEmailProviderForTests({ name: "fake", send: async () => ({ sent: true }) });
   const puts = storage.puts;
+  expect((await request(app).post(`/api/events/inspection-visits/${visitId}/email`).set(auth).send({
+    to: ["building@example.com"], expected_inspection_ids: [saved.body.id],
+  })).body.error).toBe("report_not_stored");
+  expect((await request(app).post(`/api/events/inspection-visits/${visitId}/official-pdf`).set(auth).send({
+    expected_inspection_ids: [saved.body.id],
+  })).status).toBe(200);
   const mailed = await request(app).post(`/api/events/inspection-visits/${visitId}/email`).set(auth).send({
     to: ["building@example.com"], expected_inspection_ids: [saved.body.id],
   });
@@ -209,4 +218,28 @@ it("rejects a new inspection on a finished visit and keeps the official PDF", as
   const again = await request(app).post(`/api/events/inspection-visits/${visitId}/email`).set(auth).send({ to: ["building@example.com"] });
   expect(again.status).toBe(200);
   expect(storage.puts).toBe(puts + 1);
+});
+
+it("does not rebuild the official PDF when the email fails and is retried", async () => {
+  const org = await signupTestOrg("Email retry");
+  const { buildingId } = await createPortfolioHierarchy(org.token);
+  const opening = await createTestOpening(org.token, buildingId, { opening_code: `MAIL-${randomUUID().slice(0, 8)}`, fire_rated: true });
+  const visitId = randomUUID();
+  const auth = { Authorization: `Bearer ${org.token}` };
+  const saved = await request(app).post("/api/events/inspection-events").set(auth).send({
+    opening_id: opening.id, event_date: "2026-11-09", inspection_type: "fire_door_nfpa80", visit_id: visitId, ...passingFireDoorFields(),
+  });
+  expect(saved.status).toBe(201);
+  const puts = storage.puts;
+  const stored = await request(app).post(`/api/events/inspection-visits/${visitId}/official-pdf`).set(auth).send({ expected_inspection_ids: [saved.body.id] });
+  expect(stored.status).toBe(200);
+  expect(stored.body.reused).toBe(false);
+  expect(storage.puts).toBe(puts + 1);
+  setEmailProviderForTests({ name: "fake", send: async () => ({ sent: false, reason: "email_send_failed" }) });
+  const failed = await request(app).post(`/api/events/inspection-visits/${visitId}/email`).set(auth).send({ to: ["building@example.com"] });
+  expect(failed.status).toBe(503);
+  const retry = await request(app).post(`/api/events/inspection-visits/${visitId}/official-pdf`).set(auth).send({ expected_inspection_ids: [saved.body.id] });
+  expect(retry.body.reused).toBe(true);
+  expect(storage.puts).toBe(puts + 1);
+  expect((await pool.query("SELECT report_sent_at FROM inspection_visits WHERE id=$1", [visitId])).rows[0].report_sent_at).toBeNull();
 });

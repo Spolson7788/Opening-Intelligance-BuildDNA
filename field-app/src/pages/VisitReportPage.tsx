@@ -3,8 +3,8 @@ import type { FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { SyncBadge } from "../components/SyncBadge";
 import { emailFailureText, reportRecipientList } from "../components/EmailInspectionReport";
-import { ApiError, emailInspectionVisit, fetchInspectionVisit, inspectionVisitRecipients } from "../lib/api";
-import { flushOutbox } from "../lib/sync";
+import { ApiError, emailInspectionVisit, fetchInspectionVisit, inspectionVisitRecipients, storeInspectionVisitPdf } from "../lib/api";
+import { flushOutbox, noteSyncDiagnostic } from "../lib/sync";
 import { getSyncOperationsForPrincipal, loadAuth } from "../lib/db";
 import { finishVisit, pendingInspectionIds, readVisitById, visitSummaryText, visitUploadMessage } from "../lib/inspectionVisit";
 import type { InspectionVisit } from "../lib/inspectionVisit";
@@ -73,12 +73,17 @@ export function VisitReportPage() {
         setNoticeRole("alert");
         return;
       }
+      await storeInspectionVisitPdf(id, localIds);
       await emailInspectionVisit(id, recipients, localIds);
       await finishVisit(id);
       setNotice("Combined report emailed.");
       setNoticeRole("status");
     } catch (error) {
-      setNotice(error instanceof ApiError && error.message === "visit_inspections_pending"
+      noteSyncDiagnostic(error, true);
+      const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      setNotice(timedOut
+        ? "The report request timed out. The visit stays open. Try again."
+        : error instanceof ApiError && error.message === "visit_inspections_pending"
         ? visitUploadMessage(Math.max(localIds.length, 1))
         : emailFailureText(error));
       setNoticeRole("alert");

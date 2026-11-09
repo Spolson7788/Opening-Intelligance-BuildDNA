@@ -503,8 +503,22 @@ export function fetchInspectionVisit(id: string): Promise<{ inspected: number; i
   return authedFetch(`/events/inspection-visits/${id}`);
 }
 
+const VISIT_REPORT_TIMEOUT_MS = 25_000;
+
+function visitReportSignal(): AbortSignal | undefined {
+  return typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(VISIT_REPORT_TIMEOUT_MS) : undefined;
+}
+
+export function storeInspectionVisitPdf(id: string, expectedInspectionIds: string[]): Promise<{ stored: boolean; reused: boolean; bytes: number }> {
+  return authedFetch(`/events/inspection-visits/${id}/official-pdf`, {
+    method: "POST", body: JSON.stringify({ expected_inspection_ids: expectedInspectionIds }), signal: visitReportSignal(),
+  });
+}
+
 export function emailInspectionVisit(id: string, to: string[], expectedInspectionIds: string[]): Promise<{ sent: boolean; delivery_mode: string }> {
-  return authedFetch(`/events/inspection-visits/${id}/email`, { method: "POST", body: JSON.stringify({ to, expected_inspection_ids: expectedInspectionIds }) });
+  return authedFetch(`/events/inspection-visits/${id}/email`, {
+    method: "POST", body: JSON.stringify({ to, expected_inspection_ids: expectedInspectionIds }), signal: visitReportSignal(),
+  });
 }
 
 export async function recomputeHealthScore(openingId: string) {

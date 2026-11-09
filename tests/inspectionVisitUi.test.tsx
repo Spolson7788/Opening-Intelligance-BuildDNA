@@ -27,12 +27,14 @@ vi.mock("../field-app/src/lib/db", () => ({
   getSyncOperationsForPrincipal: async () => store.operations,
 }));
 vi.mock("../field-app/src/lib/api", () => ({
+  ApiError: class ApiError extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status; } },
   recomputeHealthScore: vi.fn(async () => {}),
   inspectionReportRecipients: vi.fn(async () => ({ to: ["building@example.com", "signer@example.com"], facility_contact_email: "building@example.com", inspector_email: "signer@example.com" })),
   emailInspectionReport: vi.fn(),
   inspectionVisitRecipients: vi.fn(async () => ({ to: ["building@example.com", "signer@example.com"], facility_contact_email: "building@example.com", inspector_email: "signer@example.com" })),
   fetchInspectionVisit: vi.fn(async () => ({ inspected: store.serverIds.length, inspection_ids: store.serverIds })),
   emailInspectionVisit: (...args: unknown[]) => store.email(...args),
+  storeInspectionVisitPdf: vi.fn(async () => ({ stored: true, reused: false, bytes: 1200 })),
 }));
 vi.mock("../field-app/src/components/SyncBadge", () => ({ SyncBadge: () => <span>Sync</span> }));
 vi.mock("../field-app/src/components/SignaturePad", () => ({
@@ -163,4 +165,27 @@ it("clears the active visit after the combined report is sent", async () => {
   expect(store.email).toHaveBeenCalledWith("visit-sent", ["building@example.com", "signer@example.com"], ["insp-210a"]);
   expect((store.settings.get(`inspection-visit:${visitId}`) as { status: string }).status).toBe("finished");
   expect(store.settings.get("inspection-visit-open:u:org:facility-1")).toBe("");
+});
+
+it("shows the HTTP status when sending the report fails and leaves the visit open", async () => {
+  const { storeInspectionVisitPdf, ApiError } = await import("../field-app/src/lib/api");
+  const visitId = "visit-timeout";
+  store.serverIds = ["insp-210a"];
+  store.settings.set(`inspection-visit:${visitId}`, {
+    id: visitId, organizationId: "org", userId: "u", facilityId: "facility-1", status: "open",
+    inspections: [{ inspectionId: "insp-210a", openingId: "door-210a", passed: false }],
+  });
+  store.settings.set("inspection-visit-open:u:org:facility-1", visitId);
+  vi.mocked(storeInspectionVisitPdf).mockRejectedValueOnce(new ApiError(504, "unexpected_response"));
+  Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+  await act(async () => root.render(
+    <MemoryRouter initialEntries={[`/visit/${visitId}`]}>
+      <Routes><Route path="/visit/:id" element={<VisitReportPage />} /></Routes>
+    </MemoryRouter>,
+  ));
+  await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(host.textContent).toContain("Could not email the report (504: unexpected_response)");
+  expect(host.textContent).toContain("The visit stays open");
+  expect(store.email).not.toHaveBeenCalled();
+  expect((store.settings.get(`inspection-visit:${visitId}`) as { status: string }).status).toBe("open");
 });

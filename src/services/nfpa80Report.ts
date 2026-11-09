@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import PDFDocument from "pdfkit";
+import sharp from "sharp";
 import { NFPA80_EDITION, NFPA80_ITEMS } from "./nfpa80Checklist";
 import { doorHeading, orderVisitDoors, visitCounts, withRepeatedDoorLabels, type VisitDoor, type VisitReportData } from "./inspectionVisits";
 
@@ -103,6 +104,29 @@ export interface NfpaReportData {
   signatureData: string | null;
   checklist: { items?: Record<string, { result?: string; note?: string | null }> } | null;
   deficiencies: NfpaReportDeficiency[];
+}
+
+const REPORT_PHOTO_EDGE = 1200;
+
+/** Shrink a report photo so the official PDF stays small enough to build and mail. */
+export async function prepareReportPhoto(bytes: Buffer | null): Promise<Buffer | null> {
+  const size = drawablePhoto(bytes);
+  if (!bytes || !size) return null;
+  try {
+    let image = sharp(bytes, { failOn: "none", unlimited: false }).rotate();
+    if (Math.max(size.width, size.height) > REPORT_PHOTO_EDGE) {
+      image = image.resize({
+        width: size.width >= size.height ? REPORT_PHOTO_EDGE : undefined,
+        height: size.height > size.width ? REPORT_PHOTO_EDGE : undefined,
+        fit: "inside",
+        withoutEnlargement: true,
+      });
+    }
+    const prepared = await image.jpeg({ quality: 70 }).toBuffer();
+    return drawablePhoto(prepared) ? prepared : null;
+  } catch {
+    return null;
+  }
 }
 
 function drawPhoto(doc: PDFKit.PDFDocument, photo: Buffer | null) {

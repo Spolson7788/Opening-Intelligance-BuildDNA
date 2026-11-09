@@ -30,6 +30,11 @@ export function emailFailureText(error: unknown): string {
   if (message === "invalid_email") return "Enter a valid email address.";
   if (message === "forbidden") return "You do not have access to email this report.";
   if (message === "not_found") return "This inspection is not on the server yet.";
+  if (message === "report_not_stored") return "The official report is not stored yet. The visit stays open. Try again.";
+  const status = error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number"
+    ? (error as { status: number }).status : 0;
+  if (message === "request_timeout" || /timeout/i.test(message)) return "The report request timed out. The visit stays open. Try again.";
+  if (status) return `Could not email the report (${status}: ${message || "no details"}). The visit stays open.`;
   return "Could not email the report.";
 }
 

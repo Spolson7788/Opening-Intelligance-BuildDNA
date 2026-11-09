@@ -346,6 +346,30 @@ eventsRouter.get("/inspection-visits/:id/email-defaults", async (req: AuthedRequ
   } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
 });
 
+eventsRouter.post("/inspection-visits/:id/official-pdf", async (req: AuthedRequest, res) => {
+  const body = z.object({
+    expected_inspection_ids: z.array(z.string().uuid()).max(200).optional(),
+    expected_inspection_count: z.number().int().positive().max(200).optional(),
+  }).strict().safeParse(req.body ?? {});
+  if (!body.success) return res.status(400).json({ error: "invalid_report" });
+  const started = Date.now();
+  try {
+    const result = await visitForRequest(req.params.id, req.auth!.organizationId, req.auth!.userId);
+    if (result.status !== 200) return res.status(result.status).json({ error: result.error });
+    const stored = await pool.query(`SELECT report_storage_key FROM inspection_visits WHERE id=$1 AND organization_id=$2`, [req.params.id, req.auth!.organizationId]);
+    if (!stored.rows[0]?.report_storage_key) {
+      const pending = visitInspectionsShortfall(result.loaded.inspectionIds, body.data.expected_inspection_ids, body.data.expected_inspection_count);
+      if (pending > 0) return res.status(409).json({ error: "visit_inspections_pending", pending });
+    }
+    const official = await officialVisitPdf({
+      visitId: req.params.id, organizationId: req.auth!.organizationId, propertyId: result.loaded.propertyId,
+      userId: req.auth!.userId, report: result.loaded,
+    });
+    console.info(JSON.stringify({ event: "visit_official_pdf", ms: Date.now() - started, bytes: official.pdf.length, reused: official.reused, doors: result.loaded.doors.length }));
+    res.json({ stored: true, reused: official.reused, bytes: official.pdf.length });
+  } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
+});
+
 eventsRouter.post("/inspection-visits/:id/email", async (req: AuthedRequest, res) => {
   const body = z.object({
     to: z.union([z.string().trim().email().max(200), z.array(z.string().trim().email().max(200)).min(1).max(10)]),
@@ -359,10 +383,7 @@ eventsRouter.post("/inspection-visits/:id/email", async (req: AuthedRequest, res
     const result = await visitForRequest(req.params.id, req.auth!.organizationId, req.auth!.userId);
     if (result.status !== 200) return res.status(result.status).json({ error: result.error });
     const stored = await pool.query(`SELECT report_storage_key FROM inspection_visits WHERE id=$1 AND organization_id=$2`, [req.params.id, req.auth!.organizationId]);
-    if (!stored.rows[0]?.report_storage_key) {
-      const pending = visitInspectionsShortfall(result.loaded.inspectionIds, body.data.expected_inspection_ids, body.data.expected_inspection_count);
-      if (pending > 0) return res.status(409).json({ error: "visit_inspections_pending", pending });
-    }
+    if (!stored.rows[0]?.report_storage_key) return res.status(409).json({ error: "report_not_stored" });
     const official = await officialVisitPdf({
       visitId: req.params.id, organizationId: req.auth!.organizationId, propertyId: result.loaded.propertyId,
       userId: req.auth!.userId, report: result.loaded,

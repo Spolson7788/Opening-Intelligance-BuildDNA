@@ -45,8 +45,8 @@ let statusRead = 0;
 let pendingCountRetry: ReturnType<typeof setTimeout> | null = null;
 let pendingCountAttempt = 0;
 
-export function noteSyncDiagnostic(error: unknown) {
-  if (!isDeviceStorageError(error)) return;
+export function noteSyncDiagnostic(error: unknown, force = false) {
+  if (!force && !isDeviceStorageError(error)) return;
   currentState = { ...currentState, diagnostic: storageDiagnostic(error) };
   notify();
 }

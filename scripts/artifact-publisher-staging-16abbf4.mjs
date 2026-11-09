@@ -721,10 +721,12 @@ export function functionsZipConfig(tomlText) {
   const bundler = /node_bundler\s*=\s*"([^"]+)"/.exec(body)?.[1];
   const external = /external_node_modules\s*=\s*\[([^\]]*)\]/.exec(body)?.[1] || '';
   const modules = [...external.matchAll(/"([^"]+)"/g)].map((item) => item[1]);
+  const timeout = Number(/^\s*timeout\s*=\s*(\d+)/m.exec(body)?.[1]);
   return {
     '*': {
       ...(modules.length ? { externalNodeModules: modules } : {}),
       ...(bundler === 'esbuild' ? { nodeBundler: 'esbuild_zisi' } : bundler ? { nodeBundler: bundler } : {}),
+      ...(Number.isInteger(timeout) && timeout > 0 ? { timeout } : {}),
       processDynamicNodeImports: true,
       zipGo: true,
     },
