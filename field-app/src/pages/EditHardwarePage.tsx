@@ -3,7 +3,6 @@ import type { FormEvent } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { ApiError, editHardwareComponent, deleteHardwareComponent, fetchHardwareForOpening } from "../lib/api";
 import { CARRIER_OPTIONS, carrierTrackingUrl } from "../lib/tracking";
-import { FieldBrand } from "../components/FieldBrand";
 import { SyncBadge } from "../components/SyncBadge";
 import { SendToPurchasing } from "../components/SendToPurchasing";
 import { useAuth } from '../lib/AuthContext';
@@ -161,7 +160,6 @@ export function EditHardwarePage() {
   if (loading) {
     return (
       <div className="app-shell c04 c04-editor">
-        <FieldBrand />
         <div className="c04-toolbar">
           <p className="c04-kicker">Field app</p>
           <SyncBadge />
@@ -175,7 +173,6 @@ export function EditHardwarePage() {
 
   return (
     <div className="app-shell c04 c04-editor">
-      <FieldBrand />
       <div className="c04-toolbar">
         <button className="btn c04-back" type="button" onClick={() => navigate(-1)}>Back</button>
         <SyncBadge />

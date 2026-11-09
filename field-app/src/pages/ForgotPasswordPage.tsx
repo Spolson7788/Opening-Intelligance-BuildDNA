@@ -27,7 +27,7 @@ export function ForgotPasswordPage() {
   return (
     <div className="login-shell">
       <div className="login-card">
-        <div className="asset-plate" style={{ marginBottom: 18 }}>OPENING-INTEL</div>
+        <p className="c04-kicker">Field app</p>
         <h1>Reset your password</h1>
         <p className="login-lead">Enter the email address for your Opening Intelligence account. The link opens in the dashboard.</p>
         <form onSubmit={submit}>

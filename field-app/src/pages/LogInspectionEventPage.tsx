@@ -251,7 +251,7 @@ export function LogInspectionEventPage() {
                   style={{
                     background: passed === "pass" ? "var(--success)" : "var(--surface-raised)",
                     borderColor: passed === "pass" ? "var(--success)" : "var(--border)",
-                    color: passed === "pass" ? "#0b1a0d" : "var(--text)",
+                    color: passed === "pass" ? "#fff" : "var(--text)",
                   }}
                   onClick={() => setPassed("pass")}
                 >
@@ -263,7 +263,7 @@ export function LogInspectionEventPage() {
                   style={{
                     background: passed === "fail" ? "var(--danger)" : "var(--surface-raised)",
                     borderColor: passed === "fail" ? "var(--danger)" : "var(--border)",
-                    color: passed === "fail" ? "#1a0b0c" : "var(--text)",
+                    color: passed === "fail" ? "#fff" : "var(--text)",
                   }}
                   onClick={() => setPassed("fail")}
                 >

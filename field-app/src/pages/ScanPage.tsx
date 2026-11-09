@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
-import { FieldBrand } from "../components/FieldBrand";
 import { SyncBadge } from "../components/SyncBadge";
 import { FacilitySelector } from "../components/FacilitySelector";
 import { useAuth } from "../lib/AuthContext";
@@ -73,7 +72,6 @@ export function ScanPage() {
 
   return (
     <div className="app-shell c04">
-      <FieldBrand />
       <div className="c04-toolbar">
         <p className="c04-kicker">Field app</p>
         <SyncBadge />

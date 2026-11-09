@@ -8,6 +8,7 @@ import { scrollPageToTop } from "./lib/scrollPage";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/AuthContext";
 import { initSync } from "./lib/sync";
+import { FieldBrand } from "./components/FieldBrand";
 import { LoginPage } from "./pages/LoginPage";
 import { HowToUsePage } from "./pages/HowToUsePage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
@@ -105,14 +106,19 @@ export function FieldApplication() {
   const readOnly = isQrLandingPath(location.pathname) || isQrDetailsPath(location.pathname)
     || isQrLogin(location.pathname, location.state?.from);
   useLayoutEffect(() => { setSyncReadOnly(readOnly); return () => setSyncReadOnly(false); }, [readOnly]);
+  useEffect(() => {
+    document.body.classList.add("c04-on");
+    return () => document.body.classList.remove("c04-on");
+  }, []);
   // Public landing is outside auth/identity and sync lifecycles, including when
   // the device already has a signed-in account and a retained offline queue.
-  if (isQrLandingPath(location.pathname)) return <Routes>
+  if (isQrLandingPath(location.pathname)) return <><div className="no-print"><FieldBrand /></div><Routes>
     <Route path="/opening/by-qr/:qrToken" element={<QrInformationPage />} />
     <Route path="*" element={<QrInformationPage />} />
-  </Routes>;
+    </Routes></>;
   return (
     <AuthProvider>
+        <div className="no-print"><FieldBrand /></div>
         <AccountIdentity />
         <CompanySwitcher />
         <AppRoutes />

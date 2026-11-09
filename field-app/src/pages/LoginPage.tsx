@@ -122,9 +122,10 @@ export function LoginPage() {
 
   if (pending) {
     return (
-      <div className="screen" style={{ display: "flex", flexDirection: "column", justifyContent: "center", minHeight: "100vh" }}>
-        <div className="asset-plate" style={{ marginBottom: 16 }}>OPENING-INTEL</div>
-        <h1 style={{ fontSize: 24, marginBottom: 4 }}>Email sign-in code</h1>
+      <div className="app-shell c04"><div className="screen">
+        <p className="c04-kicker">Field app</p>
+        <h1>Email sign-in code</h1>
+        <section className="c04-band">
         <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>We emailed a 6-digit code to {pending.email}. It expires in 10 minutes. You can switch to Mail, copy the code, and come back to this screen.</p>
         <form onSubmit={onVerify}>
           <div className="field">
@@ -135,30 +136,29 @@ export function LoginPage() {
           <button type="submit" className="btn btn-primary" disabled={submitting || code.length !== 6}>{submitting ? "Checking…" : "Continue"}</button>
         </form>
         <button type="button" className="btn" disabled={submitting || wait > 0} onClick={onResend}>{wait > 0 ? `Resend code (${wait}s)` : "Resend code"}</button>
-        <button type="button" className="btn" onClick={forget}>Back to password</button>
-      </div>
+        <button type="button" className="btn c04-choice" onClick={forget}>Back to password</button>
+        </section>
+      </div></div>
     );
   }
 
   if (loading || identityChecking) return <div className="screen"><p role="status">Checking signed-in account.</p></div>;
-  if (auth) return <div className="screen">
+  if (auth) return <div className="app-shell c04"><div className="screen">
+    <p className="c04-kicker">Field app</p>
     <h1>Already signed in</h1>
     <p>Signed in as {auth.email || `Account ${auth.userId}`}</p>
     <p>Organization {auth.organizationId}</p>
     <p>This sign-in page does not switch accounts. To use a different account, go to Scan and sign out first. Saved changes remain associated with their original account.</p>
     <button type="button" className="btn btn-primary" onClick={() => navigate(loginReturnPath(location.state?.from), { replace: true })}>Continue with this account</button>
-    <button type="button" className="btn" onClick={() => navigate("/scan", { replace: true })}>Go to Scan</button>
-  </div>;
+    <button type="button" className="btn c04-choice" onClick={() => navigate("/scan", { replace: true })}>Go to Scan</button>
+  </div></div>;
 
   return (
-    <div className="screen" style={{ display: "flex", flexDirection: "column", justifyContent: "center", minHeight: "100vh" }}>
-      <div style={{ marginBottom: 32 }}>
-        <div className="asset-plate" style={{ marginBottom: 16 }}>OPENING-INTEL</div>
-        <h1 style={{ fontSize: 24, marginBottom: 4 }}>Field Sign-In</h1>
-        <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
-          Sign in to scan openings and log service.
-        </p>
-      </div>
+    <div className="app-shell c04"><div className="screen">
+      <p className="c04-kicker">Field app</p>
+      <h1>Field Sign-In</h1>
+      <p className="c04-note">Sign in to scan openings and log service.</p>
+      <section className="c04-band">
       {location.state?.passwordChanged === true && !error && <p role="status">Password changed. Sign in with your new password.</p>}
       <form onSubmit={onSubmit}>
         <div className="field">
@@ -188,12 +188,13 @@ export function LoginPage() {
           {submitting ? "Signing in…" : "Sign In"}
         </button>
       </form>
+      </section>
       <p style={{ textAlign: "center", marginTop: 16 }}>
-        <Link to="/forgot-password" style={{ color: "#ff6a1a", fontWeight: 700 }}>Forgot password?</Link>
+        <Link to="/forgot-password">Forgot password?</Link>
         {" · "}
-        <Link to="/how-to-use" style={{ color: "#ff6a1a", fontWeight: 700 }}>How to use</Link>
+        <Link to="/how-to-use">How to use</Link>
       </p>
-      {renewalUrl && <p style={{ fontSize: 13, marginTop: 16 }}><RenewPrivateSiteAccess>Renew private site access</RenewPrivateSiteAccess> if this private preview asks for access again.</p>}
-    </div>
+      {renewalUrl && <p style={{ fontSize: 16, marginTop: 16 }}><RenewPrivateSiteAccess>Renew private site access</RenewPrivateSiteAccess> if this private preview asks for access again.</p>}
+    </div></div>
   );
 }

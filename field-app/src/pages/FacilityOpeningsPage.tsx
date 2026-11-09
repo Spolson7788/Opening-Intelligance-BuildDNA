@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { listFieldProperties, listOpenings } from "../lib/api";
 import { isAppSessionFailure } from "../lib/siteAccess";
-import { FieldBrand } from "../components/FieldBrand";
 import { FacilitySelector, useFacilitySync } from "../components/FacilitySelector";
 import { getOfflineSetting, putOfflineSetting } from "../lib/db";
 import { useAuth } from "../lib/AuthContext";
@@ -54,7 +53,6 @@ export function FacilityOpeningsPage() {
   const buildings = ordered.flatMap((p) => (p.buildings ?? []).map((b) => ({ id: b.id, label: `${p.name} - ${b.name}` })));
   return (
     <div className="app-shell c04">
-      <FieldBrand />
       <div className="c04-toolbar">
         <button className="btn c04-back" type="button" onClick={() => navigate("/scan")}>Back</button>
         <SyncBadge />

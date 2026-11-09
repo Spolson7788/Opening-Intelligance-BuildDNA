@@ -26,9 +26,10 @@ export function SetupOpeningPage() {
     setBusy(true);setError("");setNotice("");
     try {await action();} catch {setError("Could not confirm the save. Reload the facility list before retrying to check whether it was saved.");} finally{setBusy(false);}
   }
-  return <div className="screen"><Link to="/scan">Back to openings</Link><h1>Facilities and openings</h1>{auth?.role==="admin"&&<Link to="/branches">Manage company branches</Link>}
-    <p>Connected setup for your organization. Hardware, specifications and photographs can be queued once an opening is available on this device.</p>
+  return <div className="app-shell c04"><div className="screen"><Link to="/scan">Back to openings</Link><h1>Facilities and openings</h1>{auth?.role==="admin"&&<p><Link to="/branches">Manage company branches</Link></p>}
+    <p className="c04-note">Connected setup for your organization. Hardware, specifications and photographs can be queued once an opening is available on this device.</p>
     {error&&<p role="alert" className="error-text">{error}</p>}{notice&&<p role="status">{notice}</p>}
+    <section className="c04-band-blue" aria-label="Find a facility">
     <div className="field"><label htmlFor="state">State</label><select id="state" value={state} onChange={e=>{setState(e.target.value);setCounty("");resetSelection();}}><option value="">All states</option>{[...new Map(facilities.filter(f=>f.state_code).map(f=>[f.state_code!, f.state_name||f.state_code!])).entries()].sort((a,b)=>a[1].localeCompare(b[1])).map(([code,name])=><option key={code} value={code}>{name}</option>)}</select></div>
     <div className="field"><label htmlFor="county">County</label><select id="county" value={county} onChange={e=>{setCounty(e.target.value);resetSelection();}}><option value="">All counties</option>{[...new Map(facilities.filter(f=>f.county_fips&&(!state||f.state_code===state)).map(f=>[f.county_fips!, f.county_name||f.county_fips!])).entries()].sort((a,b)=>a[1].localeCompare(b[1])).map(([fips,name])=><option key={fips} value={fips}>{name}</option>)}</select></div>
     <div className="field"><label htmlFor="facility-query">Find facility</label><input id="facility-query" type="search" placeholder="Name, address, city or ZIP" value={query} onChange={e=>{setQuery(e.target.value);resetSelection();}}/></div>
@@ -36,21 +37,22 @@ export function SetupOpeningPage() {
     <div className="field"><label htmlFor="facility">Facility</label><select id="facility" value={facility} onChange={e=>{setFacility(e.target.value);setBuilding("");}}><option value="">Select facility…</option>{visible.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></div>
     {!facilities.length&&<p>No facilities are available yet.</p>}
     <div className="field"><label htmlFor="building">Building</label><select id="building" disabled={!facility} value={building} onChange={e=>setBuilding(e.target.value)}><option value="">Select building…</option>{buildings.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+    </section>
     {canCreate&&<>
-    <form onSubmit={e=>{e.preventDefault();void perform(async()=>{const row=await createFieldProperty({portfolio_id:portfolio,name:facilityName.trim(),property_type:type});setFacilities(prev=>[...prev,{...row,buildings:[]}]);setState("");setCounty("");setQuery("");setFacility(row.id);setBuilding("");setFacilityName("");setNotice("Facility saved.");});}}>
+    <form className="c04-band-green" onSubmit={e=>{e.preventDefault();void perform(async()=>{const row=await createFieldProperty({portfolio_id:portfolio,name:facilityName.trim(),property_type:type});setFacilities(prev=>[...prev,{...row,buildings:[]}]);setState("");setCounty("");setQuery("");setFacility(row.id);setBuilding("");setFacilityName("");setNotice("Facility saved.");});}}>
       <h2>Add facility</h2><div className="field"><label htmlFor="portfolio">Portfolio</label><select id="portfolio" required value={portfolio} onChange={e=>setPortfolio(e.target.value)}><option value="">Select portfolio…</option>{portfolios.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
       <div className="field"><label htmlFor="facility-name">Facility name</label><input id="facility-name" required value={facilityName} onChange={e=>setFacilityName(e.target.value)}/></div>
       <div className="field"><label htmlFor="facility-type">Facility type</label><select id="facility-type" value={type} onChange={e=>setType(e.target.value)}>{[["multifamily","Multifamily"],["senior_living","Senior living"],["healthcare","Healthcare"],["university","University"],["hospitality","Hospitality"],["other","Other"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
       <button className="btn btn-secondary" disabled={busy||!portfolio||!facilityName.trim()}>Save facility</button>
     </form>
-    <form onSubmit={e=>{e.preventDefault();void perform(async()=>{const b=await createFieldBuilding({property_id:facility,name:buildingName.trim()});setFacilities(prev=>prev.map(f=>f.id===facility?{...f,buildings:[...f.buildings,b]}:f));setBuilding(b.id);setBuildingName("");setNotice("Building saved.");});}}>
+    <form className="c04-band" onSubmit={e=>{e.preventDefault();void perform(async()=>{const b=await createFieldBuilding({property_id:facility,name:buildingName.trim()});setFacilities(prev=>prev.map(f=>f.id===facility?{...f,buildings:[...f.buildings,b]}:f));setBuilding(b.id);setBuildingName("");setNotice("Building saved.");});}}>
       <h2>Add building to selected facility</h2><div className="field"><label htmlFor="building-name">Building name</label><input id="building-name" required value={buildingName} onChange={e=>setBuildingName(e.target.value)}/></div><button className="btn btn-secondary" disabled={busy||!facility||!buildingName.trim()}>Save building</button>
     </form>
-    <form onSubmit={e=>{e.preventDefault();void perform(async()=>{const row=await createFieldOpening({building_id:building,opening_code:code.trim(),opening_type:"door",opening_configuration:configuration,fire_rated:fire});navigate(`/opening/${row.id}`);});}}>
+    <form className="c04-band-blue" onSubmit={e=>{e.preventDefault();void perform(async()=>{const row=await createFieldOpening({building_id:building,opening_code:code.trim(),opening_type:"door",opening_configuration:configuration,fire_rated:fire});navigate(`/opening/${row.id}`);});}}>
       <h2>Add door opening</h2><div className="field"><label htmlFor="opening-code">Opening code</label><input id="opening-code" required value={code} onChange={e=>setCode(e.target.value)}/></div>
       <div className="field"><label htmlFor="configuration">Door configuration</label><select id="configuration" value={configuration} onChange={e=>setConfiguration(e.target.value)}><option value="single">Single door</option><option value="pair">Paired doors</option></select></div>
       <label><input type="checkbox" checked={fire} onChange={e=>setFire(e.target.checked)}/> This is a fire-rated opening</label><p>Set the classification only from the opening's documented evidence.</p>
       <button className="btn btn-primary" disabled={busy||!building||!code.trim()}>Create opening</button>
     </form></>}
-  </div>;
+  </div></div>;
 }
