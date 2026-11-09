@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, expect, it } from "vitest";
 import { closeFieldAppDb, getOfflineSetting, getSyncOperationsForPrincipal, putOfflineSetting, putSyncOperation, requeueFinishedVisitInspection, saveAuth } from "../field-app/src/lib/db";
-import { ensureOpenVisit, finishVisit, pendingInspectionIds, readVisitById, recordVisitInspection, startNewVisit, visitSummaryText, visitUploadMessage, withInspection } from "../field-app/src/lib/inspectionVisit";
+import { ensureOpenVisit, finishVisit, pendingInspectionIds, readOpenVisit, readVisitById, reconcileOpenVisit, recordVisitInspection, startNewVisit, visitSummaryText, visitUploadMessage, withInspection } from "../field-app/src/lib/inspectionVisit";
 import { syncIssueCanDiscard, syncIssueMessage } from "../field-app/src/lib/syncIssueMessage";
 import { OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "../field-app/src/lib/offlineTypes";
 import { selectedFacilityKey } from "../field-app/src/lib/facilitySync";
@@ -83,4 +83,29 @@ it("starts a new visit after the combined report is sent and keeps a finished-vi
   const moved = (await getSyncOperationsForPrincipal(userId, organizationId))[0];
   expect((moved.payload as { visit_id?: string }).visit_id).toBe(created?.id);
   expect(moved.payload && JSON.stringify(moved.payload)).not.toContain(first!.id);
+});
+
+it("clears a finished server visit on scan load and keeps an inspection that is not on the server", async () => {
+  await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
+  await putOfflineSetting({ key: selectedFacilityKey({ userId, organizationId }), value: facilityId, updatedAt: new Date().toISOString() });
+  const visit = await ensureOpenVisit();
+  await recordVisitInspection(visit!.id, { inspectionId: "insp-1", openingId: "door-1", passed: true });
+  await recordVisitInspection(visit!.id, { inspectionId: "insp-2", openingId: "door-2", passed: true });
+  await recordVisitInspection(visit!.id, { inspectionId: "insp-3", openingId: "door-3", passed: false });
+  await putSyncOperation({
+    operationId: "33333333-3333-4333-8333-333333333333", operationType: "create", entityType: "inspection_event",
+    entityId: "insp-3", openingId: "door-3", organizationId, actorUserId: userId,
+    deviceId: "66666666-6666-4666-8666-666666666666", baseServerRevision: null,
+    payload: { inspection_type: "fire_door_nfpa80", visit_id: visit!.id }, payloadHash: "b".repeat(64),
+    dependencyOperationIds: [], createdAtLocal: "2026-11-09T12:07:00.000Z", state: "queued",
+    attemptCount: 0, schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: "test", protocolVersion: SYNC_PROTOCOL_VERSION,
+  });
+  const closed = await reconcileOpenVisit(async () => ({ status: "finished", report_sent: true, inspection_ids: ["insp-1", "insp-2"] }));
+  expect(closed).toBeNull();
+  expect(await readOpenVisit()).toBeNull();
+  expect((await readVisitById(visit!.id))?.inspections).toHaveLength(3);
+  expect((await getSyncOperationsForPrincipal(userId, organizationId)).map((item) => item.entityId)).toEqual(["insp-3"]);
+  const next = await ensureOpenVisit();
+  const left = await reconcileOpenVisit(async () => { throw new Error("offline"); });
+  expect(left?.id).toBe(next?.id);
 });

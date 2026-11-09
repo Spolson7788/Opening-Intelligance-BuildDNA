@@ -5,8 +5,9 @@ import { SyncBadge } from "../components/SyncBadge";
 import { FacilitySelector } from "../components/FacilitySelector";
 import { useAuth } from "../lib/AuthContext";
 import { parseOpeningQr } from "../lib/qrPayload";
-import { fetchLabelConfig } from '../lib/api';
-import { readOpenVisit, visitSummaryText } from "../lib/inspectionVisit";
+import { fetchInspectionVisit, fetchLabelConfig } from '../lib/api';
+import { getSyncOperationsForPrincipal, loadAuth } from "../lib/db";
+import { pendingInspectionIds, reconcileOpenVisit, startNewVisit, visitSummaryText, visitUploadMessage } from "../lib/inspectionVisit";
 import type { InspectionVisit } from "../lib/inspectionVisit";
 
 const SCANNER_ELEMENT_ID = "qr-reader";
@@ -20,7 +21,30 @@ export function ScanPage() {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [scanning, setScanning] = useState(false);
   const [visit, setVisit] = useState<InspectionVisit | null>(null);
-  useEffect(() => { void readOpenVisit().then(setVisit); }, []);
+  const [visitNote, setVisitNote] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void reconcileOpenVisit((id) => fetchInspectionVisit(id)).then((open) => { if (live) setVisit(open); });
+    return () => { live = false; };
+  }, []);
+
+  async function beginNewVisit() {
+    const current = visit;
+    let pending = 0;
+    if (current) {
+      let serverIds: string[] | null = null;
+      try {
+        const row = await fetchInspectionVisit(current.id);
+        serverIds = row.inspection_ids ?? [];
+      } catch { serverIds = null; }
+      const auth = await loadAuth();
+      const operations = auth ? await getSyncOperationsForPrincipal(auth.userId, auth.organizationId) : [];
+      pending = pendingInspectionIds(current.inspections.map((item) => item.inspectionId), operations, serverIds).length;
+    }
+    await startNewVisit();
+    setVisit(null);
+    setVisitNote(pending ? `${visitUploadMessage(pending)} They stay in Synchronization review and were not removed.` : null);
+  }
 
   useEffect(() => {
     document.body.classList.add("c04-on");
@@ -85,7 +109,9 @@ export function ScanPage() {
         {visit && visit.inspections.length > 0 && <div className="c04-band-green">
           <p role="status">{visitSummaryText(visit.inspections)}</p>
           <button type="button" className="btn c04-btn-green" onClick={() => navigate(`/visit/${visit.id}`)}>Finish visit / Send combined report</button>
+          <button type="button" className="btn c04-btn-cyan" onClick={() => { void beginNewVisit(); }}>Start a new visit</button>
         </div>}
+        {visitNote && <p className="c04-note" role="status">{visitNote}</p>}
         <button type="button" className="btn c04-btn-cyan" onClick={() => navigate("/choose-location")}>Change facility</button>
         <FacilitySelector />
         <section className="c04-band" aria-label="Scan or enter an opening code">

@@ -187,6 +187,9 @@ it("rejects a new inspection on a finished visit and keeps the official PDF", as
     to: ["building@example.com"], expected_inspection_ids: [saved.body.id],
   });
   expect(mailed.status).toBe(200);
+  const closed = await request(app).get(`/api/events/inspection-visits/${visitId}`).set(auth);
+  expect(closed.body.status).toBe("finished");
+  expect(closed.body.report_sent).toBe(true);
   const refused = await request(app).post("/api/events/inspection-events").set(auth).send({
     opening_id: later.id, event_date: "2026-11-09", inspection_type: "fire_door_nfpa80", visit_id: visitId, ...passingFireDoorFields(),
   });

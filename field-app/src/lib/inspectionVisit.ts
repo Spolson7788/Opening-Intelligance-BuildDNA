@@ -105,6 +105,27 @@ export async function recordVisitInspection(visitId: string, inspection: VisitIn
   }
 }
 
+export function serverVisitIsClosed(server: { status?: string | null; report_sent?: boolean | null } | null | undefined): boolean {
+  if (!server) return false;
+  return server.status === "finished" || server.report_sent === true;
+}
+
+/** Clear the open pointer when the server has finished this visit. A failed lookup leaves the local visit in place. */
+export async function reconcileOpenVisit(
+  fetchServer: (id: string) => Promise<{ status?: string | null; report_sent?: boolean | null } | null>,
+): Promise<InspectionVisit | null> {
+  const open = await readOpenVisit();
+  if (!open) return null;
+  try {
+    const server = await fetchServer(open.id);
+    if (!serverVisitIsClosed(server)) return open;
+    await finishVisit(open.id);
+    return null;
+  } catch {
+    return open;
+  }
+}
+
 export async function readOpenVisit(): Promise<InspectionVisit | null> {
   try {
     const auth = await loadAuth();

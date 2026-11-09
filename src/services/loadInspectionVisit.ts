@@ -17,9 +17,9 @@ async function photoBytes(row: { inline_bytes?: Buffer | null; storage_url?: str
   }
 }
 
-export async function loadInspectionVisit(visitId: string, organizationId: string): Promise<(VisitReportData & { propertyId: string; openingIds: string[]; inspectionIds: string[]; contactEmail: string | null; inspectorUserId: string }) | null> {
+export async function loadInspectionVisit(visitId: string, organizationId: string): Promise<(VisitReportData & { propertyId: string; openingIds: string[]; inspectionIds: string[]; contactEmail: string | null; inspectorUserId: string; status: string; reportSent: boolean }) | null> {
   const visit = await pool.query(
-    `SELECT v.property_id, v.inspector_user_id, p.name AS facility_name, p.contact_email
+    `SELECT v.property_id, v.inspector_user_id, v.status, v.report_sent_at, p.name AS facility_name, p.contact_email
      FROM inspection_visits v
      JOIN properties p ON p.id = v.property_id
      WHERE v.id = $1 AND v.organization_id = $2`,
@@ -93,5 +93,7 @@ export async function loadInspectionVisit(visitId: string, organizationId: strin
     inspectionIds: ids,
     contactEmail: visit.rows[0].contact_email,
     inspectorUserId: visit.rows[0].inspector_user_id,
+    status: visit.rows[0].status,
+    reportSent: visit.rows[0].report_sent_at != null,
   };
 }

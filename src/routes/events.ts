@@ -312,6 +312,8 @@ eventsRouter.get("/inspection-visits/:id", async (req: AuthedRequest, res) => {
       summary: visitSummaryText(result.loaded.doors),
       ...counts,
       inspection_ids: result.loaded.inspectionIds,
+      status: result.loaded.status,
+      report_sent: result.loaded.reportSent,
       doors: result.loaded.doors.map((door) => ({ opening_code: door.openingCode, location: door.location, passed: door.passed })),
     });
   } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }

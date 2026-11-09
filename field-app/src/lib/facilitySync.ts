@@ -16,6 +16,24 @@ export function chooseFacility(properties: FacilityProperty[], storedId?: string
   if (storedId && properties.some((p) => p.id === storedId)) return storedId;
   return properties.length === 1 ? properties[0].id : null;
 }
+export const OPENING_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** True when this opening is missing, its listed revision changed, or the cached copy is older than the TTL. */
+export function openingNeedsDownload(
+  listed: { revision?: number | null },
+  cached: { revision?: number | null; _cachedAt?: string | null } | null | undefined,
+  now: number,
+  ttlMs = OPENING_CACHE_TTL_MS,
+): boolean {
+  if (!cached) return true;
+  if (listed.revision != null && cached.revision != null && Number(listed.revision) !== Number(cached.revision)) return true;
+  if (cached._cachedAt) {
+    const cachedAt = Date.parse(cached._cachedAt);
+    if (!Number.isFinite(cachedAt) || now - cachedAt >= ttlMs) return true;
+  }
+  return false;
+}
+
 /** Refresh on resume or reconnect, but not more often than minMs. Reselect always refreshes. */
 export function shouldRefresh(lastFinishedAt: string | null | undefined, now: number, minMs = 60_000): boolean {
   if (!lastFinishedAt) return true;
@@ -24,10 +42,11 @@ export function shouldRefresh(lastFinishedAt: string | null | undefined, now: nu
 }
 
 export interface FacilitySyncProgress { phase: "listing" | "downloading" | "done"; buildingsDone: number; buildingsTotal: number; openingsDone: number; openingsTotal: number; failed: number; attempt: number }
-export interface FacilitySyncResult { status: "complete" | "partial" | "failed" | "cancelled"; propertyId: string; openings: number; saved: number; failed: number; failedIds: string[]; buildingsFailed: string[]; finishedAt: string }
+export interface FacilitySyncResult { status: "complete" | "partial" | "failed" | "cancelled"; propertyId: string; openings: number; saved: number; failed: number; failedIds: string[]; buildingsFailed: string[]; finishedAt: string; fetched?: number; upToDate?: boolean }
 export interface FacilitySyncDeps {
   listOpenings(buildingId: string): Promise<FacilityOpening[]>;
   fetchOpening(id: string): Promise<unknown>;
+  cachedOpening?(id: string): Promise<{ revision?: number | null; _cachedAt?: string | null } | null | undefined> | { revision?: number | null; _cachedAt?: string | null } | null | undefined;
   putSetting(key: string, value: unknown): Promise<void>;
   sleep?(ms: number): Promise<void>;
   now?(): Date;
@@ -49,20 +68,20 @@ async function withRetry<T>(fn: () => Promise<T>, retries: number, backoffMs: nu
 }
 
 export async function syncFacility(deps: FacilitySyncDeps, principal: Principal, property: FacilityProperty,
-  opts: { retries?: number; backoffMs?: number; concurrency?: number; onProgress?: (p: FacilitySyncProgress) => void; signal?: AbortSignal } = {}): Promise<FacilitySyncResult> {
+  opts: { retries?: number; backoffMs?: number; concurrency?: number; onProgress?: (p: FacilitySyncProgress) => void; signal?: AbortSignal; full?: boolean; ttlMs?: number } = {}): Promise<FacilitySyncResult> {
   const retries = opts.retries ?? 2, backoff = opts.backoffMs ?? 500, concurrency = Math.max(1, opts.concurrency ?? 3);
   const sleep = deps.sleep ?? defaultSleep, now = deps.now ?? (() => new Date());
   const buildings = property.buildings ?? [];
   const p: FacilitySyncProgress = { phase: "listing", buildingsDone: 0, buildingsTotal: buildings.length, openingsDone: 0, openingsTotal: 0, failed: 0, attempt: 1 };
   const emit = () => opts.onProgress?.({ ...p });
   emit();
-  const ids: string[] = [], buildingsFailed: string[] = [];
+  const ids: string[] = [], listedById = new Map<string, FacilityOpening>(), buildingsFailed: string[] = [];
   for (const b of buildings) {
     if (opts.signal?.aborted) break;
     try {
       const rows = await withRetry(() => deps.listOpenings(b.id), retries, backoff, sleep, opts.signal);
       await deps.putSetting(facilityOpeningsCacheKey(principal, b.id), rows);
-      for (const o of rows) if (!ids.includes(o.id)) ids.push(o.id);
+      for (const o of rows) if (!listedById.has(o.id)) { listedById.set(o.id, o); ids.push(o.id); }
     } catch (error) {
       if (isAppSessionFailure(error)) throw error;
       buildingsFailed.push(b.id);
@@ -71,11 +90,18 @@ export async function syncFacility(deps: FacilitySyncDeps, principal: Principal,
   }
   p.phase = "downloading"; emit();
   const failedIds: string[] = [];
-  let next = 0, saved = 0;
+  let next = 0, saved = 0, fetched = 0;
   const worker = async () => {
     while (next < ids.length && !opts.signal?.aborted) {
       const id = ids[next++];
-      try { await withRetry(() => deps.fetchOpening(id), retries, backoff, sleep, opts.signal); saved++; }
+      if (!opts.full && deps.cachedOpening) {
+        const cached = await deps.cachedOpening(id);
+        const listed = listedById.get(id);
+        if (listed && !openingNeedsDownload(listed, cached ?? null, now().getTime(), opts.ttlMs)) {
+          saved++; p.openingsDone++; emit(); continue;
+        }
+      }
+      try { await withRetry(() => deps.fetchOpening(id), retries, backoff, sleep, opts.signal); saved++; fetched++; }
       catch (error) {
         if (isAppSessionFailure(error)) throw error;
         failedIds.push(id); p.failed++;
@@ -89,7 +115,8 @@ export async function syncFacility(deps: FacilitySyncDeps, principal: Principal,
   const status: FacilitySyncResult["status"] = cancelled ? "cancelled"
     : (buildings.length > 0 && buildingsFailed.length === buildings.length) ? "failed"
     : (failed || buildingsFailed.length) ? (saved ? "partial" : (ids.length ? "failed" : "partial")) : "complete";
-  const result: FacilitySyncResult = { status, propertyId: property.id, openings: ids.length, saved, failed, failedIds, buildingsFailed, finishedAt: now().toISOString() };
+  const upToDate = !opts.full && !cancelled && status === "complete" && fetched === 0 && ids.length > 0;
+  const result: FacilitySyncResult = { status, propertyId: property.id, openings: ids.length, saved, failed, failedIds, buildingsFailed, finishedAt: now().toISOString(), fetched, upToDate };
   p.phase = "done"; emit();
   if (!cancelled) await deps.putSetting(facilitySyncKey(principal, property.id), result).catch(() => {});
   return result;
@@ -116,6 +143,7 @@ export function describeSync(p: FacilitySyncProgress | null, r: FacilitySyncResu
     : `Downloading for offline use: ${p.openingsDone} of ${p.openingsTotal}${p.failed ? ` (${p.failed} failed)` : ""}`;
   if (!r) return "";
   const when = new Date(r.finishedAt).toLocaleString();
+  if (r.upToDate) return "Offline data up to date";
   if (r.status === "complete") return `All ${r.openings} opening(s) saved on this device (${when}).`;
   if (r.status === "cancelled") return "Download stopped.";
   if (r.status === "failed") return "Couldn't download this facility. Check your connection and retry.";

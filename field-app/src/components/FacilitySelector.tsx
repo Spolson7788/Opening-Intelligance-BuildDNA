@@ -2,10 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { fetchMe, fetchOpening, listFieldProperties, listOpenings, searchFieldFacilities } from "../lib/api";
 import { isAppSessionFailure } from "../lib/siteAccess";
 import { ALL_AREAS, areaFilterKey, defaultAreaFilter, filterFacilitiesByArea, type AreaFilter, type AreaPreferences } from "../lib/facilityArea";
-import { getOfflineSetting, putOfflineSetting } from "../lib/db";
+import { getCachedOpening, getOfflineSetting, putOfflineSetting } from "../lib/db";
 import { useAuth } from "../lib/AuthContext";
 import type { FacilityProperty } from "../lib/facilityOpenings";
-import { chooseFacility, describeSync, facilitySyncKey, retryFailedOpenings, selectedFacilityKey, shouldRefresh, syncFacility, type FacilitySyncProgress, type FacilitySyncResult } from "../lib/facilitySync";
+import { chooseFacility, describeSync, facilitySyncKey, OPENING_CACHE_TTL_MS, retryFailedOpenings, selectedFacilityKey, shouldRefresh, syncFacility, type FacilitySyncProgress, type FacilitySyncResult } from "../lib/facilitySync";
 
 interface FacilitySyncValue {
   properties: FacilityProperty[] | null; selectedId: string | null; progress: FacilitySyncProgress | null; result: FacilitySyncResult | null;
@@ -34,14 +34,15 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
   const abortRef = useRef<AbortController | null>(null);
   const resultRef = useRef<FacilitySyncResult | null>(null); resultRef.current = result;
   const deps = { listOpenings: (b: string) => listOpenings({ building_id: b }), fetchOpening: (id: string) => fetchOpening(id),
+    cachedOpening: (id: string) => getCachedOpening(id),
     putSetting: (key: string, value: unknown) => putOfflineSetting({ key, value, updatedAt: new Date().toISOString() }) as Promise<void> };
 
-  const run = useCallback((id: string) => {
+  const run = useCallback((id: string, full = false) => {
     if (!principal || !properties) return;
     const property = properties.find((p) => p.id === id); if (!property) return;
     abortRef.current?.abort(); const ac = new AbortController(); abortRef.current = ac;
     setRunning(true); setError(null);
-    syncFacility(deps, principal, property, { signal: ac.signal, onProgress: (p) => { if (!ac.signal.aborted) setProgress(p); } })
+    syncFacility(deps, principal, property, { signal: ac.signal, full, onProgress: (p) => { if (!ac.signal.aborted) setProgress(p); } })
       .then((r) => { if (!ac.signal.aborted) { setResult(r); setProgress(null); } })
       .catch((error) => { if (!ac.signal.aborted && !isAppSessionFailure(error)) setError("Download failed. Retry when you have a connection."); })
       .finally(() => { if (abortRef.current === ac) setRunning(false); });
@@ -77,15 +78,15 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
     return () => { stop = true; abortRef.current?.abort(); };
   }, [enabled, pkey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Download on selection (including the restored or auto-selected one after sign-in).
-  useEffect(() => { if (selectedId && properties && navigator.onLine !== false) run(selectedId); }, [selectedId, properties, run]);
+  // Check the selected facility without pulling openings that are already cached.
+  useEffect(() => { if (selectedId && properties && navigator.onLine !== false) run(selectedId, false); }, [selectedId, properties, run]);
 
-  // Refresh on app resume or reconnect.
+  // A restore or reconnect checks again only after the cache TTL. It does not block Scan.
   useEffect(() => {
     if (!enabled) return;
     const onResume = () => {
       if (document.visibilityState !== "visible" || !selectedId || running) return;
-      if (shouldRefresh(resultRef.current?.finishedAt, Date.now())) run(selectedId); };
+      if (shouldRefresh(resultRef.current?.finishedAt, Date.now(), OPENING_CACHE_TTL_MS)) run(selectedId, false); };
     document.addEventListener("visibilitychange", onResume); window.addEventListener("online", onResume);
     return () => { document.removeEventListener("visibilitychange", onResume); window.removeEventListener("online", onResume); };
   }, [enabled, selectedId, running, run]);
@@ -94,7 +95,7 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
     if (!principal) return;
     void putOfflineSetting({ key: selectedFacilityKey(principal), value: id, updatedAt: new Date().toISOString() });
     setResult(null);
-    if (id === selectedId) run(id); else setSelectedId(id);
+    if (id === selectedId) run(id, false); else setSelectedId(id);
   };
   const setArea = (a: AreaFilter) => {
     setAreaState(a);
@@ -107,7 +108,7 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
     retryFailedOpenings(deps, principal, result, { onProgress: (d, t) => setProgress({ phase: "downloading", buildingsDone: 0, buildingsTotal: 0, openingsDone: d, openingsTotal: t, failed: 0, attempt: 2 }) })
       .then((r) => { setResult(r); setProgress(null); }).finally(() => setRunning(false));
   };
-  return <Ctx.Provider value={{ properties, selectedId, progress, result, running, error, select, refresh: () => selectedId && run(selectedId), retryFailed, area, home, setArea }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ properties, selectedId, progress, result, running, error, select, refresh: () => selectedId && run(selectedId, true), retryFailed, area, home, setArea }}>{children}</Ctx.Provider>;
 }
 
 /** Facility selection step and download status (shown on the home screen after sign-in). */
@@ -146,7 +147,7 @@ export function FacilitySelector() {
         </div>
       ))}
       {error && <p className="c04-alert" role="alert">{error}</p>}
-      {(progress || result) && <p role="status">{describeSync(progress, result)}</p>}
+      {(progress || result) && <p role="status" className={!progress && result?.upToDate ? "c04-note" : undefined}>{describeSync(progress, result)}</p>}
       {progress && progress.openingsTotal > 0 && <progress max={progress.openingsTotal} value={progress.openingsDone} style={{ width: "100%" }} />}
       {selectedId && !running && <div className="c04-actions">
         <button type="button" className="btn c04-btn-cyan" onClick={() => s.refresh()}>Refresh download</button>

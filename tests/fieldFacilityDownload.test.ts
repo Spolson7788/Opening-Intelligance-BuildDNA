@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chooseFacility, describeSync, facilitySyncKey, retryFailedOpenings, selectedFacilityKey, shouldRefresh, syncFacility } from '../field-app/src/lib/facilitySync';
+import { chooseFacility, describeSync, facilitySyncKey, openingNeedsDownload, retryFailedOpenings, selectedFacilityKey, shouldRefresh, syncFacility } from '../field-app/src/lib/facilitySync';
 import { facilityOpeningsCacheKey } from '../field-app/src/lib/facilityOpenings';
 // M4 v3: download a facility's openings when a signed-in technician selects it. Synthetic data only.
 const me = { userId: 'u1', organizationId: 'o1' };
@@ -10,6 +10,7 @@ function deps(over: any = {}) {
   return { store, fetched, sleeps, d: {
     listOpenings: over.listOpenings ?? (async (b: string) => lists[b]),
     fetchOpening: over.fetchOpening ?? (async (id: string) => { fetched.push(id); return { id }; }),
+    cachedOpening: over.cachedOpening,
     putSetting: async (k: string, v: unknown) => { store.set(k, v); },
     sleep: async (ms: number) => { sleeps.push(ms); },
     now: () => new Date('2026-10-28T13:00:00Z'),
@@ -86,6 +87,28 @@ describe('M4 v3 facility download', () => {
     const r = await syncFacility(d, me, facility, { signal: ac.signal, concurrency: 1 });
     expect(r.status).toBe('cancelled'); expect(fetched).toEqual(['o1']);
     expect(store.has(facilitySyncKey(me, 'p1'))).toBe(false);
+  });
+  it('skips a cached opening unless its revision changed, the copy is old, or the pull is full', async () => {
+    const now = Date.parse('2026-11-09T12:00:00Z');
+    expect(openingNeedsDownload({ revision: 3 }, { revision: 3, _cachedAt: '2026-11-09T11:00:00.000Z' }, now)).toBe(false);
+    expect(openingNeedsDownload({ revision: 4 }, { revision: 3, _cachedAt: '2026-11-09T11:00:00.000Z' }, now)).toBe(true);
+    expect(openingNeedsDownload({ revision: 3 }, { revision: 3, _cachedAt: '2026-11-08T11:00:00.000Z' }, now)).toBe(true);
+    const { d, fetched } = deps({
+      listOpenings: async () => [{ id: 'o1', opening_code: '101', revision: 4 }, { id: 'o2', opening_code: '102', revision: 1 }],
+      cachedOpening: async (id: string) => ({ revision: id === 'o1' ? 3 : 1, _cachedAt: '2026-11-09T11:00:00.000Z' }),
+      now: () => new Date(now),
+    });
+    const one = { id: 'p1', name: 'Synthetic Facility A', buildings: [{ id: 'b1', name: 'North' }] };
+    const changed = await syncFacility(d, me, one, { retries: 0 });
+    expect(fetched).toEqual(['o1']);
+    expect(changed.upToDate).toBe(false);
+    fetched.length = 0;
+    const fresh = await syncFacility({ ...d, cachedOpening: async () => ({ revision: 1, _cachedAt: '2026-11-09T11:00:00.000Z' }), listOpenings: async () => [{ id: 'o2', opening_code: '102', revision: 1 }] }, me, one, { retries: 0 });
+    expect(fetched).toEqual([]);
+    expect(fresh.upToDate).toBe(true);
+    expect(describeSync(null, fresh)).toBe('Offline data up to date');
+    await syncFacility(d, me, one, { retries: 0, full: true });
+    expect(fetched).toEqual(['o1', 'o2']);
   });
   it('a facility with no buildings completes with nothing to download', async () => {
     const { d } = deps();

@@ -656,7 +656,7 @@ export async function cacheOpening(opening: any, principal?: {userId:string;orga
   const auth = await loadAuth();
   const owner=principal||auth;
   if(!owner||!auth||auth.userId!==owner.userId||auth.organizationId!==owner.organizationId)return;
-  await db.put("openings", {...opening,_cacheUserId:owner.userId,_cacheOrganizationId:owner.organizationId});
+  await db.put("openings", {...opening,_cacheUserId:owner.userId,_cacheOrganizationId:owner.organizationId,_cachedAt:new Date().toISOString()});
 }
 
 export async function getCachedOpening(id: string) {

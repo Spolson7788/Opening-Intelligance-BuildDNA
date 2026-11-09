@@ -5,7 +5,7 @@
 // here exactly like hand-made ones; edits go through the existing opening screens and
 // offline queue, so they sync back under the existing rules.
 export interface FacilityOpening {
-  id: string; opening_code: string; schedule_door_mark?: string | null; floor_label?: string | null; location_description?: string | null;
+  id: string; opening_code: string; revision?: number | null; schedule_door_mark?: string | null; floor_label?: string | null; location_description?: string | null;
   completion_state?: string | null; status?: string | null; opening_configuration?: string | null; fire_rated?: boolean | null;
 }
 export interface FacilityBuilding { id: string; name: string }

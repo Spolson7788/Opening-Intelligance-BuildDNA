@@ -499,7 +499,7 @@ export function inspectionVisitRecipients(id: string): Promise<{ to: string[]; f
   return authedFetch(`/events/inspection-visits/${id}/email-defaults`);
 }
 
-export function fetchInspectionVisit(id: string): Promise<{ inspected: number; inspection_ids: string[] }> {
+export function fetchInspectionVisit(id: string): Promise<{ inspected: number; inspection_ids: string[]; status?: string; report_sent?: boolean }> {
   return authedFetch(`/events/inspection-visits/${id}`);
 }
 
