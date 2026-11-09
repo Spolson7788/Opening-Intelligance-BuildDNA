@@ -15,6 +15,7 @@ const store = vi.hoisted(() => ({
 vi.mock("../field-app/src/lib/sync", () => ({
   queueOpeningMutation: (...args: unknown[]) => store.queued(...args),
   flushOutbox: vi.fn(async () => {}),
+  noteSyncDiagnostic: () => {},
   awaitInspectionSynced: vi.fn(async () => ({ ok: true })),
   onSyncStateChange: (cb: (state: { syncing: boolean }) => void) => { cb({ syncing: false }); return () => {}; },
 }));

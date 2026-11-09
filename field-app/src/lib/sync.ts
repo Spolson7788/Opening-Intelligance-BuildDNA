@@ -1,4 +1,5 @@
-import { claimSyncOperation, getAllSyncOperations, getOfflineMedia, getOfflineSetting, getSyncOperationsForPrincipal, loadAuth, putOfflineSetting, putSyncConflict, putSyncOperation, putSyncReceipt, reconcileRecoveredMediaOperationId, saveEntityAndOperation, OiDataWipedError } from "./db";
+import { claimSyncOperation, getAllSyncOperations, getOfflineMedia, getOfflineSetting, getSyncOperationsForPrincipal, loadAuth, putOfflineSetting, putSyncConflict, putSyncOperation, putSyncReceipt, reconcileRecoveredMediaOperationId, resetFieldAppDb, saveEntityAndOperation, OiDataWipedError } from "./db";
+import { isDeviceStorageError, storageDiagnostic } from "./storageErrors";
 import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, submitServiceRequest, uploadPrivatePhoto, ApiError, PrincipalChangedError, isClientPrincipalChange, isSessionEnded } from "./api";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
 import type { OfflineEntityEnvelope, OfflineEntityType, SyncConflict, SyncOperation, SyncOperationState, SyncReceipt } from "./offlineTypes";
@@ -9,7 +10,7 @@ import type { OutboxItem } from "./db";
 import { assertSyncDispatchAllowed, SyncNavigationPaused } from './syncNavigation';
 
 type SyncListener = (state: SyncState) => void;
-export interface SyncState { pending: number; syncing: boolean; failed: number; conflicts: number; lastError?: string; checked?: boolean; checkFailed?: boolean; userId?: string; organizationId?: string; }
+export interface SyncState { pending: number; syncing: boolean; failed: number; conflicts: number; lastError?: string; checked?: boolean; checkFailed?: boolean; diagnostic?: string; userId?: string; organizationId?: string; }
 const APP_VERSION = "offline-protocol-1";
 const DISPATCH_LEASE_MS = 2 * 60_000;
 const dispatchLeaseId = crypto.randomUUID();
@@ -41,6 +42,25 @@ export async function getOrCreateDeviceId(): Promise<string> {
   return value;
 }
 let statusRead = 0;
+let pendingCountRetry: ReturnType<typeof setTimeout> | null = null;
+let pendingCountAttempt = 0;
+
+export function noteSyncDiagnostic(error: unknown) {
+  if (!isDeviceStorageError(error)) return;
+  currentState = { ...currentState, diagnostic: storageDiagnostic(error) };
+  notify();
+}
+
+function schedulePendingCountRetry() {
+  if (pendingCountRetry || typeof window === "undefined") return;
+  const delay = Math.min(30_000, 500 * 2 ** pendingCountAttempt);
+  pendingCountAttempt += 1;
+  pendingCountRetry = setTimeout(() => {
+    pendingCountRetry = null;
+    void refreshPendingCount();
+  }, delay);
+}
+
 export async function refreshPendingCount() {
   const read = ++statusRead;
   try {
@@ -51,15 +71,19 @@ export async function refreshPendingCount() {
   if (auth?.userId !== latest?.userId || auth?.organizationId !== latest?.organizationId) {
     currentState = { pending: 0, syncing: currentState.syncing, failed: 0, conflicts: 0, checked: false }; notify(); return;
   }
+  pendingCountAttempt = 0;
   currentState = { ...currentState,
-    checked: true, checkFailed: false, userId: auth?.userId, organizationId: auth?.organizationId,
+    checked: true, checkFailed: false, diagnostic: undefined, userId: auth?.userId, organizationId: auth?.organizationId,
     pending: operations.filter((item) => ["local_committed", "queued", "retry_wait", "blocked_dependency", "in_flight", "verifying"].includes(item.state)).length,
     failed: operations.filter((item) => ["permanent_failure", "auth_required", "storage_pressure", "schema_blocked"].includes(item.state)).length,
     conflicts: operations.filter((item) => item.state === "conflict").length };
   notify();
-  } catch {
+  } catch (error) {
     if (read !== statusRead) return;
-    currentState = { pending: 0, syncing: currentState.syncing, failed: 0, conflicts: 0, checked: false, checkFailed: true }; notify();
+    if (isDeviceStorageError(error)) resetFieldAppDb();
+    noteSyncDiagnostic(error);
+    currentState = { ...currentState, pending: 0, failed: 0, conflicts: 0, checked: false, checkFailed: true }; notify();
+    schedulePendingCountRetry();
   }
 }
 function entityTypeForKind(kind: OutboxItem["kind"]): OfflineEntityType {

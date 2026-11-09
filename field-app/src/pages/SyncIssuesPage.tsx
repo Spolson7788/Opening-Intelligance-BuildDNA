@@ -4,7 +4,7 @@ import { useAuth } from "../lib/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { discardPermanentFailure, getOfflineMedia, getOfflineMediaForPrincipal, getOpenConflictsForPrincipal, getSyncOperationsForPrincipal, loadAuth, recoverOrphanedMediaOperation, removeRejectedMedia, replaceRejectedMediaWithReducedCopy, requeueFinishedVisitInspection, retrySyncOperationAfterReview } from "../lib/db";
 import { startNewVisit } from "../lib/inspectionVisit";
-import { checksumBlob, flushOutbox } from "../lib/sync";
+import { checksumBlob, flushOutbox, onSyncStateChange } from "../lib/sync";
 import { syncIssuesForRecords } from "../lib/syncIssuesModel";
 import type { SyncIssueView } from "../lib/syncIssuesModel";
 import { formatMegabytes, maximumMediaBytes } from "../lib/mediaLimits";
@@ -29,6 +29,8 @@ export function SyncIssuesPage() {
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [diagnostic, setDiagnostic] = useState<string | null>(null);
+  useEffect(() => onSyncStateChange((state) => setDiagnostic(state.diagnostic ?? null)), []);
 
   async function load() {
     setLoadError(false);
@@ -144,7 +146,8 @@ export function SyncIssuesPage() {
     <div className="top-bar"><button className="btn btn-secondary" onClick={() => navigate(-1)}>← Back</button></div>
     <div className="screen">
       <section className="c04-band"><h2>Synchronization review</h2>
-      <p>Entries remain stored on this device until synchronization succeeds. Review conflicts before retrying.</p></section>
+      <p>Entries remain stored on this device until synchronization succeeds. Review conflicts before retrying.</p>
+      {diagnostic && <p className="c04-note">Storage diagnostic: {diagnostic}</p>}</section>
       {loadError ? <div className="c04-alert" role="alert"><p>Saved changes on this device could not be read. They were not removed.</p><button type="button" className="btn btn-secondary" onClick={() => { void load(); }}>Retry</button></div> : identityChecking || loadedPrincipal !== principal ? <p className="c04-band-blue">Checking saved changes for this account. If this does not finish, return after checking access.</p> : issues.length === 0 ? <div className="c04-band-blue">No synchronization issues for the signed-in technician.</div> : issues.map((issue) => <div className="c04-band" key={issue.id} data-issue-kind={issue.kind}>
         <strong style={{ textTransform: "capitalize" }}>{issue.label}</strong>
         {issue.kind === "rejected_media" ? <>

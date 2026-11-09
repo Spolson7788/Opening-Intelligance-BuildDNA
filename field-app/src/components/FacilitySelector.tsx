@@ -5,7 +5,7 @@ import { ALL_AREAS, areaFilterKey, defaultAreaFilter, filterFacilitiesByArea, ty
 import { getCachedOpening, getOfflineSetting, putOfflineSetting } from "../lib/db";
 import { useAuth } from "../lib/AuthContext";
 import type { FacilityProperty } from "../lib/facilityOpenings";
-import { chooseFacility, describeSync, facilitySyncKey, OPENING_CACHE_TTL_MS, retryFailedOpenings, selectedFacilityKey, shouldRefresh, syncFacility, type FacilitySyncProgress, type FacilitySyncResult } from "../lib/facilitySync";
+import { chooseFacility, describeSync, facilityDownloadHeld, facilitySyncKey, OPENING_CACHE_TTL_MS, retryFailedOpenings, selectedFacilityKey, shouldRefresh, subscribeFacilityDownloadHold, syncFacility, type FacilitySyncProgress, type FacilitySyncResult } from "../lib/facilitySync";
 
 interface FacilitySyncValue {
   properties: FacilityProperty[] | null; selectedId: string | null; progress: FacilitySyncProgress | null; result: FacilitySyncResult | null;
@@ -32,6 +32,7 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
   const [area, setAreaState] = useState<AreaFilter>(ALL_AREAS);
   const [home, setHome] = useState<AreaFilter>(ALL_AREAS);
   const abortRef = useRef<AbortController | null>(null);
+  const resumeAfterSave = useRef<string | null>(null);
   const resultRef = useRef<FacilitySyncResult | null>(null); resultRef.current = result;
   const deps = { listOpenings: (b: string) => listOpenings({ building_id: b }), fetchOpening: (id: string) => fetchOpening(id),
     cachedOpening: (id: string) => getCachedOpening(id),
@@ -39,6 +40,7 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
 
   const run = useCallback((id: string, full = false) => {
     if (!principal || !properties) return;
+    if (facilityDownloadHeld()) { resumeAfterSave.current = id; return; }
     const property = properties.find((p) => p.id === id); if (!property) return;
     abortRef.current?.abort(); const ac = new AbortController(); abortRef.current = ac;
     setRunning(true); setError(null);
@@ -77,6 +79,18 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
     })();
     return () => { stop = true; abortRef.current?.abort(); };
   }, [enabled, pkey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A Save aborts the download immediately and the same facility resumes when the save finishes.
+  useEffect(() => subscribeFacilityDownloadHold(() => {
+    if (facilityDownloadHeld()) {
+      if (selectedId) resumeAfterSave.current = selectedId;
+      abortRef.current?.abort();
+      return;
+    }
+    const id = resumeAfterSave.current;
+    resumeAfterSave.current = null;
+    if (id && navigator.onLine !== false) run(id, false);
+  }), [selectedId, run]);
 
   // Check the selected facility without pulling openings that are already cached.
   useEffect(() => { if (selectedId && properties && navigator.onLine !== false) run(selectedId, false); }, [selectedId, properties, run]);

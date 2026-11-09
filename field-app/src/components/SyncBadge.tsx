@@ -23,6 +23,15 @@ export function SyncBadge() {
   }, []);
 
   useEffect(() => { void refreshPendingCount(); }, [auth?.userId, auth?.organizationId]);
+  useEffect(() => {
+    const retry = () => { if (document.visibilityState === "visible") void refreshPendingCount(); };
+    document.addEventListener("visibilitychange", retry);
+    window.addEventListener("focus", retry);
+    return () => {
+      document.removeEventListener("visibilitychange", retry);
+      window.removeEventListener("focus", retry);
+    };
+  }, []);
   if (loading || identityChecking) return <span className="badge">Checking sync</span>;
   if (!auth) return <span className="badge">Sign in to check pending changes</span>;
   if (syncState.checkFailed) return <Link to="/sync-issues" className="badge badge-offline" title="Open synchronization review" onClick={() => { void refreshPendingCount(); }}>Unable to check pending changes</Link>;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chooseFacility, describeSync, facilitySyncKey, openingNeedsDownload, retryFailedOpenings, selectedFacilityKey, shouldRefresh, syncFacility } from '../field-app/src/lib/facilitySync';
+import { chooseFacility, describeSync, facilitySyncKey, holdFacilityDownload, openingNeedsDownload, retryFailedOpenings, selectedFacilityKey, shouldRefresh, syncFacility } from '../field-app/src/lib/facilitySync';
 import { facilityOpeningsCacheKey } from '../field-app/src/lib/facilityOpenings';
 // M4 v3: download a facility's openings when a signed-in technician selects it. Synthetic data only.
 const me = { userId: 'u1', organizationId: 'o1' };
@@ -109,6 +109,17 @@ describe('M4 v3 facility download', () => {
     expect(describeSync(null, fresh)).toBe('Offline data up to date');
     await syncFacility(d, me, one, { retries: 0, full: true });
     expect(fetched).toEqual(['o1', 'o2']);
+  });
+  it('does not fetch an opening while a save is holding the download', async () => {
+    const unlock = holdFacilityDownload();
+    const { d, fetched } = deps({ fetchOpening: async (id: string) => { fetched.push(id); return { id }; } });
+    const running = syncFacility(d, me, { id: 'p1', name: 'A', buildings: [{ id: 'b1', name: 'North' }] }, { retries: 0, concurrency: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(fetched).toEqual([]);
+    unlock();
+    const result = await running;
+    expect(fetched.length).toBeGreaterThan(0);
+    expect(result.saved).toBe(fetched.length);
   });
   it('a facility with no buildings completes with nothing to download', async () => {
     const { d } = deps();

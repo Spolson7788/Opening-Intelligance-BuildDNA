@@ -146,9 +146,20 @@ export function getDb() {
           db.createObjectStore("settings", { keyPath: "key" });
         }
       },
+    }).then((db) => {
+      const drop = () => { if (dbPromise) dbPromise = null; };
+      db.onclose = drop;
+      db.onversionchange = () => { db.close(); drop(); };
+      return db;
     });
   }
   return dbPromise;
+}
+
+export function resetFieldAppDb() {
+  const pending = dbPromise;
+  dbPromise = null;
+  void pending?.then((db) => { try { db.close(); } catch { /* already closed */ } }).catch(() => undefined);
 }
 
 export async function closeFieldAppDb() {

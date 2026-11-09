@@ -26,6 +26,7 @@ vi.mock("../field-app/src/lib/api", () => ({
 vi.mock("../field-app/src/lib/sync", () => ({
   queueOpeningMutation: vi.fn(async () => "insp-1"),
   flushOutbox: vi.fn(async () => {}),
+  noteSyncDiagnostic: () => {},
   awaitInspectionSynced: vi.fn(async () => ({ ok: true })),
   onSyncStateChange: (cb: (state: { syncing: boolean }) => void) => { cb({ syncing: false }); return () => {}; },
 }));
@@ -279,8 +280,10 @@ it("does not blame the photo when sign-in, storage, or the server stops the save
   const signedOut = await shown(new Error("auth_required"));
   expect(signedOut).toContain("Sign in");
   expect(signedOut).not.toContain("could not be read");
-  const stored = await shown(new Error("indexeddb quota"));
-  expect(stored).toContain("could not store");
+  const stored = await shown(new DOMException("Connection to Indexed Database server lost", "UnknownError"));
+  expect(stored).toContain("This device's storage had a problem");
+  expect(stored).toContain("kept on this screen");
+  expect(stored).not.toContain("could not queue");
   expect(stored).not.toContain("could not be read");
   const queued = await shown(new Error("queue failed"));
   expect(queued).toContain("could not queue");
@@ -301,7 +304,8 @@ it("reuses a photo already saved on this device instead of reading it again", as
   ));
   await fillFireDoor("fail");
   await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
-  expect(host.textContent).toContain("could not be saved on this device");
+  expect(host.textContent).toContain("could not queue the inspection");
+  expect(host.textContent).toContain("Hole in the face");
   expect(failurePhotos.queue).toHaveBeenCalledTimes(1);
   vi.mocked(queueOpeningMutation).mockResolvedValue("insp-2");
   await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));

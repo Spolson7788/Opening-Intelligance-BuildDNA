@@ -18,6 +18,38 @@ export function chooseFacility(properties: FacilityProperty[], storedId?: string
 }
 export const OPENING_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
+let downloadHolders = 0;
+const downloadIdleWaiters: Array<() => void> = [];
+const downloadHoldListeners = new Set<() => void>();
+
+export function facilityDownloadHeld(): boolean {
+  return downloadHolders > 0;
+}
+
+/** Save calls this so a facility download cannot write IndexedDB at the same time. */
+export function holdFacilityDownload(): () => void {
+  downloadHolders += 1;
+  downloadHoldListeners.forEach((listener) => listener());
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    downloadHolders = Math.max(0, downloadHolders - 1);
+    if (downloadHolders === 0) downloadIdleWaiters.splice(0).forEach((resume) => resume());
+    downloadHoldListeners.forEach((listener) => listener());
+  };
+}
+
+export function subscribeFacilityDownloadHold(listener: () => void): () => void {
+  downloadHoldListeners.add(listener);
+  return () => { downloadHoldListeners.delete(listener); };
+}
+
+export function waitUntilFacilityDownloadFree(): Promise<void> {
+  if (downloadHolders === 0) return Promise.resolve();
+  return new Promise((resolve) => downloadIdleWaiters.push(resolve));
+}
+
 /** True when this opening is missing, its listed revision changed, or the cached copy is older than the TTL. */
 export function openingNeedsDownload(
   listed: { revision?: number | null },
@@ -94,6 +126,8 @@ export async function syncFacility(deps: FacilitySyncDeps, principal: Principal,
   const worker = async () => {
     while (next < ids.length && !opts.signal?.aborted) {
       const id = ids[next++];
+      await waitUntilFacilityDownloadFree();
+      if (opts.signal?.aborted) break;
       if (!opts.full && deps.cachedOpening) {
         const cached = await deps.cachedOpening(id);
         const listed = listedById.get(id);
