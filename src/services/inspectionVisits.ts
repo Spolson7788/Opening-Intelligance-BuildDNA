@@ -14,6 +14,8 @@ export interface VisitDoor {
   location: string | null;
   passed: boolean;
   notes: string | null;
+  inspectedAt?: string | null;
+  displayLabel?: string | null;
   deficiencies: VisitDeficiency[];
   checklist: { section: string; result: string; note: string | null }[];
 }
@@ -42,6 +44,27 @@ export function visitCounts(doors: VisitDoor[]) {
   return { inspected: doors.length, passed: doors.length - failed, failed };
 }
 
+export function withRepeatedDoorLabels(doors: VisitDoor[]): VisitDoor[] {
+  const totals = new Map<string, number>();
+  for (const door of doors) totals.set(door.openingId, (totals.get(door.openingId) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  const labels = new Map<VisitDoor, string>();
+  const timed = [...doors].sort((a, b) => (a.inspectedAt || "").localeCompare(b.inspectedAt || "") || a.openingCode.localeCompare(b.openingCode));
+  for (const door of timed) {
+    const total = totals.get(door.openingId) ?? 1;
+    if (total < 2) continue;
+    const index = (seen.get(door.openingId) ?? 0) + 1;
+    seen.set(door.openingId, index);
+    const time = door.inspectedAt && door.inspectedAt.length >= 16 ? door.inspectedAt.slice(11, 16) : "";
+    labels.set(door, `${door.openingCode}, inspection ${index} of ${total}${time ? ` at ${time}` : ""}`);
+  }
+  return doors.map((door) => ({ ...door, displayLabel: labels.get(door) ?? null }));
+}
+
+export function doorHeading(door: VisitDoor): string {
+  return door.displayLabel || door.openingCode;
+}
+
 export function orderVisitDoors(doors: VisitDoor[]): VisitDoor[] {
   return [...doors].sort((a, b) => Number(a.passed) - Number(b.passed) || a.openingCode.localeCompare(b.openingCode));
 }
@@ -53,7 +76,7 @@ export function visitSummaryText(doors: VisitDoor[]): string {
 
 /** Failed doors, then every door. Passed doors do not appear in the failure section. */
 export function visitReportOutline(data: VisitReportData): string[] {
-  const doors = orderVisitDoors(data.doors);
+  const doors = orderVisitDoors(withRepeatedDoorLabels(data.doors));
   const counts = visitCounts(doors);
   const lines = [
     data.facilityName,
@@ -65,7 +88,8 @@ export function visitReportOutline(data: VisitReportData): string[] {
     "Failed doors",
   ];
   for (const door of doors.filter((item) => !item.passed)) {
-    lines.push(door.openingCode);
+    lines.push(doorHeading(door));
+    if (door.location) lines.push(door.location);
     for (const deficiency of door.deficiencies) {
       lines.push(deficiency.section, deficiency.description, deficiency.note);
       lines.push(deficiency.photo ? "Photograph" : "Photograph stored with this inspection");
@@ -74,7 +98,9 @@ export function visitReportOutline(data: VisitReportData): string[] {
   }
   lines.push("Door details");
   for (const door of doors) {
-    lines.push(door.openingCode, door.passed ? "Result: passed" : "Result: failed");
+    lines.push(doorHeading(door));
+    if (door.location) lines.push(door.location);
+    lines.push(door.passed ? "Result: passed" : "Result: failed");
     for (const item of door.checklist) lines.push(`${item.section} ${item.result}`);
   }
   return lines;
@@ -99,7 +125,7 @@ export async function bindInspectionVisit(
   );
   const propertyId = place.rows[0]?.property_id as string | undefined;
   if (!propertyId) return { error: "visit_facility_mismatch" };
-  const existing = await db.query("SELECT organization_id, property_id, inspector_user_id FROM inspection_visits WHERE id = $1", [input.visitId]);
+  const existing = await db.query("SELECT organization_id, property_id, inspector_user_id, status FROM inspection_visits WHERE id = $1", [input.visitId]);
   if (!existing.rows[0]) {
     await db.query(
       `INSERT INTO inspection_visits (id, organization_id, property_id, inspector_user_id) VALUES ($1,$2,$3,$4)`,
@@ -109,6 +135,8 @@ export async function bindInspectionVisit(
     return { error: "visit_facility_mismatch" };
   } else if (existing.rows[0].inspector_user_id !== input.userId) {
     return { error: "visit_inspector_mismatch" };
+  } else if (existing.rows[0].status === "finished") {
+    return { error: "visit_finished" };
   }
   await db.query("UPDATE inspection_events SET visit_id = $1 WHERE id = $2", [input.visitId, input.inspectionId]);
   return {};

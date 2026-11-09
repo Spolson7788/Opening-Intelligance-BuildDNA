@@ -222,7 +222,8 @@ async function recordFailure(operation: SyncOperation, error: unknown) {
   // C2: access ended and the device was wiped; never write the operation back.
   if (isSessionEnded(error) || error instanceof OiDataWipedError) return;
   const tooLarge = isMediaSizeRejection(error);
-  const conflict = !tooLarge && error instanceof ApiError && error.status === 409;
+  const finishedVisit = error instanceof ApiError && error.message === "visit_finished";
+  const conflict = !tooLarge && !finishedVisit && error instanceof ApiError && error.status === 409;
   // A change of signed-in account (raised by this app) stops the operation like an authorization
   // failure, but is marked so that it resumes once the same account signs in again. A server 401/403
   // is not marked and stays stopped for review.
@@ -230,7 +231,7 @@ async function recordFailure(operation: SyncOperation, error: unknown) {
   const siteAccess = error instanceof ApiError && error.message === SITE_ACCESS_REQUIRED;
   const authRequired = principalChange || (!siteAccess && error instanceof ApiError && (error.status === 401 || error.status === 403));
   const rejected = error instanceof ApiError && (error.status === 400 || error.status === 413 || error.status === 422);
-  const state: SyncOperationState = tooLarge || rejected ? "permanent_failure" : conflict ? "conflict" : authRequired ? "auth_required" : "retry_wait";
+  const state: SyncOperationState = tooLarge || rejected || finishedVisit ? "permanent_failure" : conflict ? "conflict" : authRequired ? "auth_required" : "retry_wait";
   const message = tooLarge ? MEDIA_TOO_LARGE : error instanceof Error ? error.message : "unknown_error";
   if (conflict) {
     const item: SyncConflict = { conflictId: crypto.randomUUID(), operationId: operation.operationId,
@@ -239,7 +240,7 @@ async function recordFailure(operation: SyncOperation, error: unknown) {
       detectedAt: new Date().toISOString(), resolutionState: "open" };
     await putSyncConflict(item, message);
   } else await putSyncOperation({ ...operation, state, attemptCount: operation.attemptCount + 1,
-    lastAttemptAt: new Date().toISOString(), nextAttemptAt: authRequired || tooLarge ? undefined : new Date(Date.now() + retryDelayMs(operation.attemptCount)).toISOString(),
+    lastAttemptAt: new Date().toISOString(), nextAttemptAt: authRequired || tooLarge || finishedVisit ? undefined : new Date(Date.now() + retryDelayMs(operation.attemptCount)).toISOString(),
     dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined, lastErrorCode: message, principalChangeStop: principalChange ? true : undefined });
   currentState = { ...currentState, lastError: message };
   notify();

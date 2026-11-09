@@ -62,4 +62,34 @@ describe("combined fire door visit report", () => {
     expect(text).toContain("Failed doors");
     expect(text).toContain("Photograph stored with this inspection");
   });
+
+  it("names a repeated door and shows a location only when one was recorded", async () => {
+    const early = door("210A", false);
+    early.location = "Lobby";
+    early.inspectedAt = "2026-11-09T10:57:00.000Z";
+    const later = door("210A", true);
+    later.location = null;
+    later.openingId = early.openingId;
+    later.inspectedAt = "2026-11-09T12:07:00.000Z";
+    const lines = visitReportOutline({
+      facilityName: "North Clinic", eventDate: "2026-11-09", inspectorName: "Stephan Olson",
+      qualification: "Fire door inspector", licenseNumber: "FD-100", doors: [later, early],
+    });
+    expect(lines).toContain("210A, inspection 1 of 2 at 10:57");
+    expect(lines).toContain("210A, inspection 2 of 2 at 12:07");
+    expect(lines).toContain("Lobby");
+    expect(lines).not.toContain("Location not recorded");
+    const pdf = await generateNfpaVisitPdf({
+      facilityName: "North Clinic", eventDate: "2026-11-09", inspectorName: "Stephan Olson",
+      qualification: "Fire door inspector", licenseNumber: "FD-100", doors: [later, early],
+    });
+    const raw = pdf.toString("latin1");
+    const text = [...raw.matchAll(/stream\n([\s\S]*?)\nendstream/g)].flatMap((match) => {
+      try { return [inflateSync(Buffer.from(match[1], "latin1")).toString("latin1")]; } catch { return [match[1]]; }
+    }).join("\n");
+    const visible = [...text.matchAll(/<([0-9A-Fa-f]+)>/g)].map((match) => Buffer.from(match[1], "hex").toString("latin1")).join("");
+    expect(visible).toContain("210A, inspection 1 of 2 at 10:57");
+    expect(visible).toContain("Lobby");
+    expect(visible).not.toContain("Location not recorded");
+  });
 });

@@ -2,12 +2,22 @@ import { useEffect, useState } from "react";
 import { syncIssueCanDiscard, syncIssueMessage } from "../lib/syncIssueMessage";
 import { useAuth } from "../lib/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { discardPermanentFailure, getOfflineMedia, getOfflineMediaForPrincipal, getOpenConflictsForPrincipal, getSyncOperationsForPrincipal, loadAuth, recoverOrphanedMediaOperation, removeRejectedMedia, replaceRejectedMediaWithReducedCopy, retrySyncOperationAfterReview } from "../lib/db";
+import { discardPermanentFailure, getOfflineMedia, getOfflineMediaForPrincipal, getOpenConflictsForPrincipal, getSyncOperationsForPrincipal, loadAuth, recoverOrphanedMediaOperation, removeRejectedMedia, replaceRejectedMediaWithReducedCopy, requeueFinishedVisitInspection, retrySyncOperationAfterReview } from "../lib/db";
+import { startNewVisit } from "../lib/inspectionVisit";
 import { checksumBlob, flushOutbox } from "../lib/sync";
 import { syncIssuesForRecords } from "../lib/syncIssuesModel";
 import type { SyncIssueView } from "../lib/syncIssuesModel";
 import { formatMegabytes, maximumMediaBytes } from "../lib/mediaLimits";
 import { prepareImageForUpload, reducedFilename } from "../lib/photoPreparation";
+
+function retryLabel(issue: SyncIssueView): string {
+  if (issue.conflict) return "Keep local change and retry";
+  if (issue.kind === "orphaned_media") return "Restore upload operation";
+  if (issue.status === "in_flight" || issue.status === "verifying") return "Recover interrupted operation";
+  if (issue.status === "retry_wait" && !syncIssueCanDiscard(issue)) return "Retry retained operation";
+  if (syncIssueCanDiscard(issue)) return "Retry this saved change";
+  return "Retry after authorization is restored";
+}
 
 export function SyncIssuesPage() {
   const { auth, identityChecking } = useAuth();
@@ -44,6 +54,22 @@ export function SyncIssuesPage() {
   useEffect(() => { void load(); }, [principal]);
 
   const note = (id: string, text: string) => setNotes((current) => ({ ...current, [id]: text }));
+
+  async function keepFinishedVisitInspection(issue: SyncIssueView, mode: "standalone" | "new") {
+    setBusy(issue.id);
+    try {
+      const visitId = mode === "new" ? (await startNewVisit())?.id ?? null : null;
+      if (mode === "new" && !visitId) {
+        note(issue.id, "Choose a facility before starting a new visit. This inspection is still on this device.");
+        return;
+      }
+      await requeueFinishedVisitInspection(issue.id, visitId);
+      await flushOutbox();
+      await load();
+    } catch (error) {
+      note(issue.id, error instanceof Error ? error.message : "This inspection is still on this device.");
+    } finally { setBusy(null); }
+  }
 
   async function retry(issue: SyncIssueView) {
     if (issue.kind === "orphaned_media") await recoverOrphanedMediaOperation(issue.id);
@@ -134,18 +160,17 @@ export function SyncIssuesPage() {
           {!issue.contentType?.startsWith("video/") && <p style={{ margin: "6px 0", color: "var(--text-secondary)" }}>Reducing replaces this local copy with a smaller JPEG that fits the limit. Save a copy first if you need the full-resolution original.</p>}
         </> : <>
           <p role="alert" style={{ margin: "6px 0" }}>{syncIssueMessage(issue.status, issue.error)}</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button className="btn btn-secondary" onClick={() => retry(issue)}>{issue.conflict ? "Keep local change and retry"
-              : issue.kind === "orphaned_media" ? "Restore upload operation"
-                : ["in_flight", "verifying"].includes(issue.status) ? "Recover interrupted operation"
-                : issue.status === "retry_wait" && !syncIssueCanDiscard(issue) ? "Retry retained operation"
-                : syncIssueCanDiscard(issue) ? "Retry this saved change" : "Retry after authorization is restored"}</button>
+          {issue.error === "visit_finished" ? <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button className="btn btn-primary" disabled={busy === issue.id} onClick={() => keepFinishedVisitInspection(issue, "standalone")}>Save without a visit</button>
+            <button className="btn btn-secondary" disabled={busy === issue.id} onClick={() => keepFinishedVisitInspection(issue, "new")}>Save in a new visit</button>
+          </div> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button className="btn btn-secondary" onClick={() => retry(issue)}>{retryLabel(issue)}</button>
             {syncIssueCanDiscard(issue) && (confirmRemove === issue.id
               ? <div className="c04-alert"><p>Discarding removes this change from this device only. It does not change the server.</p>
                   <button className="btn c04-danger-fill" disabled={busy === issue.id} onClick={() => discard(issue)}>Confirm discard from this device</button>
                   <button className="btn btn-secondary" onClick={() => setConfirmRemove(null)}>Keep it</button></div>
               : <button className="btn btn-secondary" onClick={() => setConfirmRemove(issue.id)}>Discard this saved change</button>)}
-          </div>
+          </div>}
         </>}
         {notes[issue.id] && <p className="error-text" role="status">{notes[issue.id]}</p>}
       </div>)}

@@ -9,6 +9,7 @@ const REASONS: Record<string, string> = {
   fail_requires_photo: "A failed item is missing its photo. Discard it and save the inspection again.",
   fail_requires_note: "A failed item is missing its note. Discard it and save the inspection again.",
   media_too_large: "This file is too large to sync. It remains on this device until you discard it.",
+  visit_finished: "This inspection is still on this device. That visit is already finished, so it was not added there. Save it without a visit, or save it in a new visit.",
 };
 
 export const DISCARDABLE_SYNC_ERRORS = new Set([
@@ -17,6 +18,7 @@ export const DISCARDABLE_SYNC_ERRORS = new Set([
 ]);
 
 export function syncIssueCanDiscard(issue: { status: string; error?: string }): boolean {
+  if (issue.error === "visit_finished") return false;
   if (issue.status === "permanent_failure" || issue.status === "rejected_too_large") return true;
   return Boolean(issue.error && DISCARDABLE_SYNC_ERRORS.has(issue.error)
     && ["retry_wait", "schema_blocked", "storage_pressure"].includes(issue.status));

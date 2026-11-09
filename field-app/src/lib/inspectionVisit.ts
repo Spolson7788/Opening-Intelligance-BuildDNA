@@ -124,6 +124,24 @@ export async function readVisitById(id: string): Promise<InspectionVisit | null>
   try { return await readVisit(id); } catch { return null; }
 }
 
+export async function startNewVisit(): Promise<InspectionVisit | null> {
+  try {
+    const auth = await loadAuth();
+    const facilityId = await currentFacilityId();
+    if (!auth || !facilityId) return null;
+    const created: InspectionVisit = {
+      id: crypto.randomUUID(), organizationId: auth.organizationId, userId: auth.userId,
+      facilityId, status: "open", inspections: [],
+    };
+    const now = new Date().toISOString();
+    await putOfflineSetting({ key: visitKey(created.id), value: created, updatedAt: now });
+    await putOfflineSetting({ key: openVisitKey(auth.userId, auth.organizationId, facilityId), value: created.id, updatedAt: now });
+    return created;
+  } catch {
+    return null;
+  }
+}
+
 export async function finishVisit(id: string): Promise<void> {
   const visit = await readVisit(id);
   if (!visit) return;

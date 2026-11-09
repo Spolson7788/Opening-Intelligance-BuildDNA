@@ -12,7 +12,7 @@ import { inspectionSaveFailureMessage, queueInspectionFailurePhoto } from "../li
 import { removeUnconfirmedLocalPhoto } from "../lib/db";
 import { awaitInspectionSynced } from "../lib/sync";
 import { scrollPageToTop } from "../lib/scrollPage";
-import { ensureOpenVisit, finishVisit, recordVisitInspection, visitSummaryText } from "../lib/inspectionVisit";
+import { ensureOpenVisit, recordVisitInspection, visitSummaryText } from "../lib/inspectionVisit";
 import type { InspectionVisit } from "../lib/inspectionVisit";
 
 type ItemAnswer = { result: "" | "pass" | "fail" | "na"; note: string; photo: File | null };
@@ -209,7 +209,7 @@ export function LogInspectionEventPage() {
             {visit && <p className="c04-band-green" role="status">{visitSummaryText(visit.inspections)}</p>}
             {savedInspectionId && visit && <>
               <button type="button" className="btn c04-btn-blue" onClick={() => navigate("/scan")}>Add an Additional Opening</button>
-              <button type="button" className="btn c04-btn-green" onClick={() => { void finishVisit(visit.id).then(() => navigate(`/visit/${visit.id}`)); }}>Finish visit / Send combined report</button>
+              <button type="button" className="btn c04-btn-green" onClick={() => navigate(`/visit/${visit.id}`)}>Finish visit / Send combined report</button>
             </>}
             {savedInspectionId && <EmailInspectionReport inspectionId={savedInspectionId} syncStatus={emailSync} syncReason={emailReason} />}
             {!savedInspectionId && <p style={{ textAlign: "center" }}>Returning to the opening…</p>}

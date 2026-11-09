@@ -6,7 +6,7 @@ import { emailFailureText, reportRecipientList } from "../components/EmailInspec
 import { ApiError, emailInspectionVisit, fetchInspectionVisit, inspectionVisitRecipients } from "../lib/api";
 import { flushOutbox } from "../lib/sync";
 import { getSyncOperationsForPrincipal, loadAuth } from "../lib/db";
-import { pendingInspectionIds, readVisitById, visitSummaryText, visitUploadMessage } from "../lib/inspectionVisit";
+import { finishVisit, pendingInspectionIds, readVisitById, visitSummaryText, visitUploadMessage } from "../lib/inspectionVisit";
 import type { InspectionVisit } from "../lib/inspectionVisit";
 
 export function VisitReportPage() {
@@ -74,6 +74,7 @@ export function VisitReportPage() {
         return;
       }
       await emailInspectionVisit(id, recipients, localIds);
+      await finishVisit(id);
       setNotice("Combined report emailed.");
       setNoticeRole("status");
     } catch (error) {

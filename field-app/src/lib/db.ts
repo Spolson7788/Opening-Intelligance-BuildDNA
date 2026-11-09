@@ -424,6 +424,31 @@ export async function replaceRejectedMediaWithReducedCopy(photoId: string, reduc
 // A permanently failed change stays on the device until the technician discards it.
 // This removes only that local operation. It does not write to the server, and it
 // refuses anything that is still queued, retrying, or already verified.
+export async function requeueFinishedVisitInspection(operationId: string, visitId: string | null) {
+  assertNotWiped();
+  const db = await getDb();
+  const tx = db.transaction(["auth", "operations", "entities"], "readwrite");
+  const auth = await tx.objectStore("auth").get("current");
+  const operation: SyncOperation | undefined = await tx.objectStore("operations").get(operationId);
+  if (!auth || !operation || operation.actorUserId !== auth.userId || operation.organizationId !== auth.organizationId) {
+    throw new Error("operation_principal_mismatch");
+  }
+  if (operation.entityType !== "inspection_event" || operation.lastErrorCode !== "visit_finished") {
+    throw new Error("operation_not_finished_visit");
+  }
+  const payload = { ...(operation.payload as Record<string, unknown>) };
+  if (visitId) payload.visit_id = visitId;
+  else delete payload.visit_id;
+  const now = new Date().toISOString();
+  await tx.objectStore("operations").put({
+    ...operation, payload, state: "queued", attemptCount: 0, lastErrorCode: undefined,
+    nextAttemptAt: undefined, lastAttemptAt: undefined, dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined,
+  });
+  const entity = await tx.objectStore("entities").get(entityKey(operation.entityType, operation.entityId));
+  if (entity) await tx.objectStore("entities").put({ ...entity, payload, syncState: "queued", updatedAtLocal: now });
+  await tx.done;
+}
+
 export async function discardPermanentFailure(operationId: string) {
   assertNotWiped();
   const db = await getDb();

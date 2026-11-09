@@ -639,7 +639,14 @@ portfolioRouter.get("/inspection-visits", async (req: AuthedRequest, res) => {
     if (!await facilityDashboardAllowed(req)) return res.status(403).json({ error: "facility_dashboard_forbidden" });
     const rows = await pool.query(
       `SELECT v.id, v.property_id, p.name AS facility_name, v.created_at::date AS visit_date,
-              COALESCE(u.full_name, '') AS inspector_name,
+              COALESCE(
+                (SELECT NULLIF(btrim(i2.signed_by_name), '')
+                 FROM inspection_events i2
+                 WHERE i2.visit_id = v.id AND NULLIF(btrim(i2.signed_by_name), '') IS NOT NULL
+                 ORDER BY i2.created_at DESC
+                 LIMIT 1),
+                NULLIF(btrim(u.full_name), '')
+              ) AS inspector_name,
               v.report_sent_at IS NOT NULL AS report_sent,
               COUNT(i.id)::int AS inspected,
               COUNT(i.id) FILTER (WHERE i.passed IS TRUE)::int AS passed,

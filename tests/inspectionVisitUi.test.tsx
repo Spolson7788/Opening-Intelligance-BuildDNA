@@ -143,3 +143,23 @@ it("does not send the combined report while 310A is still off the server", async
   expect(store.email).not.toHaveBeenCalled();
   expect(host.textContent).toContain("1 inspection(s) are still uploading, try again");
 });
+
+it("clears the active visit after the combined report is sent", async () => {
+  const visitId = "visit-sent";
+  store.serverIds = ["insp-210a"];
+  store.settings.set(`inspection-visit:${visitId}`, {
+    id: visitId, organizationId: "org", userId: "u", facilityId: "facility-1", status: "open",
+    inspections: [{ inspectionId: "insp-210a", openingId: "door-210a", passed: true }],
+  });
+  store.settings.set("inspection-visit-open:u:org:facility-1", visitId);
+  Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+  await act(async () => root.render(
+    <MemoryRouter initialEntries={[`/visit/${visitId}`]}>
+      <Routes><Route path="/visit/:id" element={<VisitReportPage />} /></Routes>
+    </MemoryRouter>,
+  ));
+  await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(store.email).toHaveBeenCalledWith("visit-sent", ["building@example.com", "signer@example.com"], ["insp-210a"]);
+  expect((store.settings.get(`inspection-visit:${visitId}`) as { status: string }).status).toBe("finished");
+  expect(store.settings.get("inspection-visit-open:u:org:facility-1")).toBe("");
+});

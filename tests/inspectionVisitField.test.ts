@@ -1,7 +1,9 @@
 import "fake-indexeddb/auto";
 import { afterEach, expect, it } from "vitest";
-import { closeFieldAppDb, getOfflineSetting, putOfflineSetting, saveAuth } from "../field-app/src/lib/db";
-import { ensureOpenVisit, pendingInspectionIds, readVisitById, recordVisitInspection, visitSummaryText, visitUploadMessage, withInspection } from "../field-app/src/lib/inspectionVisit";
+import { closeFieldAppDb, getOfflineSetting, getSyncOperationsForPrincipal, putOfflineSetting, putSyncOperation, requeueFinishedVisitInspection, saveAuth } from "../field-app/src/lib/db";
+import { ensureOpenVisit, finishVisit, pendingInspectionIds, readVisitById, recordVisitInspection, startNewVisit, visitSummaryText, visitUploadMessage, withInspection } from "../field-app/src/lib/inspectionVisit";
+import { syncIssueCanDiscard, syncIssueMessage } from "../field-app/src/lib/syncIssueMessage";
+import { OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "../field-app/src/lib/offlineTypes";
 import { selectedFacilityKey } from "../field-app/src/lib/facilitySync";
 
 const userId = "55555555-5555-4555-8555-555555555555";
@@ -46,4 +48,39 @@ it("blocks a combined report while a later door in the same visit is still off t
   expect(visitUploadMessage(stillQueued.length)).toBe("1 inspection(s) are still uploading, try again");
   expect(pendingInspectionIds(local, [], ["210A-inspection", "310A-inspection"])).toEqual([]);
   expect(pendingInspectionIds(local, [], null)).toEqual(local);
+});
+
+it("starts a new visit after the combined report is sent and keeps a finished-visit inspection", async () => {
+  await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
+  await putOfflineSetting({ key: selectedFacilityKey({ userId, organizationId }), value: facilityId, updatedAt: new Date().toISOString() });
+  const first = await ensureOpenVisit();
+  await recordVisitInspection(first!.id, { inspectionId: "insp-210a", openingId: "door-210a", passed: true });
+  await finishVisit(first!.id);
+  const next = await ensureOpenVisit();
+  expect(next?.id).not.toBe(first?.id);
+  expect(next?.status).toBe("open");
+  const kept = await readVisitById(first!.id);
+  expect(kept?.status).toBe("finished");
+  expect(syncIssueCanDiscard({ status: "permanent_failure", error: "visit_finished" })).toBe(false);
+  expect(syncIssueMessage("permanent_failure", "visit_finished")).toContain("still on this device");
+  expect(syncIssueMessage("permanent_failure", "visit_finished")).not.toContain("discard");
+  await putSyncOperation({
+    operationId: "22222222-2222-4222-8222-222222222222", operationType: "create", entityType: "inspection_event",
+    entityId: "11111111-1111-4111-8111-111111111111", openingId: "door-210a", organizationId, actorUserId: userId,
+    deviceId: "66666666-6666-4666-8666-666666666666", baseServerRevision: null,
+    payload: { inspection_type: "fire_door_nfpa80", visit_id: first!.id }, payloadHash: "a".repeat(64),
+    dependencyOperationIds: [], createdAtLocal: "2026-11-09T12:07:00.000Z", state: "permanent_failure",
+    attemptCount: 1, lastErrorCode: "visit_finished", schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: "test",
+    protocolVersion: SYNC_PROTOCOL_VERSION,
+  });
+  await requeueFinishedVisitInspection("22222222-2222-4222-8222-222222222222", null);
+  const standalone = (await getSyncOperationsForPrincipal(userId, organizationId))[0];
+  expect(standalone.state).toBe("queued");
+  expect(standalone.payload).not.toHaveProperty("visit_id");
+  const created = await startNewVisit();
+  await putSyncOperation({ ...standalone, state: "permanent_failure", lastErrorCode: "visit_finished", payload: { inspection_type: "fire_door_nfpa80", visit_id: first!.id } });
+  await requeueFinishedVisitInspection(standalone.operationId, created!.id);
+  const moved = (await getSyncOperationsForPrincipal(userId, organizationId))[0];
+  expect((moved.payload as { visit_id?: string }).visit_id).toBe(created?.id);
+  expect(moved.payload && JSON.stringify(moved.payload)).not.toContain(first!.id);
 });
