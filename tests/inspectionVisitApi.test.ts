@@ -24,6 +24,7 @@ vi.mock("../src/services/storage", async (importOriginal) => {
 import { app, createPortfolioHierarchy, createTestOpening, signupTestOrg } from "./helpers";
 import { failingFireDoorFields, passingFireDoorFields } from "./nfpa80Fixture";
 import { setEmailProviderForTests } from "../src/services/email";
+import { visitInspectionsShortfall } from "../src/services/inspectionVisits";
 import { pool } from "../src/db/pool";
 
 afterEach(() => setEmailProviderForTests(null));
@@ -124,4 +125,47 @@ it("groups two openings into one visit and keeps the combined report inside the 
   expect((await request(app).get("/api/portfolio/inspection-visits").set("Authorization", `Bearer ${other.token}`)).body.visits).toEqual([]);
   const opening = await request(app).get(`/api/openings/${failed.id}`).set(auth);
   expect(opening.body.inspection_events[0].visit_id).toBe(visitId);
+});
+
+it("does not freeze the official PDF when a later door in the visit has not reached the server", async () => {
+  expect(visitInspectionsShortfall(["door-210a"], ["door-210a", "door-310a"])).toBe(1);
+  expect(visitInspectionsShortfall(["door-210a", "door-310a"], ["door-210a", "door-310a"])).toBe(0);
+  const org = await signupTestOrg("Race clinic");
+  const { buildingId } = await createPortfolioHierarchy(org.token);
+  const first = await createTestOpening(org.token, buildingId, { opening_code: "210A", fire_rated: true });
+  const second = await createTestOpening(org.token, buildingId, { opening_code: "310A", fire_rated: true });
+  const visitId = randomUUID();
+  const auth = { Authorization: `Bearer ${org.token}` };
+  const early = await request(app).post("/api/events/inspection-events").set(auth).send({
+    opening_id: first.id, event_date: "2026-11-09", inspection_type: "fire_door_nfpa80", visit_id: visitId, ...passingFireDoorFields(),
+  });
+  expect(early.status).toBe(201);
+  const lateId = randomUUID();
+  setEmailProviderForTests({ name: "fake", send: async () => ({ sent: true }) });
+  const puts = storage.puts;
+  const blocked = await request(app).post(`/api/events/inspection-visits/${visitId}/email`).set(auth).send({
+    to: ["building@example.com"],
+    expected_inspection_ids: [early.body.id, lateId],
+  });
+  expect(blocked.status).toBe(409);
+  expect(blocked.body).toEqual({ error: "visit_inspections_pending", pending: 1 });
+  expect(storage.puts).toBe(puts);
+  expect((await pool.query("SELECT report_storage_key FROM inspection_visits WHERE id=$1", [visitId])).rows[0].report_storage_key).toBeNull();
+
+  const arrived = await request(app).post("/api/events/inspection-events").set(auth).send({
+    opening_id: second.id, event_date: "2026-11-09", inspection_type: "fire_door_nfpa80", visit_id: visitId, ...passingFireDoorFields(),
+  });
+  expect(arrived.status).toBe(201);
+  const mailed = await request(app).post(`/api/events/inspection-visits/${visitId}/email`).set(auth).send({
+    to: ["building@example.com"],
+    expected_inspection_ids: [early.body.id, arrived.body.id],
+  });
+  expect(mailed.status).toBe(200);
+  expect(storage.puts).toBe(puts + 1);
+  const resent = await request(app).post(`/api/events/inspection-visits/${visitId}/email`).set(auth).send({
+    to: ["building@example.com"],
+    expected_inspection_ids: [early.body.id, lateId, randomUUID()],
+  });
+  expect(resent.status).toBe(200);
+  expect(storage.puts).toBe(puts + 1);
 });

@@ -3,8 +3,10 @@ import type { FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { SyncBadge } from "../components/SyncBadge";
 import { emailFailureText, reportRecipientList } from "../components/EmailInspectionReport";
-import { emailInspectionVisit, inspectionVisitRecipients } from "../lib/api";
-import { readVisitById, visitSummaryText } from "../lib/inspectionVisit";
+import { ApiError, emailInspectionVisit, fetchInspectionVisit, inspectionVisitRecipients } from "../lib/api";
+import { flushOutbox } from "../lib/sync";
+import { getSyncOperationsForPrincipal, loadAuth } from "../lib/db";
+import { pendingInspectionIds, readVisitById, visitSummaryText, visitUploadMessage } from "../lib/inspectionVisit";
 import type { InspectionVisit } from "../lib/inspectionVisit";
 
 export function VisitReportPage() {
@@ -16,10 +18,12 @@ export function VisitReportPage() {
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeRole, setNoticeRole] = useState<"status" | "alert">("status");
+  const [serverCount, setServerCount] = useState<number | null>(null);
 
   useEffect(() => {
     if (!id) return;
     void readVisitById(id).then(setVisit);
+    void fetchInspectionVisit(id).then((row) => setServerCount(row.inspection_ids?.length ?? row.inspected)).catch(() => setServerCount(null));
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       setNotice("Emailing this report needs a connection. The visit stays on this device.");
       setNoticeRole("alert");
@@ -36,8 +40,10 @@ export function VisitReportPage() {
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!id || (typeof navigator !== "undefined" && navigator.onLine === false)) {
-      setNotice("Emailing this report needs a connection. The visit stays on this device.");
+    if (!id) return;
+    const localIds = visit?.inspections.map((inspection) => inspection.inspectionId) ?? [];
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setNotice(visitUploadMessage(Math.max(localIds.length, 1)));
       setNoticeRole("alert");
       return;
     }
@@ -49,11 +55,31 @@ export function VisitReportPage() {
     }
     setSending(true);
     try {
-      await emailInspectionVisit(id, recipients);
+      await flushOutbox();
+      const auth = await loadAuth();
+      const operations = auth ? await getSyncOperationsForPrincipal(auth.userId, auth.organizationId) : [];
+      let serverIds: string[] | null = null;
+      try {
+        const row = await fetchInspectionVisit(id);
+        serverIds = row.inspection_ids ?? [];
+        setServerCount(serverIds.length);
+      } catch {
+        serverIds = null;
+        setServerCount(null);
+      }
+      const pending = pendingInspectionIds(localIds, operations, serverIds);
+      if (pending.length) {
+        setNotice(visitUploadMessage(pending.length));
+        setNoticeRole("alert");
+        return;
+      }
+      await emailInspectionVisit(id, recipients, localIds);
       setNotice("Combined report emailed.");
       setNoticeRole("status");
     } catch (error) {
-      setNotice(emailFailureText(error));
+      setNotice(error instanceof ApiError && error.message === "visit_inspections_pending"
+        ? visitUploadMessage(Math.max(localIds.length, 1))
+        : emailFailureText(error));
       setNoticeRole("alert");
     } finally {
       setSending(false);
@@ -68,7 +94,7 @@ export function VisitReportPage() {
       </div>
       <div className="screen">
         <h1>Inspection visit</h1>
-        {visit ? <div className="c04-band-green" role="status"><p>{visitSummaryText(visit.inspections)}</p></div> : <p>This visit is not on this device.</p>}
+        {visit ? <div className="c04-band-green" role="status"><p>{visitSummaryText(visit.inspections)}</p><p>On this device: {visit.inspections.length}. On the server: {serverCount === null ? "not confirmed" : serverCount}.</p></div> : <p>This visit is not on this device.</p>}
         <form className="c04-band" onSubmit={onSubmit}>
           <h2>Finish visit / Send combined report</h2>
           <label htmlFor="visit-report-email">Email this combined report</label>

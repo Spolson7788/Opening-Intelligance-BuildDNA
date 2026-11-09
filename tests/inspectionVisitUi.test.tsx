@@ -5,7 +5,13 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { NFPA80_ITEMS } from "../field-app/src/lib/nfpa80Items";
 
-const store = vi.hoisted(() => ({ settings: new Map<string, unknown>(), queued: vi.fn(async () => "insp-1") }));
+const store = vi.hoisted(() => ({
+  settings: new Map<string, unknown>(),
+  queued: vi.fn(async () => "insp-1"),
+  operations: [] as { entityId: string; entityType: string; state: string }[],
+  serverIds: ["insp-210a", "insp-310a"],
+  email: vi.fn(async () => ({ sent: true, delivery_mode: "attachments" })),
+}));
 vi.mock("../field-app/src/lib/sync", () => ({
   queueOpeningMutation: (...args: unknown[]) => store.queued(...args),
   flushOutbox: vi.fn(async () => {}),
@@ -17,13 +23,15 @@ vi.mock("../field-app/src/lib/db", () => ({
   getOfflineSetting: async (key: string) => store.settings.has(key) ? { key, value: store.settings.get(key), updatedAt: "" } : undefined,
   putOfflineSetting: async (setting: { key: string; value: unknown }) => { store.settings.set(setting.key, setting.value); },
   removeUnconfirmedLocalPhoto: vi.fn(async () => true),
+  getSyncOperationsForPrincipal: async () => store.operations,
 }));
 vi.mock("../field-app/src/lib/api", () => ({
   recomputeHealthScore: vi.fn(async () => {}),
   inspectionReportRecipients: vi.fn(async () => ({ to: ["building@example.com", "signer@example.com"], facility_contact_email: "building@example.com", inspector_email: "signer@example.com" })),
   emailInspectionReport: vi.fn(),
   inspectionVisitRecipients: vi.fn(async () => ({ to: ["building@example.com", "signer@example.com"], facility_contact_email: "building@example.com", inspector_email: "signer@example.com" })),
-  emailInspectionVisit: vi.fn(),
+  fetchInspectionVisit: vi.fn(async () => ({ inspected: store.serverIds.length, inspection_ids: store.serverIds })),
+  emailInspectionVisit: (...args: unknown[]) => store.email(...args),
 }));
 vi.mock("../field-app/src/components/SyncBadge", () => ({ SyncBadge: () => <span>Sync</span> }));
 vi.mock("../field-app/src/components/SignaturePad", () => ({
@@ -34,6 +42,8 @@ vi.mock("../field-app/src/components/SignaturePad", () => ({
 }));
 
 import { LogInspectionEventPage } from "../field-app/src/pages/LogInspectionEventPage";
+import { VisitReportPage } from "../field-app/src/pages/VisitReportPage";
+import { flushOutbox } from "../field-app/src/lib/sync";
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -42,7 +52,11 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   store.settings.clear();
   store.settings.set("selected-facility:u:org", "facility-1");
+  store.operations = [];
+  store.serverIds = ["insp-210a", "insp-310a"];
+  store.email.mockClear();
   store.queued.mockClear();
+  vi.mocked(flushOutbox).mockClear();
   Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
   host = document.createElement("div");
   document.body.append(host);
@@ -105,4 +119,27 @@ it("keeps the facility and adds one inspection when save is tapped twice", async
   await act(async () => add!.click());
   expect(host.textContent).toContain("Scan opening");
   expect(host.textContent).not.toContain("Choose location");
+});
+
+it("does not send the combined report while 310A is still off the server", async () => {
+  const visitId = "visit-race";
+  store.serverIds = ["insp-210a"];
+  store.settings.set(`inspection-visit:${visitId}`, {
+    id: visitId, organizationId: "org", userId: "u", facilityId: "facility-1", status: "open",
+    inspections: [
+      { inspectionId: "insp-210a", openingId: "door-210a", passed: true },
+      { inspectionId: "insp-310a", openingId: "door-310a", passed: false },
+    ],
+  });
+  Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+  await act(async () => root.render(
+    <MemoryRouter initialEntries={[`/visit/${visitId}`]}>
+      <Routes><Route path="/visit/:id" element={<VisitReportPage />} /></Routes>
+    </MemoryRouter>,
+  ));
+  expect(host.textContent).toContain("On this device: 2. On the server: 1.");
+  await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(flushOutbox).toHaveBeenCalled();
+  expect(store.email).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("1 inspection(s) are still uploading, try again");
 });

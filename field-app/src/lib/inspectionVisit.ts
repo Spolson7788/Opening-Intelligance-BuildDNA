@@ -26,6 +26,26 @@ export function visitCounts(inspections: VisitInspection[]) {
   return { inspected: inspections.length, passed: inspections.length - failed, failed };
 }
 
+export function visitUploadMessage(pending: number): string {
+  return `${pending} inspection(s) are still uploading, try again`;
+}
+
+export function pendingInspectionIds(
+  localIds: string[],
+  operations: { entityId: string; entityType: string; state: string }[],
+  serverIds: string[] | null,
+): string[] {
+  const localState = new Map(
+    operations.filter((operation) => operation.entityType === "inspection_event").map((operation) => [operation.entityId, operation.state]),
+  );
+  const onServer = new Set(serverIds ?? []);
+  return localIds.filter((id) => {
+    const state = localState.get(id);
+    if (state && state !== "verified") return true;
+    return !serverIds || !onServer.has(id);
+  });
+}
+
 export function visitSummaryText(inspections: VisitInspection[]): string {
   const counts = visitCounts(inspections);
   return `This visit: ${counts.inspected} openings (${counts.passed} passed, ${counts.failed} failed)`;

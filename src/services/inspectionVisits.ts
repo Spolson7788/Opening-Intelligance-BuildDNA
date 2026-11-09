@@ -28,6 +28,15 @@ export interface VisitReportData {
   doors: VisitDoor[];
 }
 
+export function visitInspectionsShortfall(serverIds: string[], expectedIds?: string[], expectedCount?: number): number {
+  if (!expectedIds && expectedCount == null) return 0;
+  const server = new Set(serverIds);
+  const uniqueExpected = expectedIds ? [...new Set(expectedIds)] : [];
+  const missingIds = uniqueExpected.filter((id) => !server.has(id)).length;
+  const count = uniqueExpected.length || expectedCount || 0;
+  return Math.max(missingIds, Math.max(0, count - serverIds.length));
+}
+
 export function visitCounts(doors: VisitDoor[]) {
   const failed = doors.filter((door) => !door.passed).length;
   return { inspected: doors.length, passed: doors.length - failed, failed };

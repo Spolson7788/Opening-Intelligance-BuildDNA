@@ -499,8 +499,12 @@ export function inspectionVisitRecipients(id: string): Promise<{ to: string[]; f
   return authedFetch(`/events/inspection-visits/${id}/email-defaults`);
 }
 
-export function emailInspectionVisit(id: string, to: string[]): Promise<{ sent: boolean; delivery_mode: string }> {
-  return authedFetch(`/events/inspection-visits/${id}/email`, { method: "POST", body: JSON.stringify({ to }) });
+export function fetchInspectionVisit(id: string): Promise<{ inspected: number; inspection_ids: string[] }> {
+  return authedFetch(`/events/inspection-visits/${id}`);
+}
+
+export function emailInspectionVisit(id: string, to: string[], expectedInspectionIds: string[]): Promise<{ sent: boolean; delivery_mode: string }> {
+  return authedFetch(`/events/inspection-visits/${id}/email`, { method: "POST", body: JSON.stringify({ to, expected_inspection_ids: expectedInspectionIds }) });
 }
 
 export async function recomputeHealthScore(openingId: string) {
