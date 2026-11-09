@@ -30,7 +30,7 @@ test('staging site is the only accepted target', () => {
 test('production and any other site are refused', () => {
   assert.throws(() => assertSite({ id: PRODUCTION_SITE_ID, name: 'oi-production', url: 'https://oi-production.netlify.app' }), /refusing_production/);
   assert.throws(() => assertSite({ id: '80fbbee8-b9d3-4b16-b93f-d2d8396591ec', name: 'oi-connected-release-candidate', url: 'https://oi-connected-release-candidate.netlify.app' }), /refusing_site_mismatch/);
-  assert.equal(PINNED_COMMIT, '21d33ac0df3a553d0fceaf2c50bbced76d405b2e');
+  assert.equal(PINNED_COMMIT, '5742e15e2a9ce6d189d0f999516d63e985f6939f');
   assert.equal(packageCommitAllowed(PINNED_COMMIT), true);
   assert.equal(packageCommitAllowed('16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5'), false);
   assert.equal(packageCommitAllowed('9c0256e1b92182a55246bc7e6460ab456098a48d'), false);
@@ -145,8 +145,8 @@ test('a preparing deploy is not uploaded, and a function retry keeps the same to
   assert.equal(loginProbeReached(404), false);
   assert.equal(loginProbeReached(400), true);
   assert.equal(loginProbeReached({ status: 401, contentType: 'text/html', body: '<!doctype html><html>Login</html>' }), false);
-  assert.equal(rollbackTarget().rollbackDeployId, '6af205922275f8cd171a07e0');
-  assert.equal(rollbackTarget().rollbackPermalink, 'https://6af205922275f8cd171a07e0--oi-video-workflows-staging.netlify.app');
+  assert.equal(rollbackTarget().rollbackDeployId, '6af2119ce8ac018993a499b4');
+  assert.equal(rollbackTarget().rollbackPermalink, 'https://6af2119ce8ac018993a499b4--oi-video-workflows-staging.netlify.app');
   assert.equal(needsPublishingLock({ id: '6aef3f786cc2af03c2ef1cd0', locked: false }), true);
   assert.equal(needsPublishingLock({ id: '6aef3f786cc2af03c2ef1cd0', locked: true }), false);
   assert.deepEqual(functionShasToUpload([], { abc: [{ routes: [{ pattern: '/api/*' }] }] }), ['abc']);
