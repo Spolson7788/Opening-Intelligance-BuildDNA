@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { listOpenings, listProperties, listCompanies, downloadOpeningsCsv, downloadComplianceReport, fetchCapitalForecastRollup, fetchComplianceAlerts } from "../lib/api";
 import type { ComplianceAlertsResult, Opening, Property } from "../lib/api";
 import { facilitiesErrorMessage } from "../lib/scheduleUi";
@@ -10,6 +10,7 @@ import { useLocations } from "../lib/LocationContext";
 import { CreateLocationPicker, useCreateTarget } from "../components/LocationBar";
 import { groupByLocation, rollupByLocation } from "../lib/locationScope";
 import { countBands, countyBadge, formatUsd, groupByStateCounty, needsAttentionCount, summarizeCorrectiveWork } from "../lib/portfolioOverview";
+import { scrollToOpeningsWhenReady } from "../lib/scrollToOpenings";
 
 const OPENING_TYPES = [
   { value: "", label: "All types" },
@@ -26,6 +27,7 @@ type SortDir = "asc" | "desc";
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { auth } = useAuth();
   // Mirrors the server-side rule in src/middleware/permissions.ts: only
   // admin/facilities_manager can create openings, properties, or run bulk
@@ -89,6 +91,11 @@ export function DashboardPage() {
       setGeneratingReport(false);
     }
   }
+
+  useEffect(() => {
+    if (location.hash !== "#openings") return;
+    void scrollToOpeningsWhenReady();
+  }, [location.hash]);
 
   useEffect(() => {
     // M3.1: failures are shown (a 401 goes to sign-in via authedFetch) instead of an empty list.
@@ -328,7 +335,7 @@ export function DashboardPage() {
           </div>
         )}
 
-        <section className="ov-card" id="openings">
+        <section className="ov-card" id="openings" tabIndex={-1}>
           <div className="ov-card-head">
             <div>
               <h2>Openings</h2>
@@ -337,6 +344,7 @@ export function DashboardPage() {
             <div className="ov-header-actions">
             <button
               className="ov-btn"
+              data-export-openings=""
               onClick={onExport}
               disabled={exporting || sorted.length === 0 || (loc.combined && !loc.index.canExportTree)}
               title={loc.combined && !loc.index.canExportTree ? "Exports across several locations are for company admins only" : undefined}
