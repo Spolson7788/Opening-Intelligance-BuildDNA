@@ -4,6 +4,7 @@ import { login as apiLogin, decodeTokenPayload, requestCompanySwitch, ApiError }
 import { decideSwitch, pendingWorkFor } from "./companySwitch";
 import type { SwitchDecision } from "./companySwitch";
 import { loadAuth, clearAuth } from "./db";
+import { clearLocationConfirmation } from "./locationChoice";
 import { recordFreshSignIn } from "./freshSignIn";
 import { playLoginIntro } from "./loginIntro";
 
@@ -115,7 +116,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (changing.current) return;
     changing.current = true; ++revision.current;
     setLogoutPending(true); setLogoutError(null);
-    try { await clearAuth(); setAuth(null); }
+    const signedOut = auth;
+    try { await clearAuth(); clearLocationConfirmation(typeof sessionStorage === "undefined" ? null : sessionStorage, signedOut); setAuth(null); }
     catch { setLogoutError("Sign-out could not be completed. Your saved changes remain on this device. Stay offline if you are switching accounts with pending changes."); }
     finally { changing.current = false; setLogoutPending(false); setIdentityChecking(false); }
   }

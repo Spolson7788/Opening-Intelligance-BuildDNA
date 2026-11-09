@@ -34,6 +34,8 @@ import { SyncIssuesPage } from "./pages/SyncIssuesPage";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { QrInformationPage } from './pages/QrInformationPage';
 import { isQrLandingPath, isQrLogin, isQrDetailsPath } from './lib/qrLanding';
+import { scanNeedsChooser } from './lib/locationChoice';
+import { ChooseLocationPage } from './pages/ChooseLocationPage';
 import { setSyncReadOnly } from './lib/syncNavigation';
 const PhotoIsolationPage=__PHOTO_ISOLATION_ENABLED__?lazy(()=>import('./pages/PhotoIsolationPage')):null;
 
@@ -41,6 +43,13 @@ function ScrollToTop() {
   const { pathname } = useLocation();
   useLayoutEffect(() => { scrollPageToTop(); }, [pathname]);
   return null;
+}
+
+function RequireLocation({ children }: { children: React.ReactElement }) {
+  const { auth } = useAuth();
+  const storage = typeof sessionStorage === "undefined" ? null : sessionStorage;
+  if (scanNeedsChooser(auth, storage)) return <Navigate to="/choose-location" replace />;
+  return children;
 }
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
@@ -81,7 +90,8 @@ function AppRoutes() {
       <Route path="/opening/:id/request-service" element={<RequireAuth><ServiceRequestPage /></RequireAuth>} /><Route path="/opening/:id/schedules" element={<RequireAuth><FacilitySchedulesPage /></RequireAuth>} />
       <Route path="/opening/:id/lifecycle" element={<RequireAuth><InstallationLifecyclePage /></RequireAuth>} />
       <Route path="/opening/:id/lifecycle-records" element={<RequireAuth><LifecycleOperationsPage /></RequireAuth>} />
-      <Route path="/scan" element={<RequireAuth><ScanPage /></RequireAuth>} />
+      <Route path="/choose-location" element={<RequireAuth><ChooseLocationPage /></RequireAuth>} />
+      <Route path="/scan" element={<RequireAuth><RequireLocation><ScanPage /></RequireLocation></RequireAuth>} />
       <Route path="/my-work-orders" element={<RequireAuth><MyWorkOrdersPage /></RequireAuth>} />
       <Route path="/facility-openings" element={<RequireAuth><FacilityOpeningsPage /></RequireAuth>} />
       <Route path="/sync-issues" element={<RequireAuth><SyncIssuesPage /></RequireAuth>} />

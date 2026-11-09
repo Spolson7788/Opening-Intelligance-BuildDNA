@@ -30,7 +30,7 @@ export const FIELD_SECTIONS: GuideSection[] = [
     id: "field-doors",
     title: "Facilities and doors",
     paragraphs: [
-      "On Scan, choose the facility first. Looking up an opening needs a connection. A QR label does not by itself let you in.",
+      "After sign-in, confirm the state, county, and facility before Scan. Continue confirms the location, including a last-used facility. A door link opens that door after sign-in and does not ask again. Looking up an opening needs a connection. A QR label does not by itself let you in.",
       "Scan the door label, or type the opening code from the tag. From the opening you can add hardware, edit hardware, log a service event, or log an inspection, when your role allows it.",
       "Viewers can look. Inspectors record inspections, photos, and service requests, and they can send to purchasing. They do not add or edit hardware. Technicians also add and edit hardware. Facility managers and admins do the office setup on the dashboard. The door page may show a health score out of 100. That number is a summary. It is not a test you run.",
     ],

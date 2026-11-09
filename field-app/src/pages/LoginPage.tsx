@@ -6,7 +6,7 @@ import { ApiError, resendStaffSignInCode, verifyStaffMfa } from "../lib/api";
 import { clearPendingStaffSignIn, readPendingStaffSignIn, savePendingStaffSignIn, type PendingStaffSignIn } from "../lib/staffSignInPending";
 import { readLoginForm } from "../lib/loginForm";
 import { loginFailureMessage } from "../lib/authResponse";
-import { loginReturnPath } from "../lib/qrPayload";
+import { postAuthLanding, readLocationConfirmation } from "../lib/locationChoice";
 import { isQrDetailsPath } from '../lib/qrLanding';
 import { siteAccessRenewalUrl } from '../lib/siteAccess';
 import { RenewPrivateSiteAccess } from '../components/RenewPrivateSiteAccess';
@@ -74,8 +74,7 @@ export function LoginPage() {
       if (isQrDetailsPath(location.state?.from)) await login(credentials.email, credentials.password, false);
       else await login(credentials.email, credentials.password);
       forget();
-      const from = location.state?.from;
-      navigate(loginReturnPath(from), { replace: true });
+      navigate(postAuthLanding(location.state?.from, false), { replace: true });
     } catch (err) {
       if (err instanceof StaffMfaRequired) {
         remember({ mfaToken: err.mfaToken, email: credentials.email, sentAt: Date.now() });
@@ -102,7 +101,7 @@ export function LoginPage() {
       const resumeQueued = !isQrDetailsPath(location.state?.from);
       forget();
       await finishStaffSignIn(result.token, pending.email, resumeQueued);
-      navigate(loginReturnPath(location.state?.from), { replace: true });
+      navigate(postAuthLanding(location.state?.from, false), { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? mfaMessage(err.message) : "The sign-in code could not be checked. Try again.");
     } finally { setSubmitting(false); }
@@ -149,8 +148,8 @@ export function LoginPage() {
     <p>Signed in as {auth.email || `Account ${auth.userId}`}</p>
     <p>Organization {auth.organizationId}</p>
     <p>This sign-in page does not switch accounts. To use a different account, go to Scan and sign out first. Saved changes remain associated with their original account.</p>
-    <button type="button" className="btn btn-primary" onClick={() => navigate(loginReturnPath(location.state?.from), { replace: true })}>Continue with this account</button>
-    <button type="button" className="btn c04-choice" onClick={() => navigate("/scan", { replace: true })}>Go to Scan</button>
+    <button type="button" className="btn btn-primary" onClick={() => navigate(postAuthLanding(location.state?.from, !!readLocationConfirmation(browserSession(), auth)), { replace: true })}>Continue with this account</button>
+    <button type="button" className="btn c04-choice" onClick={() => navigate(postAuthLanding("/scan", !!readLocationConfirmation(browserSession(), auth)), { replace: true })}>Go to Scan</button>
   </div></div>;
 
   return (

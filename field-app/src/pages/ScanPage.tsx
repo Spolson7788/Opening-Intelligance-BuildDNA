@@ -78,6 +78,7 @@ export function ScanPage() {
       </div>
       <div className="screen">
         <h1>Scan opening</h1>
+        <button type="button" className="btn c04-btn-cyan" onClick={() => navigate("/choose-location")}>Change facility</button>
         <FacilitySelector />
         <section className="c04-band" aria-label="Scan or enter an opening code">
         <h2>Scan or enter an opening code</h2>
