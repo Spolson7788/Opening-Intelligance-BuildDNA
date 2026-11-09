@@ -11,8 +11,6 @@ import { NFPA80_ITEMS, checklistStarted, fireDoorOutcome, resolveInspectionType 
 import { inspectionSaveFailureMessage, lowStorageWarning, queueInspectionFailurePhoto } from "../lib/inspectionPhoto";
 import { holdFacilityDownload } from "../lib/facilitySync";
 import { noteSyncDiagnostic } from "../lib/sync";
-import { DEVICE_STORAGE_MESSAGE } from "../lib/storageErrors";
-import { removeUnconfirmedLocalPhoto } from "../lib/db";
 import { awaitInspectionSynced } from "../lib/sync";
 import { scrollPageToTop } from "../lib/scrollPage";
 import { ensureOpenVisit, recordVisitInspection, visitSummaryText } from "../lib/inspectionVisit";
@@ -44,6 +42,7 @@ export function LogInspectionEventPage() {
   const savingRef = useRef(false);
   const queuedPhotoIds = useRef<Record<string, string>>({});
   const photoAttemptIds = useRef<Record<string, { photoId: string; operationId: string }>>({});
+  const inspectionAttemptId = useRef<ReturnType<typeof crypto.randomUUID> | null>(null);
   const [saved, setSaved] = useState(false);
   const [savedInspectionId, setSavedInspectionId] = useState<string | null>(null);
   const [visit, setVisit] = useState<InspectionVisit | null>(null);
@@ -120,15 +119,7 @@ export function LogInspectionEventPage() {
         return;
       }
       const items: Record<string, unknown> = {};
-      const createdPhotoIds: string[] = [];
       const stop = async (message: string) => {
-        const keepStored = message === DEVICE_STORAGE_MESSAGE;
-        if (!keepStored) {
-          await Promise.all(createdPhotoIds.map((photoId) => removeUnconfirmedLocalPhoto(photoId).catch(() => false)));
-          for (const [itemKey, photoId] of Object.entries(queuedPhotoIds.current)) {
-            if (createdPhotoIds.includes(photoId)) delete queuedPhotoIds.current[itemKey];
-          }
-        }
         setSignatureError(message);
         unlockDownload();
         savingRef.current = false;
@@ -151,7 +142,6 @@ export function LogInspectionEventPage() {
               queuedPhotoIds.current[item.key] = photoId;
             }
             if (queued.kind !== "queued") return stop(queued.message);
-            createdPhotoIds.push(photoId!);
           }
           items[item.key] = {
             result: answer.result,
@@ -160,7 +150,7 @@ export function LogInspectionEventPage() {
           };
         }
       } catch (error) {
-        noteSyncDiagnostic(error);
+        noteSyncDiagnostic(error, true);
         return stop(inspectionSaveFailureMessage(error));
       }
       const outcome = fireDoorOutcome(answers);
@@ -173,6 +163,7 @@ export function LogInspectionEventPage() {
     let visitId: string | undefined;
     try {
     if (type === "fire_door_nfpa80") visitId = (await ensureOpenVisit())?.id;
+    if (!inspectionAttemptId.current) inspectionAttemptId.current = crypto.randomUUID();
     inspectionId = await queueOpeningMutation("inspection_event", id!, {
         opening_id: id,
         event_date: eventDate,
@@ -185,7 +176,7 @@ export function LogInspectionEventPage() {
         inspector_license_number: type === "fire_door_nfpa80" ? licenseNumber.trim() : undefined,
         checklist_result: type === "fire_door_nfpa80" ? checklist : undefined,
         visit_id: visitId,
-    });
+    }, inspectionAttemptId.current);
 
     setSaved(true);
     setSubmitting(false);
@@ -205,7 +196,7 @@ export function LogInspectionEventPage() {
 
     setTimeout(() => navigate(`/opening/${id}`), 700);
     } catch (error) {
-      noteSyncDiagnostic(error);
+      noteSyncDiagnostic(error, true);
       setSignatureError(inspectionSaveFailureMessage(error));
       release();
     }

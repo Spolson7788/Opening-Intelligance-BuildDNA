@@ -22,6 +22,10 @@ vi.mock("../field-app/src/lib/api", () => ({
   deletePhoto: vi.fn(),
   fetchPhotoAccessUrl: vi.fn(),
   serverFeatures: vi.fn(async () => ({ recognition: false })),
+  ApiError: class ApiError extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status; } },
+  reserveOfflinePhoto: vi.fn(),
+  uploadPrivatePhoto: vi.fn(),
+  confirmOfflinePhoto: vi.fn(),
 }));
 vi.mock("../field-app/src/lib/sync", () => ({
   queueOpeningMutation: vi.fn(async () => "insp-1"),
@@ -163,7 +167,7 @@ it("shows email this report after a signed fire door inspection is saved, and on
   expect(queueOpeningMutation).toHaveBeenCalledWith("inspection_event", "door-1", expect.objectContaining({
     inspection_type: "fire_door_nfpa80",
     checklist_result: expect.objectContaining({ status: "complete" }),
-  }));
+  }), expect.any(String));
   expect(host.textContent).toContain("Email this report");
   expect(host.textContent).not.toContain("Returning to the opening");
   expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toContain("building@example.com");
@@ -305,6 +309,7 @@ it("reuses a photo already saved on this device instead of reading it again", as
   await fillFireDoor("fail");
   await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
   expect(host.textContent).toContain("could not queue the inspection");
+  expect(host.textContent).toContain("disk full");
   expect(host.textContent).toContain("Hole in the face");
   expect(failurePhotos.queue).toHaveBeenCalledTimes(1);
   vi.mocked(queueOpeningMutation).mockResolvedValue("insp-2");
@@ -314,5 +319,26 @@ it("reuses a photo already saved on this device instead of reading it again", as
     checklist_result: expect.objectContaining({
       items: expect.objectContaining({ [NFPA80_ITEMS[0].key]: expect.objectContaining({ photo_id: "photo-kept" }) }),
     }),
-  }));
+  }), expect.any(String));
+});
+
+it("keeps the form when the server rejects the online save", async () => {
+  const { ApiError } = await import("../field-app/src/lib/api");
+  vi.mocked(queueOpeningMutation).mockReset().mockRejectedValue(new ApiError(409, "visit_finished"));
+  failurePhotos.queue.mockReset().mockResolvedValue({ kind: "queued", photoId: "photo-kept" });
+  await act(async () => root.render(
+    <MemoryRouter initialEntries={["/opening/door-1/log-inspection"]}>
+      <Routes><Route path="/opening/:id/log-inspection" element={<LogInspectionEventPage />} /></Routes>
+    </MemoryRouter>,
+  ));
+  await fillFireDoor("fail");
+  await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  const firstId = vi.mocked(queueOpeningMutation).mock.calls.at(-1)?.[3];
+  expect(host.textContent).toContain("409: visit_finished");
+  expect(host.textContent).toContain("was not saved");
+  expect(host.textContent).toContain("Hole in the face");
+  expect(host.querySelector("form")).not.toBeNull();
+  await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(vi.mocked(queueOpeningMutation).mock.calls.at(-1)?.[3]).toBe(firstId);
+  expect(host.querySelector("form")).not.toBeNull();
 });

@@ -35,6 +35,9 @@ vi.mock("../field-app/src/lib/api", () => ({
   fetchInspectionVisit: vi.fn(async () => ({ inspected: store.serverIds.length, inspection_ids: store.serverIds })),
   emailInspectionVisit: (...args: unknown[]) => store.email(...args),
   storeInspectionVisitPdf: vi.fn(async () => ({ stored: true, reused: false, bytes: 1200 })),
+  reserveOfflinePhoto: vi.fn(),
+  uploadPrivatePhoto: vi.fn(),
+  confirmOfflinePhoto: vi.fn(),
 }));
 vi.mock("../field-app/src/components/SyncBadge", () => ({ SyncBadge: () => <span>Sync</span> }));
 vi.mock("../field-app/src/components/SignaturePad", () => ({

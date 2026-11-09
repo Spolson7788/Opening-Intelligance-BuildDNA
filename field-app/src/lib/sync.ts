@@ -51,6 +51,27 @@ export function noteSyncDiagnostic(error: unknown, force = false) {
   notify();
 }
 
+export function browserIsOnline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === true;
+}
+
+/** One local write, then one retry after the cached database connection is dropped. */
+export async function runLocalWrite<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (error) {
+    noteSyncDiagnostic(error, true);
+    resetFieldAppDb();
+    try {
+      return await write();
+    } catch (retryError) {
+      noteSyncDiagnostic(retryError, true);
+      resetFieldAppDb();
+      throw retryError;
+    }
+  }
+}
+
 function schedulePendingCountRetry() {
   if (pendingCountRetry || typeof window === "undefined") return;
   const delay = Math.min(30_000, 500 * 2 ** pendingCountAttempt);
@@ -80,8 +101,8 @@ export async function refreshPendingCount() {
   notify();
   } catch (error) {
     if (read !== statusRead) return;
-    if (isDeviceStorageError(error)) resetFieldAppDb();
-    noteSyncDiagnostic(error);
+    resetFieldAppDb();
+    noteSyncDiagnostic(error, true);
     currentState = { ...currentState, pending: 0, failed: 0, conflicts: 0, checked: false, checkFailed: true }; notify();
     schedulePendingCountRetry();
   }
@@ -126,7 +147,21 @@ export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: 
     serverRevision: null, baseSnapshotHash: null, schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: APP_VERSION,
     syncState: "queued", retryCount: 0, payload: semanticPayload };
   await assertPrincipal(auth);
-  await saveEntityAndOperation(entity, operation); await refreshPendingCount(); void flushOutbox(); return id;
+  try {
+    await runLocalWrite(() => saveEntityAndOperation(entity, operation));
+  } catch (error) {
+    if (entityType === "inspection_event" && browserIsOnline()) {
+      try {
+        await submitGeneralOperation(operation, auth);
+        return id;
+      } catch (serverError) {
+        noteSyncDiagnostic(serverError, true);
+        throw serverError;
+      }
+    }
+    throw error;
+  }
+  await refreshPendingCount(); void flushOutbox(); return id;
 }
 export function dependencyIdsForOperation(
   operations: SyncOperation[], entityType: OfflineEntityType, openingId: string, payload: Record<string, any>,
