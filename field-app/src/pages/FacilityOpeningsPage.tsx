@@ -64,6 +64,7 @@ export function FacilityOpeningsPage() {
         <h1>Facility openings</h1>
         {error && <p className="c04-alert" role="alert">{error}</p>}
         {auth && COMPARISON_REPORT_ROLES.includes(auth.role) && <p><a className="c04-link" href={comparisonReportHref()}>Schedule comparison report</a></p>}
+        <section className="c04-band-blue" aria-label="Building">
         <div className="field">
           <label htmlFor="facility-building">Building</label>
           <select id="facility-building" value={buildingId} onChange={(e) => setBuildingId(e.target.value)}>
@@ -71,10 +72,12 @@ export function FacilityOpeningsPage() {
             {buildings.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
           </select>
         </div>
+        </section>
         {fromCache && <p className="c04-note" role="status">Offline: showing the openings saved on this device.</p>}
         {progress && <p role="status">{progress}</p>}
         <FacilitySelector />
         {openings && <>
+          <section className="c04-band-blue" aria-label="Find an opening">
           <h2>Find an opening</h2>
           <div className="field">
             <label htmlFor="facility-opening-search">Search</label>
@@ -82,6 +85,7 @@ export function FacilityOpeningsPage() {
           </div>
           <label className="c04-check"><input type="checkbox" checked={onlyToSurvey} onChange={(e) => setOnlyToSurvey(e.target.checked)} /> Only openings not yet complete</label>
           <p>{shown.length} of {openings.length} opening(s)</p>
+          </section>
           <ul className="c04-openings">
             {shown.map((o) => <li key={o.id}>
               <button type="button" className="c04-opening" onClick={() => navigate(`/opening/${o.id}`)}>

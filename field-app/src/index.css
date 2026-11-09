@@ -306,7 +306,7 @@ h1, h2, h3 {
 /* Concept 04. Scoped to the scan screen, the facility openings list, and the
    purchasing section. Green panels are #A8D978. The logo file is unchanged. */
 body.c04-on {
-  background: #E7F4F8;
+  background: #D7F1FA;
   color: #142C3C;
 }
 body.c04-on aside[aria-label="Current account"],
@@ -331,7 +331,7 @@ body.c04-on .company-switch select {
 }
 .c04 {
   color: #142C3C;
-  background: #E7F4F8;
+  background: #D7F1FA;
 }
 .c04-brand {
   background: #fff;
@@ -397,7 +397,7 @@ body.c04-on .company-switch select {
   border-color: #70D0E8;
   color: #142C3C;
 }
-.c04-btn-green, .c04-facility, .c04-step-note {
+.c04-btn-green, .c04-facility, .c04-context, .c04-band-green, .c04-step-note {
   background: #A8D978;
   border-color: #A8D978;
   color: #142C3C;
@@ -489,11 +489,10 @@ body.c04-on :focus, body.c04-on :focus-visible {
 }
 .c04-purchasing {
   margin-top: 24px;
-  padding: 16px;
+  padding: 0;
   color: #142C3C;
-  background: #E7F4F8;
-  border: 1px solid #D5E3EA;
-  border-radius: 16px;
+  background: transparent;
+  border: 0;
 }
 .c04-purchasing h2 { margin: 0 0 8px; font-size: 22px; color: #142C3C; }
 .c04-purchasing h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 16px; color: #142C3C; }
@@ -509,9 +508,17 @@ body.c04-on :focus, body.c04-on :focus-visible {
   font-size: 14px;
 }
 .c04-purchasing h3 em { font-style: normal; font-weight: 600; color: #142C3C; }
-.c04-step { margin: 12px 0; padding: 12px; background: #fff; border-radius: 12px; }
+.c04-step, .c04-band, .c04-band-blue, .c04-band-green {
+  margin: 12px 0;
+  padding: 14px;
+  border: 0;
+  border-radius: 14px;
+}
+.c04-band { background: #8AD8F0; }
+.c04-band-blue, .c04-step { background: #C5EBF7; }
+.c04-band-green, .c04-step-note { background: #A8D978; }
 .c04-step-alert { background: #FDECEE; border: 2px solid #E5484D; }
-.c04-step-note { background: #A8D978; }
+.c04-band h2, .c04-band-blue h2, .c04-band-green h2, .c04-step h3 { margin-top: 0; }
 .c04-required { color: #8E1B22; font-weight: 700; }
 .c04-purchasing select[aria-invalid="true"] { border: 2px solid #E5484D; }
 .c04-recipient {
@@ -549,6 +556,16 @@ body.c04-on :focus, body.c04-on :focus-visible {
   padding: 12px 14px;
   margin: 12px 0;
 }
+.c04-context {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 0 0 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+}
+.c04-context strong { font-size: 18px; }
 .c04-editor h2 { font-size: 18px; }
 .c04-optional { font-style: normal; font-weight: 600; color: #3A4E5C; }
 .c04-plate {

@@ -183,7 +183,7 @@ export function EditHardwarePage() {
       <div className="screen">
         <p className="c04-kicker">Field app</p>
         <h1>Edit hardware</h1>
-        {trackerId && <p className="c04-plate">{trackerId}</p>}
+        {trackerId && <div className="c04-context"><span className="c04-eyebrow">Hardware</span><strong>{trackerId}</strong></div>}
         <p className="c04-note">Editing saved hardware requires a connection.</p>
 
         {saved ? (
@@ -191,7 +191,7 @@ export function EditHardwarePage() {
         ) : (
           <>
             <form onSubmit={onSubmit}>
-              <section className="c04-panel" aria-label="Hardware identity">
+              <section className="c04-band" aria-label="Hardware identity">
               <div className="field">
                 <label htmlFor="component-type">Component type</label>
                 <select id="component-type" value={componentType} onChange={(e) => setComponentType(e.target.value)}>
@@ -232,7 +232,7 @@ export function EditHardwarePage() {
                 <input id="serial-number" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} placeholder="e.g. SC-88213-A" />
               </div>
               </section>
-              <section className="c04-panel" aria-label="Replacement info">
+              <section className="c04-band-green" aria-label="Replacement info">
               <h2>Replacement info <em className="c04-optional">Optional</em></h2>
               <div className="field">
                 <label htmlFor="unit-cost">Replacement cost ($)</label>
@@ -257,7 +257,7 @@ export function EditHardwarePage() {
               </div>
 
               </section>
-              <section className="c04-panel" aria-label="Shipment tracking">
+              <section className="c04-band" aria-label="Shipment tracking">
               <h2>Shipment tracking <em className="c04-optional">Optional</em></h2>
               <div className="field">
                 <label htmlFor="shipment-status">Status</label>
@@ -280,7 +280,7 @@ export function EditHardwarePage() {
                 <input id="tracking-number" value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} placeholder="e.g. 1Z999AA10123456784" />
               </div>
               {trackingUrl && (
-                <a href={trackingUrl} target="_blank" rel="noreferrer" className="btn c04-btn-cyan">
+                <a href={trackingUrl} target="_blank" rel="noreferrer" className="btn c04-btn-blue">
                   Track shipment
                 </a>
               )}

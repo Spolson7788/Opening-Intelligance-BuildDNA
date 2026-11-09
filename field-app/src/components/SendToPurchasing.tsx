@@ -113,7 +113,7 @@ export function SendToPurchasing({ openingId, hardwareId, principal }: { opening
       {destination === null && <p id="purchasing-block" role="status">Checking where this job should be sent.</p>}
       {blocked && <p id="purchasing-block" className="c04-alert" role="alert">{blocked}</p>}
       {needsBranch && (
-        <div className="c04-step c04-step-alert">
+        <div className="c04-step c04-band-blue">
           <h3><span>1</span> Choose a recipient</h3>
           <div className="field">
             <label htmlFor="purchasing-branch">Branch for this job <span className="c04-required">Required</span></label>
@@ -132,7 +132,7 @@ export function SendToPurchasing({ openingId, hardwareId, principal }: { opening
           {destination.source === "company" && destination.branch ? " (company address; this branch has none of its own)" : ""}
         </p>
       )}
-      <div className="c04-step">
+      <div className="c04-step c04-band-blue">
         <h3><span>2</span> Add a PDF or photo</h3>
         <p>Use Files or Downloads, or photograph the sheet. On iPhone, the file name comes from its contents, not from the picker label.</p>
         {docs.length > 0 && <p>Saved sheets on this opening</p>}

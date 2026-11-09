@@ -81,6 +81,7 @@ export function ScanPage() {
       <div className="screen">
         <h1>Scan opening</h1>
         <FacilitySelector />
+        <section className="c04-band" aria-label="Scan or enter an opening code">
         <h2>Scan or enter an opening code</h2>
         <div className="c04-scan">
           <div id={SCANNER_ELEMENT_ID} />
@@ -100,6 +101,7 @@ export function ScanPage() {
           </div>
           <button type="submit" className="btn c04-btn-blue">Look up opening</button>
         </form>
+        </section>
         <button className="btn c04-btn-cyan" onClick={() => navigate("/setup-opening")}>Facilities and openings</button>
         <button className="btn c04-btn-green" onClick={() => navigate("/my-work-orders")}>My Work Orders</button>
         <a className="btn c04-btn-cyan" href="/facility-dashboard/">Facility Dashboard</a>
