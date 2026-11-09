@@ -117,12 +117,14 @@ describe('provider history sharing OFF (default)', () => {
     const access = await request(app).get(`/api/photos/${ids.pDh}/access`).set('Authorization', tok.vortexTech);
     expect(access.status).not.toBe(200);
   });
-  it('customer facility dashboard filters events and photos', async () => {
+  it('a provider admin does not receive the customer facility dashboard', async () => {
     const r = await request(app).get('/api/portfolio/facility-dashboard/' + ids.shared).set('Authorization', tok.vortexAdmin);
-    expect(r.status).toBe(200);
-    const o = r.body.openings.find((x: any) => x.id === ids.opening);
-    expect(texts(o.service_events)).toEqual(['vortex work']);
-    expect(o.photos.map((p: any) => p.id)).not.toContain(ids.pDh);
+    expect(r.status).toBe(403);
+    expect(r.body.openings).toBeUndefined();
+    const owner = await request(app).get('/api/portfolio/facility-dashboard/' + ids.shared).set('Authorization', tok.ownerAdmin);
+    expect(owner.status).toBe(200);
+    const o = owner.body.openings.find((x: any) => x.id === ids.opening);
+    expect(texts(o.service_events)).toEqual(['dh pace work', 'legacy work', 'owner work', 'vortex work']);
   });
   it('lifecycle and facility condition-history reports filter service events', async () => {
     const life = await request(app).get('/api/lifecycle/' + ids.opening).set('Authorization', tok.dhTech);
@@ -136,7 +138,7 @@ describe('provider history sharing OFF (default)', () => {
 describe('the provider wall (Vortex vs DH Pace)', () => {
   it('Vortex cannot read a facility or opening assigned only to DH Pace', async () => {
     expect((await request(app).get('/api/openings/' + ids.dhOpening).set('Authorization', tok.vortexTech)).status).toBe(404);
-    expect((await request(app).get('/api/portfolio/facility-dashboard/' + ids.dhOnly).set('Authorization', tok.vortexAdmin)).status).toBe(404);
+    expect((await request(app).get('/api/portfolio/facility-dashboard/' + ids.dhOnly).set('Authorization', tok.vortexAdmin)).status).toBe(403);
     const list = await request(app).get('/api/portfolio/properties').set('Authorization', tok.vortexAdmin);
     expect(list.body.map((p: any) => p.id)).toEqual([ids.shared]);
     const dh = await request(app).get('/api/portfolio/properties').set('Authorization', tok.dhAdmin);

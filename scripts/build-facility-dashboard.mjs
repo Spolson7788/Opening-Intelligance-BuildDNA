@@ -12,6 +12,36 @@ export function buildFacilityDashboard(destination,{production=false}={}){
  replace("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';",'');
  replace('const SUPA_URL=url;', '');replace('const SUPA_KEY=key;','');replace('const sb=createClient(SUPA_URL,SUPA_KEY);','');
  replace('if(!session){',`if(!session){document.getElementById('loginView').innerHTML='<h2>Facility Dashboard</h2><p>Sign in with your Field App account to view your company’s facilities.</p><a href="/field/scan">Sign in to Opening Intelligence</a>';`);
+ replace(`async function routeByType(session){
+  try{
+    const {data:prof}=await sb.from('profiles').select('user_type').eq('id',session.user.id).maybeSingle();
+    const t=prof&&prof.user_type;
+    const page=(location.pathname.split('/').pop()||'index.html').toLowerCase();
+    // Back to the field app. Previously admin-only, which left vortex users
+    // stranded on the dashboard with no way back. 'facility' users are
+    // deliberately excluded: index.html redirects them straight here, so the
+    // link would be a loop rather than a way out.
+    if(t==='admin' || t==='vortex' || !t){
+      var _an=document.getElementById('adminNav');
+      if(_an) _an.style.display='';
+    }
+    // Provider technicians may use the Dashboard; access comes from database memberships.
+    // 'facility' and 'admin' stay here; missing profile -> stay (no lockout).
+  }catch(e){}
+  return false;
+}`, `async function routeByType(){
+  const login=document.getElementById('loginView'), app=document.getElementById('appView');
+  login.style.display='block'; app.style.display='none';
+  login.innerHTML='<h2>Facility Dashboard</h2><p role="status">Checking access for this account.</p>';
+  try {
+    const access=await api('/portfolio/facility-dashboard-access');
+    if(!access||access.allowed!==true) throw Error('denied');
+    return false;
+  } catch (e) {
+    login.innerHTML='<h2>Facility Dashboard</h2><p role="alert">This account cannot open the facility dashboard. Facility customers sign in to their own dashboard. Field work stays in the Field App.</p><p><a href="/field/scan">Back to the Field App</a></p>';
+    return true;
+  }
+}`);
  replace("if(await routeByType(session))return;", "if(await routeByType(session))return;await refreshScope();");
  replace("const {data:ops,error}=await loadDashboardRows(sb,fac.id);", "await refreshFacility(fac.id);const {data:ops,error}=await loadDashboardRows(sb,fac.id);");
  replace("function openingScore(o){", "function openingScore(o){if(o.parts[0]&&'opening_health_score' in o.parts[0])return o.parts[0].opening_health_score;");

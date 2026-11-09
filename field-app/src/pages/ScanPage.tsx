@@ -103,7 +103,6 @@ export function ScanPage() {
         </section>
         <button className="btn c04-btn-cyan" onClick={() => navigate("/setup-opening")}>Facilities and openings</button>
         <button className="btn c04-btn-green" onClick={() => navigate("/my-work-orders")}>My Work Orders</button>
-        <a className="btn c04-btn-cyan" href="/facility-dashboard/">Facility Dashboard</a>
         <Link className="btn c04-choice" to="/how-to-use">How to use</Link>
         <button type="button" className="btn c04-choice" onClick={() => navigate("/change-password")}>Change Password</button>
         <button type="button" className="btn c04-choice" disabled={logoutPending} onClick={() => logout()}>

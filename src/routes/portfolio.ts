@@ -1,3 +1,4 @@
+import { customerMayOpenFacilityDashboard } from "../services/facilityDashboardAccess";
 import { databaseRoute } from '../db/databaseRoute';
 import { facilityAccessPredicate, photoVisibleSql, serviceEventVisibleSql, facilityAccessPredicateAny, allowedOrgIds, orgScope } from "../db/tenantScope";
 import { Router } from "express";
@@ -12,11 +13,28 @@ portfolioRouter.use(requireAuth);
 portfolioRouter.use(enforceRolePermissions);
 portfolioRouter.use(auditLog);
 
+async function facilityDashboardAllowed(req: AuthedRequest): Promise<boolean> {
+  const org = await pool.query("SELECT org_type FROM organizations WHERE id=$1", [req.auth!.organizationId]);
+  return customerMayOpenFacilityDashboard(org.rows[0]?.org_type, req.auth!.role);
+}
+
+// Checked before any facility list or opening payload. Unknown, loading, and revoked
+// sessions are already denied by requireAuth. This route adds the customer office role.
+portfolioRouter.get("/facility-dashboard-access", async (req: AuthedRequest, res) => {
+  try {
+    if (!await facilityDashboardAllowed(req)) return res.status(403).json({ error: "facility_dashboard_forbidden" });
+    res.set("Cache-Control", "no-store").json({ allowed: true });
+  } catch {
+    res.status(503).json({ error: "facility_dashboard_unavailable" });
+  }
+});
+
 // One statement gives the customer Dashboard a consistent read of the same
 // records written by the Field App. No mirrored database or client-side grants.
 portfolioRouter.get("/facility-dashboard/:id", async (req: AuthedRequest, res) => {
   if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_facility" });
   try {
+    if (!await facilityDashboardAllowed(req)) return res.status(403).json({ error: "facility_dashboard_forbidden" });
     const result = await pool.query(`
       SELECT p.*, COALESCE((
         SELECT jsonb_agg(to_jsonb(o) || jsonb_build_object(
