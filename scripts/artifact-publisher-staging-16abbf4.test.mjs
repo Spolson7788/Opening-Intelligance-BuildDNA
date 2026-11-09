@@ -31,7 +31,7 @@ test('staging site is the only accepted target', () => {
 test('production and any other site are refused', () => {
   assert.throws(() => assertSite({ id: PRODUCTION_SITE_ID, name: 'oi-production', url: 'https://oi-production.netlify.app' }), /refusing_production/);
   assert.throws(() => assertSite({ id: '80fbbee8-b9d3-4b16-b93f-d2d8396591ec', name: 'oi-connected-release-candidate', url: 'https://oi-connected-release-candidate.netlify.app' }), /refusing_site_mismatch/);
-  assert.equal(PINNED_COMMIT, 'f05adbc25c32a5efb5142ac479428fff4278ee64');
+  assert.equal(PINNED_COMMIT, '2a20f0bda7a476c913608f9e70c0f843535a4fec');
   assert.equal(packageCommitAllowed(PINNED_COMMIT), true);
   assert.equal(packageCommitAllowed('16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5'), false);
   assert.equal(packageCommitAllowed('9c0256e1b92182a55246bc7e6460ab456098a48d'), false);
