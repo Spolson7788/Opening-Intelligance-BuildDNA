@@ -146,7 +146,6 @@ export function LoginPage() {
     <p className="c04-kicker">Field app</p>
     <h1>Already signed in</h1>
     <p>Signed in as {auth.email || `Account ${auth.userId}`}</p>
-    <p>Organization {auth.organizationId}</p>
     <p>This sign-in page does not switch accounts. To use a different account, go to Scan and sign out first. Saved changes remain associated with their original account.</p>
     <button type="button" className="btn btn-primary" onClick={() => navigate(postAuthLanding(location.state?.from, !!readLocationConfirmation(browserSession(), auth)), { replace: true })}>Continue with this account</button>
     <button type="button" className="btn c04-choice" onClick={() => navigate(postAuthLanding("/scan", !!readLocationConfirmation(browserSession(), auth)), { replace: true })}>Go to Scan</button>

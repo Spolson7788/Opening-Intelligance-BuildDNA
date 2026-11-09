@@ -7,6 +7,7 @@ vi.mock('../field-app/src/lib/sync',()=>({refreshPendingCount:vi.fn(),onSyncStat
 vi.mock('react-router-dom',()=>({Link:({children}:any)=><a>{children}</a>,useNavigate:()=>vi.fn()}));
 const records=vi.hoisted(()=>({read:vi.fn()}));
 vi.mock('../field-app/src/lib/db',()=>({loadAuth:async()=>state.auth,getSyncOperationsForPrincipal:()=>records.read(),getOpenConflictsForPrincipal:async()=>[],getOfflineMediaForPrincipal:async()=>[]}));
+vi.mock('../field-app/src/lib/api',()=>({fetchCompanies:async()=>({companies:[]})}));
 import {SyncBadge} from '../field-app/src/components/SyncBadge';
 import {AccountIdentity} from '../field-app/src/components/AccountIdentity';
 import {syncIssueMessage} from '../field-app/src/lib/syncIssueMessage';
@@ -20,7 +21,7 @@ function emit(value:any){act(()=>state.listener({pending:0,failed:0,conflicts:0,
 it('does not claim success before a checked principal; zero work is scoped',()=>{render();expect(el.textContent).toContain('Checking sync');emit({});expect(el.textContent).toContain('No pending changes for this account');expect(el.textContent).not.toContain('Synced');expect(el.textContent).not.toContain('NEVER-DISPLAY');});
 it('hides old account and queue immediately on switch and rejects stale observations',()=>{render();emit({pending:7});expect(el.textContent).toContain('7 pending');state.auth=account('B');render();expect(el.textContent).not.toContain('A@example');expect(el.textContent).not.toContain('7 pending');expect(el.textContent).toContain('Checking sync');emit({pending:9});expect(el.textContent).not.toContain('9 pending');emit({userId:'B',organizationId:'org-B'});expect(el.textContent).toContain('No pending changes for this account');});
 it('has explicit error, signed-out and auth-loading states',()=>{render();emit({checked:false,checkFailed:true});expect(el.textContent).toContain('Unable to check');state.auth=null;render();expect(el.textContent).toContain('Sign in to check');expect(el.textContent).not.toContain('A@example');state.loading=true;render();expect(el.textContent).toContain('Checking sync');});
-it('legacy sessions display current principal instead of another account email',()=>{state.auth={userId:'legacy',organizationId:'org'};render();expect(el.textContent).toContain('Account legacy');expect(el.textContent).toContain('Organization org');});
+it('legacy sessions display current principal instead of another account email',()=>{state.auth={userId:'legacy',organizationId:'org'};render();expect(el.textContent).toContain('Account legacy');expect(el.textContent).not.toContain('Organization');});
 it('explains recovery without exposing raw errors or relaxing authorization',()=>{expect(syncIssueMessage('auth_required')).toContain('will not retry automatically');const text=syncIssueMessage('auth_required','unexpected_response');expect(text).toContain('unexpected response');expect(text).not.toContain('unexpected_response');expect(syncIssueMessage('retry_wait','SECRET-response')).not.toContain('SECRET');expect(syncIssueMessage('permanent_failure','photo_unreadable')).toContain('could not be read');});
 it('shows the reason and discard for a permanently failed inspection',async()=>{
   records.read.mockResolvedValueOnce([{operationId:'insp',entityType:'inspection_event',state:'permanent_failure',createdAtLocal:new Date().toISOString(),lastErrorCode:'photo_unreadable'}]);

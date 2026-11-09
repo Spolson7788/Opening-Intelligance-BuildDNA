@@ -311,6 +311,12 @@ body.c04-on .company-switch {
   color: #142C3C;
   background: #fff;
 }
+body.c04-on .account-line {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 body.c04-on .company-switch select {
   display: block;
   width: 100%;

@@ -3,7 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {beforeEach,afterEach,it,expect,vi} from 'vitest';
 const data=vi.hoisted(()=>({stored:null as any,read:vi.fn()}));
 vi.mock('../field-app/src/lib/db',()=>({loadAuth:()=>data.read(),clearAuth:vi.fn()}));
-vi.mock('../field-app/src/lib/api',()=>({login:vi.fn(),decodeTokenPayload:vi.fn()}));
+vi.mock('../field-app/src/lib/api',()=>({login:vi.fn(),decodeTokenPayload:vi.fn(),fetchCompanies:async()=>({companies:[{organization_id:'org-A',name:'Company A',role:'admin'},{organization_id:'org-B',name:'Company B',role:'admin'}]})}));
 vi.mock('../field-app/src/lib/freshSignIn',()=>({recordFreshSignIn:vi.fn()}));
 import {AuthProvider,useAuth} from '../field-app/src/lib/AuthContext';
 import {AccountIdentity} from '../field-app/src/components/AccountIdentity';

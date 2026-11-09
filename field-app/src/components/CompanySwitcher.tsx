@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../lib/AuthContext";
 import { fetchCompanies } from "../lib/api";
 import { showCompanySwitcher } from "../lib/companySwitch";
+import { companyOptionLabel } from "../lib/accountLine";
 import type { CompanyOption } from "../lib/companySwitch";
 
 /** M4: shown only when the person belongs to more than one company. */
@@ -31,7 +32,7 @@ export function CompanySwitcher() {
   return <div className="company-switch no-print">
     <label>Company{" "}
       <select aria-label="Company" value={auth.organizationId} disabled={busy} onChange={(e) => void choose(e.target.value)}>
-        {companies.map((c) => <option key={c.organization_id} value={c.organization_id}>{c.name || c.organization_id}{c.access === "tree_view" ? " (view only)" : ""}</option>)}
+        {companies.map((c) => <option key={c.organization_id} value={c.organization_id}>{companyOptionLabel(c)}</option>)}
       </select>
     </label>
     {notice && <p role="alert">{notice}</p>}
