@@ -10,6 +10,8 @@ import { acquireClient } from "../db/acquireClient";
 import { prepareFireDoorChecklist, applyFireDoorFollowUp } from "../services/nfpa80Inspection";
 import { generalPassCarriesChecklist } from "../services/nfpa80Checklist";
 import { generateNfpaInspectionPdf, generateNfpaVisitPdf } from "../services/nfpa80Report";
+import { officialVisitPdf } from "../services/officialVisitPdf";
+import { getObjectBytes } from "../services/storage";
 import { bindInspectionVisit, visitCounts, visitSummaryText } from "../services/inspectionVisits";
 import { loadInspectionVisit } from "../services/loadInspectionVisit";
 import { sendEmail, reportEmailBlockers, reportLinkBase } from "../services/email";
@@ -318,7 +320,10 @@ eventsRouter.get("/inspection-visits/:id/report.pdf", async (req: AuthedRequest,
   try {
     const result = await visitForRequest(req.params.id, req.auth!.organizationId, req.auth!.userId);
     if (result.status !== 200) return res.status(result.status).json({ error: result.error });
-    const pdf = await generateNfpaVisitPdf(result.loaded);
+    const stored = await pool.query(`SELECT report_storage_key FROM inspection_visits WHERE id=$1 AND organization_id=$2`, [req.params.id, req.auth!.organizationId]);
+    const pdf = stored.rows[0]?.report_storage_key
+      ? Buffer.from(await getObjectBytes(stored.rows[0].report_storage_key, 25 * 1024 * 1024))
+      : await generateNfpaVisitPdf(result.loaded);
     res.set("Content-Type", "application/pdf").send(pdf);
   } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
 });
@@ -348,7 +353,11 @@ eventsRouter.post("/inspection-visits/:id/email", async (req: AuthedRequest, res
   try {
     const result = await visitForRequest(req.params.id, req.auth!.organizationId, req.auth!.userId);
     if (result.status !== 200) return res.status(result.status).json({ error: result.error });
-    const pdf = await generateNfpaVisitPdf(result.loaded);
+    const official = await officialVisitPdf({
+      visitId: req.params.id, organizationId: req.auth!.organizationId, propertyId: result.loaded.propertyId,
+      userId: req.auth!.userId, report: result.loaded,
+    });
+    const pdf = official.pdf;
     const limit = attachmentByteLimit();
     const attached = pdf.length <= limit;
     const text = attached
@@ -365,7 +374,12 @@ eventsRouter.post("/inspection-visits/:id/email", async (req: AuthedRequest, res
       const missing = outcome.reason === "email_not_configured" ? reportEmailBlockers() : undefined;
       return res.status(503).json(missing ? { error: outcome.reason, missing } : { error: outcome.reason });
     }
-    await pool.query("UPDATE inspection_visits SET status='finished', finished_at=COALESCE(finished_at, now()) WHERE id=$1 AND organization_id=$2", [req.params.id, req.auth!.organizationId]);
+    await pool.query(
+      `UPDATE inspection_visits
+       SET status='finished', finished_at=COALESCE(finished_at, now()), report_sent_at=now(), report_recipients=$3
+       WHERE id=$1 AND organization_id=$2`,
+      [req.params.id, req.auth!.organizationId, recipients.join(", ")],
+    );
     res.json({ sent: true, to: recipients, delivery_mode: attached ? "attachments" : "links" });
   } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
 });

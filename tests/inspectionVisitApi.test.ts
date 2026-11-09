@@ -1,9 +1,30 @@
-import { randomUUID } from "node:crypto";
-import { afterEach, expect, it } from "vitest";
+import { createHash, randomUUID } from "node:crypto";
+import { afterEach, expect, it, vi } from "vitest";
 import request from "supertest";
+
+const storage = vi.hoisted(() => ({ objects: new Map<string, Buffer>(), puts: 0 }));
+vi.mock("../src/services/storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/services/storage")>();
+  return {
+    ...actual,
+    putPrivateBytes: async (key: string, bytes: Uint8Array) => {
+      storage.puts += 1;
+      const copy = Buffer.from(bytes);
+      storage.objects.set(key, copy);
+      return { etag: "visit-pdf", sha256: createHash("sha256").update(copy).digest("hex"), byteSize: copy.length };
+    },
+    getObjectBytes: async (key: string) => {
+      const found = storage.objects.get(key);
+      if (!found) throw new Error("object_missing");
+      return found;
+    },
+  };
+});
+
 import { app, createPortfolioHierarchy, createTestOpening, signupTestOrg } from "./helpers";
 import { failingFireDoorFields, passingFireDoorFields } from "./nfpa80Fixture";
 import { setEmailProviderForTests } from "../src/services/email";
+import { pool } from "../src/db/pool";
 
 afterEach(() => setEmailProviderForTests(null));
 
@@ -86,4 +107,21 @@ it("groups two openings into one visit and keeps the combined report inside the 
   expect(synced.status).toBe(201);
   const again = await request(app).get(`/api/events/inspection-visits/${visitId}`).set(auth);
   expect(again.body.inspected).toBe(3);
+
+  const before = storage.puts;
+  const firstSha = createHash("sha256").update([...storage.objects.values()][0]).digest("hex");
+  await pool.query("UPDATE fire_door_deficiencies SET note='Changed after the official report' WHERE inspection_event_id=$1", [failPost.body.id]);
+  const resent = await request(app).post(`/api/events/inspection-visits/${visitId}/email`).set(auth).send({ to: ["building@example.com"] });
+  expect(resent.status).toBe(200);
+  expect(storage.puts).toBe(before);
+  const stored = [...storage.objects.values()][0];
+  expect(createHash("sha256").update(stored).digest("hex")).toBe(firstSha);
+  expect(stored.toString("latin1")).not.toContain("Changed after the official report");
+  const list = await request(app).get("/api/portfolio/inspection-visits").set(auth);
+  expect(list.status).toBe(200);
+  expect(list.body.visits.some((row: { id: string; report_sent: boolean; failed: number }) => row.id === visitId && row.report_sent && row.failed >= 1)).toBe(true);
+  expect((await request(app).get("/api/portfolio/inspection-visits").set("Authorization", `Bearer ${inspector}`)).status).toBe(403);
+  expect((await request(app).get("/api/portfolio/inspection-visits").set("Authorization", `Bearer ${other.token}`)).body.visits).toEqual([]);
+  const opening = await request(app).get(`/api/openings/${failed.id}`).set(auth);
+  expect(opening.body.inspection_events[0].visit_id).toBe(visitId);
 });

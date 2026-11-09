@@ -28,7 +28,7 @@ export async function loadInspectionVisit(visitId: string, organizationId: strin
   if (!visit.rows[0]) return null;
   const inspections = await pool.query(
     `SELECT i.id, i.passed, i.notes, i.event_date, i.signed_by_name, i.inspector_qualification, i.inspector_license_number,
-            i.checklist_result, o.opening_code, o.location_description, o.id AS opening_id
+            i.signature_data, i.checklist_result, o.opening_code, o.location_description, o.id AS opening_id
      FROM inspection_events i
      JOIN openings o ON o.id = i.opening_id
      WHERE i.visit_id = $1 AND i.inspection_type = 'fire_door_nfpa80' AND i.checklist_result->>'status' = 'complete'`,
@@ -59,11 +59,13 @@ export async function loadInspectionVisit(visitId: string, organizationId: strin
       const spec = NFPA80_ITEMS.find((item) => item.key === deficiency.item_key);
       doorDeficiencies.push({
         section: spec?.section || deficiency.item_key,
+        description: spec?.text || deficiency.item_key,
         note: deficiency.note as string,
         photo: await photoBytes(deficiency),
       });
     }
     doors.push({
+      openingId: row.opening_id,
       openingCode: row.opening_code,
       location: row.location_description,
       passed: row.passed === true,
@@ -83,6 +85,7 @@ export async function loadInspectionVisit(visitId: string, organizationId: strin
     inspectorName: first?.signed_by_name ?? null,
     qualification: first?.inspector_qualification ?? null,
     licenseNumber: first?.inspector_license_number ?? null,
+    signatureData: inspections.rows.find((row) => typeof row.signature_data === "string" && row.signature_data.startsWith("data:image/"))?.signature_data ?? null,
     doors,
     propertyId: visit.rows[0].property_id,
     openingIds: inspections.rows.map((row) => row.opening_id as string),

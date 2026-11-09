@@ -1,15 +1,17 @@
+import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { NFPA80_ITEMS } from "../src/services/nfpa80Checklist";
 import { orderVisitDoors, visitReportOutline, type VisitDoor } from "../src/services/inspectionVisits";
-import { generateNfpaVisitPdf } from "../src/services/nfpa80Report";
+import { CONCEPT, drawablePhoto, generateNfpaVisitPdf, pdfRgb } from "../src/services/nfpa80Report";
 
 function door(code: string, passed: boolean, note?: string): VisitDoor {
   return {
+    openingId: code,
     openingCode: code,
     location: passed ? "Hall" : "Lobby",
     passed,
     notes: note ?? null,
-    deficiencies: passed ? [] : [{ section: "5.2.4.2(1)", note: note || "Label missing", photo: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") }],
+    deficiencies: passed ? [] : [{ section: "5.2.4.2(1)", description: "The labels on the fire door and frame are in place and can be read.", note: note || "Label missing", photo: null }],
     checklist: NFPA80_ITEMS.map((item) => ({ section: item.section, result: passed || item.key !== "labels" ? "PASS" : "FAIL", note: null })),
   };
 }
@@ -36,11 +38,28 @@ describe("combined fire door visit report", () => {
     expect(lines).toContain("Inspected 50");
     expect(lines).toContain("Failed 10");
     expect(lines).toContain("Passed 40");
+    expect(lines).toContain("The labels on the fire door and frame are in place and can be read.");
+    expect(lines).toContain("Photograph stored with this inspection");
+    const tiny = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+    expect(drawablePhoto(tiny)).toBeNull();
+    expect(drawablePhoto(null)).toBeNull();
     const pdf = await generateNfpaVisitPdf({
       facilityName: "North Clinic", eventDate: "2026-11-09", inspectorName: "Ada Inspector",
       qualification: "Fire door inspector", licenseNumber: "FD-100", doors,
     });
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
     expect(pdf.length).toBeGreaterThan(1000);
+    const raw = pdf.toString("latin1");
+    const streams = [...raw.matchAll(/stream\n([\s\S]*?)\nendstream/g)].map((match) => {
+      try { return inflateSync(Buffer.from(match[1], "latin1")).toString("latin1"); } catch { return match[1]; }
+    }).join("\n");
+    const text = [...streams.matchAll(/<([0-9A-Fa-f]+)>/g)].map((match) => Buffer.from(match[1], "hex").toString("latin1")).join("");
+    expect(streams).toContain(pdfRgb(CONCEPT.green));
+    expect(streams).toContain(pdfRgb(CONCEPT.cyan));
+    expect(streams).toContain(pdfRgb(CONCEPT.red));
+    expect(text).toContain("Page 1 of");
+    expect(text).toContain("North Clinic");
+    expect(text).toContain("Failed doors");
+    expect(text).toContain("Photograph stored with this inspection");
   });
 });

@@ -3,11 +3,13 @@ import { NFPA80_ITEMS } from "./nfpa80Checklist";
 
 export interface VisitDeficiency {
   section: string;
+  description: string;
   note: string;
   photo: Buffer | null;
 }
 
 export interface VisitDoor {
+  openingId: string;
   openingCode: string;
   location: string | null;
   passed: boolean;
@@ -22,6 +24,7 @@ export interface VisitReportData {
   inspectorName: string | null;
   qualification: string | null;
   licenseNumber: string | null;
+  signatureData?: string | null;
   doors: VisitDoor[];
 }
 
@@ -55,7 +58,7 @@ export function visitReportOutline(data: VisitReportData): string[] {
   for (const door of doors.filter((item) => !item.passed)) {
     lines.push(door.openingCode);
     for (const deficiency of door.deficiencies) {
-      lines.push(deficiency.section, deficiency.note);
+      lines.push(deficiency.section, deficiency.description, deficiency.note);
       lines.push(deficiency.photo ? "Photograph" : "Photograph stored with this inspection");
     }
     if (door.notes) lines.push(door.notes);

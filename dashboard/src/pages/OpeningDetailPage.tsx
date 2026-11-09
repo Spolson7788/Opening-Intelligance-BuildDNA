@@ -397,7 +397,7 @@ export function OpeningDetailPage() {
                         <div className="inspection-actions">
                           <button className="btn btn-secondary" type="button" onClick={() => downloadAuthedFile(`/events/inspection-events/${ev.id}/report.pdf`, "fire-door-inspection.pdf").catch(() => setRecordMessage((current) => ({ ...current, [ev.id]: "Could not download the report." })))}>Download PDF</button>
                           {canSaveRecords && <button className="btn btn-secondary" type="button" onClick={() => saveReport(ev.id)}>Save to facility records</button>}
-                          {canSaveRecords && ev.visit_id && <Link className="btn btn-secondary" to={`/inspection-visits/${ev.visit_id}`}>Combined visit report</Link>}
+                          {canSaveRecords && ev.visit_id && <Link to={`/inspection-visits/${ev.visit_id}`}>Part of visit {String(ev.event_date).slice(0, 10)}</Link>}
                           {recordMessage[ev.id] && <p role={recordMessage[ev.id].startsWith("Could not") ? "alert" : "status"}>{recordMessage[ev.id]}</p>}
                         </div>
                       )}

@@ -1,6 +1,6 @@
 import { customerMayOpenFacilityDashboard } from "../services/facilityDashboardAccess";
 import { loadInspectionVisit } from "../services/loadInspectionVisit";
-import { visitCounts, visitSummaryText } from "../services/inspectionVisits";
+import { orderVisitDoors, visitCounts, visitSummaryText } from "../services/inspectionVisits";
 import { databaseRoute } from '../db/databaseRoute';
 import { facilityAccessPredicate, photoVisibleSql, serviceEventVisibleSql, facilityAccessPredicateAny, allowedOrgIds, orgScope } from "../db/tenantScope";
 import { Router } from "express";
@@ -632,25 +632,63 @@ portfolioRouter.get("/warranty-alerts", databaseRoute(async (req: AuthedRequest,
   }
 }));
 
+portfolioRouter.get("/inspection-visits", async (req: AuthedRequest, res) => {
+  const propertyId = typeof req.query.property_id === "string" ? req.query.property_id : null;
+  if (propertyId && !z.string().uuid().safeParse(propertyId).success) return res.status(400).json({ error: "invalid_facility" });
+  try {
+    if (!await facilityDashboardAllowed(req)) return res.status(403).json({ error: "facility_dashboard_forbidden" });
+    const rows = await pool.query(
+      `SELECT v.id, v.property_id, p.name AS facility_name, v.created_at::date AS visit_date,
+              COALESCE(u.full_name, '') AS inspector_name,
+              v.report_sent_at IS NOT NULL AS report_sent,
+              COUNT(i.id)::int AS inspected,
+              COUNT(i.id) FILTER (WHERE i.passed IS TRUE)::int AS passed,
+              COUNT(i.id) FILTER (WHERE i.passed IS NOT TRUE)::int AS failed
+       FROM inspection_visits v
+       JOIN properties p ON p.id = v.property_id
+       JOIN users u ON u.id = v.inspector_user_id
+       LEFT JOIN inspection_events i ON i.visit_id = v.id AND i.inspection_type = 'fire_door_nfpa80'
+         AND i.checklist_result->>'status' = 'complete'
+       WHERE v.organization_id = $1 AND ($2::uuid IS NULL OR v.property_id = $2)
+       GROUP BY v.id, p.name, u.full_name
+       ORDER BY v.created_at DESC`,
+      [req.auth!.organizationId, propertyId],
+    );
+    res.set("Cache-Control", "no-store").json({ visits: rows.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
 portfolioRouter.get("/inspection-visits/:id", async (req: AuthedRequest, res) => {
   if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_visit" });
   try {
     if (!await facilityDashboardAllowed(req)) return res.status(403).json({ error: "facility_dashboard_forbidden" });
     const loaded = await loadInspectionVisit(req.params.id, req.auth!.organizationId);
     if (!loaded || !loaded.doors.length) return res.status(404).json({ error: "not_found" });
+    const stored = await pool.query(
+      `SELECT report_sent_at, report_storage_key IS NOT NULL AS report_stored FROM inspection_visits WHERE id=$1 AND organization_id=$2`,
+      [req.params.id, req.auth!.organizationId],
+    );
     const counts = visitCounts(loaded.doors);
+    const doors = orderVisitDoors(loaded.doors);
     res.set("Cache-Control", "no-store").json({
       id: req.params.id,
       facility_name: loaded.facilityName,
       event_date: loaded.eventDate,
       inspector_name: loaded.inspectorName,
       summary: visitSummaryText(loaded.doors),
+      report_sent: Boolean(stored.rows[0]?.report_sent_at),
+      report_stored: stored.rows[0]?.report_stored === true,
       ...counts,
-      doors: loaded.doors.map((door) => ({
+      doors: doors.map((door) => ({
+        opening_id: door.openingId,
         opening_code: door.openingCode,
         location: door.location,
         passed: door.passed,
-        deficiencies: door.deficiencies.map((item) => ({ section: item.section, note: item.note })),
+        notes: door.notes,
+        deficiencies: door.deficiencies.map((item) => ({ section: item.section, description: item.description, note: item.note })),
       })),
     });
   } catch (err) {

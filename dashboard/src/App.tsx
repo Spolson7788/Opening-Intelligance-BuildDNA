@@ -26,6 +26,7 @@ import { ScheduleComparisonPage } from "./pages/ScheduleComparisonPage";
 import { ScheduleComparisonsPage } from "./pages/ScheduleComparisonsPage";
 import { OpeningDetailPage } from "./pages/OpeningDetailPage";
 import { InspectionVisitPage } from "./pages/InspectionVisitPage";
+import { InspectionVisitsPage } from "./pages/InspectionVisitsPage";
 import { NewPropertyPage } from "./pages/NewPropertyPage";
 import { NewOpeningPage } from "./pages/NewOpeningPage";
 import { ImportOpeningsPage } from "./pages/ImportOpeningsPage";
@@ -86,6 +87,7 @@ function AppRoutes() {
       <Route path="/schedule-imports/:id/comparison/:snapshotId" element={<RequireAuth><ScheduleComparisonPage /></RequireAuth>} />
       <Route path="/maintenance-schedules" element={<RequireAuth><MaintenanceSchedulesPage /></RequireAuth>} />
       <Route path="/opening/:id" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />
+      <Route path="/inspection-visits" element={<RequireAuth><InspectionVisitsPage /></RequireAuth>} />
       <Route path="/inspection-visits/:id" element={<RequireAuth><InspectionVisitPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

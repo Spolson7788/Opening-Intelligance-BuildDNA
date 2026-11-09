@@ -209,6 +209,22 @@ export function buildPrivatePhotoStorageKey(
   return `private/org/${orgId}/opening/${openingId}/photo/${photoId}.${ext}`;
 }
 
+export function buildPrivateVisitReportKey(orgId: string, propertyId: string, visitId: string): string {
+  return `private/org/${orgId}/facility/${propertyId}/inspection-visit/${visitId}.pdf`;
+}
+
+export async function putPrivateBytes(key: string, bytes: Uint8Array, contentType: string): Promise<{ etag: string; sha256: string; byteSize: number }> {
+  assertStorageConfigured();
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const result = await getClient().send(new PutObjectCommand({
+    Bucket: process.env.S3_BUCKET,
+    Key: key,
+    Body: bytes,
+    ContentType: contentType,
+  }));
+  return { etag: (result.ETag || "").replaceAll('"', ""), sha256, byteSize: bytes.byteLength };
+}
+
 export function buildPrivatePhotoUploadKey(
   orgId: string,
   openingId: string,

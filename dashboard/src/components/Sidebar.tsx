@@ -115,6 +115,7 @@ export function Sidebar() {
           <div className="nav-label">Planning</div>
           <NavLink to="/capital-forecast" className={({ isActive }) => itemClass(isActive)}>Capital Forecast</NavLink>
           <NavLink to="/compliance-alerts" className={({ isActive }) => itemClass(isActive)}>Alerts</NavLink>
+          {canManage && <NavLink to="/inspection-visits" className={({ isActive }) => itemClass(isActive)}>Inspection visits</NavLink>}
         </div>
         <div className="nav-group">
           <div className="nav-label">Data</div>

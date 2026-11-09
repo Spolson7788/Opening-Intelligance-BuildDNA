@@ -9,7 +9,13 @@ CREATE TABLE IF NOT EXISTS inspection_visits (
   inspector_user_id UUID NOT NULL REFERENCES users(id),
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'finished')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  finished_at TIMESTAMPTZ
+  finished_at TIMESTAMPTZ,
+  report_storage_key TEXT,
+  report_sha256 TEXT,
+  report_generated_at TIMESTAMPTZ,
+  report_generated_by UUID REFERENCES users(id),
+  report_sent_at TIMESTAMPTZ,
+  report_recipients TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_inspection_visits_facility

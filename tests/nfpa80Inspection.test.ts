@@ -114,8 +114,13 @@ describe("NFPA 80 fire door inspection", () => {
     expect(sent[0].text).toContain(dashboardLink);
     expect(sent[0].text).not.toContain("token=");
     expect(sent[0].html).not.toContain("?");
-    const emailed = await pool.query("SELECT action, request_body FROM audit_log WHERE organization_id=$1 AND action=$2", [org.organizationId, "Emailed fire door inspection report"]);
-    expect(emailed.rows.some((row) => row.request_body.to.includes("facility@example.com"))).toBe(true);
+    let emailedRecipient = false;
+    for (let attempt = 0; attempt < 20 && !emailedRecipient; attempt += 1) {
+      const emailed = await pool.query("SELECT action, request_body FROM audit_log WHERE organization_id=$1 AND action=$2", [org.organizationId, "Emailed fire door inspection report"]);
+      emailedRecipient = emailed.rows.some((row) => row.request_body.to?.includes("facility@example.com"));
+      if (!emailedRecipient) await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(emailedRecipient).toBe(true);
 
     const photoDelete = await request(app).delete(`/api/photos/${deficiency.photo_id}`).set("Authorization", `Bearer ${org.token}`);
     expect(photoDelete.status).toBe(409);
