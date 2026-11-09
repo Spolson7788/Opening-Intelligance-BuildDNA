@@ -50,7 +50,7 @@ export function MyWorkOrdersPage() {
   const finishedOrders = workOrders.filter((w) => w.status === "done" || w.status === "cancelled");
 
   return (
-    <div className="app-shell">
+    <div className="app-shell c04">
       <div className="top-bar">
         <button className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13 }} onClick={() => navigate("/scan")}>
           ← Back
@@ -59,11 +59,11 @@ export function MyWorkOrdersPage() {
         <SyncBadge />
       </div>
       <div className="screen">
-        {error && <p className="error-text">{error}</p>}
+        {error && <p className="c04-alert" role="alert">{error}</p>}
         {loading && <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>Loading…</p>}
 
         {!loading && workOrders.length === 0 && (
-          <div className="card" style={{ textAlign: "center", color: "var(--text-secondary)" }}>
+          <div className="c04-band-blue" style={{ textAlign: "center" }}>
             Nothing assigned to you right now.
           </div>
         )}

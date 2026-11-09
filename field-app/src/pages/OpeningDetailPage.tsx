@@ -188,7 +188,7 @@ export function OpeningDetailPage() {
 
   if (loading) {
     return (
-      <div className="app-shell">
+      <div className="app-shell c04">
         <div className="top-bar"><h1>Loading…</h1></div>
       </div>
     );
@@ -196,7 +196,7 @@ export function OpeningDetailPage() {
 
   if (!opening || (error && !error.retry)) {
     return (
-      <div className="app-shell">
+      <div className="app-shell c04">
         <div className="top-bar">
           <h1>{error?.title ?? "Opening unavailable"}</h1>
           <SyncBadge />
@@ -221,7 +221,7 @@ export function OpeningDetailPage() {
   const completionBlocked = opening.completion_state !== "complete" && opening.completion_state !== "pending_sync" && completionRequirements.length > 0;
 
   return (
-    <div className="app-shell">
+    <div className="app-shell c04">
       <div className="top-bar">
         <button className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13 }} onClick={() => navigate("/scan")}>
           ← Scan
@@ -237,6 +237,7 @@ export function OpeningDetailPage() {
             <button className="btn btn-secondary" onClick={() => reload()}>Check access again</button>
           </div>}
         </div>
+        <section className="c04-band-green">
         <div className="asset-plate" style={{ marginBottom: 10 }}>{opening.opening_code}</div>
         {fromCache && (
           <p className="error-text" style={{ marginTop: 0 }}>Showing last-saved data — no connection right now.</p>
@@ -259,7 +260,9 @@ export function OpeningDetailPage() {
           </div>
           {opening.fire_rated && <span className="badge" style={{ marginTop: 8 }}>Fire Rated</span>}
         </div>
+        </section>
 
+        <section className="c04-band">
         <Link className="btn btn-secondary" to={`/opening/${opening.id}/lifecycle`}>Installation and service history</Link><Link className="btn btn-secondary" to={`/opening/${opening.id}/schedules`}>Facility schedules</Link>
         {retired?<p role="status">This opening is retired. Its records remain available for review; new requests and labels are unavailable.</p>:<Link className="btn btn-secondary" to={`/opening/${opening.id}/request-service`}>Request service</Link>}
         <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
@@ -270,7 +273,9 @@ export function OpeningDetailPage() {
             Log Inspection
           </Link>
         </div>
+        </section>
 
+        <section className="c04-band-blue">
         <div className="section-label">Opening Structure</div>
         <div className="card">
           <strong>{opening.opening_configuration === "pair" ? "Door pair" : "Single door"}</strong>
@@ -294,7 +299,9 @@ export function OpeningDetailPage() {
             {opening.completion_state === "complete" ? "Opening complete" : opening.completion_state === "pending_sync" ? "Completion pending sync" : "Finish the opening"}
           </button>
         </div>
+        </section>
 
+        <section className="c04-band">
         <div className="section-label" style={{ marginTop: 20 }}>Photos &amp; Videos</div>
         {((opening.photos && opening.photos.length > 0) || queuedPhotos.length > 0) && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 10 }}>
@@ -346,25 +353,26 @@ export function OpeningDetailPage() {
         <PhotoCapture openingId={opening.id} onQueued={loadQueuedPhotos} />
 
         {photoToDelete && (
-          <div role="dialog" aria-modal="true" aria-labelledby="delete-photo-title" className="card"
-            style={{ borderColor: "var(--danger)", marginTop: 10 }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="delete-photo-title" className="c04-alert">
             <strong id="delete-photo-title">Delete photo?</strong>
-            <p style={{ margin: "6px 0 10px", fontSize: 14 }}>
+            <p>
               {photoToDelete.name} will be removed from this opening. This cannot be undone in the field app.
             </p>
             {deleteError && <p role="alert" className="error-text">{deleteError}</p>}
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className="c04-row">
               <button className="btn btn-secondary" disabled={deletingPhoto} onClick={() => { setPhotoToDelete(null); setDeleteError(null); }}>Cancel</button>
-              <button className="btn btn-primary" disabled={deletingPhoto} onClick={handleDeletePhoto}>
+              <button className="btn c04-danger-fill" disabled={deletingPhoto} onClick={handleDeletePhoto}>
                 {deletingPhoto ? "Deleting…" : "Delete photo"}
               </button>
             </div>
           </div>
         )}
+        </section>
 
         {opening.hardware_components && opening.hardware_components.length > 0 && (
           <>
             <div className="section-label">Hardware</div>
+            <div className="c04-band-green">
             {opening.hardware_components.map((hw: any) => (
               <div key={hw.id} className="card">
               <Link to={`/opening/${opening.id}/edit-hardware/${hw.id}`} state={{ hardware: hw }} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
@@ -413,6 +421,7 @@ export function OpeningDetailPage() {
               </div>
               </div>
             ))}
+            </div>
           </>
         )}
         {!retired && <IdentifyHardwareEntry openingId={opening.id} />}

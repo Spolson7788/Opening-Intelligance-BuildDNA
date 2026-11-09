@@ -164,7 +164,7 @@ export function LogInspectionEventPage() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell c04">
       <div className="top-bar">
         <button className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13 }} onClick={() => navigate(-1)}>
           ← Back
@@ -185,7 +185,7 @@ export function LogInspectionEventPage() {
             <button type="button" className="btn btn-secondary" onClick={() => navigate(`/opening/${id}`)}>Back to the opening</button>
           </div>
         ) : (
-          <form onSubmit={onSubmit}>
+          <form className="c04-band" onSubmit={onSubmit}>
             <div className="field">
               <label htmlFor="event-date">Date</label>
               <input

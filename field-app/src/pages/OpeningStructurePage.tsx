@@ -89,21 +89,21 @@ function StructureEditor({ id, opening }: { id: string; opening: any }) {
     } finally { setSaving(false); }
   }
 
-  return <div className="app-shell">
+  return <div className="app-shell c04">
     <div className="top-bar"><button className="btn btn-secondary" onClick={() => navigate(-1)}>← Back</button></div>
     <div className="screen">
       <h2>Door &amp; Frame</h2>
       <p style={{ color: "var(--text-secondary)" }}>
         {configuration === "pair" ? "One frame with active and inactive door leaves." : "One frame with one door leaf."}
       </p>
-      <div className="card">
+      <div className="c04-band">
         <div className="section-label">Frame</div>
         <div className="field"><label htmlFor="frame-material">Material</label><input id="frame-material" value={frameMaterial} onChange={(e) => setFrameMaterial(e.target.value)} /></div>
         <div className="field"><label htmlFor="frame-condition">Frame condition</label><select id="frame-condition" value={frameCondition} onChange={e=>setFrameCondition(e.target.value)}>{["unverified","good","worn","failed"].map(c=><option key={c} value={c}>{c}</option>)}</select></div>
         <button className="btn btn-secondary" onClick={saveFrame} disabled={saving || savedTargets.includes(frameId)}>Save frame</button>
         <div style={{ marginTop: 10 }}><PhotoCapture openingId={id!} relatedEntityType="frame" relatedEntityId={frameId} onQueued={() => setMessage("Frame photograph saved locally.")} /></div>
       </div>
-      <div className="card">
+      <div className="c04-band-green">
         <div className="section-label">Door leaf</div>
         {configuration === "pair" && <div className="field"><label htmlFor="leaf-role">Leaf</label><select id="leaf-role" value={role} onChange={(e) => { const next=e.target.value; setRole(next); const leaf=opening?.door_leaves?.find((l:any)=>l.leaf_role===next); setLeafMaterial(leaf?.material??""); setHanding(leaf?.handing??""); setLeafCondition(leaf?.condition??"unverified"); }}>{roles.map((r) => <option key={r} value={r}>{r}</option>)}</select></div>}
         <div className="field"><label htmlFor="leaf-material">Material</label><input id="leaf-material" value={leafMaterial} onChange={(e) => setLeafMaterial(e.target.value)} /></div>

@@ -106,12 +106,12 @@ export function SyncIssuesPage() {
     await load();
   }
 
-  return <div className="app-shell">
+  return <div className="app-shell c04">
     <div className="top-bar"><button className="btn btn-secondary" onClick={() => navigate(-1)}>← Back</button></div>
     <div className="screen">
-      <h2>Synchronization review</h2>
-      <p style={{ color: "var(--text-secondary)" }}>Entries remain stored on this device until synchronization succeeds. Review conflicts before retrying.</p>
-      {identityChecking || loadedPrincipal !== principal ? <p>Checking saved changes for this account. If this does not finish, return after checking access.</p> : issues.length === 0 ? <div className="card">No synchronization issues for the signed-in technician.</div> : issues.map((issue) => <div className="card" key={issue.id} data-issue-kind={issue.kind}>
+      <section className="c04-band"><h2>Synchronization review</h2>
+      <p>Entries remain stored on this device until synchronization succeeds. Review conflicts before retrying.</p></section>
+      {identityChecking || loadedPrincipal !== principal ? <p className="c04-band-blue">Checking saved changes for this account. If this does not finish, return after checking access.</p> : issues.length === 0 ? <div className="c04-band-blue">No synchronization issues for the signed-in technician.</div> : issues.map((issue) => <div className="c04-band" key={issue.id} data-issue-kind={issue.kind}>
         <strong style={{ textTransform: "capitalize" }}>{issue.label}</strong>
         {issue.kind === "rejected_media" ? <>
           <p style={{ margin: "6px 0" }}>Not uploaded: this {issue.contentType?.startsWith("video/") ? "video" : "photograph"} is {formatMegabytes(issue.mediaBytes ?? 0)}, above the {formatMegabytes(maximumMediaBytes(issue.contentType ?? ""))} upload limit. It is kept on this device and will not be retried automatically.</p>
@@ -119,8 +119,8 @@ export function SyncIssuesPage() {
             {!issue.contentType?.startsWith("video/") && <button className="btn btn-primary" disabled={busy === issue.id} onClick={() => reduceAndUpload(issue)}>{busy === issue.id ? "Reducing…" : "Reduce size and upload"}</button>}
             <button className="btn btn-secondary" onClick={() => saveCopy(issue)}>Save a copy to this device</button>
             {confirmRemove === issue.id
-              ? <><button className="btn btn-secondary" onClick={() => remove(issue)}>Confirm remove from this device</button>
-                  <button className="btn btn-secondary" onClick={() => setConfirmRemove(null)}>Keep it</button></>
+              ? <div className="c04-alert"><button className="btn c04-danger-fill" onClick={() => remove(issue)}>Confirm remove from this device</button>
+                  <button className="btn btn-secondary" onClick={() => setConfirmRemove(null)}>Keep it</button></div>
               : <button className="btn btn-secondary" onClick={() => setConfirmRemove(issue.id)}>Remove from this device</button>}
           </div>
           {!issue.contentType?.startsWith("video/") && <p style={{ margin: "6px 0", color: "var(--text-secondary)" }}>Reducing replaces this local copy with a smaller JPEG that fits the limit. Save a copy first if you need the full-resolution original.</p>}
@@ -133,9 +133,9 @@ export function SyncIssuesPage() {
                 : issue.status === "retry_wait" && !syncIssueCanDiscard(issue) ? "Retry retained operation"
                 : syncIssueCanDiscard(issue) ? "Retry this saved change" : "Retry after authorization is restored"}</button>
             {syncIssueCanDiscard(issue) && (confirmRemove === issue.id
-              ? <><button className="btn btn-secondary" disabled={busy === issue.id} onClick={() => discard(issue)}>Confirm discard from this device</button>
-                  <button className="btn btn-secondary" onClick={() => setConfirmRemove(null)}>Keep it</button>
-                  <p style={{ margin: "6px 0", color: "var(--text-secondary)" }}>Discarding removes this change from this device only. It does not change the server.</p></>
+              ? <div className="c04-alert"><p>Discarding removes this change from this device only. It does not change the server.</p>
+                  <button className="btn c04-danger-fill" disabled={busy === issue.id} onClick={() => discard(issue)}>Confirm discard from this device</button>
+                  <button className="btn btn-secondary" onClick={() => setConfirmRemove(null)}>Keep it</button></div>
               : <button className="btn btn-secondary" onClick={() => setConfirmRemove(issue.id)}>Discard this saved change</button>)}
           </div>
         </>}

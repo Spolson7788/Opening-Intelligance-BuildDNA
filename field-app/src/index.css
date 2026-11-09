@@ -513,6 +513,10 @@ body.c04-on :focus, body.c04-on :focus-visible {
 .c04-band-green, .c04-step-note { background: #A8D978; }
 .c04-step-alert { background: #FDECEE; border: 2px solid #E5484D; }
 .c04-band h2, .c04-band-blue h2, .c04-band-green h2, .c04-step h3 { margin-top: 0; }
+.c04-band a:not(.btn), .c04-band-blue a:not(.btn), .c04-band-green a:not(.btn) {
+  color: #142C3C;
+  font-weight: 700;
+}
 .c04-required { color: #8E1B22; font-weight: 700; }
 .c04-purchasing select[aria-invalid="true"] { border: 2px solid #E5484D; }
 .c04-recipient {

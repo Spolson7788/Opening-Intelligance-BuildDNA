@@ -116,7 +116,7 @@ export function LogHardwarePage() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell c04">
       <div className="top-bar">
         <button className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13 }} onClick={() => navigate(-1)}>
           ← Back
@@ -134,7 +134,7 @@ export function LogHardwarePage() {
             Saved. Returning to the opening…
           </div>
         ) : (
-          <form onSubmit={onSubmit}>
+          <form className="c04-band" onSubmit={onSubmit}>
             {id && <RecognitionReview key={id} openingId={id} onUse={(brand,model)=>{setManufacturer(brand);setModelNumber(model);setIdentityStatus('unresolved');setReviewState('pending');}}/>}
             <div className="field">
               <label htmlFor="component-type">Component type</label>
