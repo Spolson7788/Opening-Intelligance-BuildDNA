@@ -12,6 +12,8 @@ import { queueInspectionFailurePhoto } from "../lib/inspectionPhoto";
 import { removeUnconfirmedLocalPhoto } from "../lib/db";
 import { awaitInspectionSynced } from "../lib/sync";
 import { scrollPageToTop } from "../lib/scrollPage";
+import { ensureOpenVisit, finishVisit, recordVisitInspection, visitSummaryText } from "../lib/inspectionVisit";
+import type { InspectionVisit } from "../lib/inspectionVisit";
 
 type ItemAnswer = { result: "" | "pass" | "fail" | "na"; note: string; photo: File | null };
 
@@ -40,6 +42,7 @@ export function LogInspectionEventPage() {
   const queuedPhotoIds = useRef<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
   const [savedInspectionId, setSavedInspectionId] = useState<string | null>(null);
+  const [visit, setVisit] = useState<InspectionVisit | null>(null);
   const [emailSync, setEmailSync] = useState<"syncing" | "ready" | "failed">("syncing");
   const [emailReason, setEmailReason] = useState<string | null>(null);
 
@@ -147,7 +150,9 @@ export function LogInspectionEventPage() {
     }
 
     let inspectionId: string;
+    let visitId: string | undefined;
     try {
+    if (type === "fire_door_nfpa80") visitId = (await ensureOpenVisit())?.id;
     inspectionId = await queueOpeningMutation("inspection_event", id!, {
         opening_id: id,
         event_date: eventDate,
@@ -159,12 +164,14 @@ export function LogInspectionEventPage() {
         inspector_qualification: type === "fire_door_nfpa80" ? qualification.trim() : undefined,
         inspector_license_number: type === "fire_door_nfpa80" ? licenseNumber.trim() : undefined,
         checklist_result: type === "fire_door_nfpa80" ? checklist : undefined,
+        visit_id: visitId,
     });
 
     setSaved(true);
     setSubmitting(false);
     if (type === "fire_door_nfpa80") {
       setSavedInspectionId(inspectionId);
+      if (visitId) setVisit(await recordVisitInspection(visitId, { inspectionId, openingId: id!, passed: resultPassed }));
       if (navigator.onLine) {
         flushOutbox().then(() => Promise.resolve(recomputeHealthScore(id!)).catch(() => {}));
       }
@@ -199,6 +206,11 @@ export function LogInspectionEventPage() {
         {saved ? (
           <div className="card">
             <p style={{ textAlign: "center", color: "var(--success)" }}>Saved.</p>
+            {visit && <p className="c04-band-green" role="status">{visitSummaryText(visit.inspections)}</p>}
+            {savedInspectionId && visit && <>
+              <button type="button" className="btn c04-btn-blue" onClick={() => navigate("/scan")}>Add an Additional Opening</button>
+              <button type="button" className="btn c04-btn-green" onClick={() => { void finishVisit(visit.id).then(() => navigate(`/visit/${visit.id}`)); }}>Finish visit / Send combined report</button>
+            </>}
             {savedInspectionId && <EmailInspectionReport inspectionId={savedInspectionId} syncStatus={emailSync} syncReason={emailReason} />}
             {!savedInspectionId && <p style={{ textAlign: "center" }}>Returning to the opening…</p>}
             <button type="button" className="btn btn-secondary" onClick={() => navigate(`/opening/${id}`)}>Back to the opening</button>

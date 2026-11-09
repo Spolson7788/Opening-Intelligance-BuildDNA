@@ -9,7 +9,9 @@ import { areaAllowsOpening } from "../db/areaAccess";
 import { acquireClient } from "../db/acquireClient";
 import { prepareFireDoorChecklist, applyFireDoorFollowUp } from "../services/nfpa80Inspection";
 import { generalPassCarriesChecklist } from "../services/nfpa80Checklist";
-import { generateNfpaInspectionPdf } from "../services/nfpa80Report";
+import { generateNfpaInspectionPdf, generateNfpaVisitPdf } from "../services/nfpa80Report";
+import { bindInspectionVisit, visitCounts, visitSummaryText } from "../services/inspectionVisits";
+import { loadInspectionVisit } from "../services/loadInspectionVisit";
 import { sendEmail, reportEmailBlockers, reportLinkBase } from "../services/email";
 import { dashboardInspectionLink } from "../services/inspectionReportLink";
 import { attachmentByteLimit } from "../services/purchasingSend";
@@ -87,6 +89,7 @@ const inspectionEventSchema = z.object({
   signed_by_name: z.string().optional(),
   inspector_qualification: z.string().max(200).optional(),
   inspector_license_number: z.string().max(80).optional(),
+  visit_id: z.string().uuid().optional(),
 });
 
 eventsRouter.post("/inspection-events", async (req: AuthedRequest, res) => {
@@ -138,6 +141,8 @@ eventsRouter.post("/inspection-events", async (req: AuthedRequest, res) => {
         inspectionId: result.rows[0].id, openingId: b.opening_id, organizationId: orgId, userId, items: prepared.items,
       });
       if (follow.error) { await client.query("ROLLBACK"); return res.status(400).json({ error: follow.error }); }
+      const visit = await bindInspectionVisit(client, { visitId: b.visit_id, inspectionId: result.rows[0].id, openingId: b.opening_id, organizationId: orgId, userId });
+      if (visit.error) { await client.query("ROLLBACK"); return res.status(409).json({ error: visit.error }); }
       await client.query("COMMIT");
       const fresh = await pool.query("SELECT * FROM inspection_events WHERE id=$1", [result.rows[0].id]);
       return res.status(201).json(fresh.rows[0]);
@@ -278,6 +283,89 @@ eventsRouter.post("/inspection-events/:id/email", async (req: AuthedRequest, res
       if (missing) console.error("OI email", { outcome: "not_configured", missing });
       return res.status(503).json(missing ? { error: outcome.reason, missing } : { error: outcome.reason });
     }
+    res.json({ sent: true, to: recipients, delivery_mode: attached ? "attachments" : "links" });
+  } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
+});
+
+async function visitForRequest(id: string, orgId: string, userId: string) {
+  if (!z.string().uuid().safeParse(id).success) return { status: 400 as const, error: "invalid_visit" };
+  const loaded = await loadInspectionVisit(id, orgId);
+  if (!loaded || !loaded.doors.length) return { status: 404 as const, error: "not_found" };
+  for (const openingId of loaded.openingIds) {
+    if (!(await areaAllowsOpening(userId, openingId))) return { status: 403 as const, error: "forbidden" };
+  }
+  return { status: 200 as const, loaded };
+}
+
+eventsRouter.get("/inspection-visits/:id", async (req: AuthedRequest, res) => {
+  try {
+    const result = await visitForRequest(req.params.id, req.auth!.organizationId, req.auth!.userId);
+    if (result.status !== 200) return res.status(result.status).json({ error: result.error });
+    const counts = visitCounts(result.loaded.doors);
+    res.set("Cache-Control", "no-store").json({
+      id: req.params.id,
+      facility_name: result.loaded.facilityName,
+      event_date: result.loaded.eventDate,
+      inspector_name: result.loaded.inspectorName,
+      summary: visitSummaryText(result.loaded.doors),
+      ...counts,
+      doors: result.loaded.doors.map((door) => ({ opening_code: door.openingCode, location: door.location, passed: door.passed })),
+    });
+  } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
+});
+
+eventsRouter.get("/inspection-visits/:id/report.pdf", async (req: AuthedRequest, res) => {
+  try {
+    const result = await visitForRequest(req.params.id, req.auth!.organizationId, req.auth!.userId);
+    if (result.status !== 200) return res.status(result.status).json({ error: result.error });
+    const pdf = await generateNfpaVisitPdf(result.loaded);
+    res.set("Content-Type", "application/pdf").send(pdf);
+  } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
+});
+
+eventsRouter.get("/inspection-visits/:id/email-defaults", async (req: AuthedRequest, res) => {
+  try {
+    const result = await visitForRequest(req.params.id, req.auth!.organizationId, req.auth!.userId);
+    if (result.status !== 200) return res.status(result.status).json({ error: result.error });
+    const sender = await pool.query("SELECT email FROM users WHERE id=$1", [req.auth!.userId]);
+    const inspector = (sender.rows[0]?.email as string | undefined) || "";
+    const facility = result.loaded.contactEmail;
+    res.set("Cache-Control", "no-store").json({
+      facility_contact_email: facility,
+      inspector_email: inspector,
+      to: reportRecipients(facility ? [facility, inspector] : [inspector]),
+    });
+  } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
+});
+
+eventsRouter.post("/inspection-visits/:id/email", async (req: AuthedRequest, res) => {
+  const body = z.object({
+    to: z.union([z.string().trim().email().max(200), z.array(z.string().trim().email().max(200)).min(1).max(10)]),
+  }).strict().safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "invalid_email" });
+  const recipients = reportRecipients(body.data.to);
+  if (!recipients.length) return res.status(400).json({ error: "invalid_email" });
+  try {
+    const result = await visitForRequest(req.params.id, req.auth!.organizationId, req.auth!.userId);
+    if (result.status !== 200) return res.status(result.status).json({ error: result.error });
+    const pdf = await generateNfpaVisitPdf(result.loaded);
+    const limit = attachmentByteLimit();
+    const attached = pdf.length <= limit;
+    const text = attached
+      ? `The combined fire door inspection for ${result.loaded.facilityName} is attached. ${visitSummaryText(result.loaded.doors)}`
+      : `The combined fire door inspection for ${result.loaded.facilityName} is ready. ${visitSummaryText(result.loaded.doors)}`;
+    const outcome = await sendEmail({
+      to: recipients,
+      subject: `Fire door inspection visit ${result.loaded.facilityName}`,
+      text,
+      html: `<p>${text}</p>`,
+      attachments: attached ? [{ filename: "fire-door-inspection-visit.pdf", contentBase64: pdf.toString("base64") }] : undefined,
+    });
+    if (!outcome.sent) {
+      const missing = outcome.reason === "email_not_configured" ? reportEmailBlockers() : undefined;
+      return res.status(503).json(missing ? { error: outcome.reason, missing } : { error: outcome.reason });
+    }
+    await pool.query("UPDATE inspection_visits SET status='finished', finished_at=COALESCE(finished_at, now()) WHERE id=$1 AND organization_id=$2", [req.params.id, req.auth!.organizationId]);
     res.json({ sent: true, to: recipients, delivery_mode: attached ? "attachments" : "links" });
   } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
 });

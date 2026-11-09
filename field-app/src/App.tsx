@@ -16,6 +16,7 @@ import { ScanPage } from "./pages/ScanPage";
 import { OpeningDetailPage } from "./pages/OpeningDetailPage";
 import { LogServiceEventPage } from "./pages/LogServiceEventPage";
 import { LogInspectionEventPage } from "./pages/LogInspectionEventPage";
+import { VisitReportPage } from "./pages/VisitReportPage";
 import { InspectionDetailPage } from "./pages/InspectionDetailPage";
 import { LogHardwarePage } from "./pages/LogHardwarePage";
 import { IdentifyHardwarePage } from "./pages/IdentifyHardwarePage";
@@ -100,6 +101,7 @@ function AppRoutes() {
       <Route path="/opening/:id" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />
       <Route path="/opening/:id/log-service" element={<RequireAuth><LogServiceEventPage /></RequireAuth>} />
       <Route path="/opening/:id/log-inspection" element={<RequireAuth><LogInspectionEventPage /></RequireAuth>} />
+      <Route path="/visit/:id" element={<RequireAuth><VisitReportPage /></RequireAuth>} />
       <Route path="/opening/:id/inspection/:eventId" element={<RequireAuth><InspectionDetailPage /></RequireAuth>} />
       <Route path="/opening/:id/add-hardware" element={<RequireAuth><LogHardwarePage /></RequireAuth>} />
       <Route path="/opening/:id/identify-hardware" element={<RequireAuth><IdentifyHardwarePage /></RequireAuth>} />

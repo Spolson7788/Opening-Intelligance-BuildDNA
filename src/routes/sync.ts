@@ -15,6 +15,7 @@ import {
   writeSyncReceiptAndAudit,
 } from "../services/syncProtocol";
 import { prepareFireDoorChecklist, applyFireDoorFollowUp } from "../services/nfpa80Inspection";
+import { bindInspectionVisit } from "../services/inspectionVisits";
 import { generalPassCarriesChecklist } from "../services/nfpa80Checklist";
 
 export const syncRouter = Router();
@@ -212,6 +213,7 @@ const inspectionPayload = z.object({
   signature_data: z.string().max(2_000_000).optional(), signed_by_name: z.string().optional(),
   inspector_qualification: z.string().max(200).optional(),
   inspector_license_number: z.string().max(80).optional(),
+  visit_id: z.string().uuid().optional(),
 });
 
 syncRouter.post("/operations", async (req: AuthedRequest, res) => {
@@ -348,6 +350,8 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       if (preparedItems && preparedItems.ok) {
         const follow = await applyFireDoorFollowUp(client, { inspectionId: record.id, openingId: b.opening_id, organizationId: orgId, userId, items: preparedItems.items });
         if (follow.error) { await client.query("ROLLBACK"); return res.status(400).json({ error: follow.error }); }
+        const visit = await bindInspectionVisit(client, { visitId: payload.visit_id as string | undefined, inspectionId: record.id, openingId: b.opening_id, organizationId: orgId, userId });
+        if (visit.error) { await client.query("ROLLBACK"); return res.status(409).json({ error: visit.error }); }
       }
     } else {
       const [frame,leaves,hardware]=await Promise.all([

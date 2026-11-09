@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl, fetchAuthedBlob, emailInspectionReport, inspectionReportRecipients, saveInspectionToFacilityRecords, downloadAuthedFile } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import type { OpeningDetail, DocumentEntry, PurchasingEligibility, HardwareComponent, OpeningPhoto } from "../lib/api";
@@ -397,6 +397,7 @@ export function OpeningDetailPage() {
                         <div className="inspection-actions">
                           <button className="btn btn-secondary" type="button" onClick={() => downloadAuthedFile(`/events/inspection-events/${ev.id}/report.pdf`, "fire-door-inspection.pdf").catch(() => setRecordMessage((current) => ({ ...current, [ev.id]: "Could not download the report." })))}>Download PDF</button>
                           {canSaveRecords && <button className="btn btn-secondary" type="button" onClick={() => saveReport(ev.id)}>Save to facility records</button>}
+                          {canSaveRecords && ev.visit_id && <Link className="btn btn-secondary" to={`/inspection-visits/${ev.visit_id}`}>Combined visit report</Link>}
                           {recordMessage[ev.id] && <p role={recordMessage[ev.id].startsWith("Could not") ? "alert" : "status"}>{recordMessage[ev.id]}</p>}
                         </div>
                       )}

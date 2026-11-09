@@ -980,6 +980,7 @@ export const fetchBranches = (): Promise<{ branches: Array<{ id: string; name: s
 export const saveBranch = (id: string, body: { name: string; default_state: string; default_territory: string | null; is_active: boolean; purchasing_email: string | null }) => post(`/branches/${id}`, body, "PUT");
 export const inspectionReportRecipients = (id: string): Promise<{ to: string[]; facility_contact_email: string | null; inspector_email: string }> => authedFetch(`/events/inspection-events/${id}/email-defaults`);
 export const emailInspectionReport = (id: string, to: string[]): Promise<{ sent: boolean; delivery_mode: string }> => post(`/events/inspection-events/${id}/email`, { to });
+export const fetchInspectionVisit = (id: string): Promise<{ id: string; facility_name: string; event_date: string; inspector_name: string | null; summary: string; inspected: number; passed: number; failed: number; doors: Array<{ opening_code: string; location: string | null; passed: boolean }> }> => authedFetch(`/portfolio/inspection-visits/${id}`);
 export const saveInspectionToFacilityRecords = (id: string): Promise<{ document: { id: string; title: string }; already_saved: boolean }> => post(`/events/inspection-events/${id}/facility-record`, {});
 
 export async function fetchAuthedBlob(path: string): Promise<Blob> {

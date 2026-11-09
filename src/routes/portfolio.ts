@@ -1,4 +1,6 @@
 import { customerMayOpenFacilityDashboard } from "../services/facilityDashboardAccess";
+import { loadInspectionVisit } from "../services/loadInspectionVisit";
+import { visitCounts, visitSummaryText } from "../services/inspectionVisits";
 import { databaseRoute } from '../db/databaseRoute';
 import { facilityAccessPredicate, photoVisibleSql, serviceEventVisibleSql, facilityAccessPredicateAny, allowedOrgIds, orgScope } from "../db/tenantScope";
 import { Router } from "express";
@@ -629,3 +631,30 @@ portfolioRouter.get("/warranty-alerts", databaseRoute(async (req: AuthedRequest,
     res.status(500).json({ error: "internal_error" });
   }
 }));
+
+portfolioRouter.get("/inspection-visits/:id", async (req: AuthedRequest, res) => {
+  if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_visit" });
+  try {
+    if (!await facilityDashboardAllowed(req)) return res.status(403).json({ error: "facility_dashboard_forbidden" });
+    const loaded = await loadInspectionVisit(req.params.id, req.auth!.organizationId);
+    if (!loaded || !loaded.doors.length) return res.status(404).json({ error: "not_found" });
+    const counts = visitCounts(loaded.doors);
+    res.set("Cache-Control", "no-store").json({
+      id: req.params.id,
+      facility_name: loaded.facilityName,
+      event_date: loaded.eventDate,
+      inspector_name: loaded.inspectorName,
+      summary: visitSummaryText(loaded.doors),
+      ...counts,
+      doors: loaded.doors.map((door) => ({
+        opening_code: door.openingCode,
+        location: door.location,
+        passed: door.passed,
+        deficiencies: door.deficiencies.map((item) => ({ section: item.section, note: item.note })),
+      })),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal_error" });
+  }
+});

@@ -84,6 +84,7 @@ const FIELD_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp }> = [
   { method: "POST", pattern: /^\/api\/purchasing\/review$/ },
   { method: "POST", pattern: /^\/api\/purchasing\/send$/ },
   { method: "POST", pattern: /^\/api\/events\/inspection-events\/[^/]+\/email$/ },
+  { method: "POST", pattern: /^\/api\/events\/inspection-visits\/[^/]+\/email$/ },
   { method: "POST", pattern: /^\/api\/events\/fire-door-deficiencies\/[^/]+\/repair$/ },
 ];
 
@@ -99,6 +100,7 @@ const INSPECTOR_WRITE_ACTIONS: Array<{ method: string; pattern: RegExp; body?: (
   { method: "POST", pattern: /^\/api\/service-requests\/?$/ },
   { method: "POST", pattern: /^\/api\/purchasing\/send$/ },
   { method: "POST", pattern: /^\/api\/events\/inspection-events\/[^/]+\/email$/ },
+  { method: "POST", pattern: /^\/api\/events\/inspection-visits\/[^/]+\/email$/ },
   { method: "POST", pattern: /^\/api\/events\/fire-door-deficiencies\/[^/]+\/repair$/ },
 ];
 const WRITE_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);

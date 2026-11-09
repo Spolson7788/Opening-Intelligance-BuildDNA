@@ -21,6 +21,7 @@ const AUDIT_ACTIONS: Array<{ method: string; pattern: RegExp; label: string }> =
   { method: "POST", pattern: /^\/api\/events\/service-events$/, label: "Logged service event" },
   { method: "POST", pattern: /^\/api\/events\/inspection-events$/, label: "Logged inspection event" },
   { method: "POST", pattern: /^\/api\/events\/inspection-events\/[^/]+\/email$/, label: "Emailed fire door inspection report" },
+  { method: "POST", pattern: /^\/api\/events\/inspection-visits\/[^/]+\/email$/, label: "Emailed fire door inspection visit" },
   { method: "POST", pattern: /^\/api\/events\/inspection-events\/[^/]+\/facility-record$/, label: "Saved fire door inspection to facility records" },
   { method: "POST", pattern: /^\/api\/photos$/, label: "Uploaded photo" },
   { method: "DELETE", pattern: /^\/api\/photos\/[^/]+$/, label: "Deleted photo" },

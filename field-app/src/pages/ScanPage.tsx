@@ -6,6 +6,8 @@ import { FacilitySelector } from "../components/FacilitySelector";
 import { useAuth } from "../lib/AuthContext";
 import { parseOpeningQr } from "../lib/qrPayload";
 import { fetchLabelConfig } from '../lib/api';
+import { readOpenVisit, visitSummaryText } from "../lib/inspectionVisit";
+import type { InspectionVisit } from "../lib/inspectionVisit";
 
 const SCANNER_ELEMENT_ID = "qr-reader";
 
@@ -17,6 +19,8 @@ export function ScanPage() {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [visit, setVisit] = useState<InspectionVisit | null>(null);
+  useEffect(() => { void readOpenVisit().then(setVisit); }, []);
 
   useEffect(() => {
     document.body.classList.add("c04-on");
@@ -78,6 +82,10 @@ export function ScanPage() {
       </div>
       <div className="screen">
         <h1>Scan opening</h1>
+        {visit && visit.inspections.length > 0 && <div className="c04-band-green">
+          <p role="status">{visitSummaryText(visit.inspections)}</p>
+          <button type="button" className="btn c04-btn-green" onClick={() => navigate(`/visit/${visit.id}`)}>Finish visit / Send combined report</button>
+        </div>}
         <button type="button" className="btn c04-btn-cyan" onClick={() => navigate("/choose-location")}>Change facility</button>
         <FacilitySelector />
         <section className="c04-band" aria-label="Scan or enter an opening code">
