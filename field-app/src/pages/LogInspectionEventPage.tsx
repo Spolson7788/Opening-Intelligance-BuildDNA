@@ -8,7 +8,7 @@ import { SignaturePad } from "../components/SignaturePad";
 import type { SignaturePadHandle } from "../components/SignaturePad";
 import { EmailInspectionReport } from "../components/EmailInspectionReport";
 import { NFPA80_ITEMS, checklistStarted, fireDoorOutcome, resolveInspectionType } from "../lib/nfpa80Items";
-import { queueInspectionFailurePhoto } from "../lib/inspectionPhoto";
+import { inspectionSaveFailureMessage, queueInspectionFailurePhoto } from "../lib/inspectionPhoto";
 import { removeUnconfirmedLocalPhoto } from "../lib/db";
 import { awaitInspectionSynced } from "../lib/sync";
 import { scrollPageToTop } from "../lib/scrollPage";
@@ -140,8 +140,8 @@ export function LogInspectionEventPage() {
             photo_id: photoId,
           };
         }
-      } catch {
-        return stop("The failure photo could not be read. Choose it again. The inspection was not saved.");
+      } catch (error) {
+        return stop(inspectionSaveFailureMessage(error));
       }
       const outcome = fireDoorOutcome(answers);
       if (outcome.ok === false) return stop(outcome.error);

@@ -38,9 +38,10 @@ vi.mock("../field-app/src/lib/db", () => ({
   removeUnconfirmedLocalPhoto: (...args: unknown[]) => localPhotos.remove(...args),
 }));
 const failurePhotos = vi.hoisted(() => ({ queue: vi.fn() }));
-vi.mock("../field-app/src/lib/inspectionPhoto", () => ({
-  queueInspectionFailurePhoto: (...args: unknown[]) => failurePhotos.queue(...args),
-}));
+vi.mock("../field-app/src/lib/inspectionPhoto", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../field-app/src/lib/inspectionPhoto")>();
+  return { ...actual, queueInspectionFailurePhoto: (...args: unknown[]) => failurePhotos.queue(...args) };
+});
 vi.mock("../field-app/src/components/SyncBadge", () => ({ SyncBadge: () => <span>Sync</span> }));
 vi.mock("../field-app/src/components/PhotoCapture", () => ({ PhotoCapture: () => null }));
 vi.mock("../field-app/src/components/SignaturePad", () => ({
@@ -254,6 +255,39 @@ it("tells the technician at save time when a failure photo cannot be read and qu
   await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
   expect(host.textContent).toContain("The failure photo could not be read");
   expect(host.textContent).toContain("inspection was not saved");
+  expect(queueOpeningMutation).not.toHaveBeenCalled();
+});
+
+it("does not blame the photo when sign-in, storage, or the server stops the save", async () => {
+  async function shown(error: Error) {
+    await act(async () => root.unmount());
+    host.remove();
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    failurePhotos.queue.mockClear().mockRejectedValue(error);
+    vi.mocked(queueOpeningMutation).mockClear();
+    await act(async () => root.render(
+      <MemoryRouter initialEntries={["/opening/door-1/log-inspection"]}>
+        <Routes><Route path="/opening/:id/log-inspection" element={<LogInspectionEventPage />} /></Routes>
+      </MemoryRouter>,
+    ));
+    await fillFireDoor("fail");
+    await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    return host.textContent || "";
+  }
+  const signedOut = await shown(new Error("auth_required"));
+  expect(signedOut).toContain("Sign in");
+  expect(signedOut).not.toContain("could not be read");
+  const stored = await shown(new Error("indexeddb quota"));
+  expect(stored).toContain("could not store");
+  expect(stored).not.toContain("could not be read");
+  const queued = await shown(new Error("queue failed"));
+  expect(queued).toContain("could not queue");
+  const rejected = await shown(new Error("new row violates row-level security policy for table inspection_visits"));
+  expect(rejected).toContain("remains saved on this device");
+  expect(rejected).not.toContain("inspection was not saved");
+  expect(rejected).not.toContain("could not be read");
   expect(queueOpeningMutation).not.toHaveBeenCalled();
 });
 

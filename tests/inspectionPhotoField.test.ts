@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
 import { closeFieldAppDb, getOfflineMedia, getSyncOperationsForPrincipal, putSyncOperation, removeUnconfirmedLocalPhoto, saveAuth } from "../field-app/src/lib/db";
-import { queueInspectionFailurePhoto } from "../field-app/src/lib/inspectionPhoto";
+import { inspectionSaveFailureMessage, queueInspectionFailurePhoto } from "../field-app/src/lib/inspectionPhoto";
 import { MAX_IMAGE_BYTES } from "../field-app/src/lib/mediaLimits";
 
 const userId = "55555555-5555-4555-8555-555555555555";
@@ -32,6 +32,25 @@ describe("inspection failure photos stay out of the inspection payload", () => {
     const media = await getOfflineMedia(operations[0].entityId);
     expect(media?.uploadState).toBe("permanent_failure");
     expect(media?.byteSize).toBe(file.size);
+  });
+
+  it("does not call a missing sign-in an unreadable photo", async () => {
+    const file = new Blob([new Uint8Array(32)], { type: "image/jpeg" });
+    const result = await queueInspectionFailurePhoto(openingId, file, "hole.jpg");
+    expect(result.kind).toBe("auth");
+    if (result.kind === "queued") return;
+    expect(result.message).toContain("Sign in");
+    expect(result.message).not.toContain("could not be read");
+  });
+
+  it("keeps a server rejection distinct from an unreadable photo", () => {
+    const saved = inspectionSaveFailureMessage(new Error("new row violates row-level security policy for table inspection_visits"));
+    expect(saved).toContain("remains saved on this device");
+    expect(saved).not.toContain("inspection was not saved");
+    expect(saved).not.toContain("could not be read");
+    expect(inspectionSaveFailureMessage(new Error("indexeddb quota"))).toContain("could not store");
+    expect(inspectionSaveFailureMessage(new Error("queue failed"))).toContain("could not queue");
+    expect(inspectionSaveFailureMessage(new Error("photo_unreadable"))).toContain("could not be read");
   });
 
   it("does not queue a photo when the blob cannot be read", async () => {
