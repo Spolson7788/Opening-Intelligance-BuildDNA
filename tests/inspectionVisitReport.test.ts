@@ -2,7 +2,7 @@ import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { NFPA80_ITEMS } from "../src/services/nfpa80Checklist";
 import { orderVisitDoors, visitReportOutline, type VisitDoor } from "../src/services/inspectionVisits";
-import { CONCEPT, drawablePhoto, generateNfpaVisitPdf, pdfRgb, prepareReportPhoto } from "../src/services/nfpa80Report";
+import { CONCEPT, drawablePhoto, generateNfpaVisitPdf, pdfRgb, prepareReportPhoto, setReportImageLoaderForTests } from "../src/services/nfpa80Report";
 
 function door(code: string, passed: boolean, note?: string): VisitDoor {
   return {
@@ -118,5 +118,46 @@ describe("combined fire door visit report", () => {
     expect(prepared!.length).toBeLessThan(raw.length / 2);
     expect(pdf.length).toBeLessThan(raw.length);
     expect(ms).toBeLessThan(15000);
+  });
+
+  it("embeds a small photo and still builds the PDF when sharp cannot load", async () => {
+    setReportImageLoaderForTests(async () => { throw new Error("wrong-platform native"); });
+    try {
+      const header = Buffer.alloc(19);
+      header[0] = 0xff; header[1] = 0xd8; header[2] = 0xff; header[3] = 0xc0;
+      header.writeUInt16BE(17, 4);
+      header[6] = 8;
+      header.writeUInt16BE(64, 7);
+      header.writeUInt16BE(64, 9);
+      const small = Buffer.concat([header, Buffer.alloc(32)]);
+      expect(await prepareReportPhoto(small)).toEqual(small);
+      const largeHeader = Buffer.from(header);
+      largeHeader.writeUInt16BE(1400, 7);
+      largeHeader.writeUInt16BE(1800, 9);
+      const large = Buffer.concat([largeHeader, Buffer.alloc(700 * 1024)]);
+      const logs: string[] = [];
+      const original = console.info;
+      console.info = (...args: unknown[]) => { logs.push(args.map(String).join(" ")); };
+      let omitted: Buffer | null = null;
+      try { omitted = await prepareReportPhoto(large); }
+      finally { console.info = original; }
+      expect(omitted).toBeNull();
+      expect(logs.join("\n")).toContain("downscale_unavailable");
+      const failing = door("310A", false);
+      failing.deficiencies[0].photo = omitted;
+      const pdf = await generateNfpaVisitPdf({
+        facilityName: "North Clinic", eventDate: "2026-11-09", inspectorName: "Ada Inspector",
+        qualification: "Fire door inspector", licenseNumber: "FD-100", doors: [failing],
+      });
+      expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
+      const raw = pdf.toString("latin1");
+      const text = [...raw.matchAll(/stream\n([\s\S]*?)\nendstream/g)].flatMap((match) => {
+        try { return [inflateSync(Buffer.from(match[1], "latin1")).toString("latin1")]; } catch { return [match[1]]; }
+      }).join("\n");
+      const visible = [...text.matchAll(/<([0-9A-Fa-f]+)>/g)].map((match) => Buffer.from(match[1], "hex").toString("latin1")).join("");
+      expect(visible).toContain("Photograph stored with this inspection");
+    } finally {
+      setReportImageLoaderForTests();
+    }
   });
 });

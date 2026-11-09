@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { deflateRawSync } from 'node:zlib';
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { buildFacilityDashboard } from './build-facility-dashboard.mjs';
-import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, functionsFromDeploy, missingBundledModules, stageFunctionSources, packageCommitAllowed, packageChecksum, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, eagerNativePackagingProblems, eagerNativeProblemsForZip, readZipEntry, functionsFromDeploy, missingBundledModules, stageFunctionSources, packageCommitAllowed, packageChecksum, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('diagnose compares function metadata without keeping secrets', () => {
   const knownGood = functionsFromDeploy({ available_functions: [{ n: 'api', d: 'sha-good', runtime: 'nodejs22.x', im: 'stream', ro: [], a: 100 }] });
@@ -168,6 +169,84 @@ test('a preparing deploy is not uploaded, and a function retry keeps the same to
   assert.equal(functionsZipConfig('[functions]\n  timeout = 26\n  node_bundler = "esbuild"\n  external_node_modules = ["express"]\n')['*'].timeout, 26);
   assert.equal(zipConfig['*'].nodeBundler, 'esbuild_zisi');
   assert.deepEqual(zipConfig['*'].externalNodeModules, ['express']);
+});
+
+function zipEntries(files) {
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  for (const file of files) {
+    const name = Buffer.from(file.name);
+    const method = file.method || 0;
+    const payload = method === 8 ? deflateRawSync(file.data) : file.data;
+    const local = Buffer.alloc(30 + name.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(payload.length, 18);
+    local.writeUInt32LE(file.data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    name.copy(local, 30);
+    locals.push(Buffer.concat([local, payload]));
+    const central = Buffer.alloc(46 + name.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(method, 10);
+    central.writeUInt32LE(payload.length, 20);
+    central.writeUInt32LE(file.data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    name.copy(central, 46);
+    centrals.push(central);
+    offset += local.length + payload.length;
+  }
+  const centralBuf = Buffer.concat(centrals);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(files.length, 8);
+  eocd.writeUInt16LE(files.length, 10);
+  eocd.writeUInt32LE(centralBuf.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, centralBuf, eocd]);
+}
+
+test('upload-check refuses an api bundle that eagerly requires a native the zip did not build for linux', () => {
+  const win32 = ['api.cjs', 'node_modules/@img/sharp-win32-x64/sharp-win32-x64.node'];
+  const eager = 'var import_sharp = __toESM(require("sharp"));';
+  assert.ok(eagerNativePackagingProblems(eager, win32).some((problem) => problem.includes('eagerly requires sharp')));
+  assert.deepEqual(eagerNativePackagingProblems(eager, [...win32, 'node_modules/@img/sharp-linux-x64/sharp-linux-x64.node']), []);
+  assert.deepEqual(eagerNativePackagingProblems('const name = "sharp"; await import(name);', win32), []);
+  const zip = zipEntries([
+    { name: 'api.cjs', data: Buffer.from(eager), method: 8 },
+    { name: 'node_modules/@img/sharp-win32-x64/sharp-win32-x64.node', data: Buffer.from('win32') },
+  ]);
+  assert.equal(readZipEntry(zip, 'api.cjs').toString('utf8'), eager);
+  assert.ok(eagerNativeProblemsForZip(zip, win32).some((problem) => problem.includes('no linux sharp native')));
+  const safe = zipEntries([{ name: 'api.cjs', data: Buffer.from('const name = "sharp"; await import(name);') }]);
+  assert.deepEqual(eagerNativeProblemsForZip(safe, ['api.cjs']), []);
+});
+
+test('the api bundle does not eagerly require sharp', async () => {
+  const esbuild = await import('esbuild');
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  const source = readFileSync(resolve(repo, 'src/services/nfpa80Report.ts'), 'utf8');
+  assert.equal(/from\s+["']sharp["']/.test(source), false);
+  const result = await esbuild.build({
+    entryPoints: [resolve(repo, 'netlify/functions/api.ts')],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    packages: 'external',
+    write: false,
+    logLevel: 'silent',
+    absWorkingDir: repo,
+  });
+  const text = result.outputFiles[0].text;
+  assert.equal(/require\(\s*["']sharp["']\s*\)/.test(text), false);
+  assert.equal(/require\(\s*["']@img\/sharp-/.test(text), false);
+  assert.equal(/from\s+["']sharp["']/.test(text), false);
+  assert.match(text, /import\s*\(\s*name\s*\)/);
 });
 
 test('upload-check refuses a small api zip that is missing dependencies', () => {

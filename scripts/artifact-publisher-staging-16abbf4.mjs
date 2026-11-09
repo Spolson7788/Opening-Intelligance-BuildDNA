@@ -3,6 +3,7 @@
 // Hard-locked to oi-video-workflows-staging. Refuses production. One attempt.
 // Does not print secrets. Default is a dry run; publish requires --publish-approved.
 import { createHash, randomBytes } from 'node:crypto';
+import { inflateRawSync } from 'node:zlib';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, closeSync } from 'node:fs';
 import https from 'node:https';
@@ -622,6 +623,76 @@ export function listZipEntryNames(buffer) {
   return names;
 }
 
+export function readZipEntry(buffer, wanted) {
+  let eocd = -1;
+  const maxBack = Math.min(buffer.length, 22 + 65535);
+  for (let offset = buffer.length - 22; offset >= buffer.length - maxBack; offset -= 1) {
+    if (offset < 0) break;
+    if (buffer.readUInt32LE(offset) !== 0x06054b50) continue;
+    const commentLength = buffer.readUInt16LE(offset + 20);
+    if (offset + 22 + commentLength === buffer.length) { eocd = offset; break; }
+  }
+  if (eocd < 0) throw new Error('zip end of central directory not found');
+  const count = buffer.readUInt16LE(eocd + 10);
+  let cursor = buffer.readUInt32LE(eocd + 16);
+  for (let index = 0; index < count; index += 1) {
+    if (buffer.readUInt32LE(cursor) !== 0x02014b50) throw new Error('zip central directory is truncated');
+    const method = buffer.readUInt16LE(cursor + 10);
+    const compressedSize = buffer.readUInt32LE(cursor + 20);
+    const nameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const commentLength = buffer.readUInt16LE(cursor + 32);
+    const localOffset = buffer.readUInt32LE(cursor + 42);
+    const name = buffer.subarray(cursor + 46, cursor + 46 + nameLength).toString('utf8');
+    if (name === wanted) {
+      const localName = buffer.readUInt16LE(localOffset + 26);
+      const localExtra = buffer.readUInt16LE(localOffset + 28);
+      const start = localOffset + 30 + localName + localExtra;
+      const data = buffer.subarray(start, start + compressedSize);
+      if (method === 0) return data;
+      if (method === 8) return inflateRawSync(data);
+      throw new Error(`zip method ${method} is not read by this check`);
+    }
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  throw new Error(`zip entry ${wanted} was not found`);
+}
+
+const EAGER_NATIVE_REQUIRE = /require\(\s*["'](sharp|@img\/sharp-[^"']+)["']\s*\)/g;
+
+export function eagerNativePackagingProblems(source, entryNames) {
+  const problems = [];
+  const modules = new Set([...String(source).matchAll(EAGER_NATIVE_REQUIRE)].map((match) => match[1]));
+  for (const mod of modules) {
+    const linuxNative = entryNames.some((name) => name.endsWith('.node') && /linux/.test(name) && name.includes('sharp'));
+    if (!linuxNative) problems.push(`api bundle eagerly requires ${mod}, and the zip has no linux sharp native`);
+  }
+  return problems;
+}
+
+export function apiBundleEntryNames(entryNames) {
+  const list = entryNames || [];
+  const bundles = list.filter((name) => /(^|\/)api\.(cjs|js|mjs)$/.test(String(name).replace(/\\/g, '/')));
+  if (bundles.length) return bundles;
+  return list.filter((name) => {
+    const normalized = String(name).replace(/\\/g, '/');
+    return !normalized.includes('node_modules/') && /\.(cjs|js|mjs)$/.test(normalized);
+  });
+}
+
+export function eagerNativeProblemsForZip(buffer, entryNames) {
+  const bundles = apiBundleEntryNames(entryNames);
+  if (!bundles.length) return ['api zip has no function bundle to scan for eager native requires'];
+  const problems = [];
+  for (const name of bundles) {
+    let source;
+    try { source = readZipEntry(buffer, name).toString('utf8'); }
+    catch (error) { problems.push(`api bundle ${name} could not be read: ${error.message}`); continue; }
+    problems.push(...eagerNativePackagingProblems(source, entryNames));
+  }
+  return problems;
+}
+
 export function functionZipProblems(name, byteLength, entryNames) {
   const problems = [];
   if (name === 'api' && byteLength < API_ZIP_MIN_BYTES) problems.push(`api zip is ${byteLength} bytes, under ${API_ZIP_MIN_BYTES}`);
@@ -1197,6 +1268,7 @@ async function uploadCheck() {
     try { names = listZipEntryNames(bytes); }
     catch (error) { zipProblems.push(`${name} zip could not be listed: ${error.message}`); }
     zipProblems.push(...functionZipProblems(name, bytes.length, names));
+    if (name === 'api') zipProblems.push(...eagerNativeProblemsForZip(bytes, names));
   }
   const routesOk = apiRoutesOk(functionMap);
   const apiInvocationMode = functionMap.functionsConfig?.api?.invocation_mode || null;

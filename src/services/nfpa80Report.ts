@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import PDFDocument from "pdfkit";
-import sharp from "sharp";
 import { NFPA80_EDITION, NFPA80_ITEMS } from "./nfpa80Checklist";
 import { doorHeading, orderVisitDoors, visitCounts, withRepeatedDoorLabels, type VisitDoor, type VisitReportData } from "./inspectionVisits";
 
@@ -107,11 +106,42 @@ export interface NfpaReportData {
 }
 
 const REPORT_PHOTO_EDGE = 1200;
+const REPORT_PHOTO_EMBED_LIMIT = 600 * 1024;
+
+type SharpFactory = (input: Buffer, options?: Record<string, unknown>) => any;
+
+// A variable specifier keeps sharp out of the esbuild function bundle. A static
+// import is evaluated when the shared api function loads, and a Windows-built zip
+// does not contain the Linux native, so the function never starts.
+let reportImageLoader: () => Promise<SharpFactory> = async () => {
+  const name = "sharp";
+  const mod: any = await import(name);
+  return (mod.default ?? mod) as SharpFactory;
+};
+
+export function setReportImageLoaderForTests(next?: () => Promise<SharpFactory>) {
+  reportImageLoader = next ?? (async () => {
+    const name = "sharp";
+    const mod: any = await import(name);
+    return (mod.default ?? mod) as SharpFactory;
+  });
+}
+
+function fallbackReportPhoto(bytes: Buffer, size: { width: number; height: number }): Buffer | null {
+  const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+  const png = bytes[0] === 0x89 && bytes[1] === 0x50;
+  if ((jpeg || png) && bytes.length <= REPORT_PHOTO_EMBED_LIMIT) return bytes;
+  console.info(JSON.stringify({ event: "downscale_unavailable", bytes: bytes.length, width: size.width, height: size.height }));
+  return null;
+}
 
 /** Shrink a report photo so the official PDF stays small enough to build and mail. */
 export async function prepareReportPhoto(bytes: Buffer | null): Promise<Buffer | null> {
   const size = drawablePhoto(bytes);
   if (!bytes || !size) return null;
+  let sharp: SharpFactory;
+  try { sharp = await reportImageLoader(); }
+  catch { return fallbackReportPhoto(bytes, size); }
   try {
     let image = sharp(bytes, { failOn: "none", unlimited: false }).rotate();
     if (Math.max(size.width, size.height) > REPORT_PHOTO_EDGE) {
@@ -123,9 +153,9 @@ export async function prepareReportPhoto(bytes: Buffer | null): Promise<Buffer |
       });
     }
     const prepared = await image.jpeg({ quality: 70 }).toBuffer();
-    return drawablePhoto(prepared) ? prepared : null;
+    return drawablePhoto(prepared) ? prepared : fallbackReportPhoto(bytes, size);
   } catch {
-    return null;
+    return fallbackReportPhoto(bytes, size);
   }
 }
 
