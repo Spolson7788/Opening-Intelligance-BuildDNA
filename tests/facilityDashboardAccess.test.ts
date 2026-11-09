@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
 import { pool } from "../src/db/pool";
 import { customerMayOpenFacilityDashboard } from "../src/services/facilityDashboardAccess";
+import { AUTH_CONTEXT_SQL } from "../src/middleware/auth";
 
 async function account(orgType: "customer" | "service_partner" | "internal", role = "admin") {
   const stamp = `${orgType}-${role}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -98,5 +99,62 @@ describe("facility dashboard office access", () => {
     const other = await signupTestOrg("Synthetic other customer");
     const otherFacility = await createPortfolioHierarchy(other.token);
     expect((await request(app).get("/api/portfolio/facility-dashboard/" + otherFacility.propertyId).set("Authorization", `Bearer ${back.body.token}`)).status).toBe(404);
+  });
+
+  it("follows the active membership and ignores a stale users.role on every request and company switch", async () => {
+    expect(AUTH_CONTEXT_SQL).toContain("user_authorized_orgs");
+    expect(AUTH_CONTEXT_SQL).not.toMatch(/u\.role\b/);
+    const customer = await signupTestOrg("Synthetic membership drift");
+    const facility = await createPortfolioHierarchy(customer.token);
+    const url = "/api/portfolio/facility-dashboard/" + facility.propertyId;
+    const person = (await pool.query("SELECT id, role, is_active FROM users WHERE lower(email)=lower($1)", [customer.email])).rows[0];
+    await pool.query("UPDATE organization_memberships SET role='technician' WHERE user_id=$1 AND organization_id=$2 AND is_home", [person.id, customer.organizationId]);
+    const drifted = (await pool.query("SELECT u.role AS user_role, m.role AS membership_role, u.is_active, m.is_active AS membership_active FROM users u JOIN organization_memberships m ON m.user_id=u.id AND m.organization_id=u.organization_id WHERE u.id=$1", [person.id])).rows[0];
+    expect(drifted).toMatchObject({ user_role: "admin", membership_role: "technician", is_active: true, membership_active: true });
+    const deniedMe = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${customer.token}`);
+    expect(deniedMe.status).toBe(200);
+    expect(deniedMe.body.role).toBe("technician");
+    const denied = await request(app).get(url).set("Authorization", `Bearer ${customer.token}`);
+    expect(denied.status).toBe(403);
+    expect(denied.body.error).toBe("facility_dashboard_forbidden");
+    expect(denied.body.openings).toBeUndefined();
+
+    await pool.query("ALTER TABLE users DISABLE TRIGGER users_sync_home_membership");
+    try {
+      await pool.query("UPDATE users SET role='viewer' WHERE id=$1", [person.id]);
+      await pool.query("UPDATE organization_memberships SET role='facilities_manager' WHERE user_id=$1 AND is_home", [person.id]);
+    } finally {
+      await pool.query("ALTER TABLE users ENABLE TRIGGER users_sync_home_membership");
+    }
+    const office = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${customer.token}`);
+    expect(office.body.role).toBe("facilities_manager");
+    expect((await request(app).get("/api/portfolio/facility-dashboard-access").set("Authorization", `Bearer ${customer.token}`)).body).toEqual({ allowed: true });
+    expect((await pool.query("SELECT role FROM users WHERE id=$1", [person.id])).rows[0].role).toBe("viewer");
+
+    const second = await signupTestOrg("Synthetic second company");
+    await pool.query("INSERT INTO organization_memberships (user_id, organization_id, role, is_active, is_home) VALUES ($1,$2,'technician',true,false)", [person.id, second.organizationId]);
+    const switched = await request(app).post("/api/auth/switch-company").set("Authorization", `Bearer ${customer.token}`).send({ organization_id: second.organizationId });
+    expect(switched.status).toBe(200);
+    expect(switched.body.role).toBe("technician");
+    expect((await request(app).get(url).set("Authorization", `Bearer ${switched.body.token}`)).status).toBe(403);
+    const homeAgain = await request(app).post("/api/auth/switch-company").set("Authorization", `Bearer ${switched.body.token}`).send({ organization_id: customer.organizationId });
+    expect(homeAgain.body.role).toBe("facilities_manager");
+
+    await pool.query("ALTER TABLE organization_memberships DISABLE TRIGGER memberships_home_deactivates_user");
+    try {
+      await pool.query("UPDATE organization_memberships SET is_active=false, deactivated_at=now() WHERE user_id=$1 AND organization_id=$2 AND is_home", [person.id, customer.organizationId]);
+    } finally {
+      await pool.query("ALTER TABLE organization_memberships ENABLE TRIGGER memberships_home_deactivates_user");
+    }
+    const kept = (await pool.query("SELECT role, is_active FROM users WHERE id=$1", [person.id])).rows[0];
+    expect(kept).toMatchObject({ role: "viewer", is_active: true });
+    const revoked = await request(app).get(url).set("Authorization", `Bearer ${homeAgain.body.token}`);
+    expect(revoked.status).toBe(403);
+    expect(revoked.body.error).toBe("membership_inactive");
+    expect(revoked.body.openings).toBeUndefined();
+    const switchBack = await request(app).post("/api/auth/switch-company").set("Authorization", `Bearer ${switched.body.token}`).send({ organization_id: customer.organizationId });
+    expect(switchBack.status).toBe(403);
+    expect(switchBack.body.error).toBe("membership_inactive");
+    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${switched.body.token}`)).body.role).toBe("technician");
   });
 });
