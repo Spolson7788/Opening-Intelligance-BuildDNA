@@ -648,16 +648,26 @@ portfolioRouter.get("/inspection-visits", async (req: AuthedRequest, res) => {
                 NULLIF(btrim(u.full_name), '')
               ) AS inspector_name,
               v.report_sent_at IS NOT NULL AS report_sent,
-              COUNT(i.id)::int AS inspected,
-              COUNT(i.id) FILTER (WHERE i.passed IS TRUE)::int AS passed,
-              COUNT(i.id) FILTER (WHERE i.passed IS NOT TRUE)::int AS failed
+              COALESCE(c.inspected, 0)::int AS inspected,
+              COALESCE(c.passed, 0)::int AS passed,
+              COALESCE(c.failed, 0)::int AS failed
        FROM inspection_visits v
        JOIN properties p ON p.id = v.property_id
        JOIN users u ON u.id = v.inspector_user_id
-       LEFT JOIN inspection_events i ON i.visit_id = v.id AND i.inspection_type = 'fire_door_nfpa80'
-         AND i.checklist_result->>'status' = 'complete'
+       LEFT JOIN (
+         SELECT visit_id,
+                COUNT(*)::int AS inspected,
+                COUNT(*) FILTER (WHERE passed IS TRUE)::int AS passed,
+                COUNT(*) FILTER (WHERE passed IS NOT TRUE)::int AS failed
+         FROM (
+           SELECT DISTINCT ON (visit_id, opening_id) visit_id, passed
+           FROM inspection_events
+           WHERE inspection_type = 'fire_door_nfpa80' AND checklist_result->>'status' = 'complete'
+           ORDER BY visit_id, opening_id, created_at DESC
+         ) latest
+         GROUP BY visit_id
+       ) c ON c.visit_id = v.id
        WHERE v.organization_id = $1 AND ($2::uuid IS NULL OR v.property_id = $2)
-       GROUP BY v.id, p.name, u.full_name
        ORDER BY v.created_at DESC`,
       [req.auth!.organizationId, propertyId],
     );
@@ -695,6 +705,7 @@ portfolioRouter.get("/inspection-visits/:id", async (req: AuthedRequest, res) =>
         location: door.location,
         passed: door.passed,
         notes: door.notes,
+        repeat_note: door.repeatNote ?? null,
         deficiencies: door.deficiencies.map((item) => ({ section: item.section, description: item.description, note: item.note })),
       })),
     });

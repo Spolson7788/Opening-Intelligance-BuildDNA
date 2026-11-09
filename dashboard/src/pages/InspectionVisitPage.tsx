@@ -32,13 +32,14 @@ export function InspectionVisitPage() {
             {failed.length === 0 && <p>No doors failed on this visit.</p>}
             {failed.map((door) => <article key={door.opening_id}>
               <p><Link to={`/opening/${door.opening_id}`}>{door.opening_code}</Link>{door.location ? ` · ${door.location}` : ""}</p>
+              {door.repeat_note && <p>{door.repeat_note}</p>}
               {door.deficiencies.map((item) => <p key={item.section}><strong>{item.section}</strong> {item.description} — {item.note}</p>)}
               {door.notes && <p>{door.notes}</p>}
             </article>)}
           </section>
           <section className="ov-card">
             <h2>Doors</h2>
-            {visit.doors.map((door) => <p key={door.opening_id}><Link to={`/opening/${door.opening_id}`}>{door.opening_code}</Link> {door.passed ? "Passed" : "Failed"}</p>)}
+            {visit.doors.map((door) => <p key={door.opening_id}><Link to={`/opening/${door.opening_id}`}>{door.opening_code}</Link> {door.passed ? "Passed" : "Failed"}{door.repeat_note ? ` · ${door.repeat_note}` : ""}</p>)}
           </section>
         </>}
       </div>

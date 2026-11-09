@@ -3,7 +3,7 @@ import { pool } from "../db/pool";
 import { getObjectBytes } from "./storage";
 import { NFPA80_ITEMS } from "./nfpa80Checklist";
 import { prepareReportPhoto } from "./nfpa80Report";
-import type { VisitDoor, VisitReportData } from "./inspectionVisits";
+import { latestVisitDoors, type VisitDoor, type VisitReportData } from "./inspectionVisits";
 
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 const PHOTO_FETCH_CONCURRENCY = 4;
@@ -32,6 +32,41 @@ async function photoBytes(row: { inline_bytes?: Buffer | null; storage_url?: str
   }
 }
 
+function inspectionTime(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  return value ? String(value) : "";
+}
+
+function latestInspectionRows(rows: any[]): any[] {
+  const grouped = new Map<string, { row: any; index: number }[]>();
+  rows.forEach((row, index) => {
+    const list = grouped.get(row.opening_id) ?? [];
+    list.push({ row, index });
+    grouped.set(row.opening_id, list);
+  });
+  const latest = [];
+  for (const group of grouped.values()) {
+    const ordered = [...group].sort((a, b) => {
+      const time = inspectionTime(a.row.created_at).localeCompare(inspectionTime(b.row.created_at));
+      return time !== 0 ? time : a.index - b.index;
+    });
+    latest.push(ordered[ordered.length - 1].row);
+  }
+  return latest;
+}
+
+function repeatNoteFor(winner: any, rows: any[]): string | null {
+  const sameDoor = rows.filter((row) => row.opening_id === winner.opening_id);
+  if (sameDoor.length < 2) return null;
+  const signature = (row: any) => {
+    const items = (row.checklist_result?.items ?? {}) as Record<string, { result?: string; note?: string | null }>;
+    const checklist = NFPA80_ITEMS.map((item) => `${item.key}:${items[item.key]?.result ?? ""}:${items[item.key]?.note ?? ""}`).join("|");
+    return `${row.passed === true}|${row.notes ?? ""}|${checklist}`;
+  };
+  if (sameDoor.every((row) => signature(row) === signature(winner))) return null;
+  return `Inspected ${sameDoor.length} times in this visit; latest result shown.`;
+}
+
 export async function loadInspectionVisit(visitId: string, organizationId: string): Promise<(VisitReportData & { propertyId: string; openingIds: string[]; inspectionIds: string[]; contactEmail: string | null; inspectorUserId: string; status: string; reportSent: boolean }) | null> {
   const visit = await pool.query(
     `SELECT v.property_id, v.inspector_user_id, v.status, v.report_sent_at, p.name AS facility_name, p.contact_email
@@ -50,14 +85,16 @@ export async function loadInspectionVisit(visitId: string, organizationId: strin
     [visitId],
   );
   const ids = inspections.rows.map((row) => row.id as string);
-  const deficiencies = ids.length
+  const latestIds = new Set(latestInspectionRows(inspections.rows).map((row) => row.id as string));
+  const photoIds = [...latestIds];
+  const deficiencies = photoIds.length
     ? await pool.query(
       `SELECT d.inspection_event_id, d.item_key, d.note, ph.inline_bytes, ph.storage_url
        FROM fire_door_deficiencies d
        LEFT JOIN photos ph ON ph.id = d.photo_id
        WHERE d.inspection_event_id = ANY($1::uuid[])
        ORDER BY d.created_at`,
-      [ids],
+      [photoIds],
     )
     : { rows: [] };
   const byInspection = new Map<string, typeof deficiencies.rows>();
@@ -82,7 +119,7 @@ export async function loadInspectionVisit(visitId: string, organizationId: strin
     row.prepared = await pending;
   });
   const doors: VisitDoor[] = [];
-  for (const row of inspections.rows) {
+  for (const row of latestInspectionRows(inspections.rows)) {
     const answers = (row.checklist_result?.items ?? {}) as Record<string, { result?: string; note?: string | null }>;
     const doorDeficiencies = [];
     for (const deficiency of byInspection.get(row.id) ?? []) {
@@ -107,6 +144,7 @@ export async function loadInspectionVisit(visitId: string, organizationId: strin
         result: (answers[item.key]?.result || "unanswered").toUpperCase(),
         note: answers[item.key]?.note ?? null,
       })),
+      repeatNote: repeatNoteFor(row, inspections.rows),
     });
   }
   const first = inspections.rows[0];

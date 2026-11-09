@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import PDFDocument from "pdfkit";
 import { NFPA80_EDITION, NFPA80_ITEMS } from "./nfpa80Checklist";
-import { doorHeading, orderVisitDoors, visitCounts, withRepeatedDoorLabels, type VisitDoor, type VisitReportData } from "./inspectionVisits";
+import { doorHeading, latestVisitDoors, orderVisitDoors, visitCounts, type VisitDoor, type VisitReportData } from "./inspectionVisits";
 
 export const CONCEPT = {
   ink: "#142C3C",
@@ -236,6 +236,7 @@ function doorTable(doc: PDFKit.PDFDocument, door: VisitDoor) {
   if (door.location) doc.font("Helvetica").fontSize(9).text(door.location);
   fill(doc, door.passed ? CONCEPT.ink : CONCEPT.red);
   doc.font("Helvetica-Bold").text(door.passed ? "Result: passed" : "Result: failed");
+  if (door.repeatNote) doc.font("Helvetica").fontSize(8).text(door.repeatNote);
   for (const item of door.checklist) {
     fill(doc, item.result === "FAIL" ? CONCEPT.red : CONCEPT.ink);
     doc.font("Helvetica").fontSize(8).text(`${item.section}  ${item.result}${item.note ? `  ${item.note}` : ""}`);
@@ -249,7 +250,7 @@ export function generateNfpaVisitPdf(data: VisitReportData): Promise<Buffer> {
     doc.on("data", (chunk) => chunks.push(chunk));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
-    const doors = orderVisitDoors(withRepeatedDoorLabels(data.doors));
+    const doors = orderVisitDoors(latestVisitDoors(data.doors));
     const counts = visitCounts(doors);
     const logo = logoBytes();
     if (logo) doc.image(logo, 48, 36, { height: 36 });
@@ -271,6 +272,7 @@ export function generateNfpaVisitPdf(data: VisitReportData): Promise<Buffer> {
     for (const door of failed) {
       fill(doc, CONCEPT.ink);
       doc.font("Helvetica-Bold").fontSize(12).text(doorHeading(door));
+      if (door.repeatNote) doc.font("Helvetica").fontSize(8).text(door.repeatNote);
       if (door.location) doc.font("Helvetica").fontSize(9).text(door.location);
       for (const deficiency of door.deficiencies) {
         fill(doc, CONCEPT.red);

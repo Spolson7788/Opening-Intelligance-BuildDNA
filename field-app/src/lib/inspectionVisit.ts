@@ -5,6 +5,7 @@ export interface VisitInspection {
   inspectionId: string;
   openingId: string;
   passed: boolean;
+  inspectedAt?: string | null;
 }
 
 export interface InspectionVisit {
@@ -22,8 +23,25 @@ export function openVisitKey(userId: string, organizationId: string, facilityId:
 }
 
 export function visitCounts(inspections: VisitInspection[]) {
-  const failed = inspections.filter((item) => !item.passed).length;
-  return { inspected: inspections.length, passed: inspections.length - failed, failed };
+  const doors = new Map<string, VisitInspection>();
+  for (const item of inspections) {
+    const key = item.openingId || item.inspectionId;
+    const current = doors.get(key);
+    if (!current) {
+      doors.set(key, item);
+      continue;
+    }
+    const currentAt = current.inspectedAt;
+    const nextAt = item.inspectedAt;
+    if (currentAt && nextAt) {
+      if (nextAt >= currentAt) doors.set(key, item);
+    } else {
+      doors.set(key, item);
+    }
+  }
+  const latest = [...doors.values()];
+  const failed = latest.filter((item) => !item.passed).length;
+  return { inspected: latest.length, passed: latest.length - failed, failed };
 }
 
 export function visitUploadMessage(pending: number): string {
@@ -53,7 +71,8 @@ export function visitSummaryText(inspections: VisitInspection[]): string {
 
 export function withInspection(visit: InspectionVisit, inspection: VisitInspection): InspectionVisit {
   if (visit.inspections.some((item) => item.inspectionId === inspection.inspectionId)) return visit;
-  return { ...visit, inspections: [...visit.inspections, inspection] };
+  const stamped = { ...inspection, inspectedAt: inspection.inspectedAt || new Date().toISOString() };
+  return { ...visit, inspections: [...visit.inspections, stamped] };
 }
 
 async function readVisit(id: string): Promise<InspectionVisit | null> {

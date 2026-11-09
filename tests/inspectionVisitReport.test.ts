@@ -63,34 +63,59 @@ describe("combined fire door visit report", () => {
     expect(text).toContain("Photograph stored with this inspection");
   });
 
-  it("names a repeated door and shows a location only when one was recorded", async () => {
-    const early = door("210A", false);
+  it("shows a repeated door once, using the latest inspection and its photo", async () => {
+    const early = door("310A", true);
     early.location = "Lobby";
     early.inspectedAt = "2026-11-09T10:57:00.000Z";
-    const later = door("210A", true);
-    later.location = null;
+    early.deficiencies = [{ section: "5.2.4.2(1)", description: "Earlier", note: "Earlier hole", photo: Buffer.from("early-photo") }];
+    const later = door("310A", false, "Latest hole");
+    later.location = "Lobby";
     later.openingId = early.openingId;
     later.inspectedAt = "2026-11-09T12:07:00.000Z";
+    later.deficiencies[0].photo = Buffer.from("latest-photo");
+    const other = door("310B", false, "Other door");
+    other.inspectedAt = "2026-11-09T11:00:00.000Z";
     const lines = visitReportOutline({
       facilityName: "North Clinic", eventDate: "2026-11-09", inspectorName: "Stephan Olson",
-      qualification: "Fire door inspector", licenseNumber: "FD-100", doors: [later, early],
+      qualification: "Fire door inspector", licenseNumber: "FD-100", doors: [early, later, other],
     });
-    expect(lines).toContain("210A, inspection 1 of 2 at 10:57");
-    expect(lines).toContain("210A, inspection 2 of 2 at 12:07");
-    expect(lines).toContain("Lobby");
-    expect(lines).not.toContain("Location not recorded");
+    expect(lines.filter((line) => line === "310A")).toHaveLength(lines.filter((line) => line === "310B").length);
+    expect(lines.filter((line) => line === "310A")).toHaveLength(2);
+    expect(lines).toContain("Inspected 2");
+    expect(lines).toContain("Passed 0");
+    expect(lines).toContain("Failed 2");
+    expect(lines).toContain("Latest hole");
+    expect(lines).toContain("Photograph");
+    expect(lines).toContain("Inspected 2 times in this visit; latest result shown.");
+    expect(lines).not.toContain("Earlier hole");
+    expect(lines).not.toContain("inspection 1 of 2");
+    expect(lines).toContain("Other door");
+    const sameEarly = door("410A", true);
+    sameEarly.inspectedAt = "2026-11-09T10:00:00.000Z";
+    const sameLater = door("410A", true);
+    sameLater.openingId = sameEarly.openingId;
+    sameLater.inspectedAt = "2026-11-09T11:00:00.000Z";
+    const unchanged = visitReportOutline({
+      facilityName: "North Clinic", eventDate: "2026-11-09", inspectorName: "Ada",
+      qualification: "Fire door inspector", licenseNumber: "FD-100", doors: [sameEarly, sameLater],
+    });
+    expect(unchanged.filter((line) => line === "410A")).toHaveLength(1);
+    expect(unchanged.join("\n")).not.toContain("Inspected 2 times");
     const pdf = await generateNfpaVisitPdf({
       facilityName: "North Clinic", eventDate: "2026-11-09", inspectorName: "Stephan Olson",
-      qualification: "Fire door inspector", licenseNumber: "FD-100", doors: [later, early],
+      qualification: "Fire door inspector", licenseNumber: "FD-100", doors: [early, later, other],
     });
     const raw = pdf.toString("latin1");
     const text = [...raw.matchAll(/stream\n([\s\S]*?)\nendstream/g)].flatMap((match) => {
       try { return [inflateSync(Buffer.from(match[1], "latin1")).toString("latin1")]; } catch { return [match[1]]; }
     }).join("\n");
     const visible = [...text.matchAll(/<([0-9A-Fa-f]+)>/g)].map((match) => Buffer.from(match[1], "hex").toString("latin1")).join("");
-    expect(visible).toContain("210A, inspection 1 of 2 at 10:57");
-    expect(visible).toContain("Lobby");
-    expect(visible).not.toContain("Location not recorded");
+    expect(visible).toContain("310A");
+    expect(visible).toContain("Latest hole");
+    expect(visible).toContain("Inspected 2 times in this visit; latest result shown.");
+    expect(visible).not.toContain("Earlier hole");
+    expect(visible).toContain("Other door");
+    expect(visible).not.toContain("inspection 1 of 2");
   });
 
   it("builds a two-door failure report from shrunk photos", async () => {

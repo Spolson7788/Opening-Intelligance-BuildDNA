@@ -16,6 +16,7 @@ export interface VisitDoor {
   notes: string | null;
   inspectedAt?: string | null;
   displayLabel?: string | null;
+  repeatNote?: string | null;
   deficiencies: VisitDeficiency[];
   checklist: { section: string; result: string; note: string | null }[];
 }
@@ -44,21 +45,40 @@ export function visitCounts(doors: VisitDoor[]) {
   return { inspected: doors.length, passed: doors.length - failed, failed };
 }
 
-export function withRepeatedDoorLabels(doors: VisitDoor[]): VisitDoor[] {
-  const totals = new Map<string, number>();
-  for (const door of doors) totals.set(door.openingId, (totals.get(door.openingId) ?? 0) + 1);
-  const seen = new Map<string, number>();
-  const labels = new Map<VisitDoor, string>();
-  const timed = [...doors].sort((a, b) => (a.inspectedAt || "").localeCompare(b.inspectedAt || "") || a.openingCode.localeCompare(b.openingCode));
-  for (const door of timed) {
-    const total = totals.get(door.openingId) ?? 1;
-    if (total < 2) continue;
-    const index = (seen.get(door.openingId) ?? 0) + 1;
-    seen.set(door.openingId, index);
-    const time = door.inspectedAt && door.inspectedAt.length >= 16 ? door.inspectedAt.slice(11, 16) : "";
-    labels.set(door, `${door.openingCode}, inspection ${index} of ${total}${time ? ` at ${time}` : ""}`);
+function attemptSignature(door: VisitDoor): string {
+  const checklist = door.checklist.map((item) => `${item.section}|${item.result}|${item.note ?? ""}`).join(";");
+  const deficiencies = door.deficiencies.map((item) => `${item.section}|${item.note}|${item.photo ? "photo" : ""}`).join(";");
+  return `${door.passed}|${door.notes ?? ""}|${checklist}|${deficiencies}`;
+}
+
+/** One row per door. The latest inspection time supplies the result, deficiencies, and photos. */
+export function latestVisitDoors(doors: VisitDoor[]): VisitDoor[] {
+  const groups = new Map<string, { door: VisitDoor; index: number }[]>();
+  doors.forEach((door, index) => {
+    const key = door.openingId || door.openingCode;
+    const list = groups.get(key) ?? [];
+    list.push({ door, index });
+    groups.set(key, list);
+  });
+  const latest: VisitDoor[] = [];
+  for (const group of groups.values()) {
+    const ordered = [...group].sort((a, b) => {
+      const time = (a.door.inspectedAt || "").localeCompare(b.door.inspectedAt || "");
+      if (time !== 0) return time;
+      return a.index - b.index;
+    });
+    const winner = ordered[ordered.length - 1].door;
+    if (ordered.length === 1) {
+      latest.push(winner);
+      continue;
+    }
+    const differs = ordered.slice(0, -1).some((item) => attemptSignature(item.door) !== attemptSignature(winner));
+    latest.push({
+      ...winner,
+      repeatNote: differs ? `Inspected ${ordered.length} times in this visit; latest result shown.` : winner.repeatNote ?? null,
+    });
   }
-  return doors.map((door) => ({ ...door, displayLabel: labels.get(door) ?? null }));
+  return latest;
 }
 
 export function doorHeading(door: VisitDoor): string {
@@ -76,7 +96,7 @@ export function visitSummaryText(doors: VisitDoor[]): string {
 
 /** Failed doors, then every door. Passed doors do not appear in the failure section. */
 export function visitReportOutline(data: VisitReportData): string[] {
-  const doors = orderVisitDoors(withRepeatedDoorLabels(data.doors));
+  const doors = orderVisitDoors(latestVisitDoors(data.doors));
   const counts = visitCounts(doors);
   const lines = [
     data.facilityName,
@@ -89,6 +109,7 @@ export function visitReportOutline(data: VisitReportData): string[] {
   ];
   for (const door of doors.filter((item) => !item.passed)) {
     lines.push(doorHeading(door));
+    if (door.repeatNote) lines.push(door.repeatNote);
     if (door.location) lines.push(door.location);
     for (const deficiency of door.deficiencies) {
       lines.push(deficiency.section, deficiency.description, deficiency.note);
@@ -99,6 +120,7 @@ export function visitReportOutline(data: VisitReportData): string[] {
   lines.push("Door details");
   for (const door of doors) {
     lines.push(doorHeading(door));
+    if (door.repeatNote) lines.push(door.repeatNote);
     if (door.location) lines.push(door.location);
     lines.push(door.passed ? "Result: passed" : "Result: failed");
     for (const item of door.checklist) lines.push(`${item.section} ${item.result}`);

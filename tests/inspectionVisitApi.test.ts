@@ -243,3 +243,50 @@ it("does not rebuild the official PDF when the email fails and is retried", asyn
   expect(storage.puts).toBe(puts + 1);
   expect((await pool.query("SELECT report_sent_at FROM inspection_visits WHERE id=$1", [visitId])).rows[0].report_sent_at).toBeNull();
 });
+
+it("counts a door once and keeps both inspection records", async () => {
+  const org = await signupTestOrg("Repeated door");
+  const { buildingId } = await createPortfolioHierarchy(org.token);
+  const opening = await createTestOpening(org.token, buildingId, { opening_code: `REP-${randomUUID().slice(0, 8)}`, fire_rated: true });
+  const other = await createTestOpening(org.token, buildingId, { opening_code: `OTH-${randomUUID().slice(0, 8)}`, fire_rated: true });
+  const visitId = randomUUID();
+  const auth = { Authorization: `Bearer ${org.token}` };
+  const first = await request(app).post("/api/events/inspection-events").set(auth).send({
+    opening_id: opening.id, event_date: "2026-11-09", inspection_type: "fire_door_nfpa80", visit_id: visitId, ...passingFireDoorFields(),
+  });
+  expect(first.status).toBe(201);
+  await pool.query("UPDATE inspection_events SET created_at = '2026-11-09T10:57:00Z' WHERE id=$1", [first.body.id]);
+  const second = await request(app).post("/api/events/inspection-events").set(auth).send({
+    opening_id: opening.id, event_date: "2026-11-09", inspection_type: "fire_door_nfpa80", visit_id: visitId, ...failingFireDoorFields("Latest hole"),
+  });
+  expect(second.status).toBe(201);
+  const kept = await request(app).post("/api/events/inspection-events").set(auth).send({
+    opening_id: other.id, event_date: "2026-11-09", inspection_type: "fire_door_nfpa80", visit_id: visitId, ...passingFireDoorFields(),
+  });
+  expect(kept.status).toBe(201);
+  const summary = await request(app).get(`/api/events/inspection-visits/${visitId}`).set(auth);
+  expect(summary.body.inspected).toBe(2);
+  expect(summary.body.passed).toBe(1);
+  expect(summary.body.failed).toBe(1);
+  expect(summary.body.inspection_ids).toHaveLength(3);
+  expect(summary.body.doors).toHaveLength(2);
+  const office = await request(app).get(`/api/portfolio/inspection-visits/${visitId}`).set(auth);
+  const repeated = office.body.doors.find((door: { opening_id: string }) => door.opening_id === opening.id);
+  expect(repeated.passed).toBe(false);
+  expect(repeated.deficiencies.map((item: { note: string }) => item.note)).toEqual(["Latest hole"]);
+  expect(repeated.repeat_note).toBe("Inspected 2 times in this visit; latest result shown.");
+  expect(office.body.doors).toHaveLength(2);
+  const list = await request(app).get("/api/portfolio/inspection-visits").set(auth);
+  expect(list.body.visits.find((visit: { id: string }) => visit.id === visitId)).toMatchObject({ inspected: 2, passed: 1, failed: 1 });
+  expect((await pool.query("SELECT id FROM inspection_events WHERE visit_id=$1", [visitId])).rowCount).toBe(3);
+  const keysBefore = new Set(storage.objects.keys());
+  const stored = await request(app).post(`/api/events/inspection-visits/${visitId}/official-pdf`).set(auth).send({});
+  expect(stored.body.reused).toBe(false);
+  const added = [...storage.objects.keys()].filter((key) => !keysBefore.has(key));
+  expect(added).toHaveLength(1);
+  const before = Buffer.from(storage.objects.get(added[0])!);
+  await pool.query("UPDATE inspection_events SET notes='Edited earlier attempt' WHERE id=$1", [first.body.id]);
+  const again = await request(app).post(`/api/events/inspection-visits/${visitId}/official-pdf`).set(auth).send({});
+  expect(again.body.reused).toBe(true);
+  expect(Buffer.from(storage.objects.get(added[0])!).equals(before)).toBe(true);
+});
