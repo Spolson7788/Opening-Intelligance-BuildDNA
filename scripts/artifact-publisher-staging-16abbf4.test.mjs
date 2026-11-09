@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { deflateRawSync } from 'node:zlib';
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { buildFacilityDashboard } from './build-facility-dashboard.mjs';
-import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, eagerNativePackagingProblems, eagerNativeProblemsForZip, readZipEntry, functionsFromDeploy, missingBundledModules, stageFunctionSources, packageCommitAllowed, packageChecksum, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, eagerNativePackagingProblems, eagerNativeProblemsForZip, linuxSharpPackagingProblems, linuxSharpVersions, stageLinuxSharp, linuxSharpZipEntries, appendZipEntries, extractZip, zipUnzippedBytes, API_ZIP_MAX_UNZIPPED_BYTES, listZipEntryNames, readZipEntry, functionsFromDeploy, missingBundledModules, stageFunctionSources, packageCommitAllowed, packageChecksum, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('diagnose compares function metadata without keeping secrets', () => {
   const knownGood = functionsFromDeploy({ available_functions: [{ n: 'api', d: 'sha-good', runtime: 'nodejs22.x', im: 'stream', ro: [], a: 100 }] });
@@ -169,6 +170,12 @@ test('a preparing deploy is not uploaded, and a function retry keeps the same to
   assert.equal(functionsZipConfig('[functions]\n  timeout = 26\n  node_bundler = "esbuild"\n  external_node_modules = ["express"]\n')['*'].timeout, 26);
   assert.equal(zipConfig['*'].nodeBundler, 'esbuild_zisi');
   assert.deepEqual(zipConfig['*'].externalNodeModules, ['express']);
+  const repoToml = functionsZipConfig(readFileSync(resolve(fileURLToPath(new URL('..', import.meta.url)), 'netlify.toml'), 'utf8'));
+  assert.ok(repoToml['*'].externalNodeModules.includes('express'));
+  assert.ok(repoToml['*'].externalNodeModules.includes('sharp'));
+  assert.ok(repoToml['*'].includedFiles.some((item) => item.includes('@img/sharp-linux-x64')));
+  assert.ok(repoToml['*'].includedFiles.some((item) => item.includes('@img/sharp-libvips-linux-x64')));
+  assert.equal(repoToml['*'].timeout, 26);
 });
 
 function zipEntries(files) {
@@ -223,8 +230,82 @@ test('upload-check refuses an api bundle that eagerly requires a native the zip 
   ]);
   assert.equal(readZipEntry(zip, 'api.cjs').toString('utf8'), eager);
   assert.ok(eagerNativeProblemsForZip(zip, win32).some((problem) => problem.includes('no linux sharp native')));
+  assert.ok(linuxSharpPackagingProblems(win32).some((problem) => problem.includes('sharp-linux-x64')));
+  assert.ok(linuxSharpPackagingProblems(['api.cjs', 'node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64.node']).some((problem) => problem.includes('libvips')));
+  const packaged = ['api.cjs', 'node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64.node', 'node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.7'];
+  assert.deepEqual(linuxSharpPackagingProblems(packaged), []);
+  assert.deepEqual(eagerNativePackagingProblems('const name = "sharp"; await import(name);', packaged), []);
   const safe = zipEntries([{ name: 'api.cjs', data: Buffer.from('const name = "sharp"; await import(name);') }]);
-  assert.deepEqual(eagerNativeProblemsForZip(safe, ['api.cjs']), []);
+  assert.ok(eagerNativeProblemsForZip(safe, ['api.cjs']).some((problem) => problem.includes('sharp-linux-x64')));
+  assert.deepEqual(linuxSharpVersions({ version: '0.35.5', optionalDependencies: { '@img/sharp-libvips-linux-x64': '1.3.4' } }), { sharp: '0.35.5', libvips: '1.3.4' });
+});
+
+test('packaged linux sharp loads from the api zip and shrinks a large photo', { timeout: 120000 }, async () => {
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  const stage = mkdtempSync(resolve(tmpdir(), 'oi-sharp-stage-'));
+  const extract = mkdtempSync(resolve(tmpdir(), 'oi-sharp-zip-'));
+  try {
+    const modules = stageLinuxSharp(repo, stage);
+    const esbuild = await import('esbuild');
+    const bundled = await esbuild.build({
+      entryPoints: [resolve(repo, 'netlify/functions/api.ts')],
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      packages: 'external',
+      write: false,
+      logLevel: 'silent',
+      absWorkingDir: repo,
+    });
+    const api = Buffer.from(bundled.outputFiles[0].text);
+    assert.equal(/require\(\s*["']sharp["']\s*\)/.test(api.toString('utf8')), false);
+    let zip = zipEntries([{ name: 'api.cjs', data: api }]);
+    zip = appendZipEntries(zip, linuxSharpZipEntries(modules));
+    const names = listZipEntryNames(zip);
+    assert.deepEqual(linuxSharpPackagingProblems(names), []);
+    assert.deepEqual(eagerNativeProblemsForZip(zip, names), []);
+    const unzipped = zipUnzippedBytes(zip);
+    assert.ok(unzipped < API_ZIP_MAX_UNZIPPED_BYTES);
+    const natives = names.filter((name) => name.endsWith('.node') || name.includes('libvips-cpp.so'));
+    console.log(JSON.stringify({ event: 'linux_sharp_zip', zipBytes: zip.length, unzippedBytes: unzipped, natives }));
+    extractZip(zip, extract);
+    const nativeOnDisk = readFileSync(resolve(extract, 'node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.5.node'));
+    const packagedNative = readZipEntry(zip, 'node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.5.node');
+    assert.equal(nativeOnDisk.equals(packagedNative), true);
+    writeFileSync(resolve(extract, 'resize.mjs'), `
+      import { createRequire } from 'node:module';
+      import { writeFileSync } from 'node:fs';
+      const require = createRequire(new URL('./api.cjs', import.meta.url));
+      const sharp = require('sharp');
+      const native = require.resolve('@img/sharp-linux-x64/sharp.node');
+      const libvips = require.resolve('@img/sharp-libvips-linux-x64/binary');
+      const root = ${JSON.stringify(extract)};
+      if (!native.startsWith(root) || !libvips.startsWith(root)) {
+        console.error(JSON.stringify({ native, libvips, root }));
+        process.exit(1);
+      }
+      const pixels = Buffer.alloc(1800 * 1400 * 3);
+      for (let i = 0; i < pixels.length; i += 1) pixels[i] = (i * 17) % 251;
+      const raw = await sharp(pixels, { raw: { width: 1800, height: 1400, channels: 3 } }).jpeg({ quality: 95 }).toBuffer();
+      const prepared = await sharp(raw, { failOn: 'none' }).rotate().resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer();
+      const meta = await sharp(prepared).metadata();
+      const measure = { raw: raw.length, prepared: prepared.length, width: meta.width, height: meta.height, native, libvips };
+      writeFileSync(new URL('./measure.json', import.meta.url), JSON.stringify(measure));
+      console.log(JSON.stringify(measure));
+    `);
+    const env = { ...process.env, NODE_PATH: '' };
+    delete env.NODE_OPTIONS;
+    execFileSync(process.execPath, ['resize.mjs'], { cwd: extract, env, stdio: 'inherit' });
+    const measure = JSON.parse(readFileSync(resolve(extract, 'measure.json'), 'utf8'));
+    assert.ok(measure.raw > 600 * 1024);
+    assert.ok(measure.prepared < measure.raw / 2);
+    assert.ok(Math.max(measure.width, measure.height) <= 1200);
+    assert.ok(measure.native.startsWith(extract));
+    assert.ok(measure.libvips.startsWith(extract));
+  } finally {
+    rmSync(stage, { recursive: true, force: true });
+    rmSync(extract, { recursive: true, force: true });
+  }
 });
 
 test('the api bundle does not eagerly require sharp', async () => {

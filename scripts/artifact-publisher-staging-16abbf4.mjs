@@ -3,7 +3,7 @@
 // Hard-locked to oi-video-workflows-staging. Refuses production. One attempt.
 // Does not print secrets. Default is a dry run; publish requires --publish-approved.
 import { createHash, randomBytes } from 'node:crypto';
-import { inflateRawSync } from 'node:zlib';
+import { crc32, deflateRawSync, inflateRawSync } from 'node:zlib';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, closeSync } from 'node:fs';
 import https from 'node:https';
@@ -683,15 +683,234 @@ export function apiBundleEntryNames(entryNames) {
 
 export function eagerNativeProblemsForZip(buffer, entryNames) {
   const bundles = apiBundleEntryNames(entryNames);
-  if (!bundles.length) return ['api zip has no function bundle to scan for eager native requires'];
   const problems = [];
+  if (!bundles.length) problems.push('api zip has no function bundle to scan for eager native requires');
   for (const name of bundles) {
     let source;
     try { source = readZipEntry(buffer, name).toString('utf8'); }
     catch (error) { problems.push(`api bundle ${name} could not be read: ${error.message}`); continue; }
     problems.push(...eagerNativePackagingProblems(source, entryNames));
   }
+  problems.push(...linuxSharpPackagingProblems(entryNames));
   return problems;
+}
+
+export const API_ZIP_MAX_UNZIPPED_BYTES = 250 * 1024 * 1024;
+export const LINUX_SHARP_ZIP_PACKAGES = [
+  'sharp',
+  'detect-libc',
+  'semver',
+  '@img/colour',
+  '@img/sharp-linux-x64',
+  '@img/sharp-libvips-linux-x64',
+];
+
+export function linuxSharpVersions(sharpPackage) {
+  const sharp = sharpPackage?.version;
+  const libvips = sharpPackage?.optionalDependencies?.['@img/sharp-libvips-linux-x64'];
+  if (!sharp || !libvips) throw new Error('installed sharp package has no linux-x64 libvips version');
+  return { sharp, libvips };
+}
+
+export function linuxSharpPackagingProblems(entryNames) {
+  const names = (entryNames || []).map((name) => String(name).replace(/\\/g, '/'));
+  const problems = [];
+  const node = names.some((name) => name.includes('@img/sharp-linux-x64/') && name.endsWith('.node'));
+  const libvips = names.some((name) => name.includes('@img/sharp-libvips-linux-x64/') && name.includes('libvips-cpp.so'));
+  if (!node) problems.push('api zip is missing the glibc linux-x64 sharp native (@img/sharp-linux-x64 .node)');
+  if (!libvips) problems.push('api zip is missing @img/sharp-libvips-linux-x64');
+  return problems;
+}
+
+function readPackageVersion(path) {
+  try { return JSON.parse(readFileSync(path, 'utf8')).version; }
+  catch { return null; }
+}
+
+function copyInstalledPackage(repoRoot, nodeModulesDir, name) {
+  const from = resolve(repoRoot, 'node_modules', ...name.split('/'));
+  if (!existsSync(resolve(from, 'package.json'))) throw new Error(`missing ${name} in ${resolve(repoRoot, 'node_modules')}`);
+  placePackage(from, nodeModulesDir, name);
+}
+
+function placePackage(from, nodeModulesDir, name) {
+  const to = resolve(nodeModulesDir, ...name.split('/'));
+  if (resolve(from) === resolve(to)) return;
+  mkdirSync(resolve(to, '..'), { recursive: true });
+  cpSync(from, to, { recursive: true, dereference: true });
+}
+
+function locatePackage(root, name) {
+  const parts = name.split('/');
+  const direct = resolve(root, 'node_modules', ...parts);
+  if (existsSync(resolve(direct, 'package.json'))) return direct;
+  const nodeModules = resolve(root, 'node_modules');
+  if (!existsSync(nodeModules)) return null;
+  for (const entry of readdirSync(nodeModules, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const nested = resolve(nodeModules, entry.name, 'node_modules', ...parts);
+    if (existsSync(resolve(nested, 'package.json'))) return nested;
+  }
+  return null;
+}
+
+function installLinuxSharp(destination, versions) {
+  writeFileSync(resolve(destination, 'package.json'), JSON.stringify({ private: true, name: 'oi-linux-sharp' }));
+  execFileSync('npm', [
+    'install', '--no-save', '--no-package-lock', '--omit=dev',
+    '--os=linux', '--cpu=x64', '--libc=glibc',
+    `sharp@${versions.sharp}`,
+  ], {
+    cwd: destination,
+    env: { ...process.env, npm_config_os: 'linux', npm_config_cpu: 'x64', npm_config_libc: 'glibc' },
+    stdio: 'pipe',
+  });
+}
+
+export function stageLinuxSharp(repoRoot, destination) {
+  const sharpPackage = JSON.parse(readFileSync(resolve(repoRoot, 'node_modules/sharp/package.json'), 'utf8'));
+  const versions = linuxSharpVersions(sharpPackage);
+  const nodeModulesDir = resolve(destination, 'node_modules');
+  mkdirSync(resolve(nodeModulesDir, '@img'), { recursive: true });
+  const nativeVersion = readPackageVersion(resolve(repoRoot, 'node_modules/@img/sharp-linux-x64/package.json'));
+  const libvipsVersion = readPackageVersion(resolve(repoRoot, 'node_modules/@img/sharp-libvips-linux-x64/package.json'));
+  if (nativeVersion === versions.sharp && libvipsVersion === versions.libvips) {
+    for (const name of LINUX_SHARP_ZIP_PACKAGES) copyInstalledPackage(repoRoot, nodeModulesDir, name);
+  } else {
+    installLinuxSharp(destination, versions);
+    for (const name of LINUX_SHARP_ZIP_PACKAGES) {
+      const found = locatePackage(destination, name);
+      if (!found) throw new Error(`npm install did not provide ${name} for linux-x64`);
+      placePackage(found, nodeModulesDir, name);
+    }
+  }
+  const win32 = resolve(repoRoot, 'node_modules/@img/sharp-win32-x64/package.json');
+  if (existsSync(win32)) copyInstalledPackage(repoRoot, nodeModulesDir, '@img/sharp-win32-x64');
+  const stagedNative = readPackageVersion(resolve(nodeModulesDir, '@img/sharp-linux-x64/package.json'));
+  const stagedLibvips = readPackageVersion(resolve(nodeModulesDir, '@img/sharp-libvips-linux-x64/package.json'));
+  if (stagedNative !== versions.sharp || stagedLibvips !== versions.libvips) {
+    throw new Error(`linux sharp ${stagedNative || 'missing'} / libvips ${stagedLibvips || 'missing'} does not match sharp ${versions.sharp} / ${versions.libvips}`);
+  }
+  return nodeModulesDir;
+}
+
+export function linuxSharpZipEntries(nodeModulesDir) {
+  const packages = [...LINUX_SHARP_ZIP_PACKAGES];
+  if (existsSync(resolve(nodeModulesDir, '@img/sharp-win32-x64/package.json'))) packages.push('@img/sharp-win32-x64');
+  const files = [];
+  const walk = (dir, prefix) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === 'node_modules') continue;
+      const path = resolve(dir, entry.name);
+      const name = `${prefix}${entry.name}`;
+      if (entry.isDirectory()) walk(path, `${name}/`);
+      else if (entry.isFile()) files.push({ name: `node_modules/${name}`.replace(/\\/g, '/'), data: readFileSync(path) });
+    }
+  };
+  for (const name of packages) {
+    const dir = resolve(nodeModulesDir, ...name.split('/'));
+    if (!existsSync(dir)) throw new Error(`staged sharp package ${name} is missing`);
+    walk(dir, `${name}/`);
+  }
+  return files;
+}
+
+export function zipUnzippedBytes(buffer) {
+  const maxBack = Math.min(buffer.length, 22 + 65535);
+  let eocd = -1;
+  for (let offset = buffer.length - 22; offset >= buffer.length - maxBack; offset -= 1) {
+    if (offset < 0) break;
+    if (buffer.readUInt32LE(offset) !== 0x06054b50) continue;
+    const commentLength = buffer.readUInt16LE(offset + 20);
+    if (offset + 22 + commentLength === buffer.length) { eocd = offset; break; }
+  }
+  if (eocd < 0) throw new Error('zip end of central directory not found');
+  const count = buffer.readUInt16LE(eocd + 10);
+  let cursor = buffer.readUInt32LE(eocd + 16);
+  if (cursor === 0xffffffff) throw new Error('zip64 central directory is not measured by this check');
+  let total = 0;
+  for (let index = 0; index < count; index += 1) {
+    if (buffer.readUInt32LE(cursor) !== 0x02014b50) throw new Error('zip central directory is truncated');
+    const uncompressed = buffer.readUInt32LE(cursor + 24);
+    if (uncompressed === 0xffffffff) throw new Error('zip64 entry is not measured by this check');
+    total += uncompressed;
+    const nameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const commentLength = buffer.readUInt16LE(cursor + 32);
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  return total;
+}
+
+export function appendZipEntries(buffer, files) {
+  const existing = new Set(listZipEntryNames(buffer));
+  const additions = files.filter((file) => file?.name && !existing.has(file.name));
+  if (!additions.length) return buffer;
+  const maxBack = Math.min(buffer.length, 22 + 65535);
+  let eocd = -1;
+  for (let offset = buffer.length - 22; offset >= buffer.length - maxBack; offset -= 1) {
+    if (offset < 0) break;
+    if (buffer.readUInt32LE(offset) !== 0x06054b50) continue;
+    const commentLength = buffer.readUInt16LE(offset + 20);
+    if (offset + 22 + commentLength === buffer.length) { eocd = offset; break; }
+  }
+  if (eocd < 0) throw new Error('zip end of central directory not found');
+  const count = buffer.readUInt16LE(eocd + 10);
+  const centralSize = buffer.readUInt32LE(eocd + 12);
+  const centralOffset = buffer.readUInt32LE(eocd + 16);
+  if (centralOffset === 0xffffffff || centralSize === 0xffffffff) throw new Error('zip64 archives are not extended by this check');
+  const locals = [];
+  const centrals = [];
+  let offset = centralOffset;
+  for (const file of additions) {
+    const name = Buffer.from(file.name);
+    const data = Buffer.isBuffer(file.data) ? file.data : Buffer.from(file.data);
+    const compressed = deflateRawSync(data);
+    const method = compressed.length < data.length ? 8 : 0;
+    const payload = method === 8 ? compressed : data;
+    const sum = crc32(data) >>> 0;
+    const local = Buffer.alloc(30 + name.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(sum, 14);
+    local.writeUInt32LE(payload.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    name.copy(local, 30);
+    locals.push(Buffer.concat([local, payload]));
+    const central = Buffer.alloc(46 + name.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(method, 10);
+    central.writeUInt32LE(sum, 16);
+    central.writeUInt32LE(payload.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    name.copy(central, 46);
+    centrals.push(central);
+    offset += local.length + payload.length;
+  }
+  const nextCentral = Buffer.concat([buffer.subarray(centralOffset, centralOffset + centralSize), ...centrals]);
+  const nextEocd = Buffer.alloc(22);
+  nextEocd.writeUInt32LE(0x06054b50, 0);
+  nextEocd.writeUInt16LE(count + additions.length, 8);
+  nextEocd.writeUInt16LE(count + additions.length, 10);
+  nextEocd.writeUInt32LE(nextCentral.length, 12);
+  nextEocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([buffer.subarray(0, centralOffset), ...locals, nextCentral, nextEocd]);
+}
+
+export function extractZip(buffer, destination) {
+  mkdirSync(destination, { recursive: true });
+  for (const name of listZipEntryNames(buffer)) {
+    if (name.endsWith('/') || name.split('/').includes('..')) continue;
+    const path = resolve(destination, name);
+    mkdirSync(resolve(path, '..'), { recursive: true });
+    writeFileSync(path, readZipEntry(buffer, name));
+  }
 }
 
 export function functionZipProblems(name, byteLength, entryNames) {
@@ -727,6 +946,18 @@ async function bundleFunctionsUncaught(cliDir) {
   const functionsDir = stageFunctionSources(root, stamp);
   const zipConfig = functionsZipConfig(readFileSync(resolve(root, 'netlify.toml'), 'utf8'));
   const built = await zipFunctions([functionsDir], tmp, { basePath: root, repositoryRoot: root, config: zipConfig });
+  const sharpStage = mkdtempSync(resolve(root, 'dist/linux-sharp-'));
+  try {
+    const sharpModules = stageLinuxSharp(root, sharpStage);
+    const sharpFiles = linuxSharpZipEntries(sharpModules);
+    for (const fn of built) {
+      if (fn.name !== 'api') continue;
+      const next = appendZipEntries(readFileSync(fn.path), sharpFiles);
+      writeFileSync(fn.path, next);
+    }
+  } finally {
+    rmSync(sharpStage, { recursive: true, force: true });
+  }
   const functions = {};
   const byHash = {};
   for (const fn of built) {
@@ -794,10 +1025,13 @@ export function functionsZipConfig(tomlText) {
   const bundler = /node_bundler\s*=\s*"([^"]+)"/.exec(body)?.[1];
   const external = /external_node_modules\s*=\s*\[([^\]]*)\]/.exec(body)?.[1] || '';
   const modules = [...external.matchAll(/"([^"]+)"/g)].map((item) => item[1]);
+  const included = /included_files\s*=\s*\[([^\]]*)\]/.exec(body)?.[1] || '';
+  const includedFiles = [...included.matchAll(/"([^"]+)"/g)].map((item) => item[1]);
   const timeout = Number(/^\s*timeout\s*=\s*(\d+)/m.exec(body)?.[1]);
   return {
     '*': {
       ...(modules.length ? { externalNodeModules: modules } : {}),
+      ...(includedFiles.length ? { includedFiles } : {}),
       ...(bundler === 'esbuild' ? { nodeBundler: 'esbuild_zisi' } : bundler ? { nodeBundler: bundler } : {}),
       ...(Number.isInteger(timeout) && timeout > 0 ? { timeout } : {}),
       processDynamicNodeImports: true,
@@ -1269,7 +1503,13 @@ async function uploadCheck() {
     try { names = listZipEntryNames(bytes); }
     catch (error) { zipProblems.push(`${name} zip could not be listed: ${error.message}`); }
     zipProblems.push(...functionZipProblems(name, bytes.length, names));
-    if (name === 'api') zipProblems.push(...eagerNativeProblemsForZip(bytes, names));
+    if (name === 'api') {
+      try {
+        const unzipped = zipUnzippedBytes(bytes);
+        if (unzipped > API_ZIP_MAX_UNZIPPED_BYTES) zipProblems.push(`api zip unpacks to ${unzipped} bytes, over ${API_ZIP_MAX_UNZIPPED_BYTES}`);
+      } catch (error) { zipProblems.push(`api zip size could not be measured: ${error.message}`); }
+      zipProblems.push(...eagerNativeProblemsForZip(bytes, names));
+    }
   }
   const routesOk = apiRoutesOk(functionMap);
   const apiInvocationMode = functionMap.functionsConfig?.api?.invocation_mode || null;

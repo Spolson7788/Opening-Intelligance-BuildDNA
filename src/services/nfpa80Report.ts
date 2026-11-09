@@ -111,8 +111,9 @@ const REPORT_PHOTO_EMBED_LIMIT = 600 * 1024;
 type SharpFactory = (input: Buffer, options?: Record<string, unknown>) => any;
 
 // A variable specifier keeps sharp out of the esbuild function bundle. A static
-// import is evaluated when the shared api function loads, and a Windows-built zip
-// does not contain the Linux native, so the function never starts.
+// import is evaluated when the shared api function loads. The publisher copies the
+// glibc linux-x64 native into the zip; if that copy is missing, the fallback below
+// still builds the PDF.
 let reportImageLoader: () => Promise<SharpFactory> = async () => {
   const name = "sharp";
   const mod: any = await import(name);
