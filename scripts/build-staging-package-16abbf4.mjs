@@ -1,4 +1,4 @@
-// Offline package for the PR 19 app commit b3a2bfc31e575ebf3edfe65ab62bd2a50496ffe5, or a publisher-only commit after it.
+// Offline package for the PR 19 app commit 95ca77afb3228d8355d531cd43e672e5061386f4, or a publisher-only commit after it.
 // Does not deploy, does not read or print secrets, and does not migrate.
 import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
