@@ -8,18 +8,11 @@ import { SignaturePad } from "../components/SignaturePad";
 import type { SignaturePadHandle } from "../components/SignaturePad";
 import { EmailInspectionReport } from "../components/EmailInspectionReport";
 import { NFPA80_ITEMS, checklistStarted, fireDoorOutcome, resolveInspectionType } from "../lib/nfpa80Items";
-import { checklistPhotoJpeg } from "../lib/photoPreparation";
+import { queueInspectionFailurePhoto } from "../lib/inspectionPhoto";
 import { awaitInspectionSynced } from "../lib/sync";
 import { scrollPageToTop } from "../lib/scrollPage";
 
 type ItemAnswer = { result: "" | "pass" | "fail" | "na"; note: string; photo: File | null };
-
-async function fileToBase64(file: Blob): Promise<string> {
-  const data = await file.arrayBuffer();
-  let binary = "";
-  for (const byte of new Uint8Array(data)) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
 
 const INSPECTION_TYPES = [
   { value: "general", label: "General" },
@@ -113,10 +106,19 @@ export function LogInspectionEventPage() {
             setSignatureError("A failed item needs a note and a photo.");
             return;
           }
+          let photoId: string | undefined;
+          if (answer.result === "fail" && answer.photo) {
+            const queued = await queueInspectionFailurePhoto(id!, answer.photo, answer.photo.name || "inspection-failure.jpg");
+            if (queued.kind === "kept") {
+              setSignatureError(queued.message);
+              return;
+            }
+            photoId = queued.photoId;
+          }
           items[item.key] = {
             result: answer.result,
             note: answer.note.trim() || undefined,
-            photo_base64: answer.photo ? await fileToBase64(await checklistPhotoJpeg(answer.photo)) : undefined,
+            photo_id: photoId,
           };
         }
       } catch {

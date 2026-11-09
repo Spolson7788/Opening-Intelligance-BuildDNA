@@ -318,6 +318,21 @@ export async function fetchPhotoAccessUrl(id: string): Promise<{ url: string; ex
   return authedFetch(`/photos/${id}/access`);
 }
 
+export async function fetchPhotoContent(id: string): Promise<Blob> {
+  const auth = await loadAuth();
+  if (!auth?.token) throw new ApiError(401, "missing_token");
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(id)}/content`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+    cache: "no-store",
+  });
+  const current = await loadAuth();
+  if (!current || current.userId !== auth.userId || current.organizationId !== auth.organizationId || current.token !== auth.token) {
+    throw new PrincipalChangedError();
+  }
+  if (!res.ok) throw new ApiError(res.status, "photo_unavailable");
+  return res.blob();
+}
+
 // Uploads directly to storage using the presigned URL - bypasses our own API
 // entirely for the actual bytes, per authedFetch not being used here.
 export async function uploadToPresignedUrl(uploadUrl: string, blob: Blob, contentType: string) {

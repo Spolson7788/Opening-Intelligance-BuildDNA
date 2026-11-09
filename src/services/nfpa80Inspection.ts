@@ -16,7 +16,10 @@ export async function applyFireDoorFollowUp(
   const stored: Record<string, { result: string; note: string | null; photo_id: string | null }> = {};
   for (const item of args.items) {
     let photoId = item.photoId;
-    if (item.result === "fail" && item.photoBase64) {
+    // A photo_id is a private-bucket photo confirmed before this inspection.
+    // Base64 is still stored inline only when that id is absent, so an inspection
+    // already queued by an older field app can finish. New field saves do not send base64.
+    if (item.result === "fail" && item.photoBase64 && !photoId) {
       const bytes = decodePhoto(item.photoBase64);
       if (!bytes) return { error: "photo_unreadable" };
       const png = bytes[0] === 0x89;
@@ -30,6 +33,11 @@ export async function applyFireDoorFollowUp(
     if (item.result === "fail" && photoId) {
       const owned = await db.query("SELECT 1 FROM photos WHERE id=$1 AND opening_id=$2", [photoId, args.openingId]);
       if (!owned.rows.length) return { error: "fail_requires_photo" };
+      await db.query(
+        `UPDATE photos SET related_entity_type='inspection_event', related_entity_id=$3
+         WHERE id=$1 AND opening_id=$2`,
+        [photoId, args.openingId, args.inspectionId],
+      );
     }
     stored[item.key] = { result: item.result, note: item.note, photo_id: photoId };
     if (item.result === "fail") {

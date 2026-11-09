@@ -121,6 +121,19 @@ export function dependencyIdsForOperation(
     addEntityDependency(payload.frame_id);
   } else if (entityType === "photo") {
     if (payload.target_type !== "opening") addEntityDependency(payload.target_id);
+  } else if (entityType === "inspection_event") {
+    const items = payload.checklist_result?.items;
+    if (items && typeof items === "object") {
+      for (const item of Object.values(items as Record<string, unknown>)) {
+        const photoId = item && typeof item === "object" ? (item as { photo_id?: unknown }).photo_id : undefined;
+        if (typeof photoId !== "string" || !photoId) continue;
+        for (const parent of operations) {
+          if (parent.openingId === openingId && parent.entityType === "photo" && parent.entityId === photoId && parent.state !== "verified") {
+            ids.add(parent.operationId);
+          }
+        }
+      }
+    }
   } else if (entityType === "completion") {
     for (const candidate of operations) {
       if (candidate.openingId === openingId && ["frame", "door_leaf", "component"].includes(candidate.entityType) && candidate.state !== "verified") {

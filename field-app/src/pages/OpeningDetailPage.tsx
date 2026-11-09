@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
-import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchPhotoAccessUrl, serverFeatures } from "../lib/api";
+import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchPhotoAccessUrl, fetchPhotoContent, serverFeatures } from "../lib/api";
 import { mediaAssociationLabel } from "../lib/mediaAssociationLabel";
 import { openingLoadFailure } from "../lib/openingLoadFailure";
 import { siteAccessRenewalUrl } from "../lib/siteAccess";
@@ -46,13 +46,26 @@ function healthClass(score: number | null) {
 }
 
 export function SyncedMedia({ photo, label }: { photo: any; label: string }) {
-  const [url, setUrl] = useState<string | null>(photo.storage_url?.startsWith("private:") ? null : photo.storage_url);
+  const inline = typeof photo.storage_url === "string" && photo.storage_url.startsWith("inline:");
+  const stored = typeof photo.storage_url === "string" && photo.storage_url.startsWith("private:");
+  const [url, setUrl] = useState<string | null>(inline || stored ? null : photo.storage_url);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
+    let objectUrl: string | null = null;
     setFailed(false);
-    if (!photo.storage_url?.startsWith("private:")) {
+    if (inline) {
+      setUrl(null);
+      fetchPhotoContent(photo.id)
+        .then((blob) => {
+          objectUrl = URL.createObjectURL(blob);
+          if (active) setUrl(objectUrl);
+        })
+        .catch(() => { if (active) setFailed(true); });
+      return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    }
+    if (!stored) {
       setUrl(photo.storage_url || null);
       setFailed(!photo.storage_url);
       return () => { active = false; };
@@ -62,7 +75,7 @@ export function SyncedMedia({ photo, label }: { photo: any; label: string }) {
       .then(({ url }) => { if (active) { setUrl(url || null); setFailed(!url); } })
       .catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
-  }, [photo.id, photo.storage_url]);
+  }, [photo.id, photo.storage_url, inline, stored]);
 
   if (failed) return <div className="error-text" role="status">{photo.media_type === "video" ? "Video" : "Photo"} unavailable. The attachment record is retained; its media could not be loaded.</div>;
   if (!url) return <div style={{ aspectRatio: "1", display: "grid", placeItems: "center" }}>Loading…</div>;
