@@ -1,4 +1,4 @@
-// One staging publish of the approved field-app and guide commit aa992e9efcda984223eb58115911983eb67db962.
+// One staging publish of the approved field-app and guide commit 1c8404bde25e5f9b75a41f0a3760a86d9d8cc1f6.
 // Publisher-file commits after that pin are allowed. App changes are not.
 // Hard-locked to oi-video-workflows-staging. Refuses production. One attempt.
 // Does not print secrets. Default is a dry run; publish requires --publish-approved.
@@ -9,7 +9,7 @@ import https from 'node:https';
 import { resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
-export const PINNED_COMMIT = 'aa992e9efcda984223eb58115911983eb67db962';
+export const PINNED_COMMIT = '1c8404bde25e5f9b75a41f0a3760a86d9d8cc1f6';
 export const STAGING_SITE_ID = 'b64bf33c-a131-4ae2-b2b0-9aec16e9f77b';
 export const STAGING_SITE_NAME = 'oi-video-workflows-staging';
 export const STAGING_URL = 'https://oi-video-workflows-staging.netlify.app';
@@ -19,9 +19,9 @@ const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r23');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r24');
 const resumePath = resolve(journalDir, 'resume-attempt.json');
-const ROLLBACK_DEPLOY_ID = '6af0f44530545e281bfc493f';
+const ROLLBACK_DEPLOY_ID = '6af11498b3e7562c5cbc6ec4';
 const rollbackDir = resolve(root, 'dist/staging-publish-journal-16abbf4-rollback');
 const rollbackAttempt = resolve(rollbackDir, 'rollback-attempt.json');
 const PRIOR_JOURNALS = [
@@ -47,6 +47,7 @@ const PRIOR_JOURNALS = [
   'dist/staging-publish-journal-16abbf4-r20/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r21/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r22/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r23/publication-attempt.json',
 ];
 const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
