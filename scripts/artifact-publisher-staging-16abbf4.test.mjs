@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
-import { rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
+import { buildFacilityDashboard } from './build-facility-dashboard.mjs';
 import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, functionsFromDeploy, missingBundledModules, stageFunctionSources, packageCommitAllowed, packageChecksum, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('diagnose compares function metadata without keeping secrets', () => {
@@ -255,4 +256,37 @@ test('a production deploy includes netlify.toml and refuses any other context', 
   assert.equal(assertPublishableDeploy(ready).context, 'production');
   assert.throws(() => assertPublishableDeploy({ ...ready, context: 'deploy-preview' }), /refusing_deploy_context/);
   assert.throws(() => assertPublishableDeploy({ context: 'production', available_functions: [{ n: 'api', im: null, ro: [] }] }), /refusing_invocation_mode/);
+});
+
+test('facility dashboard packaging accepts CRLF checkout and still refuses a changed marker', () => {
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  const source = resolve(repo, 'facility-dashboard');
+  const stage = (transform) => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'oi-dash-src-'));
+    cpSync(source, dir, { recursive: true });
+    const htmlPath = resolve(dir, 'portal-source.html');
+    writeFileSync(htmlPath, transform(readFileSync(htmlPath, 'utf8')));
+    return dir;
+  };
+  const expectGuarded = (sourceRoot) => {
+    const dest = mkdtempSync(resolve(tmpdir(), 'oi-dash-out-'));
+    buildFacilityDashboard(dest, { sourceRoot });
+    const html = readFileSync(resolve(dest, 'index.html'), 'utf8');
+    assert.equal(html.includes('\r'), false);
+    assert.match(html, /Checking access for this account/);
+    assert.match(html, /api\('\/portfolio\/facility-dashboard-access'\)/);
+    assert.match(html, /This account cannot open the facility dashboard/);
+    assert.equal(html.includes('missing profile -> stay'), false);
+    rmSync(dest, { recursive: true, force: true });
+    rmSync(sourceRoot, { recursive: true, force: true });
+  };
+  const lf = readFileSync(resolve(source, 'portal-source.html'), 'utf8').replace(/\r\n/g, '\n');
+  expectGuarded(stage(() => lf));
+  expectGuarded(stage(() => lf.replace(/\n/g, '\r\n')));
+  const brokenRoot = stage((html) => html.replace('missing profile -> stay (no lockout).', 'marker removed'));
+  const brokenDest = mkdtempSync(resolve(tmpdir(), 'oi-dash-broken-'));
+  assert.throws(() => buildFacilityDashboard(brokenDest, { sourceRoot: brokenRoot }), /Dashboard source changed: async function routeByType/);
+  assert.equal(existsSync(resolve(brokenDest, 'index.html')), false);
+  rmSync(brokenRoot, { recursive: true, force: true });
+  rmSync(brokenDest, { recursive: true, force: true });
 });

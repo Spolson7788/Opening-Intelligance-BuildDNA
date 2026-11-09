@@ -1,11 +1,14 @@
 import {readFileSync,writeFileSync,cpSync,mkdirSync} from 'node:fs';
 import {resolve} from 'node:path';
 export const PREVIEW_BANNER='<aside style="background:#fff1c8;padding:12px;text-align:center">Nonproduction preview — connected acceptance pending. <a href="opening.html">Opening review</a></aside>';
-export function buildFacilityDashboard(destination,{production=false}={}){
- const root=resolve(import.meta.dirname,'../facility-dashboard');
- let html=readFileSync(resolve(root,'portal-source.html'),'utf8');
+// Node parses this script's markers as LF. A Windows checkout can leave the HTML as CRLF.
+// Compare the text with line endings normalized, and still refuse a changed marker.
+function asLf(text){return text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');}
+export function buildFacilityDashboard(destination,{production=false,sourceRoot}={}){
+ const root=sourceRoot||resolve(import.meta.dirname,'../facility-dashboard');
+ let html=asLf(readFileSync(resolve(root,'portal-source.html'),'utf8'));
  html=html.replace('<script type="module">','<script type="module">\nimport {installLabelActions,addOpeningLabelAction} from "./labels.mjs";\nimport {addServiceRequestAction} from "./service-requests.mjs";');
- const replace=(a,b)=>{if(!html.includes(a))throw Error('Dashboard source changed: '+a.slice(0,80));html=html.replace(a,b);};
+ const replace=(a,b)=>{const needle=asLf(a);if(!html.includes(needle))throw Error('Dashboard source changed: '+needle.slice(0,80));html=html.replace(needle,asLf(b));};
  // oi-production shows no nonproduction preview banner; staging keeps it.
  if(production)replace(PREVIEW_BANNER,'');
  replace('import {url,key} from "./preview-config.mjs";', 'import {sb,refreshScope,refreshFacility,readFieldSession,api} from "./api-client.mjs";');

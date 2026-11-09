@@ -80,6 +80,7 @@ const PUBLISHER_FILES = new Set([
   'docs/ops/STAGING-PUBLISH-16abbf4.md',
   'scripts/artifact-publisher-staging-16abbf4.mjs',
   'scripts/artifact-publisher-staging-16abbf4.test.mjs',
+  'scripts/build-facility-dashboard.mjs',
   'scripts/build-staging-package-16abbf4.mjs',
 ]);
 
