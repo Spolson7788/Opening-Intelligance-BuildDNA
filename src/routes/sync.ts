@@ -306,6 +306,24 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
         payload.work_performed,payload.parts_used??[],payload.cost??null,b.operation_id]); record=result.rows[0];
       await client.query(`UPDATE openings SET last_service_date=GREATEST(COALESCE(last_service_date,$1),$1) WHERE id=$2`,[payload.event_date,b.opening_id]);
     } else if (b.entity_type === "inspection_event") {
+      const already = await client.query(
+        `SELECT * FROM inspection_events WHERE opening_id=$1 AND client_operation_id=$2`,
+        [b.opening_id, b.operation_id]);
+      if (already.rows[0]) {
+        await client.query("ROLLBACK");
+        const prior = await pool.query(
+          `SELECT * FROM sync_operation_receipts WHERE organization_id=$1 AND operation_id=$2`,
+          [orgId, b.operation_id]);
+        if (prior.rows[0]) return res.status(200).json({ ...prior.rows[0], status: "already_applied" });
+        return res.status(200).json({
+          operation_id: b.operation_id, entity_id: already.rows[0].id, entity_type: "inspection_event",
+          opening_id: already.rows[0].opening_id, organization_id: orgId,
+          resulting_server_revision: Number(already.rows[0].revision ?? 1),
+          normalized_record_hash: canonicalPayloadHash(already.rows[0]),
+          server_accepted_at: already.rows[0].created_at ?? new Date().toISOString(),
+          verified_at: new Date().toISOString(), status: "already_applied",
+        });
+      }
       if (generalPassCarriesChecklist(payload.inspection_type, payload.passed === true, payload.checklist_result)) {
         await client.query("ROLLBACK");
         return res.status(400).json({ error: "inspection_type_mismatch" });
@@ -357,6 +375,25 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
     await client.query("COMMIT"); return res.status(201).json(receipt);
   } catch (err:any) {
     await client.query("ROLLBACK").catch(()=>undefined);
+    if (err.code === "23505" && b.entity_type === "inspection_event") {
+      const existing = await pool.query(
+        `SELECT * FROM inspection_events WHERE opening_id=$1 AND client_operation_id=$2`,
+        [b.opening_id, b.operation_id]);
+      const prior = existing.rows[0] ? await pool.query(
+        `SELECT * FROM sync_operation_receipts WHERE organization_id=$1 AND operation_id=$2`,
+        [orgId, b.operation_id]) : null;
+      if (existing.rows[0] && prior?.rows[0]) return res.status(200).json({ ...prior.rows[0], status: "already_applied" });
+      if (existing.rows[0]) {
+        return res.status(200).json({
+          operation_id: b.operation_id, entity_id: existing.rows[0].id, entity_type: "inspection_event",
+          opening_id: existing.rows[0].opening_id, organization_id: orgId,
+          resulting_server_revision: Number(existing.rows[0].revision ?? 1),
+          normalized_record_hash: canonicalPayloadHash(existing.rows[0]),
+          server_accepted_at: existing.rows[0].created_at ?? new Date().toISOString(),
+          verified_at: new Date().toISOString(), status: "already_applied",
+        });
+      }
+    }
     if (err.code === "23505") return res.status(409).json({ error:"entity_or_operation_already_exists" });
     console.error(err); return res.status(500).json({ error:"internal_error" });
   } finally { client.release(); }

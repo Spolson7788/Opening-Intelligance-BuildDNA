@@ -1,5 +1,6 @@
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
+import {MemoryRouter} from 'react-router-dom';
 import {beforeEach,afterEach,it,expect,vi} from 'vitest';
 const data=vi.hoisted(()=>({stored:null as any,read:vi.fn()}));
 vi.mock('../field-app/src/lib/db',()=>({loadAuth:()=>data.read(),clearAuth:vi.fn()}));
@@ -14,13 +15,13 @@ const account=(id:string)=>({userId:id,organizationId:'org-'+id,email:id+'@examp
 beforeEach(()=>{vi.useFakeTimers();vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);data.stored=account('A');data.read.mockReset().mockImplementation(async()=>data.stored);el=document.createElement('div');root=createRoot(el);});
 afterEach(()=>{act(()=>root.unmount());vi.useRealTimers();vi.unstubAllGlobals();});
 it('reconciles another tab account change and sign-out without replaying sign-in recovery',async()=>{
-  await act(async()=>root.render(<AuthProvider><AccountIdentity/></AuthProvider>));expect(el.textContent).toContain('A@example');
+  await act(async()=>root.render(<MemoryRouter><AuthProvider><AccountIdentity/></AuthProvider></MemoryRouter>));expect(el.textContent).toContain('A@example');
   data.stored=account('B');await act(async()=>vi.advanceTimersByTimeAsync(1500));
   expect(el.textContent).toContain('B@example');expect(el.textContent).not.toContain('A@example');expect(el.textContent).not.toContain('PRIVATE');
   data.stored=null;await act(async()=>{window.dispatchEvent(new Event('focus'));});expect(el.textContent).toBe('');expect(recordFreshSignIn).not.toHaveBeenCalled();
 });
 it('invalidates display on focus and ignores late stale reads',async()=>{
-  await act(async()=>root.render(<AuthProvider><AccountIdentity/></AuthProvider>));
+  await act(async()=>root.render(<MemoryRouter><AuthProvider><AccountIdentity/></AuthProvider></MemoryRouter>));
   let finish!:(v:any)=>void;data.read.mockImplementationOnce(()=>new Promise(r=>{finish=r;}));
   await act(async()=>{window.dispatchEvent(new Event('focus'));});expect(el.textContent).toBe('');
   data.stored=account('B');await act(async()=>vi.advanceTimersByTimeAsync(1500));
@@ -30,7 +31,7 @@ it('focus and transient identity-read failure do not unmount a protected draft',
   let mounts=0;
   function Draft(){const {auth}=useAuth();const [text]=React.useState(()=>{mounts++;return 'unsaved draft '+auth?.userId;});return <p>{text}</p>;}
   function Protected(){const {auth,loading}=useAuth();return loading||!auth?null:<AccountScope><Draft/></AccountScope>;}
-  await act(async()=>root.render(<AuthProvider><AccountIdentity/><Protected/></AuthProvider>));
+  await act(async()=>root.render(<MemoryRouter><AuthProvider><AccountIdentity/><Protected/></AuthProvider></MemoryRouter>));
   data.read.mockRejectedValueOnce(new Error('read failed'));
   await act(async()=>{window.dispatchEvent(new Event('focus'));});
   expect(el.textContent).toContain('unsaved draft');expect(el.textContent).not.toContain('A@example');expect(mounts).toBe(1);

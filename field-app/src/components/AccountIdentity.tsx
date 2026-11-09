@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { fetchCompanies } from "../lib/api";
 import { activeCompanyName, signedInLabel } from "../lib/accountLine";
@@ -20,5 +21,6 @@ export function AccountIdentity() {
   const line = `Signed in as ${who} · ${company}`;
   return <aside aria-label="Current account" className="no-print">
     <p className="account-line" title={line}>{line}</p>
+    <Link className="account-sync-link" to="/sync-issues">Synchronization review</Link>
   </aside>;
 }

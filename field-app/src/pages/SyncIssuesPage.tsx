@@ -18,22 +18,30 @@ export function SyncIssuesPage() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
   async function load() {
+    setLoadError(false);
     const auth = await loadAuth();
-    if (!auth) { setIssues([]); return; }
-    const [operations, conflicts, media] = await Promise.all([
-      getSyncOperationsForPrincipal(auth.userId, auth.organizationId),
-      getOpenConflictsForPrincipal(auth.userId, auth.organizationId),
-      getOfflineMediaForPrincipal(auth.userId, auth.organizationId),
-    ]);
-    const latest = await loadAuth();
-    if (latest?.userId !== auth.userId || latest?.organizationId !== auth.organizationId) return;
-    setIssues(syncIssuesForRecords(operations, conflicts, media));
-    setLoadedPrincipal(`${auth.organizationId}/${auth.userId}`);
+    if (!auth) { setIssues([]); setLoadedPrincipal(""); return; }
+    try {
+      const [operations, conflicts, media] = await Promise.all([
+        getSyncOperationsForPrincipal(auth.userId, auth.organizationId),
+        getOpenConflictsForPrincipal(auth.userId, auth.organizationId),
+        getOfflineMediaForPrincipal(auth.userId, auth.organizationId),
+      ]);
+      const latest = await loadAuth();
+      if (latest?.userId !== auth.userId || latest?.organizationId !== auth.organizationId) return;
+      setIssues(syncIssuesForRecords(operations, conflicts, media));
+      setLoadedPrincipal(`${auth.organizationId}/${auth.userId}`);
+    } catch {
+      setIssues([]);
+      setLoadError(true);
+      setLoadedPrincipal(`${auth.organizationId}/${auth.userId}`);
+    }
   }
 
-  useEffect(() => { void load().catch(() => setLoadedPrincipal(null)); }, [principal]);
+  useEffect(() => { void load(); }, [principal]);
 
   const note = (id: string, text: string) => setNotes((current) => ({ ...current, [id]: text }));
 
@@ -111,7 +119,7 @@ export function SyncIssuesPage() {
     <div className="screen">
       <section className="c04-band"><h2>Synchronization review</h2>
       <p>Entries remain stored on this device until synchronization succeeds. Review conflicts before retrying.</p></section>
-      {identityChecking || loadedPrincipal !== principal ? <p className="c04-band-blue">Checking saved changes for this account. If this does not finish, return after checking access.</p> : issues.length === 0 ? <div className="c04-band-blue">No synchronization issues for the signed-in technician.</div> : issues.map((issue) => <div className="c04-band" key={issue.id} data-issue-kind={issue.kind}>
+      {loadError ? <div className="c04-alert" role="alert"><p>Saved changes on this device could not be read. They were not removed.</p><button type="button" className="btn btn-secondary" onClick={() => { void load(); }}>Retry</button></div> : identityChecking || loadedPrincipal !== principal ? <p className="c04-band-blue">Checking saved changes for this account. If this does not finish, return after checking access.</p> : issues.length === 0 ? <div className="c04-band-blue">No synchronization issues for the signed-in technician.</div> : issues.map((issue) => <div className="c04-band" key={issue.id} data-issue-kind={issue.kind}>
         <strong style={{ textTransform: "capitalize" }}>{issue.label}</strong>
         {issue.kind === "rejected_media" ? <>
           <p style={{ margin: "6px 0" }}>Not uploaded: this {issue.contentType?.startsWith("video/") ? "video" : "photograph"} is {formatMegabytes(issue.mediaBytes ?? 0)}, above the {formatMegabytes(maximumMediaBytes(issue.contentType ?? ""))} upload limit. It is kept on this device and will not be retried automatically.</p>

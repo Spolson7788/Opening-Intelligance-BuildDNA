@@ -25,7 +25,7 @@ export function SyncBadge() {
   useEffect(() => { void refreshPendingCount(); }, [auth?.userId, auth?.organizationId]);
   if (loading || identityChecking) return <span className="badge">Checking sync</span>;
   if (!auth) return <span className="badge">Sign in to check pending changes</span>;
-  if (syncState.checkFailed) return <span className="badge">Unable to check pending changes</span>;
+  if (syncState.checkFailed) return <Link to="/sync-issues" className="badge badge-offline" title="Open synchronization review" onClick={() => { void refreshPendingCount(); }}>Unable to check pending changes</Link>;
   if (!syncState.checked || syncState.userId !== auth.userId || syncState.organizationId !== auth.organizationId)
     return <span className="badge">Checking sync</span>;
 

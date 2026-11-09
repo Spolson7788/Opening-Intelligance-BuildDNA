@@ -81,4 +81,34 @@ describe("inspection photos use confirmed private storage", () => {
     expect((await request(app).get(`/api/photos/${photoId}/access`).set("Authorization", `Bearer ${other.token}`)).status).toBe(404);
     expect((await request(app).get(`/api/photos/${photoId}/content`).set("Authorization", `Bearer ${other.token}`)).status).toBe(404);
   });
+
+  it("treats a repeated inspection operation as already saved when the server row exists", async () => {
+    const org = await signupTestOrg("Repeat inspection");
+    const { buildingId } = await createPortfolioHierarchy(org.token);
+    const opening = await createTestOpening(org.token, buildingId, { fire_rated: true });
+    const operationId = randomUUID();
+    const auth = { Authorization: `Bearer ${org.token}` };
+    const payload = { event_date: "2026-11-09", inspection_type: "fire_door_nfpa80", passed: false, ...failingFireDoorFields() };
+    const body = { operation_id: operationId, operation_type: "create", entity_id: operationId, entity_type: "inspection_event",
+      opening_id: opening.id, device_id: randomUUID(), base_server_revision: null, schema_version: 3,
+      app_version: "inspection-photo", protocol_version: 1, payload };
+    expect((await request(app).post("/api/sync/operations").set(auth).send(body)).status).toBe(201);
+    const { pool } = await import("../src/db/pool");
+    await pool.query("DELETE FROM sync_operation_receipts WHERE operation_id=$1", [operationId]);
+    const again = await request(app).post("/api/sync/operations").set(auth).send({
+      ...body, payload: { ...payload, checklist_result: { status: "complete", items: { labels: { result: "fail", note: "Hole", photo_base64: "not-a-photo" } } } },
+    });
+    expect(again.status).toBe(200);
+    expect(again.body.status).toBe("already_applied");
+    expect(again.body.entity_id).toBe(operationId);
+    const otherId = randomUUID();
+    const stray = await request(app).post("/api/sync/operations").set(auth).send({
+      ...body, operation_id: otherId, entity_id: otherId,
+      payload: { ...payload, checklist_result: { status: "complete", items: { labels: { result: "fail", note: "Hole", photo_base64: "not-a-photo" } } } },
+    });
+    expect(stray.status).toBe(400);
+    expect(stray.body.status).not.toBe("already_applied");
+    const rows = await pool.query("SELECT id FROM inspection_events WHERE opening_id=$1", [opening.id]);
+    expect(rows.rows).toHaveLength(1);
+  });
 });

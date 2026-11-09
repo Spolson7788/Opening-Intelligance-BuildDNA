@@ -451,6 +451,26 @@ export async function discardPermanentFailure(operationId: string) {
   await tx.done;
 }
 
+// Removes a photo queued during a save that did not finish. A verified upload,
+// an in-flight upload, or any receipt is left untouched.
+export async function removeUnconfirmedLocalPhoto(photoId: string) {
+  assertNotWiped();
+  const db = await getDb();
+  const tx = db.transaction(["operations", "media", "syncReceipts"], "readwrite");
+  const operations: SyncOperation[] = await tx.objectStore("operations").getAll();
+  const operation = operations.find((item) => item.entityType === "photo" && item.entityId === photoId);
+  if (!operation || operation.state === "verified" || operation.state === "in_flight" || operation.state === "verifying") {
+    await tx.done;
+    return false;
+  }
+  const receipts = await tx.objectStore("syncReceipts").index("by-entity").getAll(photoId);
+  if (receipts.length) { await tx.done; return false; }
+  await tx.objectStore("operations").delete(operation.operationId);
+  await tx.objectStore("media").delete(photoId);
+  await tx.done;
+  return true;
+}
+
 export async function removeRejectedMedia(photoId: string) {
   const db = await getDb();
   const tx = db.transaction(["auth", "media", "operations"], "readwrite");

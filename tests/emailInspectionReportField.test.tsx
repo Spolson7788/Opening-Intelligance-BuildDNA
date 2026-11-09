@@ -29,11 +29,17 @@ vi.mock("../field-app/src/lib/sync", () => ({
   awaitInspectionSynced: vi.fn(async () => ({ ok: true })),
   onSyncStateChange: (cb: (state: { syncing: boolean }) => void) => { cb({ syncing: false }); return () => {}; },
 }));
+const localPhotos = vi.hoisted(() => ({ remove: vi.fn(async () => true) }));
 vi.mock("../field-app/src/lib/db", () => ({
   getAllOfflineMedia: async () => [],
   getSyncOperationsForOpening: async () => [],
   loadAuth: async () => null,
   updateCachedOpening: vi.fn(),
+  removeUnconfirmedLocalPhoto: (...args: unknown[]) => localPhotos.remove(...args),
+}));
+const failurePhotos = vi.hoisted(() => ({ queue: vi.fn() }));
+vi.mock("../field-app/src/lib/inspectionPhoto", () => ({
+  queueInspectionFailurePhoto: (...args: unknown[]) => failurePhotos.queue(...args),
 }));
 vi.mock("../field-app/src/components/SyncBadge", () => ({ SyncBadge: () => <span>Sync</span> }));
 vi.mock("../field-app/src/components/PhotoCapture", () => ({ PhotoCapture: () => null }));
@@ -181,4 +187,94 @@ it("shows email this report after a signed fire door inspection is saved, and on
   const links = Array.from(host.querySelectorAll("a")).map((link) => link.getAttribute("href"));
   expect(links).toContain("/opening/door-1/inspection/insp-9");
   expect(links).toContain("/opening/door-1/inspection/insp-general");
+});
+
+async function fillFireDoor(result: "pass" | "fail" = "pass") {
+  const select = host.querySelector("#inspection-type") as HTMLSelectElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")?.set?.call(select, "fire_door_nfpa80");
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const setInput = (selector: string, value: string) => {
+    const input = host.querySelector(selector) as HTMLInputElement;
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const setText = (selector: string, value: string) => {
+    const input = host.querySelector(selector) as HTMLTextAreaElement;
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  await act(async () => {
+    setInput("#qualification", "Fire door inspector");
+    setInput("#license-number", "FD-100");
+    setInput("#signed-by-name", "Ada Inspector");
+    for (const item of NFPA80_ITEMS) {
+      const answer = host.querySelector(`[aria-label="${item.key}"]`) as HTMLSelectElement;
+      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")?.set?.call(answer, item.key === NFPA80_ITEMS[0].key ? result : "pass");
+      answer.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+  if (result === "fail") {
+    await act(async () => setText(`[aria-label="${NFPA80_ITEMS[0].key}-note"]`, "Hole in the face"));
+    const photo = host.querySelector(`[aria-label="${NFPA80_ITEMS[0].key}-photo"]`) as HTMLInputElement;
+    const file = new File(["jpeg-bytes"], "hole.jpg", { type: "image/jpeg" });
+    Object.defineProperty(photo, "files", { configurable: true, value: [file] });
+    await act(async () => photo.dispatchEvent(new Event("change", { bubbles: true })));
+  }
+}
+
+it("queues one inspection when save is submitted twice", async () => {
+  vi.mocked(queueOpeningMutation).mockClear();
+  await act(async () => root.render(
+    <MemoryRouter initialEntries={["/opening/door-1/log-inspection"]}>
+      <Routes><Route path="/opening/:id/log-inspection" element={<LogInspectionEventPage />} /></Routes>
+    </MemoryRouter>,
+  ));
+  await fillFireDoor("pass");
+  const form = host.querySelector("form")!;
+  await act(async () => {
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(queueOpeningMutation).toHaveBeenCalledTimes(1);
+});
+
+it("tells the technician at save time when a failure photo cannot be read and queues nothing", async () => {
+  vi.mocked(queueOpeningMutation).mockClear();
+  localPhotos.remove.mockClear();
+  failurePhotos.queue.mockClear().mockResolvedValue({ kind: "unreadable", message: "The failure photo could not be read. Choose it again. The inspection was not saved." });
+  await act(async () => root.render(
+    <MemoryRouter initialEntries={["/opening/door-1/log-inspection"]}>
+      <Routes><Route path="/opening/:id/log-inspection" element={<LogInspectionEventPage />} /></Routes>
+    </MemoryRouter>,
+  ));
+  await fillFireDoor("fail");
+  await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(host.textContent).toContain("The failure photo could not be read");
+  expect(host.textContent).toContain("inspection was not saved");
+  expect(queueOpeningMutation).not.toHaveBeenCalled();
+});
+
+it("reuses a photo already saved on this device instead of reading it again", async () => {
+  vi.mocked(queueOpeningMutation).mockClear().mockRejectedValueOnce(new Error("disk full"));
+  failurePhotos.queue.mockClear().mockResolvedValue({ kind: "queued", photoId: "photo-kept" });
+  await act(async () => root.render(
+    <MemoryRouter initialEntries={["/opening/door-1/log-inspection"]}>
+      <Routes><Route path="/opening/:id/log-inspection" element={<LogInspectionEventPage />} /></Routes>
+    </MemoryRouter>,
+  ));
+  await fillFireDoor("fail");
+  await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(host.textContent).toContain("could not be saved on this device");
+  expect(failurePhotos.queue).toHaveBeenCalledTimes(1);
+  vi.mocked(queueOpeningMutation).mockResolvedValue("insp-2");
+  await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(failurePhotos.queue).toHaveBeenCalledTimes(1);
+  expect(queueOpeningMutation).toHaveBeenLastCalledWith("inspection_event", "door-1", expect.objectContaining({
+    checklist_result: expect.objectContaining({
+      items: expect.objectContaining({ [NFPA80_ITEMS[0].key]: expect.objectContaining({ photo_id: "photo-kept" }) }),
+    }),
+  }));
 });

@@ -1,5 +1,6 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 
 const ORG_A = "11111111-1111-4111-8111-111111111111";
@@ -30,13 +31,14 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
 
 async function render() {
-  await act(async () => { root.render(<><AccountIdentity /><CompanySwitcher /></>); });
+  await act(async () => { root.render(<MemoryRouter><AccountIdentity /><CompanySwitcher /></MemoryRouter>); });
 }
 
 it("shows the company name without a picker or organization id for one company", async () => {
   await render();
   expect(host.textContent).toContain("Signed in as tech@example.invalid · Synthetic Acceptance");
   expect(host.querySelector("select")).toBeNull();
+  expect(host.querySelector("a")?.getAttribute("href")).toBe("/sync-issues");
   expect(host.textContent).not.toContain(ORG_A);
 });
 

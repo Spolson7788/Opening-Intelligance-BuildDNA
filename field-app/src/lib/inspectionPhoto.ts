@@ -8,14 +8,24 @@ import type { OfflineMediaRecord, SyncOperation } from "./offlineTypes";
 export async function queueInspectionFailurePhoto(openingId: string, file: Blob, filename: string) {
   const auth = await loadAuth();
   if (!auth) throw new Error("auth_required");
-  const prepared = await prepareImageForUpload(file, MAX_IMAGE_BYTES);
+  let prepared;
+  try {
+    prepared = await prepareImageForUpload(file, MAX_IMAGE_BYTES);
+  } catch {
+    return { kind: "unreadable" as const, message: "The failure photo could not be read. Choose it again. The inspection was not saved." };
+  }
   const photoId = crypto.randomUUID();
   const operationId = crypto.randomUUID();
   const now = new Date().toISOString();
   const contentType = prepared.contentType || (file.type.startsWith("image/") ? file.type : "image/jpeg");
   const blob = prepared.blob;
   const rejected = !prepared.withinLimit;
-  const checksum = await checksumBlob(blob);
+  let checksum: string;
+  try {
+    checksum = await checksumBlob(blob);
+  } catch {
+    return { kind: "unreadable" as const, message: "The failure photo could not be read. Choose it again. The inspection was not saved." };
+  }
   const deviceId = await getOrCreateDeviceId();
   const media: OfflineMediaRecord = {
     photoId, openingId, organizationId: auth.organizationId,

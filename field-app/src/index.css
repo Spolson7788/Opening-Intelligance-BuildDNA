@@ -239,6 +239,7 @@ input:not([type=checkbox]):not([type=radio]):not([type=file]), select, textarea 
   border-color: #E0A72E;
   color: #7A4E00;
 }
+a.badge { cursor: pointer; text-decoration: underline; }
 
 .error-text {
   color: #8E1B22;
@@ -316,6 +317,14 @@ body.c04-on .account-line {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+body.c04-on .account-sync-link {
+  display: inline-block;
+  margin-top: 4px;
+  color: #142C3C;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: underline;
 }
 body.c04-on .company-switch select {
   display: block;

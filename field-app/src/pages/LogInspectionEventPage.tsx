@@ -9,6 +9,7 @@ import type { SignaturePadHandle } from "../components/SignaturePad";
 import { EmailInspectionReport } from "../components/EmailInspectionReport";
 import { NFPA80_ITEMS, checklistStarted, fireDoorOutcome, resolveInspectionType } from "../lib/nfpa80Items";
 import { queueInspectionFailurePhoto } from "../lib/inspectionPhoto";
+import { removeUnconfirmedLocalPhoto } from "../lib/db";
 import { awaitInspectionSynced } from "../lib/sync";
 import { scrollPageToTop } from "../lib/scrollPage";
 
@@ -35,6 +36,8 @@ export function LogInspectionEventPage() {
   const [signatureError, setSignatureError] = useState<string | null>(null);
   const signaturePadRef = useRef<SignaturePadHandle>(null);
   const [submitting, setSubmitting] = useState(false);
+  const savingRef = useRef(false);
+  const queuedPhotoIds = useRef<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
   const [savedInspectionId, setSavedInspectionId] = useState<string | null>(null);
   const [emailSync, setEmailSync] = useState<"syncing" | "ready" | "failed">("syncing");
@@ -69,17 +72,23 @@ export function LogInspectionEventPage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSubmitting(true);
+    const release = () => { savingRef.current = false; setSubmitting(false); };
     const type = resolveInspectionType(inspectionType, answers);
-    if (type !== "fire_door_nfpa80" && passed === null) return;
+    if (type !== "fire_door_nfpa80" && passed === null) { release(); return; }
     setSignatureError(null);
 
     const signatureDataUrl = signaturePadRef.current?.getDataUrl();
     if (!signatureDataUrl) {
       setSignatureError("A signature is required to save this inspection.");
+      release();
       return;
     }
     if (!signedByName.trim()) {
       setSignatureError("Enter your name to sign off on this inspection.");
+      release();
       return;
     }
 
@@ -88,32 +97,39 @@ export function LogInspectionEventPage() {
     if (type === "fire_door_nfpa80") {
       if (!qualification.trim()) {
         setSignatureError("Enter your qualification for this fire door inspection.");
+        release();
         return;
       }
       if (!licenseNumber.trim()) {
         setSignatureError("Enter your inspector license number.");
+        release();
         return;
       }
       const items: Record<string, unknown> = {};
+      const createdPhotoIds: string[] = [];
+      const stop = async (message: string) => {
+        await Promise.all(createdPhotoIds.map((photoId) => removeUnconfirmedLocalPhoto(photoId).catch(() => false)));
+        for (const [itemKey, photoId] of Object.entries(queuedPhotoIds.current)) {
+          if (createdPhotoIds.includes(photoId)) delete queuedPhotoIds.current[itemKey];
+        }
+        setSignatureError(message);
+        savingRef.current = false;
+        setSubmitting(false);
+      };
       try {
         for (const item of NFPA80_ITEMS) {
           const answer = answers[item.key];
-          if (!answer?.result) {
-            setSignatureError("Answer every fire door item before saving.");
-            return;
+          if (!answer?.result) return stop("Answer every fire door item before saving.");
+          if (answer.result === "fail" && (!answer.note.trim() || (!answer.photo && !queuedPhotoIds.current[item.key]))) {
+            return stop("A failed item needs a note and a photo.");
           }
-          if (answer.result === "fail" && (!answer.note.trim() || !answer.photo)) {
-            setSignatureError("A failed item needs a note and a photo.");
-            return;
-          }
-          let photoId: string | undefined;
-          if (answer.result === "fail" && answer.photo) {
+          let photoId = queuedPhotoIds.current[item.key];
+          if (answer.result === "fail" && !photoId && answer.photo) {
             const queued = await queueInspectionFailurePhoto(id!, answer.photo, answer.photo.name || "inspection-failure.jpg");
-            if (queued.kind === "kept") {
-              setSignatureError(queued.message);
-              return;
-            }
+            if (queued.kind !== "queued") return stop(queued.message);
             photoId = queued.photoId;
+            createdPhotoIds.push(photoId);
+            queuedPhotoIds.current[item.key] = photoId;
           }
           items[item.key] = {
             result: answer.result,
@@ -122,20 +138,17 @@ export function LogInspectionEventPage() {
           };
         }
       } catch {
-        setSignatureError("A failure photo could not be prepared for sync. Retake it and save again.");
-        return;
+        return stop("The failure photo could not be read. Choose it again. The inspection was not saved.");
       }
       const outcome = fireDoorOutcome(answers);
-      if (outcome.ok === false) {
-        setSignatureError(outcome.error);
-        return;
-      }
+      if (outcome.ok === false) return stop(outcome.error);
       resultPassed = outcome.passed;
       checklist = { status: "complete", items };
     }
 
-    setSubmitting(true);
-    const inspectionId = await queueOpeningMutation("inspection_event", id!, {
+    let inspectionId: string;
+    try {
+    inspectionId = await queueOpeningMutation("inspection_event", id!, {
         opening_id: id,
         event_date: eventDate,
         inspection_type: type,
@@ -163,6 +176,10 @@ export function LogInspectionEventPage() {
     });
 
     setTimeout(() => navigate(`/opening/${id}`), 700);
+    } catch {
+      setSignatureError("The inspection could not be saved on this device. A failure photo already saved here will be used if you save again.");
+      release();
+    }
   }
 
   return (
