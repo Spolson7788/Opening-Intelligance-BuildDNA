@@ -1,4 +1,5 @@
 import { normalizeMark } from "./scheduleParsing/normalize";
+import { scheduledLeafWidths } from "./scheduleImport";
 
 // M4: compare what a confirmed schedule import said (immutable schedule_rows /
 // schedule_set_items / schedule_import_effects) with the current field state of
@@ -172,10 +173,11 @@ export async function compareImport(db: Db, importId: string): Promise<Compariso
       cmpText("opening", "opening_configuration", pair ? "pair" : "single", o.opening_configuration);
       cmpBool("opening", "fire_rated", fire, o.fire_rated, r.fire_rating_raw ? `schedule: ${r.fire_rating_raw}` : null);
     }
+    const widths = scheduledLeafWidths(r, pair);
     for (const l of leavesOf.get(o.id) ?? []) if (VERIFIED.has(l.condition)) {
-      const w = blank(r.width_in) ? null : pair ? Number(r.width_in) / 2 : Number(r.width_in);
+      const w = !pair ? (blank(r.width_in) ? null : Number(r.width_in)) : l.leaf_role === "inactive" ? widths.inactive : widths.active;
       cmpText("door_leaf", `${l.leaf_role}.material`, r.door_material, l.material);
-      cmpNum("door_leaf", `${l.leaf_role}.width_in`, w, l.width_in, pair ? "pair: schedule width / 2" : null);
+      cmpNum("door_leaf", `${l.leaf_role}.width_in`, w, l.width_in, widths.estimated ? "estimated even split" : null);
       cmpNum("door_leaf", `${l.leaf_role}.height_in`, r.height_in, l.height_in);
       cmpNum("door_leaf", `${l.leaf_role}.thickness_in`, r.thickness_in, l.thickness_in);
       cmpBool("door_leaf", `${l.leaf_role}.fire_rated`, fire, l.fire_rated);

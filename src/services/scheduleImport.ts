@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { normalizeMark } from "./scheduleParsing/normalize";
+import { pairLeafWidths } from "../lib/inchMeasure";
 
 type Db = { query: (sql: string, args?: unknown[]) => Promise<{ rows: any[] }> };
 
@@ -60,6 +61,12 @@ export function locationFor(r: any): string | null {
 }
 export function configurationFor(r: any): "single" | "pair" {
   return /\b(pair|double|dbl)\b/i.test(`${r.configuration ?? ""} ${r.description ?? ""}`) ? "pair" : "single";
+}
+
+export function scheduledLeafWidths(row: { width_in?: unknown; description?: string | null; configuration?: string | null; comments?: string | null; raw?: unknown }, pair: boolean) {
+  const width = row.width_in === null || row.width_in === undefined || row.width_in === "" ? null : Number(row.width_in);
+  const rawTexts = row.raw && typeof row.raw === "object" ? Object.values(row.raw as Record<string, unknown>).map((value) => value == null ? null : String(value)) : [];
+  return pairLeafWidths({ pair, widthIn: width != null && Number.isFinite(width) ? width : null, texts: [row.description, row.configuration, row.comments, ...rawTexts] });
 }
 
 export async function loadImport(db: Db, id: string) {
@@ -180,13 +187,15 @@ export async function planImport(db: Db, loaded: NonNullable<Awaited<ReturnType<
     push(change("opening", oid, "fire_rated", existing?.fire_rated, r.fire_rating_minutes === null ? null : r.fire_rating_minutes > 0, verifiedOpening, overwrite));
     push(change("opening", oid, "opening_configuration", existing?.opening_configuration, config, verifiedOpening, overwrite));
     const leafRoles = config === "pair" ? ["active", "inactive"] : ["single"];
-    const width = r.width_in === null ? null : config === "pair" ? Number(r.width_in) / 2 : Number(r.width_in);
+    const widths = scheduledLeafWidths(r, config === "pair");
+    if (widths.estimated) issues.push({ code: "estimated_even_split", severity: "info", message: `Row ${r.source_row} (${mark}): pair width was split evenly because the schedule did not give two leaf widths`, row_ids: [r.id] });
+    const widthFor = (role: string) => config === "pair" ? (role === "inactive" ? widths.inactive : widths.active) : num(r.width_in);
     const leafPlans: OpeningPlan["leaves"] = [];
     for (const role of leafRoles) {
       const leaf = leaves.find((l: any) => l.opening_id === oid && l.leaf_role === role) ?? null;
       const v = !!leaf && VERIFIED_CONDITIONS.has(leaf.condition);
       leafPlans.push({ role, id: leaf?.id ?? null, create: !leaf });
-      for (const [f, val] of [["material", r.door_material], ["width_in", width], ["height_in", num(r.height_in)], ["thickness_in", num(r.thickness_in)], ["fire_rated", r.fire_rating_minutes === null ? null : r.fire_rating_minutes > 0]] as const) {
+      for (const [f, val] of [["material", r.door_material], ["width_in", widthFor(role)], ["height_in", num(r.height_in)], ["thickness_in", num(r.thickness_in)], ["fire_rated", r.fire_rating_minutes === null ? null : r.fire_rating_minutes > 0]] as const) {
         const c = change("door_leaf", leaf?.id ?? null, f, leaf?.[f], val, v, overwrite);
         if (c) fields.push({ ...c, field: leaf ? f : `${role}.${f}` });
       }
