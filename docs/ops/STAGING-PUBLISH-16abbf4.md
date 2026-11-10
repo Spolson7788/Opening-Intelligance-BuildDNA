@@ -2,7 +2,7 @@
 
 One publish of pull request 18 to **oi-video-workflows-staging** only. The staging migration is already applied. Do not apply it again. Do not publish to production. Do not run `npm run migrate`.
 
-Pinned app commit: `7c9c1ab0713d7df00b1110bb7082815658c35a33`. This is release r44. A later commit is accepted only when its diff from that pin is publisher files. It includes Door & Frame sizes and the Claude measurement reader. A measurement photo is read only when `OI_MEASUREMENT_READER` is `anthropic` on this staging site and recognition is already enabled.
+Pinned app commit: `cd4ca94ce19143ab0773ad754dbd0d1744e1a5ff`. This is release r44. A later commit is accepted only when its diff from that pin is publisher files. It includes Door & Frame sizes, the Claude measurement reader, and leaf thickness on the dashboard door type. A measurement photo is read only when `OI_MEASUREMENT_READER` is `anthropic` on this staging site and recognition is already enabled.
 
 Site: `oi-video-workflows-staging` (`b64bf33c-a131-4ae2-b2b0-9aec16e9f77b`), https://oi-video-workflows-staging.netlify.app
 
@@ -21,7 +21,7 @@ node scripts/artifact-publisher-staging-16abbf4.mjs --dry-run
 
 `build-staging-package-16abbf4.mjs` only builds the local package. It ignores publish flags. The only publish command is `node scripts/artifact-publisher-staging-16abbf4.mjs --publish-approved`. Do not run a hosted migration for this release. `migrations/20261108181500_purchasing_api_insert_policies.sql` records INSERT policies already applied on staging. Routing uses `oi_private.area_row_covers`, created in `20261103180000` and covered by `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA oi_private` in `20261103223000` when `oi_pr2_api` already existed. That grant was not rechecked on the hosted database.
 
-Rebuild `dist/staging-package-16abbf4` with that command. The old package records commit `16abbf4` and is refused. The build writes a new `packageSha256` into `package-pin.json`. There is no checksum to paste back into git. The publisher recomputes it from the built files and the commit recorded in that pin. The recorded commit must be `7c9c1ab0713d7df00b1110bb7082815658c35a33` or a publisher-only descendant. Any other change is refused.
+Rebuild `dist/staging-package-16abbf4` with that command. The old package records commit `16abbf4` and is refused. The build writes a new `packageSha256` into `package-pin.json`. There is no checksum to paste back into git. The publisher recomputes it from the built files and the commit recorded in that pin. The recorded commit must be `cd4ca94ce19143ab0773ad754dbd0d1744e1a5ff` or a publisher-only descendant. Any other change is refused.
 
 Install the API dependencies before the upload check. From the repo root:
 
@@ -53,7 +53,7 @@ node scripts/artifact-publisher-staging-16abbf4.mjs --inspect-deploy 6aef3f786cc
 node scripts/artifact-publisher-staging-16abbf4.mjs --check-deploy 6aefb27ce9feb6a9e881d55d
 ```
 
-`--check-deploy` only reads. It POSTs `{}` to that deploy's permalink `/api/auth/login` with no token. `publishable` is true when the deploy is `ready`, its context is `production`, and the probe status is not 404. An empty `routes` list matches the known-good deploy. `rollbackDeployId` is always `6af230ff9978904131f1329d`. The journal `commit` is the publisher HEAD, and `packageCommit` stays `7c9c1ab0713d7df00b1110bb7082815658c35a33`. A privacy-gate `401` HTML page is not a pass. Do not turn the privacy gate off.
+`--check-deploy` only reads. It POSTs `{}` to that deploy's permalink `/api/auth/login` with no token. `publishable` is true when the deploy is `ready`, its context is `production`, and the probe status is not 404. An empty `routes` list matches the known-good deploy. `rollbackDeployId` is always `6af230ff9978904131f1329d`. The journal `commit` is the publisher HEAD, and `packageCommit` stays `cd4ca94ce19143ab0773ad754dbd0d1744e1a5ff`. A privacy-gate `401` HTML page is not a pass. Do not turn the privacy gate off.
 
 Resume waits until the deploy state is `prepared` before any file or function PUT. A 401 that says the deploy is still `preparing` is not an authentication failure. The same in-memory token is reused, and a function retry sends `X-Nf-Retry-Count`. After the deploy is ready, resume calls restore and records success only when `published_deploy.id` is that deploy and its context is `production`.
 
