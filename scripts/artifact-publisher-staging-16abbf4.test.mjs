@@ -7,7 +7,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } 
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { buildFacilityDashboard } from './build-facility-dashboard.mjs';
-import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, eagerNativePackagingProblems, eagerNativeProblemsForZip, linuxSharpPackagingProblems, linuxSharpVersions, stageLinuxSharp, linuxSharpZipEntries, appendZipEntries, extractZip, zipUnzippedBytes, API_ZIP_MAX_UNZIPPED_BYTES, listZipEntryNames, readZipEntry, functionsFromDeploy, missingBundledModules, stageFunctionSources, packageCommitAllowed, packageChecksum, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT, envNamesFromPayload, recognitionEnvReport, measurementReaderReport, measurementReaderEnvBody, siteEnvReport, MEASUREMENT_READER_KEY } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, eagerNativePackagingProblems, eagerNativeProblemsForZip, linuxSharpPackagingProblems, linuxSharpVersions, stageLinuxSharp, linuxSharpZipEntries, appendZipEntries, extractZip, zipUnzippedBytes, API_ZIP_MAX_UNZIPPED_BYTES, listZipEntryNames, readZipEntry, functionsFromDeploy, missingBundledModules, stageFunctionSources, packageCommitAllowed, packageChecksum, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT, envNamesFromPayload, recognitionEnvReport, measurementReaderReport, measurementReaderEnvBody, siteEnvReport, MEASUREMENT_READER_KEY, accountIdFromSite, accountEnvPath, measurementReaderAlreadySet } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('diagnose compares function metadata without keeping secrets', () => {
   const knownGood = functionsFromDeploy({ available_functions: [{ n: 'api', d: 'sha-good', runtime: 'nodejs22.x', im: 'stream', ro: [], a: 100 }] });
@@ -470,10 +470,24 @@ test('staging env report names the measurement setting and keeps secret values o
   assert.equal(report.measurementReader.present, false);
   assert.equal(report.measurementReader.intendedValue, 'anthropic');
   assert.equal(report.measurementReader.siteId, STAGING_SITE_ID);
-  assert.equal(measurementReaderEnvBody().key, MEASUREMENT_READER_KEY);
-  assert.equal(measurementReaderEnvBody().values[0].value, 'anthropic');
-  assert.equal(assertStagingApiPath(`/api/v1/sites/${STAGING_SITE_ID}/env`), `/api/v1/sites/${STAGING_SITE_ID}/env`);
-  assert.throws(() => assertStagingApiPath(`/api/v1/sites/${PRODUCTION_SITE_ID}/env`), /refusing_production/);
+  const body = measurementReaderEnvBody();
+  assert.equal(Array.isArray(body), true);
+  assert.equal(body[0].key, MEASUREMENT_READER_KEY);
+  assert.deepEqual(body[0].scopes, ['functions']);
+  assert.deepEqual(body[0].values, [{ context: 'production', value: 'anthropic' }]);
+  const createPath = accountEnvPath('account-1');
+  const patchPath = accountEnvPath('account-1', { key: MEASUREMENT_READER_KEY });
+  assert.equal(createPath, `/api/v1/accounts/account-1/env?site_id=${STAGING_SITE_ID}`);
+  assert.equal(patchPath, `/api/v1/accounts/account-1/env/${MEASUREMENT_READER_KEY}?site_id=${STAGING_SITE_ID}`);
+  assert.equal(assertStagingApiPath(createPath), createPath);
+  assert.equal(assertStagingApiPath(patchPath), patchPath);
+  assert.throws(() => assertStagingApiPath(`/api/v1/accounts/account-1/env?site_id=${PRODUCTION_SITE_ID}`), /refusing_production/);
+  assert.throws(() => accountIdFromSite({ id: PRODUCTION_SITE_ID, account_id: 'account-1' }), /refusing_production/);
+  assert.equal(accountIdFromSite({ id: STAGING_SITE_ID, account_id: 'account-uuid', account_slug: 'slug' }), 'account-uuid');
+  assert.equal(accountIdFromSite({ id: STAGING_SITE_ID, account_slug: 'slug' }), 'slug');
+  assert.equal(measurementReaderAlreadySet([{ key: MEASUREMENT_READER_KEY, values: [{ context: 'production', value: 'anthropic' }] }]), true);
+  assert.equal(measurementReaderAlreadySet([{ key: MEASUREMENT_READER_KEY, values: [{ context: 'production', value: secret }] }]), false);
+  assert.equal(String(measurementReaderAlreadySet([{ key: 'ANTHROPIC_API_KEY', values: [{ value: secret }] }])).includes(secret), false);
   assert.equal(JSON.stringify(scrubDeployValue(report)).includes(secret), false);
   assert.equal(recognitionEnvReport([])[1].present, false);
   assert.equal(measurementReaderReport(names, true).write, true);

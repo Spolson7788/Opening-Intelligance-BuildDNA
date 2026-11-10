@@ -50,11 +50,41 @@ export function measurementReaderReport(names, write = false) {
 }
 
 export function measurementReaderEnvBody() {
-  return {
+  return [{
     key: MEASUREMENT_READER_KEY,
-    scopes: ['functions', 'runtime'],
-    values: [{ value: MEASUREMENT_READER_VALUE, context: 'all' }],
-  };
+    scopes: ['functions'],
+    values: [{ context: 'production', value: MEASUREMENT_READER_VALUE }],
+  }];
+}
+
+export function accountIdFromSite(site) {
+  if (!site || site.id === PRODUCTION_SITE_ID) throw fail('refusing_production');
+  if (site.id !== STAGING_SITE_ID) throw fail('refusing_site_mismatch');
+  const id = typeof site.account_id === 'string' && site.account_id.trim()
+    ? site.account_id.trim()
+    : typeof site.account_slug === 'string' && site.account_slug.trim()
+      ? site.account_slug.trim()
+      : '';
+  if (!id || id.includes('/')) throw fail('env_account_missing');
+  if (id === PRODUCTION_SITE_ID) throw fail('refusing_production');
+  return id;
+}
+
+export function accountEnvPath(accountId, { key = '' } = {}) {
+  if (typeof accountId !== 'string' || !accountId.trim() || accountId.includes('/') || accountId.includes('?')) throw fail('env_account_missing');
+  if (accountId === PRODUCTION_SITE_ID) throw fail('refusing_production');
+  const suffix = key ? `/${encodeURIComponent(key)}` : '';
+  return `/api/v1/accounts/${encodeURIComponent(accountId.trim())}/env${suffix}?site_id=${STAGING_SITE_ID}`;
+}
+
+export function measurementReaderAlreadySet(payload) {
+  const list = Array.isArray(payload) ? payload
+    : Array.isArray(payload?.variables) ? payload.variables
+    : Array.isArray(payload?.env) ? payload.env
+    : [];
+  const item = list.find((entry) => entry && (entry.key === MEASUREMENT_READER_KEY || entry.name === MEASUREMENT_READER_KEY));
+  const values = item && Array.isArray(item.values) ? item.values : [];
+  return values.some((entry) => entry && entry.value === MEASUREMENT_READER_VALUE);
 }
 
 export function siteEnvReport(names, write = false) {
@@ -68,7 +98,7 @@ const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r44');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r45');
 const resumePath = resolve(journalDir, 'resume-attempt.json');
 const ROLLBACK_DEPLOY_ID = '6af230ff9978904131f1329d';
 const rollbackDir = resolve(root, 'dist/staging-publish-journal-16abbf4-rollback');
@@ -117,6 +147,7 @@ const PRIOR_JOURNALS = [
   'dist/staging-publish-journal-16abbf4-r41/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r42/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r43/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r44/publication-attempt.json',
 ];
 const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
@@ -247,8 +278,10 @@ export function assertStagingApiPath(path, deployId) {
   if (path.includes(PRODUCTION_SITE_ID)) throw fail('refusing_production');
   const site = `/api/v1/sites/${STAGING_SITE_ID}`;
   const deploy = deployId ? `/api/v1/deploys/${deployId}` : '';
+  const accountEnv = /^\/api\/v1\/accounts\/[^/]+\/env(?:\/[^/?]+)?\?site_id=([^&]+)/.exec(path);
   const allowed = path === site || path.startsWith(`${site}/`) || path.startsWith(`${site}?`)
-    || (deploy && (path === deploy || path.startsWith(`${deploy}/`) || path.startsWith(`${deploy}?`)));
+    || (deploy && (path === deploy || path.startsWith(`${deploy}/`) || path.startsWith(`${deploy}?`)))
+    || (accountEnv && accountEnv[1] === STAGING_SITE_ID);
   if (!allowed) throw fail('refusing_site_mismatch');
   return path;
 }
@@ -320,23 +353,45 @@ function stagingRequest(method, path, token, body, contentType = 'application/js
   });
 }
 
-const SITE_ENV_PATH = `/api/v1/sites/${STAGING_SITE_ID}/env`;
+async function stagingAccountId(token) {
+  const response = await stagingRequest('GET', `/api/v1/sites/${STAGING_SITE_ID}`, token);
+  if (response.status === 401 || response.status === 403) throw fail('auth_required');
+  if (response.status !== 200) throw fail('site_lookup_failed');
+  let site = null;
+  try { site = JSON.parse(response.body.toString('utf8')); }
+  catch { throw fail('site_lookup_failed'); }
+  assertSite({ id: site.id, name: site.name, url: site.ssl_url || site.url });
+  return accountIdFromSite(site);
+}
 
-async function fetchSiteEnvNames(token) {
-  const response = await stagingRequest('GET', SITE_ENV_PATH, token);
+async function fetchSiteEnvPayload(token) {
+  const accountId = await stagingAccountId(token);
+  const response = await stagingRequest('GET', accountEnvPath(accountId), token);
   if (response.status === 401 || response.status === 403) throw fail('auth_required');
   if (response.status !== 200) throw fail('env_lookup_failed');
   let payload = null;
   try { payload = JSON.parse(response.body.toString('utf8')); }
   catch { throw fail('env_lookup_failed'); }
+  return { accountId, payload };
+}
+
+async function fetchSiteEnvNames(token) {
+  const { payload } = await fetchSiteEnvPayload(token);
   return envNamesFromPayload(payload);
 }
 
 async function writeMeasurementReaderEnv(token) {
-  const names = await fetchSiteEnvNames(token);
+  const { accountId, payload } = await fetchSiteEnvPayload(token);
+  const names = envNamesFromPayload(payload);
+  if (measurementReaderAlreadySet(payload)) {
+    const report = siteEnvReport(names, false);
+    report.measurementReader.skipped = true;
+    return report;
+  }
   const exists = names.includes(MEASUREMENT_READER_KEY);
-  const target = exists ? `${SITE_ENV_PATH}/${MEASUREMENT_READER_KEY}` : SITE_ENV_PATH;
-  const response = await stagingRequest(exists ? 'PUT' : 'POST', target, token, JSON.stringify(measurementReaderEnvBody()));
+  const target = accountEnvPath(accountId, { key: exists ? MEASUREMENT_READER_KEY : '' });
+  const body = exists ? measurementReaderEnvBody()[0] : measurementReaderEnvBody();
+  const response = await stagingRequest(exists ? 'PATCH' : 'POST', target, token, JSON.stringify(body));
   if (response.status === 401 || response.status === 403) throw fail('auth_required');
   if (response.status < 200 || response.status >= 300) {
     saveFailure('env_write_failed', { status: response.status, body: Buffer.from('') });
