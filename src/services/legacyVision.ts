@@ -1,5 +1,6 @@
 // @ts-nocheck
 // Preserved production recognition engine; source SHA256 9da330e98a2f1646f5bd825bd6fa4987a270c04d5c8b5ceb4ff6d06bd4e2cae7.
+import { postAnthropicMessages } from "./anthropicMessages";
 // Internal only: exposed through authenticated, opening-scoped recognition route.
 // Opening Intelligence — vision proxy (Netlify Function, zero dependencies).
 // Holds the API key server-side; the app POSTs base64 images and gets a structured
@@ -433,21 +434,15 @@ export const legacyVisionHandler = async (event: {httpMethod:string;body:string}
     const multi = imgs.length > 1
       ? "You are given " + imgs.length + " photographs of the SAME piece of hardware from a short sweep. Examine ALL of them together before answering. A stamp, label or distinguishing feature may be legible in only one frame; transcribe it from whichever frame shows it. Do not treat the frames as separate products. "
       : "";
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      signal: AbortSignal.timeout(25000),
-      headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: labelBlind ? 2500 : (markingMode ? 1800 : (hardwareMode ? 2000 : 1200)),
-        messages: [{ role: "user", content: [
-          ...imgs.map(function(d){ return { type: "image", source: { type: "base64", media_type: media_type || "image/jpeg", data: d } }; }),
-          { type: "text", text: hardwareMode ? HARDWARE_PROMPT
-                                : markingMode ? MARKING_PROMPT
-                                : (labelBlind ? (multi + PHYSICAL_PROMPT)
-                                : (focus ? (multi + focusPrompt(focus)) : (multi + PROMPT + referenceContext))) }
-        ]}]
-      })
+    const resp = await postAnthropicMessages({
+      apiKey: key,
+      model: "claude-sonnet-4-5-20250929",
+      maxTokens: labelBlind ? 2500 : (markingMode ? 1800 : (hardwareMode ? 2000 : 1200)),
+      images: imgs.map(function(d){ return { mediaType: media_type || "image/jpeg", data: d }; }),
+      text: hardwareMode ? HARDWARE_PROMPT
+            : markingMode ? MARKING_PROMPT
+            : (labelBlind ? (multi + PHYSICAL_PROMPT)
+            : (focus ? (multi + focusPrompt(focus)) : (multi + PROMPT + referenceContext))),
     });
     const responseText = await resp.text();
     let j;

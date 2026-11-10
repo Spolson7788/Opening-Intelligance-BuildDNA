@@ -2,7 +2,7 @@ import { databaseRoute } from '../db/databaseRoute';
 import { acquireClient } from '../db/acquireClient';
 import { openingLabel } from "../services/openingLabels";
 import { convertOpeningConfiguration } from "../services/openingConfiguration";
-import { MeasurementReaderError, measurementProvider } from "../services/measurementReader";
+import { MeasurementReaderError, measurementProvider, measurementReadingAllowed } from "../services/measurementReader";
 import { hasDimension } from "../lib/inchMeasure";
 import {purchasingReview} from "../services/purchasingReview";
 import { Router, Response } from "express";
@@ -266,6 +266,9 @@ openingsRouter.post("/:id/measurement-reading", databaseRoute(async (req: Authed
     image_base64: z.string().min(1).max(12_000_000),
   }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (!measurementReadingAllowed(req.app.locals.recognitionFeaturesEnabled === true)) {
+    return res.status(404).json({ error: "feature_disabled" });
+  }
   const opening = await getOpeningForOrg(req.params.id, req.auth!.organizationId);
   if (!opening) return res.status(404).json({ error: "not_found" });
   let bytes: Buffer;

@@ -92,6 +92,7 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   // production does not have. Default on keeps existing local/test behavior; the
   // Netlify entry point turns them on only for the known staging sites.
   const recognitionFeaturesEnabled=options.recognitionFeaturesEnabled!==false;
+  app.locals.recognitionFeaturesEnabled=recognitionFeaturesEnabled;
   const allowedOrigins = corsOriginsFromEnv();
 
   app.use(
