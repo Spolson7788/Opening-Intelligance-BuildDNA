@@ -59,10 +59,23 @@ const mockProvider: MeasurementProvider = {
   async read() { return SAMPLE_MEASUREMENT_SUGGESTIONS; },
 };
 
+const READABLE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+export function measurementImageType(contentType: string): string | null {
+  const type = contentType.split(";")[0].trim().toLowerCase();
+  return READABLE_IMAGE_TYPES.has(type) ? type : null;
+}
+
+/** Prose that names a size, such as "six feet" or 3' 11", is not an empty reading. */
+const CLAIMS_PRINTED_SIZE = /\b(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b[\s\S]{0,16}\b(?:feet|foot|ft|inch|inches|in)\b|\d\s*['′″"]/i;
+
 export function parseMeasurementText(text: string): MeasurementSuggestion[] {
   const first = text.indexOf("{");
   const last = text.lastIndexOf("}");
-  if (first < 0 || last <= first) throw new MeasurementReaderError("measurement_response_unreadable", 502);
+  if (first < 0 || last <= first) {
+    if (!CLAIMS_PRINTED_SIZE.test(text)) return [];
+    throw new MeasurementReaderError("measurement_response_unreadable", 502);
+  }
   let parsed: unknown;
   try { parsed = JSON.parse(text.slice(first, last + 1)); }
   catch { throw new MeasurementReaderError("measurement_response_unreadable", 502); }
@@ -86,14 +99,23 @@ function anthropicProvider(): MeasurementProvider {
     async read(image) {
       const key = process.env.ANTHROPIC_API_KEY;
       if (process.env.OI_RECOGNITION_ENABLED !== "true" || !key) throw new MeasurementReaderError("measurement_reader_unconfigured");
+      const mediaType = measurementImageType(image.contentType || "");
+      if (!mediaType) throw new MeasurementReaderError("measurement_image_type", 400);
       const model = process.env.OI_MEASUREMENT_READER_MODEL || DEFAULT_CLAUDE_MODEL;
-      const response = await postAnthropicMessages({
-        apiKey: key,
-        model,
-        maxTokens: 1200,
-        images: [{ mediaType: image.contentType || "image/jpeg", data: image.bytes.toString("base64") }],
-        text: MEASUREMENT_PROMPT,
-      });
+      let response: Response;
+      try {
+        response = await postAnthropicMessages({
+          apiKey: key,
+          model,
+          maxTokens: 1200,
+          images: [{ mediaType, data: image.bytes.toString("base64") }],
+          text: MEASUREMENT_PROMPT,
+        });
+      } catch (error) {
+        const name = error instanceof Error ? error.name : "";
+        if (name === "TimeoutError" || name === "AbortError") throw new MeasurementReaderError("measurement_reader_timeout", 504);
+        throw new MeasurementReaderError("measurement_network", 502);
+      }
       const raw = await response.text();
       let body: { content?: { text?: string }[]; error?: { message?: string } };
       try { body = raw ? JSON.parse(raw) : {}; }

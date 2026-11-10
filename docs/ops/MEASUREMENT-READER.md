@@ -2,7 +2,7 @@
 
 Door & Frame can ask Claude to suggest inches from an Apple Measure screenshot. The phone stores the photo with the existing opening photo queue. Nothing is written to the frame or a leaf until the technician uses a suggestion and saves.
 
-The route is `POST /api/openings/:id/measurement-reading`. It checks that the opening belongs to the signed-in company and returns suggestions. It does not update `opening_frames` or `door_leaves`. A response that is not valid JSON returns `measurement_response_unreadable` and still writes nothing.
+The route is `POST /api/openings/:id/measurement-reading`. It checks that the opening belongs to the signed-in company and returns suggestions. It does not update `opening_frames` or `door_leaves`. A reply with no printed measurement returns no suggestions. A reply that names a size but is not valid JSON returns `measurement_response_unreadable` and still writes nothing. The phone can choose a saved screenshot or take a photo, and it sends JPEG, PNG, GIF, or WebP within the reader size limit. HEIC and oversized photos are reduced on the phone first.
 
 The route is available only where recognition is available: the Netlify entry turns recognition on for the two staging sites and leaves it off everywhere else, including production. The Claude call also stays off unless recognition itself is enabled and the existing Anthropic key is present.
 

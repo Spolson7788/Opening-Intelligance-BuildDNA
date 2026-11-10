@@ -1,10 +1,14 @@
+import { readFileSync } from "node:fs";
 import { afterEach, expect, it, vi } from "vitest";
 import request from "supertest";
 import { pool } from "../src/db/pool";
 import { createApp } from "../src/app";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
-import { confirmedDimension } from "../field-app/src/lib/measurementSuggestions";
+import { confirmedDimension, measurementReadPresentation } from "../field-app/src/lib/measurementSuggestions";
 import type { MeasurementSuggestion } from "../field-app/src/lib/api";
+import { parseInches } from "../src/lib/inchMeasure";
+
+const measurePair = readFileSync(new URL("./fixtures/apple-measure-pair-3ft11-8ft.jpg", import.meta.url));
 
 const sample: MeasurementSuggestion = {
   field: "frame_width", inches: 72, confidence: 0.86, bounds: "Outer frame width along the top of the Measure card",
@@ -136,4 +140,82 @@ it("stays off when recognition features are disabled", async () => {
   expect(reading.status).toBe(404);
   expect(reading.body.error).toBe("feature_disabled");
   expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it("reads the saved Apple Measure pair screenshot as overall width and height", async () => {
+  process.env.OI_MEASUREMENT_READER = "anthropic";
+  process.env.OI_RECOGNITION_ENABLED = "true";
+  process.env.ANTHROPIC_API_KEY = "test-not-real";
+  expect(parseInches("3' 11\"")).toBe(47);
+  expect(parseInches("8'")).toBe(96);
+  const fetchMock = vi.fn(async () => anthropicResponse(JSON.stringify({
+    dimensions: [
+      { label: "3' 11\"", inches: 47, edge: "frame width", confidence: 0.91 },
+      { label: "8'", inches: 96, edge: "frame height", confidence: 0.9 },
+    ],
+  })));
+  const { opening, auth, frameId } = await openingWithFrame();
+  vi.stubGlobal("fetch", fetchMock);
+  const reading = await request(app).post(`/api/openings/${opening.id}/measurement-reading`).set(auth).send({
+    content_type: "image/jpeg", image_base64: measurePair.toString("base64"),
+  });
+  expect(reading.status).toBe(200);
+  expect(reading.body.written).toBe(false);
+  expect(reading.body.suggestions).toEqual([
+    { field: "frame_width", inches: 47, confidence: 0.91, bounds: "frame width: 3' 11\"" },
+    { field: "frame_height", inches: 96, confidence: 0.9, bounds: "frame height: 8'" },
+  ]);
+  expect(confirmedDimension(reading.body.suggestions[0])).toEqual({ text: "3' 11\"", clear: false });
+  expect(confirmedDimension(reading.body.suggestions[1])).toEqual({ text: "8' 0\"", clear: false });
+  const stored = await pool.query("SELECT width_in FROM opening_frames WHERE id=$1", [frameId]);
+  expect(Number(stored.rows[0].width_in)).toBe(40);
+});
+
+it("treats a photo with no measurement labels as an empty reading", async () => {
+  process.env.OI_MEASUREMENT_READER = "anthropic";
+  process.env.OI_RECOGNITION_ENABLED = "true";
+  process.env.ANTHROPIC_API_KEY = "test-not-real";
+  const { opening, auth, frameId } = await openingWithFrame();
+  vi.stubGlobal("fetch", vi.fn(async () => anthropicResponse("This photo has no measurement labels.")));
+  const reading = await request(app).post(`/api/openings/${opening.id}/measurement-reading`).set(auth).send({
+    content_type: "image/jpeg", image_base64: Buffer.from("plain-opening").toString("base64"),
+  });
+  expect(reading.status).toBe(200);
+  expect(reading.body.suggestions).toEqual([]);
+  expect(reading.body.written).toBe(false);
+  expect(measurementReadPresentation("measurement_none_found")).toEqual({
+    empty: true,
+    code: "measurement_none_found",
+    message: "No measurements were found in this photo. Use an Apple Measure screenshot that shows the numbers.",
+  });
+  const stored = await pool.query("SELECT width_in FROM opening_frames WHERE id=$1", [frameId]);
+  expect(Number(stored.rows[0].width_in)).toBe(40);
+});
+
+it("names a timeout, a provider failure, and an unsupported image type", async () => {
+  process.env.OI_MEASUREMENT_READER = "anthropic";
+  process.env.OI_RECOGNITION_ENABLED = "true";
+  process.env.ANTHROPIC_API_KEY = "test-not-real";
+  const { opening, auth } = await openingWithFrame();
+  vi.stubGlobal("fetch", vi.fn(async () => { throw new DOMException("timed out", "TimeoutError"); }));
+  const timedOut = await request(app).post(`/api/openings/${opening.id}/measurement-reading`).set(auth).send({
+    content_type: "image/jpeg", image_base64: Buffer.from("plain-opening").toString("base64"),
+  });
+  expect(timedOut.status).toBe(504);
+  expect(timedOut.body.error).toBe("measurement_reader_timeout");
+  expect(measurementReadPresentation("measurement_reader_timeout").message).toContain("timed out");
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { message: "bad image" } }), { status: 400 })));
+  const provider = await request(app).post(`/api/openings/${opening.id}/measurement-reading`).set(auth).send({
+    content_type: "image/jpeg", image_base64: Buffer.from("plain-opening").toString("base64"),
+  });
+  expect(provider.status).toBe(502);
+  expect(provider.body.error).toBe("measurement_reader_failed");
+  expect(measurementReadPresentation("measurement_reader_failed").code).toBe("measurement_reader_failed");
+  const heic = await request(app).post(`/api/openings/${opening.id}/measurement-reading`).set(auth).send({
+    content_type: "image/heic", image_base64: Buffer.from("plain-opening").toString("base64"),
+  });
+  expect(heic.status).toBe(400);
+  expect(heic.body.error).toBe("measurement_image_type");
+  expect(measurementReadPresentation("measurement_reader_unconfigured").message).toContain("not available");
+  expect(measurementReadPresentation("measurement_network").message).toContain("could not be sent");
 });

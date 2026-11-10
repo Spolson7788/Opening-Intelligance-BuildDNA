@@ -3,6 +3,8 @@ import { formatInches, pairLeafWidths, parseInches, unevenPair } from "../src/li
 import { dimensionPayload, parseInches as fieldParse, formatInches as fieldFormat } from "../field-app/src/lib/inchMeasure";
 
 it("reads feet, inches, fractions, and decimals as inches", () => {
+  expect(parseInches("3' 11\"")).toBe(47);
+  expect(parseInches("8'")).toBe(96);
   expect(parseInches("3' 11 1/2\"")).toBe(47.5);
   expect(parseInches("47.5")).toBe(47.5);
   expect(parseInches("47 1/2")).toBe(47.5);

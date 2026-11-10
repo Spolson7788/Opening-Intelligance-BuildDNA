@@ -285,7 +285,11 @@ export type MeasurementSuggestion = {
 };
 
 export async function readMeasurementPhoto(openingId: string, contentType: string, imageBase64: string): Promise<{ provider: string; suggestions: MeasurementSuggestion[]; written: false }> {
-  return authedFetch(`/openings/${openingId}/measurement-reading`, { method: "POST", body: JSON.stringify({ content_type: contentType, image_base64: imageBase64 }) });
+  return authedFetch(`/openings/${openingId}/measurement-reading`, {
+    method: "POST",
+    body: JSON.stringify({ content_type: contentType, image_base64: imageBase64 }),
+    signal: AbortSignal.timeout(45_000),
+  });
 }
 
 export async function setOpeningConfiguration(openingId: string, opening_configuration: "single" | "pair") {

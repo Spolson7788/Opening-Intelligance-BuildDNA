@@ -11,6 +11,8 @@ interface Props {
   relatedEntityType?: "opening" | "frame" | "door_leaf" | "hardware_component";
   relatedEntityId?: string;
   targetLabel?: string;
+  /** Measurement photos need a library choice. Other captures keep the camera and video controls. */
+  sources?: "camera" | "saved-or-camera";
   onQueued: () => void; // fires the instant a photo/video is saved locally, not once it's uploaded
   onPicked?: (file: File) => void;
 }
@@ -28,7 +30,7 @@ function recentMessage(key: string) {
   return entry && Date.now() - entry.at < MESSAGE_TTL_MS ? entry : undefined;
 }
 
-export function PhotoCapture({ openingId, relatedEntityType = "opening", relatedEntityId, targetLabel, onQueued, onPicked }: Props) {
+export function PhotoCapture({ openingId, relatedEntityType = "opening", relatedEntityId, targetLabel, sources = "camera", onQueued, onPicked }: Props) {
   const captureTarget = targetLabel ?? relatedEntityType.replace(/_/g, " ");
   const inputSuffix = `${openingId}-${relatedEntityType}-${relatedEntityId ?? openingId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
   const [saving, setSaving] = useState(false);
@@ -139,35 +141,65 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
     }
   }
 
+  const fileInputStyle = { position: "absolute" as const, width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap" as const, border: 0 };
+  const buttonStyle = { cursor: "pointer", flex: "1 1 220px", padding: "8px 12px", overflowWrap: "anywhere" as const };
   return (
     <div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        <label htmlFor={`photo-input-${inputSuffix}`} className="btn btn-secondary" style={{ cursor: "pointer", flex: "1 1 220px", padding: "8px 12px", overflowWrap: "anywhere" }}>
-          {saving ? "Saving…" : `+ Add photo to ${captureTarget}`}
-          <input
-            id={`photo-input-${inputSuffix}`}
-            aria-label={`Choose photo for ${captureTarget}`}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={onFileSelected}
-            disabled={saving}
-            style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}
-          />
-        </label>
-        <label htmlFor={`video-input-${inputSuffix}`} className="btn btn-secondary" style={{ cursor: "pointer", flex: "1 1 220px", padding: "8px 12px", overflowWrap: "anywhere" }}>
-          {saving ? "Saving…" : `+ Add video to ${captureTarget}`}
-          <input
-            id={`video-input-${inputSuffix}`}
-            aria-label={`Choose video for ${captureTarget}`}
-            type="file"
-            accept="video/mp4,video/quicktime"
-            capture="environment"
-            onChange={onFileSelected}
-            disabled={saving}
-            style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}
-          />
-        </label>
+        {sources === "saved-or-camera" ? <>
+          <label htmlFor={`photo-library-${inputSuffix}`} className="btn btn-secondary" style={buttonStyle}>
+            {saving ? "Saving…" : "Choose saved Measure screenshot"}
+            <input
+              id={`photo-library-${inputSuffix}`}
+              aria-label="Choose saved Measure screenshot"
+              type="file"
+              accept="image/*,image/heic,image/heif"
+              onChange={onFileSelected}
+              disabled={saving}
+              style={fileInputStyle}
+            />
+          </label>
+          <label htmlFor={`photo-camera-${inputSuffix}`} className="btn btn-secondary" style={buttonStyle}>
+            {saving ? "Saving…" : "Take photo"}
+            <input
+              id={`photo-camera-${inputSuffix}`}
+              aria-label="Take photo"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={onFileSelected}
+              disabled={saving}
+              style={fileInputStyle}
+            />
+          </label>
+        </> : <>
+          <label htmlFor={`photo-input-${inputSuffix}`} className="btn btn-secondary" style={buttonStyle}>
+            {saving ? "Saving…" : `+ Add photo to ${captureTarget}`}
+            <input
+              id={`photo-input-${inputSuffix}`}
+              aria-label={`Choose photo for ${captureTarget}`}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={onFileSelected}
+              disabled={saving}
+              style={fileInputStyle}
+            />
+          </label>
+          <label htmlFor={`video-input-${inputSuffix}`} className="btn btn-secondary" style={buttonStyle}>
+            {saving ? "Saving…" : `+ Add video to ${captureTarget}`}
+            <input
+              id={`video-input-${inputSuffix}`}
+              aria-label={`Choose video for ${captureTarget}`}
+              type="file"
+              accept="video/mp4,video/quicktime"
+              capture="environment"
+              onChange={onFileSelected}
+              disabled={saving}
+              style={fileInputStyle}
+            />
+          </label>
+        </>}
       </div>
       {notice && <p role="status" style={{ marginTop: 8, color: "var(--text-secondary)" }}>{notice}</p>}
       {error && <p className="error-text" role="alert" style={{ marginTop: 8 }}>{error}</p>}

@@ -7,7 +7,8 @@ import { updateCachedOpening } from "../lib/db";
 import { PhotoCapture } from "../components/PhotoCapture";
 import { useAuth } from "../lib/AuthContext";
 import { dimensionDraft, dimensionPayload, parseInches, unevenPair } from "../lib/inchMeasure";
-import { confirmedDimension, suggestionLabel } from "../lib/measurementSuggestions";
+import { confirmedDimension, measurementErrorCode, measurementReadPresentation, suggestionLabel } from "../lib/measurementSuggestions";
+import { prepareMeasurementImage } from "../lib/photoPreparation";
 import type { DimensionDraft } from "../lib/inchMeasure";
 
 export function OpeningStructurePage() {
@@ -68,6 +69,7 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
   const [measureFile, setMeasureFile] = useState<File | null>(null);
   const [suggestions, setSuggestions] = useState<MeasurementSuggestion[]>([]);
   const [reading, setReading] = useState(false);
+  const [supportCode, setSupportCode] = useState("");
 
   const activeIn = parseInches(leafWidth.active?.text ?? "");
   const inactiveIn = parseInches(leafWidth.inactive?.text ?? "");
@@ -93,6 +95,7 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
   async function saveFrame() {
     setSaving(true);
     setError("");
+    setSupportCode("");
     setMessage("Saving frame…");
     try {
       const payload = withDimensions({
@@ -114,6 +117,7 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
   async function saveLeaf(role: string) {
     setSaving(true);
     setError("");
+    setSupportCode("");
     setMessage(`Saving ${role} leaf…`);
     try {
       const payload = withDimensions({
@@ -139,6 +143,7 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
   }
 
   function pickMeasurement(file: File) {
+    setSupportCode("");
     setMeasureFile(file);
     setMeasurePreview((current) => {
       if (current) URL.revokeObjectURL(current);
@@ -150,24 +155,38 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
   async function readMeasurement() {
     if (!measureFile) return;
     setError("");
+    setSupportCode("");
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
-      setMessage("Reading a measurement photo needs a connection. The photo can still be saved on this phone.");
+      const offline = measurementReadPresentation("measurement_offline");
+      setMessage(offline.message);
+      setSupportCode(offline.code);
       return;
     }
     setReading(true);
     try {
+      const prepared = await prepareMeasurementImage(measureFile);
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("unreadable"));
-        reader.readAsDataURL(measureFile);
+        reader.onerror = () => reject(new Error("measurement_image_unreadable"));
+        reader.readAsDataURL(prepared.blob);
       });
-      const result = await readMeasurementPhoto(id, measureFile.type || "image/jpeg", dataUrl.split(",")[1] || "");
+      const encoded = dataUrl.split(",")[1] || "";
+      if (!encoded) throw new Error("measurement_image_unreadable");
+      const result = await readMeasurementPhoto(id, prepared.contentType, encoded);
       setSuggestions(result.suggestions);
-      setMessage("Suggestions stay on this screen until you use one and save. Nothing was written yet.");
-    } catch {
+      if (result.suggestions.length === 0) {
+        const empty = measurementReadPresentation("measurement_none_found");
+        setMessage(empty.message);
+        setSupportCode(empty.code);
+      } else {
+        setMessage("Suggestions stay on this screen until you use one and save. Nothing was written yet.");
+      }
+    } catch (caught) {
+      const outcome = measurementReadPresentation(measurementErrorCode(caught));
       setMessage("");
-      setError("The measurement photo could not be read. The opening was not changed.");
+      setError(outcome.message);
+      setSupportCode(outcome.code);
     } finally { setReading(false); }
   }
 
@@ -189,6 +208,7 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
   async function changeConfiguration(next: "single" | "pair") {
     if (next === configuration) return;
     setError("");
+    setSupportCode("");
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       setMessage("Changing single or pair needs a connection. Sizes and materials can still be saved on this phone.");
       return;
@@ -247,9 +267,10 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
       </div>)}
       <div className="c04-band-blue">
         <div className="section-label">Measurement photo</div>
-        <p>Take or choose an Apple Measure screenshot. Saving the photo works offline. Reading it needs a connection and does not change a size until you use a suggestion and save.</p>
+        <p>Choose a saved Apple Measure screenshot, or take a photo. Saving the photo works offline. Reading it needs a connection and does not change a size until you use a suggestion and save.</p>
+        <p>On a pair, a line across both doors is the whole opening. Put that width on the frame, or on the leaves, then save.</p>
         {measurePreview && <img src={measurePreview} alt="Measurement photo" style={{ width: "100%", maxHeight: 220, objectFit: "contain", background: "#fff", borderRadius: 8 }} />}
-        <PhotoCapture openingId={id} relatedEntityType="opening" relatedEntityId={id} targetLabel="measurement photo" onQueued={() => setMessage("Measurement photo saved locally.")} onPicked={pickMeasurement} />
+        <PhotoCapture openingId={id} relatedEntityType="opening" relatedEntityId={id} sources="saved-or-camera" onQueued={() => { setSupportCode(""); setMessage("Measurement photo saved locally."); }} onPicked={pickMeasurement} />
         <button type="button" className="btn btn-secondary" disabled={!measureFile || reading || saving} onClick={() => { void readMeasurement(); }}>{reading ? "Reading…" : "Read measurements"}</button>
         {suggestions.map((suggestion) => <div key={suggestion.field} style={{ marginTop: 8 }}>
           <p><strong>{suggestionLabel(suggestion.field)}</strong> {confirmedDimension(suggestion).text} · confidence {Math.round(suggestion.confidence * 100)}%</p>
@@ -259,6 +280,7 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
       </div>
       {error && <p className="c04-step-alert" role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
+      {supportCode && <p style={{ fontSize: 12 }}>Support code: {supportCode}</p>}
       {savedTargets.length > 0 && <p>Return to the opening and refresh saved records before editing these targets again.</p>}
     </div>
   </div>;
