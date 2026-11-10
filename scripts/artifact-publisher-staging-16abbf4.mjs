@@ -1,4 +1,4 @@
-// One staging publish of the approved app commit 86d3590d247efd5a4addc62df9fd531e70451e2b.
+// One staging publish of the approved app commit 7c9c1ab0713d7df00b1110bb7082815658c35a33.
 // Publisher-file commits after that pin are allowed. App changes are not.
 // Hard-locked to oi-video-workflows-staging. Refuses production. One attempt.
 // Does not print secrets. Default is a dry run; publish requires --publish-approved.
@@ -10,17 +10,65 @@ import https from 'node:https';
 import { resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
-export const PINNED_COMMIT = '86d3590d247efd5a4addc62df9fd531e70451e2b';
+export const PINNED_COMMIT = '7c9c1ab0713d7df00b1110bb7082815658c35a33';
 export const STAGING_SITE_ID = 'b64bf33c-a131-4ae2-b2b0-9aec16e9f77b';
 export const STAGING_SITE_NAME = 'oi-video-workflows-staging';
 export const STAGING_URL = 'https://oi-video-workflows-staging.netlify.app';
 export const PRODUCTION_SITE_ID = 'b4e0fc62-86ce-4a26-9ebf-26d7386f4b01';
+export const MEASUREMENT_READER_KEY = 'OI_MEASUREMENT_READER';
+export const MEASUREMENT_READER_VALUE = 'anthropic';
+export const RECOGNITION_ENV_NAMES = ['OI_RECOGNITION_ENABLED', 'ANTHROPIC_API_KEY'];
+
+export function envNamesFromPayload(payload) {
+  const list = Array.isArray(payload) ? payload
+    : Array.isArray(payload?.variables) ? payload.variables
+    : Array.isArray(payload?.env) ? payload.env
+    : [];
+  const names = [];
+  for (const item of list) {
+    const key = item && typeof item.key === 'string' ? item.key : item && typeof item.name === 'string' ? item.name : '';
+    if (key) names.push(key);
+  }
+  return [...new Set(names)].sort();
+}
+
+export function recognitionEnvReport(names) {
+  const have = new Set(names);
+  return RECOGNITION_ENV_NAMES.map((name) => ({ name, present: have.has(name) }));
+}
+
+export function measurementReaderReport(names, write = false) {
+  return {
+    siteId: STAGING_SITE_ID,
+    productionRefused: true,
+    key: MEASUREMENT_READER_KEY,
+    intendedValue: MEASUREMENT_READER_VALUE,
+    present: names.includes(MEASUREMENT_READER_KEY),
+    appliesOn: 'publish-approved',
+    write,
+  };
+}
+
+export function measurementReaderEnvBody() {
+  return {
+    key: MEASUREMENT_READER_KEY,
+    scopes: ['functions', 'runtime'],
+    values: [{ value: MEASUREMENT_READER_VALUE, context: 'all' }],
+  };
+}
+
+export function siteEnvReport(names, write = false) {
+  return {
+    measurementReader: measurementReaderReport(names, write),
+    recognitionEnvPresent: recognitionEnvReport(names),
+  };
+}
 export const DEFAULT_NETLIFY_CLI_DIR = 'C:\\Users\\spols\\Documents\\Codex\\2026-10-23\\task\\.local-netlify-cli\\node_modules\\netlify-cli';
 const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r43');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r44');
 const resumePath = resolve(journalDir, 'resume-attempt.json');
 const ROLLBACK_DEPLOY_ID = '6af230ff9978904131f1329d';
 const rollbackDir = resolve(root, 'dist/staging-publish-journal-16abbf4-rollback');
@@ -68,6 +116,7 @@ const PRIOR_JOURNALS = [
   'dist/staging-publish-journal-16abbf4-r40/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r41/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r42/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r43/publication-attempt.json',
 ];
 const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
@@ -269,6 +318,31 @@ function stagingRequest(method, path, token, body, contentType = 'application/js
     req.on('error', () => reject(fail('site_lookup_failed')));
     req.end(payload);
   });
+}
+
+const SITE_ENV_PATH = `/api/v1/sites/${STAGING_SITE_ID}/env`;
+
+async function fetchSiteEnvNames(token) {
+  const response = await stagingRequest('GET', SITE_ENV_PATH, token);
+  if (response.status === 401 || response.status === 403) throw fail('auth_required');
+  if (response.status !== 200) throw fail('env_lookup_failed');
+  let payload = null;
+  try { payload = JSON.parse(response.body.toString('utf8')); }
+  catch { throw fail('env_lookup_failed'); }
+  return envNamesFromPayload(payload);
+}
+
+async function writeMeasurementReaderEnv(token) {
+  const names = await fetchSiteEnvNames(token);
+  const exists = names.includes(MEASUREMENT_READER_KEY);
+  const target = exists ? `${SITE_ENV_PATH}/${MEASUREMENT_READER_KEY}` : SITE_ENV_PATH;
+  const response = await stagingRequest(exists ? 'PUT' : 'POST', target, token, JSON.stringify(measurementReaderEnvBody()));
+  if (response.status === 401 || response.status === 403) throw fail('auth_required');
+  if (response.status < 200 || response.status >= 300) {
+    saveFailure('env_write_failed', { status: response.status, body: Buffer.from('') });
+    throw fail('env_write_failed');
+  }
+  return siteEnvReport([...names, MEASUREMENT_READER_KEY], true);
 }
 
 function sanitize(value) {
@@ -1363,6 +1437,10 @@ async function ensurePublishingLocked(token, journal) {
 
 async function uploadDigestDeploy(token, fileMap, functionMap, journal) {
   if (!fileMap.files['/netlify.toml'] || !apiRoutesOk(functionMap)) throw fail('refusing_missing_routes');
+  const envReport = await writeMeasurementReaderEnv(token);
+  journal.measurementReader = envReport.measurementReader;
+  journal.recognitionEnvPresent = envReport.recognitionEnvPresent;
+  writeJson(attemptPath, journal);
   await ensurePublishingLocked(token, journal);
   const createBody = productionDeployBody({
     files: fileMap.files,
@@ -1840,6 +1918,10 @@ async function diagnoseDeploy(deployId) {
     if (summary.available) break;
   }
   const publishedDeployId = siteResponse.body.published_deploy?.id || null;
+  let siteEnv = null;
+  let envError = null;
+  try { siteEnv = siteEnvReport(await fetchSiteEnvNames(token), false); }
+  catch (error) { envError = error.code || 'env_lookup_failed'; }
   const record = scrubDeployValue({
     state: 'diagnose',
     readsOnly: true,
@@ -1854,6 +1936,9 @@ async function diagnoseDeploy(deployId) {
     differences: compareFunctionLists(knownGood.functions, candidate.functions),
     functionListStatus: candidate.listStatus,
     apiLogs: logs,
+    measurementReader: siteEnv?.measurementReader || null,
+    recognitionEnvPresent: siteEnv?.recognitionEnvPresent || null,
+    envError,
   });
   mkdirSync(journalDir, { recursive: true });
   writeJson(resolve(journalDir, `diagnose-${deployId}.json`), record);
@@ -1912,6 +1997,10 @@ async function main() {
       catch (error) { rollbackError = error.code || 'cli_login_required'; }
     }
     mkdirSync(journalDir, { recursive: true });
+    let siteEnv = null;
+    let envError = null;
+    try { siteEnv = siteEnvReport(await fetchSiteEnvNames(await authorize(netlifyCliDir())), false); }
+    catch (error) { envError = error.code || 'env_lookup_failed'; }
     const record = {
       state: 'dry-run',
       commit: assertHeadCommit(root),
@@ -1924,6 +2013,9 @@ async function main() {
       liveDeployId: rollback?.liveDeployId || null,
       rollbackError,
       productionRefused: true,
+      measurementReader: siteEnv?.measurementReader || measurementReaderReport([], false),
+      recognitionEnvPresent: siteEnv?.recognitionEnvPresent || recognitionEnvReport([]),
+      envError,
       createdAt: new Date().toISOString(),
     };
     writeJson(dryRunPath, record);

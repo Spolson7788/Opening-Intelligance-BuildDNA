@@ -7,7 +7,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } 
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { buildFacilityDashboard } from './build-facility-dashboard.mjs';
-import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, eagerNativePackagingProblems, eagerNativeProblemsForZip, linuxSharpPackagingProblems, linuxSharpVersions, stageLinuxSharp, linuxSharpZipEntries, appendZipEntries, extractZip, zipUnzippedBytes, API_ZIP_MAX_UNZIPPED_BYTES, listZipEntryNames, readZipEntry, functionsFromDeploy, missingBundledModules, stageFunctionSources, packageCommitAllowed, packageChecksum, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, eagerNativePackagingProblems, eagerNativeProblemsForZip, linuxSharpPackagingProblems, linuxSharpVersions, stageLinuxSharp, linuxSharpZipEntries, appendZipEntries, extractZip, zipUnzippedBytes, API_ZIP_MAX_UNZIPPED_BYTES, listZipEntryNames, readZipEntry, functionsFromDeploy, missingBundledModules, stageFunctionSources, packageCommitAllowed, packageChecksum, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT, envNamesFromPayload, recognitionEnvReport, measurementReaderReport, measurementReaderEnvBody, siteEnvReport, MEASUREMENT_READER_KEY } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('diagnose compares function metadata without keeping secrets', () => {
   const knownGood = functionsFromDeploy({ available_functions: [{ n: 'api', d: 'sha-good', runtime: 'nodejs22.x', im: 'stream', ro: [], a: 100 }] });
@@ -32,7 +32,7 @@ test('staging site is the only accepted target', () => {
 test('production and any other site are refused', () => {
   assert.throws(() => assertSite({ id: PRODUCTION_SITE_ID, name: 'oi-production', url: 'https://oi-production.netlify.app' }), /refusing_production/);
   assert.throws(() => assertSite({ id: '80fbbee8-b9d3-4b16-b93f-d2d8396591ec', name: 'oi-connected-release-candidate', url: 'https://oi-connected-release-candidate.netlify.app' }), /refusing_site_mismatch/);
-  assert.equal(PINNED_COMMIT, '86d3590d247efd5a4addc62df9fd531e70451e2b');
+  assert.equal(PINNED_COMMIT, '7c9c1ab0713d7df00b1110bb7082815658c35a33');
   assert.equal(packageCommitAllowed(PINNED_COMMIT), true);
   assert.equal(packageCommitAllowed('16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5'), false);
   assert.equal(packageCommitAllowed('9c0256e1b92182a55246bc7e6460ab456098a48d'), false);
@@ -450,4 +450,31 @@ test('facility dashboard packaging accepts CRLF checkout and still refuses a cha
   assert.equal(existsSync(resolve(brokenDest, 'index.html')), false);
   rmSync(brokenRoot, { recursive: true, force: true });
   rmSync(brokenDest, { recursive: true, force: true });
+});
+
+test('staging env report names the measurement setting and keeps secret values out', () => {
+  const secret = 'sk-ant-this-value-must-not-appear';
+  const names = envNamesFromPayload([
+    { key: 'ANTHROPIC_API_KEY', values: [{ value: secret, context: 'all' }] },
+    { key: 'OI_RECOGNITION_ENABLED', values: [{ value: 'true', context: 'all' }] },
+    { name: 'OTHER', value: secret },
+  ]);
+  const report = siteEnvReport(names, false);
+  const text = JSON.stringify(report);
+  assert.equal(text.includes(secret), false);
+  assert.deepEqual(report.recognitionEnvPresent, [
+    { name: 'OI_RECOGNITION_ENABLED', present: true },
+    { name: 'ANTHROPIC_API_KEY', present: true },
+  ]);
+  assert.equal(report.measurementReader.write, false);
+  assert.equal(report.measurementReader.present, false);
+  assert.equal(report.measurementReader.intendedValue, 'anthropic');
+  assert.equal(report.measurementReader.siteId, STAGING_SITE_ID);
+  assert.equal(measurementReaderEnvBody().key, MEASUREMENT_READER_KEY);
+  assert.equal(measurementReaderEnvBody().values[0].value, 'anthropic');
+  assert.equal(assertStagingApiPath(`/api/v1/sites/${STAGING_SITE_ID}/env`), `/api/v1/sites/${STAGING_SITE_ID}/env`);
+  assert.throws(() => assertStagingApiPath(`/api/v1/sites/${PRODUCTION_SITE_ID}/env`), /refusing_production/);
+  assert.equal(JSON.stringify(scrubDeployValue(report)).includes(secret), false);
+  assert.equal(recognitionEnvReport([])[1].present, false);
+  assert.equal(measurementReaderReport(names, true).write, true);
 });
