@@ -1,4 +1,5 @@
 import { openDB } from "idb";
+import { withTimeout } from "./deadline";
 import type { DBSchema, IDBPDatabase } from "idb";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
 import type {
@@ -105,10 +106,26 @@ export interface PhotoOutboxItem {
 
 let dbPromise: Promise<IDBPDatabase<FieldAppDB>> | null = null;
 
-export function getDb() {
-  if (!dbPromise) {
-    dbPromise = openDB<FieldAppDB>("opening-intel-field", OFFLINE_SCHEMA_VERSION, {
-      upgrade(db, oldVersion) {
+export const DB_OPEN_TIMEOUT_MS = 4_000;
+
+/** Reject when another connection blocks the open, or when the open itself does not finish. */
+export function combineDatabaseOpen<T>(opened: Promise<T>, blocked: Promise<T>, timeoutMs = DB_OPEN_TIMEOUT_MS): Promise<T> {
+  return withTimeout(Promise.race([opened, blocked]), timeoutMs, "IndexedDB open timed out");
+}
+
+function openFieldDatabase(): Promise<IDBPDatabase<FieldAppDB>> {
+  let rejectBlocked: (error: DOMException) => void = () => {};
+  let acceptOpened: (db: IDBPDatabase<FieldAppDB>) => void = () => {};
+  const blocked = new Promise<IDBPDatabase<FieldAppDB>>((resolve, reject) => {
+    rejectBlocked = reject;
+    acceptOpened = resolve;
+  });
+  let abandoned = false;
+  const opened = openDB<FieldAppDB>("opening-intel-field", OFFLINE_SCHEMA_VERSION, {
+    blocked() {
+      rejectBlocked(new DOMException("IndexedDB open blocked", "AbortError"));
+    },
+    upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           db.createObjectStore("openings", { keyPath: "id" });
           db.createObjectStore("outbox", { keyPath: "id" });
@@ -147,19 +164,34 @@ export function getDb() {
         }
       },
     }).then((db) => {
+      if (abandoned) {
+        try { db.close(); } catch { /* already closed */ }
+        throw new DOMException("IndexedDB open timed out", "TimeoutError");
+      }
       const drop = () => { if (dbPromise) dbPromise = null; };
       db.onclose = drop;
       db.onversionchange = () => { db.close(); drop(); };
+      acceptOpened(db);
       return db;
     });
-  }
+  const raced = combineDatabaseOpen(opened, blocked);
+  raced.catch(() => { abandoned = true; if (dbPromise === raced) dbPromise = null; });
+  return raced;
+}
+
+export function getDb() {
+  if (!dbPromise) dbPromise = openFieldDatabase();
   return dbPromise;
 }
 
-export function resetFieldAppDb() {
+export async function resetFieldAppDb() {
   const pending = dbPromise;
   dbPromise = null;
-  void pending?.then((db) => { try { db.close(); } catch { /* already closed */ } }).catch(() => undefined);
+  if (!pending) return;
+  try {
+    const db = await withTimeout(pending, DB_OPEN_TIMEOUT_MS, "IndexedDB close timed out");
+    db.close();
+  } catch { /* the cached connection is already dropped */ }
 }
 
 export async function closeFieldAppDb() {

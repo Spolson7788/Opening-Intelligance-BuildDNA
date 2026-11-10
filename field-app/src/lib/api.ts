@@ -1,4 +1,5 @@
 import { loadAuth, cacheOpening, getCachedOpening, wipeAllOiData, clearAuth } from "./db";
+import { withTimeout } from "./deadline";
 import { isNetlifyAccessResponse, redirectToFieldLogin, SITE_ACCESS_REQUIRED } from "./siteAccess";
 import {diagnosticActor,diagnosticAvailable,PROBES,readBoundedProbe,runPhotoProbes} from './photoDiagnostic';
 import type {Principal,ProbeResponse} from './photoDiagnostic';
@@ -99,7 +100,16 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
   if (auth?.token) headers["Authorization"] = `Bearer ${auth.token}`;
 
   if (expectedPrincipal && options.method && !['GET','HEAD'].includes(options.method.toUpperCase())) assertSyncDispatchAllowed();
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const signal = options.signal ?? AbortSignal.timeout(20_000);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal });
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new DOMException("request timed out", "TimeoutError");
+    }
+    throw error;
+  }
   if(diagnostic){
     const response=await readBoundedProbe(res);
     const current=await loadAuth();
@@ -385,7 +395,7 @@ export async function uploadPrivatePhoto(
   checksum: string,
   photoId: string,
 ) {
-  const res = await fetch(uploadUrl, {
+  const res = await withTimeout(fetch(uploadUrl, {
     method: "PUT",
     headers: {
       "Content-Type": contentType,
@@ -393,7 +403,8 @@ export async function uploadPrivatePhoto(
       "x-amz-meta-oi-photo-id": photoId,
     },
     body: blob,
-  });
+    signal: AbortSignal.timeout(20_000),
+  }), 20_000, "photo upload timed out");
   if (!res.ok) throw new Error(`upload_failed_${res.status}`);
 }
 

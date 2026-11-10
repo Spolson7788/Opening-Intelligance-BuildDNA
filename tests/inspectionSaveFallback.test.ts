@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, expect, it, vi } from "vitest";
 
-const control = vi.hoisted(() => ({ failsLeft: 0, writes: 0, resets: 0, readFails: 0, rejectNext: false }));
+const control = vi.hoisted(() => ({ failsLeft: 0, writes: 0, resets: 0, readFails: 0, rejectNext: false, blockRetry: false, photos: 0 }));
 const posts = vi.hoisted(() => ({ calls: [] as Record<string, unknown>[] }));
 
 vi.mock("../field-app/src/lib/db", async (importOriginal) => {
@@ -11,8 +11,17 @@ vi.mock("../field-app/src/lib/db", async (importOriginal) => {
     resetFieldAppDb: () => { control.resets += 1; return actual.resetFieldAppDb(); },
     saveEntityAndOperation: async (...args: Parameters<typeof actual.saveEntityAndOperation>) => {
       control.writes += 1;
-      if (control.failsLeft > 0) { control.failsLeft -= 1; throw new Error("queue failed"); }
+      if (control.failsLeft > 0) {
+        control.failsLeft -= 1;
+        if (control.failsLeft === 0 && control.blockRetry) throw new DOMException("IndexedDB open blocked", "AbortError");
+        throw new Error("queue failed");
+      }
       return actual.saveEntityAndOperation(...args);
+    },
+    saveMediaAndOperation: async (...args: Parameters<typeof actual.saveMediaAndOperation>) => {
+      control.writes += 1;
+      if (control.failsLeft > 0) { control.failsLeft -= 1; throw new Error("queue failed"); }
+      return actual.saveMediaAndOperation(...args);
     },
     getSyncOperationsForPrincipal: async (...args: Parameters<typeof actual.getSyncOperationsForPrincipal>) => {
       if (control.readFails > 0) { control.readFails -= 1; throw new Error("queue failed"); }
@@ -25,6 +34,9 @@ vi.mock("../field-app/src/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../field-app/src/lib/api")>();
   return {
     ...actual,
+    reserveOfflinePhoto: vi.fn(async () => { control.photos += 1; return { status: "verified" }; }),
+    confirmOfflinePhoto: vi.fn(async () => { control.photos += 1; return {}; }),
+    uploadPrivatePhoto: vi.fn(async () => {}),
     submitOfflineOperation: vi.fn(async (payload: Record<string, unknown>) => {
       posts.calls.push(payload);
       if (control.rejectNext) { control.rejectNext = false; throw new actual.ApiError(409, "visit_finished"); }
@@ -39,8 +51,8 @@ vi.mock("../field-app/src/lib/api", async (importOriginal) => {
 });
 
 import { ApiError } from "../field-app/src/lib/api";
-import { closeFieldAppDb, saveAuth } from "../field-app/src/lib/db";
-import { inspectionSaveFailureMessage } from "../field-app/src/lib/inspectionPhoto";
+import { closeFieldAppDb, combineDatabaseOpen, saveAuth } from "../field-app/src/lib/db";
+import { inspectionSaveFailureMessage, queueInspectionFailurePhoto } from "../field-app/src/lib/inspectionPhoto";
 import { noteSyncDiagnostic, onSyncStateChange, queueOpeningMutation, refreshPendingCount, runLocalWrite } from "../field-app/src/lib/sync";
 
 const userId = "55555555-5555-4555-8555-555555555555";
@@ -55,6 +67,8 @@ afterEach(async () => {
   control.resets = 0;
   control.readFails = 0;
   control.rejectNext = false;
+  control.blockRetry = false;
+  control.photos = 0;
   await closeFieldAppDb();
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.deleteDatabase("opening-intel-field");
@@ -110,6 +124,58 @@ it("drops the cached database and retries a local write once", async () => {
   expect(saved).toBe("stored");
   expect(calls).toBe(2);
   expect(control.resets).toBe(1);
+});
+
+it("rejects a blocked database open without waiting", async () => {
+  let rejectBlocked: (error: DOMException) => void = () => {};
+  const blocked = new Promise<string>((_, reject) => { rejectBlocked = reject; });
+  const pending = combineDatabaseOpen(new Promise<string>(() => {}), blocked, 1000);
+  const started = Date.now();
+  rejectBlocked(new DOMException("IndexedDB open blocked", "AbortError"));
+  await expect(pending).rejects.toThrow(/blocked/);
+  expect(Date.now() - started).toBeLessThan(1000);
+  expect(inspectionSaveFailureMessage(new DOMException("IndexedDB open timed out", "TimeoutError"))).toContain("TimeoutError");
+});
+
+it("posts one no-photo inspection after the reopen is blocked", async () => {
+  await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
+  online(true);
+  control.failsLeft = 2;
+  control.blockRetry = true;
+  let diagnostic = "";
+  const stop = onSyncStateChange((state) => { diagnostic = state.diagnostic ?? ""; });
+  const started = Date.now();
+  const saved = await queueOpeningMutation("inspection_event", openingId, inspectionPayload(), operationId);
+  expect(Date.now() - started).toBeLessThan(1000);
+  expect(saved).toBe(operationId);
+  expect(posts.calls).toHaveLength(1);
+  expect(posts.calls[0].operation_id).toBe(operationId);
+  expect((posts.calls[0].payload as { visit_id: string }).visit_id).toBe("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+  expect(diagnostic).toContain("AbortError");
+  expect(diagnostic).toContain("blocked");
+  stop();
+});
+
+it("queues a photo-backed inspection once and does not post it twice", async () => {
+  await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
+  online(true);
+  control.failsLeft = 0;
+  await queueOpeningMutation("inspection_event", openingId, inspectionPayload(), operationId);
+  await vi.waitFor(() => expect(posts.calls.length).toBe(1));
+  expect(posts.calls[0].operation_id).toBe(operationId);
+  expect(control.photos).toBe(0);
+});
+
+it("uploads a failure photo when its local write throws and does not hang", async () => {
+  await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
+  online(true);
+  control.failsLeft = 2;
+  const started = Date.now();
+  const result = await queueInspectionFailurePhoto(openingId, new Blob([new Uint8Array(32)], { type: "image/jpeg" }), "hole.jpg");
+  expect(Date.now() - started).toBeLessThan(1000);
+  expect(result.kind).toBe("queued");
+  expect(control.photos).toBeGreaterThan(0);
+  expect(control.writes).toBe(2);
 });
 
 it("posts one inspection online after the local queue fails twice", async () => {

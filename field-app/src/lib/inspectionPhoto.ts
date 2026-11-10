@@ -29,6 +29,9 @@ export function inspectionSaveFailureMessage(error: unknown): string {
     return `This device could not queue the inspection (${detail}). Try again. The inspection was not saved.`;
   }
   if (error instanceof ApiError) return `The server did not save this inspection (${error.status}: ${message}). The inspection was not saved.`;
+  if (name === "TimeoutError" || /timed out|open blocked/i.test(message)) {
+    return `This device could not queue the inspection (${detail}). Try again. The inspection was not saved.`;
+  }
   if (/row-level security|\binternal_error\b/i.test(message)) {
     return "The server rejected this queued inspection. It remains saved on this device.";
   }
@@ -106,7 +109,7 @@ export async function queueInspectionFailurePhoto(openingId: string, file: Blob,
     await refreshPendingCount();
   } catch (error) {
     noteSyncDiagnostic(error, true);
-    resetFieldAppDb();
+    await resetFieldAppDb();
     if (!rejected && browserIsOnline()) {
       try {
         await uploadFailurePhotoDirect(media, operation);

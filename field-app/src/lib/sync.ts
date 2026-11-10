@@ -1,4 +1,5 @@
 import { claimSyncOperation, getAllSyncOperations, getOfflineMedia, getOfflineSetting, getSyncOperationsForPrincipal, loadAuth, putOfflineSetting, putSyncConflict, putSyncOperation, putSyncReceipt, reconcileRecoveredMediaOperationId, resetFieldAppDb, saveEntityAndOperation, OiDataWipedError } from "./db";
+import { withTimeout } from "./deadline";
 import { isDeviceStorageError, storageDiagnostic } from "./storageErrors";
 import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, submitServiceRequest, uploadPrivatePhoto, ApiError, PrincipalChangedError, isClientPrincipalChange, isSessionEnded } from "./api";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
@@ -61,12 +62,12 @@ export async function runLocalWrite<T>(write: () => Promise<T>): Promise<T> {
     return await write();
   } catch (error) {
     noteSyncDiagnostic(error, true);
-    resetFieldAppDb();
+    await resetFieldAppDb();
     try {
       return await write();
     } catch (retryError) {
       noteSyncDiagnostic(retryError, true);
-      resetFieldAppDb();
+      await resetFieldAppDb();
       throw retryError;
     }
   }
@@ -101,7 +102,7 @@ export async function refreshPendingCount() {
   notify();
   } catch (error) {
     if (read !== statusRead) return;
-    resetFieldAppDb();
+    await resetFieldAppDb();
     noteSyncDiagnostic(error, true);
     currentState = { ...currentState, pending: 0, failed: 0, conflicts: 0, checked: false, checkFailed: true }; notify();
     schedulePendingCountRetry();
@@ -373,12 +374,25 @@ export async function flushVersionedOperations() {
     }
   }
 }
+const FLUSH_TIMEOUT_MS = 25_000;
+let flushToken = 0;
+
 export async function flushOutbox() {
-  if (currentState.syncing || !navigator.onLine) return;
+  if (currentState.syncing || (typeof navigator !== "undefined" && navigator.onLine === false)) return;
+  const token = ++flushToken;
   currentState = { ...currentState, syncing: true }; notify();
-  try { await flushVersionedOperations(); }
-  catch (error) { currentState = { ...currentState, lastError: error instanceof Error ? error.message : "unknown_error" }; }
-  finally { currentState = { ...currentState, syncing: false }; await refreshPendingCount(); }
+  try { await withTimeout(flushVersionedOperations(), FLUSH_TIMEOUT_MS, "sync timed out"); }
+  catch (error) {
+    if (token !== flushToken) return;
+    noteSyncDiagnostic(error, true);
+    currentState = { ...currentState, lastError: error instanceof Error ? error.message : "unknown_error" };
+  }
+  finally {
+    if (token === flushToken) {
+      currentState = { ...currentState, syncing: false }; notify();
+      await refreshPendingCount().catch(() => undefined);
+    }
+  }
 }
 export function initSync() {
   void refreshPendingCount(); window.addEventListener("online", flushOutbox);

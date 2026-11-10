@@ -322,6 +322,60 @@ it("reuses a photo already saved on this device instead of reading it again", as
   }), expect.any(String));
 });
 
+it("does not queue a failed item that has no photo and no note", async () => {
+  vi.mocked(queueOpeningMutation).mockClear();
+  failurePhotos.queue.mockClear();
+  await act(async () => root.render(
+    <MemoryRouter initialEntries={["/opening/door-1/log-inspection"]}>
+      <Routes><Route path="/opening/:id/log-inspection" element={<LogInspectionEventPage />} /></Routes>
+    </MemoryRouter>,
+  ));
+  const select = host.querySelector("#inspection-type") as HTMLSelectElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")?.set?.call(select, "fire_door_nfpa80");
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const setInput = (selector: string, value: string) => {
+    const input = host.querySelector(selector) as HTMLInputElement;
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  await act(async () => {
+    setInput("#qualification", "Fire door inspector");
+    setInput("#license-number", "FD-100");
+    setInput("#signed-by-name", "Ada Inspector");
+    for (const item of NFPA80_ITEMS) {
+      const answer = host.querySelector(`[aria-label="${item.key}"]`) as HTMLSelectElement;
+      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")?.set?.call(answer, item.key === NFPA80_ITEMS[0].key ? "fail" : "pass");
+      answer.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+  await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(host.textContent).toContain("A failed item needs a note and a photo.");
+  expect(queueOpeningMutation).not.toHaveBeenCalled();
+  expect(failurePhotos.queue).not.toHaveBeenCalled();
+  expect((host.querySelector("button[type=submit]") as HTMLButtonElement).textContent).toContain("Save");
+});
+
+it("re-enables Save when the queue times out", async () => {
+  const timedOut = new Error("IndexedDB open timed out");
+  timedOut.name = "TimeoutError";
+  vi.mocked(queueOpeningMutation).mockReset().mockRejectedValue(timedOut);
+  await act(async () => root.render(
+    <MemoryRouter initialEntries={["/opening/door-1/log-inspection"]}>
+      <Routes><Route path="/opening/:id/log-inspection" element={<LogInspectionEventPage />} /></Routes>
+    </MemoryRouter>,
+  ));
+  await fillFireDoor("pass");
+  await act(async () => host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(host.textContent).toContain("TimeoutError");
+  expect(host.textContent).toContain("IndexedDB open timed out");
+  const button = host.querySelector("button[type=submit]") as HTMLButtonElement;
+  expect(button.textContent).toContain("Save");
+  expect(button.textContent).not.toContain("Saving");
+  expect(button.disabled).toBe(false);
+});
+
 it("keeps the form when the server rejects the online save", async () => {
   const { ApiError } = await import("../field-app/src/lib/api");
   vi.mocked(queueOpeningMutation).mockReset().mockRejectedValue(new ApiError(409, "visit_finished"));
