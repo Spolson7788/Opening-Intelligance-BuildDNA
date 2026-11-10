@@ -12,6 +12,7 @@ interface Props {
   relatedEntityId?: string;
   targetLabel?: string;
   onQueued: () => void; // fires the instant a photo/video is saved locally, not once it's uploaded
+  onPicked?: (file: File) => void;
 }
 
 // Size limits come from lib/mediaLimits.ts, which a test keeps equal to the
@@ -27,7 +28,7 @@ function recentMessage(key: string) {
   return entry && Date.now() - entry.at < MESSAGE_TTL_MS ? entry : undefined;
 }
 
-export function PhotoCapture({ openingId, relatedEntityType = "opening", relatedEntityId, targetLabel, onQueued }: Props) {
+export function PhotoCapture({ openingId, relatedEntityType = "opening", relatedEntityId, targetLabel, onQueued, onPicked }: Props) {
   const captureTarget = targetLabel ?? relatedEntityType.replace(/_/g, " ");
   const inputSuffix = `${openingId}-${relatedEntityType}-${relatedEntityId ?? openingId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
   const [saving, setSaving] = useState(false);
@@ -57,6 +58,7 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
     const file = e.target.files?.[0];
     e.target.value = ""; // allow selecting the same file again later
     if (!file) return;
+    onPicked?.(file);
     setError(null);
     setNotice(null);
 

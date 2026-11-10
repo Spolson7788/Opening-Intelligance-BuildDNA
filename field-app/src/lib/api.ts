@@ -277,6 +277,17 @@ export async function fetchOpeningByCode(openingCode: string) {
   return { opening, fromCache: false };
 }
 
+export type MeasurementSuggestion = {
+  field: "frame_width" | "frame_height" | "active_width" | "active_height" | "inactive_width" | "inactive_height";
+  inches: number;
+  confidence: number;
+  bounds: string;
+};
+
+export async function readMeasurementPhoto(openingId: string, contentType: string, imageBase64: string): Promise<{ provider: string; suggestions: MeasurementSuggestion[]; written: false }> {
+  return authedFetch(`/openings/${openingId}/measurement-reading`, { method: "POST", body: JSON.stringify({ content_type: contentType, image_base64: imageBase64 }) });
+}
+
 export async function setOpeningConfiguration(openingId: string, opening_configuration: "single" | "pair") {
   return authedFetch(`/openings/${openingId}/configuration`, { method: "POST", body: JSON.stringify({ opening_configuration }) });
 }

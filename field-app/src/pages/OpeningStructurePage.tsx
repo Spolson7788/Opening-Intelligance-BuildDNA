@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { fetchOpening, setOpeningConfiguration } from "../lib/api";
+import { fetchOpening, readMeasurementPhoto, setOpeningConfiguration } from "../lib/api";
+import type { MeasurementSuggestion } from "../lib/api";
 import { queueOpeningMutation } from "../lib/sync";
 import { updateCachedOpening } from "../lib/db";
 import { PhotoCapture } from "../components/PhotoCapture";
 import { useAuth } from "../lib/AuthContext";
 import { dimensionDraft, dimensionPayload, parseInches, unevenPair } from "../lib/inchMeasure";
+import { confirmedDimension, suggestionLabel } from "../lib/measurementSuggestions";
 import type { DimensionDraft } from "../lib/inchMeasure";
 
 export function OpeningStructurePage() {
@@ -62,6 +64,10 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [measurePreview, setMeasurePreview] = useState<string | null>(null);
+  const [measureFile, setMeasureFile] = useState<File | null>(null);
+  const [suggestions, setSuggestions] = useState<MeasurementSuggestion[]>([]);
+  const [reading, setReading] = useState(false);
 
   const activeIn = parseInches(leafWidth.active?.text ?? "");
   const inactiveIn = parseInches(leafWidth.inactive?.text ?? "");
@@ -132,6 +138,54 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
     } finally { setSaving(false); }
   }
 
+  function pickMeasurement(file: File) {
+    setMeasureFile(file);
+    setMeasurePreview((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return URL.createObjectURL(file);
+    });
+    setSuggestions([]);
+  }
+
+  async function readMeasurement() {
+    if (!measureFile) return;
+    setError("");
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setMessage("Reading a measurement photo needs a connection. The photo can still be saved on this phone.");
+      return;
+    }
+    setReading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("unreadable"));
+        reader.readAsDataURL(measureFile);
+      });
+      const result = await readMeasurementPhoto(id, measureFile.type || "image/jpeg", dataUrl.split(",")[1] || "");
+      setSuggestions(result.suggestions);
+      setMessage("Suggestions stay on this screen until you use one and save. Nothing was written yet.");
+    } catch {
+      setMessage("");
+      setError("The measurement photo could not be read. The opening was not changed.");
+    } finally { setReading(false); }
+  }
+
+  function useSuggestion(suggestion: MeasurementSuggestion) {
+    const next = confirmedDimension(suggestion);
+    if (suggestion.field === "frame_width") setFrameWidth(next);
+    if (suggestion.field === "frame_height") setFrameHeight(next);
+    if (suggestion.field === "active_width" || suggestion.field === "inactive_width") {
+      const role = suggestion.field.startsWith("inactive") ? "inactive" : "active";
+      setLeafWidth((current) => ({ ...current, [role]: next }));
+    }
+    if (suggestion.field === "active_height" || suggestion.field === "inactive_height") {
+      const role = suggestion.field.startsWith("inactive") ? "inactive" : "active";
+      setLeafHeight((current) => ({ ...current, [role]: next }));
+    }
+    setMessage(`${suggestionLabel(suggestion.field)} is on the form. Save the frame or leaf to keep it.`);
+  }
+
   async function changeConfiguration(next: "single" | "pair") {
     if (next === configuration) return;
     setError("");
@@ -191,6 +245,18 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
         <button className="btn btn-secondary" onClick={() => { void saveLeaf(role); }} disabled={saving || savedTargets.includes(leafIds[role])}>Save {role} leaf</button>
         <div style={{ marginTop: 10 }}><PhotoCapture openingId={id} relatedEntityType="door_leaf" relatedEntityId={leafIds[role]} onQueued={() => setMessage(`${role} leaf photograph saved locally.`)} /></div>
       </div>)}
+      <div className="c04-band-blue">
+        <div className="section-label">Measurement photo</div>
+        <p>Take or choose an Apple Measure screenshot. Saving the photo works offline. Reading it needs a connection and does not change a size until you use a suggestion and save.</p>
+        {measurePreview && <img src={measurePreview} alt="Measurement photo" style={{ width: "100%", maxHeight: 220, objectFit: "contain", background: "#fff", borderRadius: 8 }} />}
+        <PhotoCapture openingId={id} relatedEntityType="opening" relatedEntityId={id} targetLabel="measurement photo" onQueued={() => setMessage("Measurement photo saved locally.")} onPicked={pickMeasurement} />
+        <button type="button" className="btn btn-secondary" disabled={!measureFile || reading || saving} onClick={() => { void readMeasurement(); }}>{reading ? "Reading…" : "Read measurements"}</button>
+        {suggestions.map((suggestion) => <div key={suggestion.field} style={{ marginTop: 8 }}>
+          <p><strong>{suggestionLabel(suggestion.field)}</strong> {confirmedDimension(suggestion).text} · confidence {Math.round(suggestion.confidence * 100)}%</p>
+          <p>{suggestion.bounds}</p>
+          <button type="button" className="btn btn-secondary" onClick={() => useSuggestion(suggestion)}>Use this value</button>
+        </div>)}
+      </div>
       {error && <p className="c04-step-alert" role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
       {savedTargets.length > 0 && <p>Return to the opening and refresh saved records before editing these targets again.</p>}

@@ -2,6 +2,7 @@ import { databaseRoute } from '../db/databaseRoute';
 import { acquireClient } from '../db/acquireClient';
 import { openingLabel } from "../services/openingLabels";
 import { convertOpeningConfiguration } from "../services/openingConfiguration";
+import { MeasurementReaderError, measurementProvider } from "../services/measurementReader";
 import { hasDimension } from "../lib/inchMeasure";
 import {purchasingReview} from "../services/purchasingReview";
 import { Router, Response } from "express";
@@ -257,6 +258,29 @@ openingsRouter.post("/:id/configuration", databaseRoute(async (req: AuthedReques
     console.error(error);
     if (!res.headersSent) res.status(500).json({ error: "internal_error" });
   } finally { client.release(); }
+}));
+
+openingsRouter.post("/:id/measurement-reading", databaseRoute(async (req: AuthedRequest, res) => {
+  const parsed = z.object({
+    content_type: z.string().min(1).max(100),
+    image_base64: z.string().min(1).max(12_000_000),
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const opening = await getOpeningForOrg(req.params.id, req.auth!.organizationId);
+  if (!opening) return res.status(404).json({ error: "not_found" });
+  let bytes: Buffer;
+  try { bytes = Buffer.from(parsed.data.image_base64, "base64"); }
+  catch { return res.status(400).json({ error: "unreadable_image" }); }
+  if (!bytes.length || bytes.length > 8_000_000) return res.status(400).json({ error: "unreadable_image" });
+  try {
+    const provider = measurementProvider();
+    const suggestions = await provider.read({ contentType: parsed.data.content_type, bytes });
+    res.json({ provider: provider.name, suggestions, written: false });
+  } catch (error) {
+    if (error instanceof MeasurementReaderError) return res.status(error.status).json({ error: error.message });
+    console.error(error);
+    res.status(502).json({ error: "measurement_reader_failed" });
+  }
 }));
 
 // Completion is a backend fact. It requires the whole physical opening hierarchy.
