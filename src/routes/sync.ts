@@ -1,5 +1,6 @@
 import { acquireClient } from '../db/acquireClient';
 import { revisionConflict } from "../services/revision";
+import { hasDimension } from "../lib/inchMeasure";
 import { randomBytes } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
@@ -194,13 +195,13 @@ const generalSyncOperation = z.object({
 });
 
 const framePayload = z.object({
-  material: z.string().optional(), frame_type: z.string().optional(), width_in: z.number().positive().optional(),
-  height_in: z.number().positive().optional(), fire_rated: z.boolean().optional(),
+  material: z.string().optional(), frame_type: z.string().optional(), width_in: z.number().positive().nullable().optional(),
+  height_in: z.number().positive().nullable().optional(), fire_rated: z.boolean().optional(),
   condition: z.enum(["good", "worn", "failed", "unverified"]).optional(), notes: z.string().optional(),
 });
 const leafPayload = z.object({
   leaf_role: z.enum(["single", "active", "inactive"]), handing: z.string().optional(), material: z.string().optional(),
-  width_in: z.number().positive().optional(), height_in: z.number().positive().optional(), thickness_in: z.number().positive().optional(),
+  width_in: z.number().positive().nullable().optional(), height_in: z.number().positive().nullable().optional(), thickness_in: z.number().positive().nullable().optional(),
   fire_rated: z.boolean().optional(), condition: z.enum(["good", "worn", "failed", "unverified"]).optional(), notes: z.string().optional(),
 });
 const servicePayload = z.object({
@@ -259,15 +260,19 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       }
       const conflict = revisionConflict(permanent.rows[0], b.base_server_revision);
       if (conflict) { await client.query("ROLLBACK"); return res.status(409).json(conflict); }
+      const widthSet = hasDimension(payload, "width_in");
+      const heightSet = hasDimension(payload, "height_in");
       const result = await client.query(`INSERT INTO opening_frames
         (id,opening_id,material,frame_type,width_in,height_in,fire_rated,condition,notes,client_operation_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
         ON CONFLICT (opening_id) DO UPDATE SET material=EXCLUDED.material,frame_type=EXCLUDED.frame_type,
-        width_in=EXCLUDED.width_in,height_in=EXCLUDED.height_in,fire_rated=EXCLUDED.fire_rated,
+        width_in=CASE WHEN $12::boolean THEN $5::numeric ELSE opening_frames.width_in END,
+        height_in=CASE WHEN $13::boolean THEN $6::numeric ELSE opening_frames.height_in END,
+        fire_rated=EXCLUDED.fire_rated,
         condition=EXCLUDED.condition,notes=EXCLUDED.notes,client_operation_id=EXCLUDED.client_operation_id,
         revision=opening_frames.revision+1,updated_at=now() WHERE opening_frames.revision=$11 RETURNING *`,
-      [b.entity_id,b.opening_id,payload.material??null,payload.frame_type??null,payload.width_in??null,payload.height_in??null,
-        payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id,b.base_server_revision]); record=result.rows[0];
+      [b.entity_id,b.opening_id,payload.material??null,payload.frame_type??null,widthSet ? payload.width_in ?? null : null,heightSet ? payload.height_in ?? null : null,
+        payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id,b.base_server_revision,widthSet,heightSet]); record=result.rows[0];
       if (!record) { await client.query("ROLLBACK"); return res.status(409).json({ error: "revision_conflict" }); }
     } else if (b.entity_type === "door_leaf") {
       if ((opening.opening_configuration === "single") !== (payload.leaf_role === "single")) {
@@ -282,15 +287,21 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       }
       const conflict = revisionConflict(permanent.rows[0], b.base_server_revision);
       if (conflict) { await client.query("ROLLBACK"); return res.status(409).json(conflict); }
+      const widthSet = hasDimension(payload, "width_in");
+      const heightSet = hasDimension(payload, "height_in");
+      const thicknessSet = hasDimension(payload, "thickness_in");
       const result = await client.query(`INSERT INTO door_leaves
         (id,opening_id,leaf_role,handing,material,width_in,height_in,thickness_in,fire_rated,condition,notes,client_operation_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
         ON CONFLICT (opening_id,leaf_role) DO UPDATE SET handing=EXCLUDED.handing,material=EXCLUDED.material,
-        width_in=EXCLUDED.width_in,height_in=EXCLUDED.height_in,thickness_in=EXCLUDED.thickness_in,
+        width_in=CASE WHEN $14::boolean THEN $6::numeric ELSE door_leaves.width_in END,
+        height_in=CASE WHEN $15::boolean THEN $7::numeric ELSE door_leaves.height_in END,
+        thickness_in=CASE WHEN $16::boolean THEN $8::numeric ELSE door_leaves.thickness_in END,
         fire_rated=EXCLUDED.fire_rated,condition=EXCLUDED.condition,notes=EXCLUDED.notes,
         client_operation_id=EXCLUDED.client_operation_id,revision=door_leaves.revision+1,updated_at=now() WHERE door_leaves.revision=$13 RETURNING *`,
-      [b.entity_id,b.opening_id,payload.leaf_role,payload.handing??null,payload.material??null,payload.width_in??null,
-        payload.height_in??null,payload.thickness_in??null,payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id,b.base_server_revision]); record=result.rows[0];
+      [b.entity_id,b.opening_id,payload.leaf_role,payload.handing??null,payload.material??null,widthSet ? payload.width_in ?? null : null,
+        heightSet ? payload.height_in ?? null : null,thicknessSet ? payload.thickness_in ?? null : null,payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id,b.base_server_revision,
+        widthSet,heightSet,thicknessSet]); record=result.rows[0];
       if (!record) { await client.query("ROLLBACK"); return res.status(409).json({ error: "revision_conflict" }); }
     } else if (b.entity_type === "service_event") {
       if (payload.performed_by_org_id && payload.performed_by_org_id !== orgId) {

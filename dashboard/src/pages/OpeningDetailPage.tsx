@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { formatSize, unevenPair } from "../lib/inchMeasure";
 import type { FormEvent } from "react";
 import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl, fetchAuthedBlob, emailInspectionReport, inspectionReportRecipients, saveInspectionToFacilityRecords, downloadAuthedFile } from "../lib/api";
@@ -238,8 +239,9 @@ export function OpeningDetailPage() {
               {!opening.frame ? (
                 <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No frame record has synchronized for this opening.</p>
               ) : (
-                <p><strong>Frame:</strong> {opening.frame.material || "Material not recorded"} · {opening.frame.frame_type || "Type not recorded"} · condition {opening.frame.condition}</p>
+                <p><strong>Frame:</strong> {opening.frame.material || "Material not recorded"} · {opening.frame.frame_type || "Type not recorded"} · {formatSize(opening.frame.width_in, opening.frame.height_in)} · condition {opening.frame.condition}</p>
               )}
+              {unevenPair(opening.door_leaves) && <p><strong>Uneven pair</strong></p>}
               {opening.door_leaves.length === 0 ? (
                 <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No door-leaf records have synchronized for this opening.</p>
               ) : (
@@ -251,7 +253,7 @@ export function OpeningDetailPage() {
                         <td style={{ textTransform: "capitalize" }}>{leaf.leaf_role}</td>
                         <td>{leaf.handing || "—"}</td>
                         <td>{leaf.material || "—"}</td>
-                        <td>{leaf.width_in && leaf.height_in ? `${leaf.width_in} × ${leaf.height_in} in` : "—"}</td>
+                        <td>{formatSize(leaf.width_in, leaf.height_in, leaf.thickness_in)}</td>
                         <td style={{ textTransform: "capitalize" }}>{leaf.condition}</td>
                       </tr>
                     ))}

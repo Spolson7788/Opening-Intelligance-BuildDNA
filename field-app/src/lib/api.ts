@@ -277,6 +277,10 @@ export async function fetchOpeningByCode(openingCode: string) {
   return { opening, fromCache: false };
 }
 
+export async function setOpeningConfiguration(openingId: string, opening_configuration: "single" | "pair") {
+  return authedFetch(`/openings/${openingId}/configuration`, { method: "POST", body: JSON.stringify({ opening_configuration }) });
+}
+
 export async function fetchOpening(id: string) {
   const principal=await loadAuth();
   if(!principal)throw new ApiError(401,"missing_token");

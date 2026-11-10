@@ -1,6 +1,8 @@
 import { databaseRoute } from '../db/databaseRoute';
 import { acquireClient } from '../db/acquireClient';
 import { openingLabel } from "../services/openingLabels";
+import { convertOpeningConfiguration } from "../services/openingConfiguration";
+import { hasDimension } from "../lib/inchMeasure";
 import {purchasingReview} from "../services/purchasingReview";
 import { Router, Response } from "express";
 import { randomUUID } from "node:crypto";
@@ -125,8 +127,8 @@ const frameSchema = z.object({
   id: z.string().uuid().optional(),
   material: z.string().optional(),
   frame_type: z.string().optional(),
-  width_in: z.number().positive().optional(),
-  height_in: z.number().positive().optional(),
+  width_in: z.number().positive().nullable().optional(),
+  height_in: z.number().positive().nullable().optional(),
   fire_rated: z.boolean().optional(),
   condition: z.enum(["good", "worn", "failed", "unverified"]).optional(),
   notes: z.string().optional(),
@@ -138,9 +140,9 @@ const leafSchema = z.object({
   leaf_role: z.enum(["single", "active", "inactive"]),
   handing: z.string().optional(),
   material: z.string().optional(),
-  width_in: z.number().positive().optional(),
-  height_in: z.number().positive().optional(),
-  thickness_in: z.number().positive().optional(),
+  width_in: z.number().positive().nullable().optional(),
+  height_in: z.number().positive().nullable().optional(),
+  thickness_in: z.number().positive().nullable().optional(),
   fire_rated: z.boolean().optional(),
   condition: z.enum(["good", "worn", "failed", "unverified"]).optional(),
   notes: z.string().optional(),
@@ -161,6 +163,8 @@ openingsRouter.put("/:id/frame", databaseRoute(async (req: AuthedRequest, res) =
   const opening = await getOpeningForOrg(req.params.id, req.auth!.organizationId);
   if (!opening) return res.status(404).json({ error: "not_found" });
   const b = parsed.data;
+  const widthSet = hasDimension(b, "width_in");
+  const heightSet = hasDimension(b, "height_in");
   const result = await pool.query(
     `INSERT INTO opening_frames
       (id, opening_id, material, frame_type, width_in, height_in, fire_rated, condition, notes)
@@ -168,14 +172,17 @@ openingsRouter.put("/:id/frame", databaseRoute(async (req: AuthedRequest, res) =
      WHERE $10::bigint IS NULL OR EXISTS (SELECT 1 FROM opening_frames WHERE opening_id=$2 AND revision=$10)
      ON CONFLICT (opening_id) DO UPDATE SET
        material=EXCLUDED.material, frame_type=EXCLUDED.frame_type,
-       width_in=EXCLUDED.width_in, height_in=EXCLUDED.height_in,
+       width_in=CASE WHEN $12::boolean THEN $5::numeric ELSE opening_frames.width_in END,
+       height_in=CASE WHEN $13::boolean THEN $6::numeric ELSE opening_frames.height_in END,
        fire_rated=EXCLUDED.fire_rated, condition=EXCLUDED.condition,
        notes=EXCLUDED.notes, updated_at=now(), revision=opening_frames.revision + CASE WHEN $10::bigint IS NULL THEN 0 ELSE 1 END
      WHERE ($11::uuid IS NULL OR opening_frames.id=$11) AND
-       (opening_frames.revision=$10 OR ($10::bigint IS NULL AND ROW(opening_frames.material,opening_frames.frame_type,opening_frames.width_in,opening_frames.height_in,opening_frames.fire_rated,opening_frames.condition,opening_frames.notes) IS NOT DISTINCT FROM ROW(EXCLUDED.material,EXCLUDED.frame_type,EXCLUDED.width_in,EXCLUDED.height_in,EXCLUDED.fire_rated,EXCLUDED.condition,EXCLUDED.notes)))
+       (opening_frames.revision=$10 OR ($10::bigint IS NULL AND ROW(opening_frames.material,opening_frames.frame_type,opening_frames.width_in,opening_frames.height_in,opening_frames.fire_rated,opening_frames.condition,opening_frames.notes)
+         IS NOT DISTINCT FROM ROW(EXCLUDED.material,EXCLUDED.frame_type,CASE WHEN $12::boolean THEN $5::numeric ELSE opening_frames.width_in END,CASE WHEN $13::boolean THEN $6::numeric ELSE opening_frames.height_in END,EXCLUDED.fire_rated,EXCLUDED.condition,EXCLUDED.notes)))
      RETURNING *`,
-    [b.id ?? randomUUID(), opening.id, b.material ?? null, b.frame_type ?? null, b.width_in ?? null,
-     b.height_in ?? null, b.fire_rated ?? false, b.condition ?? "unverified", b.notes ?? null, b.expected_revision ?? null, b.id ?? null]
+    [b.id ?? randomUUID(), opening.id, b.material ?? null, b.frame_type ?? null, widthSet ? b.width_in ?? null : null,
+     heightSet ? b.height_in ?? null : null, b.fire_rated ?? false, b.condition ?? "unverified", b.notes ?? null, b.expected_revision ?? null, b.id ?? null,
+     widthSet, heightSet]
   );
   if (!result.rows[0]) {
     const current = await pool.query("SELECT revision FROM opening_frames WHERE opening_id=$1", [opening.id]);
@@ -198,6 +205,9 @@ openingsRouter.post("/:id/door-leaves", databaseRoute(async (req: AuthedRequest,
   if (opening.opening_configuration === "pair" && b.leaf_role === "single") {
     return res.status(409).json({ error: "paired_opening_requires_active_or_inactive_leaf" });
   }
+  const widthSet = hasDimension(b, "width_in");
+  const heightSet = hasDimension(b, "height_in");
+  const thicknessSet = hasDimension(b, "thickness_in");
   const result = await pool.query(
     `INSERT INTO door_leaves
       (id, opening_id, leaf_role, handing, material, width_in, height_in, thickness_in, fire_rated, condition, notes)
@@ -205,21 +215,48 @@ openingsRouter.post("/:id/door-leaves", databaseRoute(async (req: AuthedRequest,
      WHERE $12::bigint IS NULL OR EXISTS (SELECT 1 FROM door_leaves WHERE opening_id=$2 AND revision=$12 AND leaf_role=$3)
      ON CONFLICT (opening_id, leaf_role) DO UPDATE SET
        handing=EXCLUDED.handing, material=EXCLUDED.material,
-       width_in=EXCLUDED.width_in, height_in=EXCLUDED.height_in,
-       thickness_in=EXCLUDED.thickness_in, fire_rated=EXCLUDED.fire_rated,
+       width_in=CASE WHEN $14::boolean THEN $6::numeric ELSE door_leaves.width_in END,
+       height_in=CASE WHEN $15::boolean THEN $7::numeric ELSE door_leaves.height_in END,
+       thickness_in=CASE WHEN $16::boolean THEN $8::numeric ELSE door_leaves.thickness_in END,
+       fire_rated=EXCLUDED.fire_rated,
        condition=EXCLUDED.condition, notes=EXCLUDED.notes, updated_at=now(), revision=door_leaves.revision + CASE WHEN $12::bigint IS NULL THEN 0 ELSE 1 END
      WHERE ($13::uuid IS NULL OR door_leaves.id=$13) AND
-       (door_leaves.revision=$12 OR ($12::bigint IS NULL AND ROW(door_leaves.handing,door_leaves.material,door_leaves.width_in,door_leaves.height_in,door_leaves.thickness_in,door_leaves.fire_rated,door_leaves.condition,door_leaves.notes) IS NOT DISTINCT FROM ROW(EXCLUDED.handing,EXCLUDED.material,EXCLUDED.width_in,EXCLUDED.height_in,EXCLUDED.thickness_in,EXCLUDED.fire_rated,EXCLUDED.condition,EXCLUDED.notes)))
+       (door_leaves.revision=$12 OR ($12::bigint IS NULL AND ROW(door_leaves.handing,door_leaves.material,door_leaves.width_in,door_leaves.height_in,door_leaves.thickness_in,door_leaves.fire_rated,door_leaves.condition,door_leaves.notes)
+         IS NOT DISTINCT FROM ROW(EXCLUDED.handing,EXCLUDED.material,
+           CASE WHEN $14::boolean THEN $6::numeric ELSE door_leaves.width_in END,
+           CASE WHEN $15::boolean THEN $7::numeric ELSE door_leaves.height_in END,
+           CASE WHEN $16::boolean THEN $8::numeric ELSE door_leaves.thickness_in END,
+           EXCLUDED.fire_rated,EXCLUDED.condition,EXCLUDED.notes)))
      RETURNING *`,
-    [b.id ?? randomUUID(), opening.id, b.leaf_role, b.handing ?? null, b.material ?? null, b.width_in ?? null,
-     b.height_in ?? null, b.thickness_in ?? null, b.fire_rated ?? false,
-     b.condition ?? "unverified", b.notes ?? null, b.expected_revision ?? null, b.id ?? null]
+    [b.id ?? randomUUID(), opening.id, b.leaf_role, b.handing ?? null, b.material ?? null, widthSet ? b.width_in ?? null : null,
+     heightSet ? b.height_in ?? null : null, thicknessSet ? b.thickness_in ?? null : null, b.fire_rated ?? false,
+     b.condition ?? "unverified", b.notes ?? null, b.expected_revision ?? null, b.id ?? null,
+     widthSet, heightSet, thicknessSet]
   );
   if (!result.rows[0]) {
     const current = await pool.query("SELECT revision FROM door_leaves WHERE opening_id=$1 AND leaf_role=$2", [opening.id, b.leaf_role]);
     return res.status(409).json({ error: "revision_conflict", server_revision: current.rows[0] ? Number(current.rows[0].revision) : null });
   }
   res.status(201).json(result.rows[0]);
+}));
+
+openingsRouter.post("/:id/configuration", databaseRoute(async (req: AuthedRequest, res) => {
+  const parsed = z.object({ opening_configuration: z.enum(["single", "pair"]) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const opening = await getOpeningForOrg(req.params.id, req.auth!.organizationId);
+  if (!opening) return res.status(404).json({ error: "not_found" });
+  const client = await acquireClient(res); if (!client) return;
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT id FROM openings WHERE id=$1 FOR UPDATE", [opening.id]);
+    const converted = await convertOpeningConfiguration(client, opening.id, parsed.data.opening_configuration);
+    await client.query("COMMIT");
+    res.json(converted);
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    console.error(error);
+    if (!res.headersSent) res.status(500).json({ error: "internal_error" });
+  } finally { client.release(); }
 }));
 
 // Completion is a backend fact. It requires the whole physical opening hierarchy.
