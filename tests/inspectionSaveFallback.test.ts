@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, expect, it, vi } from "vitest";
 
-const control = vi.hoisted(() => ({ failsLeft: 0, writes: 0, resets: 0, readFails: 0, rejectNext: false, blockRetry: false, photos: 0 }));
+const control = vi.hoisted(() => ({ failsLeft: 0, writes: 0, resets: 0, readFails: 0, rejectNext: false, blockRetry: false, photos: 0, hangReads: false, hangWrite: false, hangFlush: false }));
 const posts = vi.hoisted(() => ({ calls: [] as Record<string, unknown>[] }));
 
 vi.mock("../field-app/src/lib/db", async (importOriginal) => {
@@ -10,6 +10,7 @@ vi.mock("../field-app/src/lib/db", async (importOriginal) => {
     ...actual,
     resetFieldAppDb: () => { control.resets += 1; return actual.resetFieldAppDb(); },
     saveEntityAndOperation: async (...args: Parameters<typeof actual.saveEntityAndOperation>) => {
+      if (control.hangWrite) return new Promise(() => {});
       control.writes += 1;
       if (control.failsLeft > 0) {
         control.failsLeft -= 1;
@@ -24,8 +25,13 @@ vi.mock("../field-app/src/lib/db", async (importOriginal) => {
       return actual.saveMediaAndOperation(...args);
     },
     getSyncOperationsForPrincipal: async (...args: Parameters<typeof actual.getSyncOperationsForPrincipal>) => {
+      if (control.hangFlush) { control.hangFlush = false; return new Promise(() => {}); }
       if (control.readFails > 0) { control.readFails -= 1; throw new Error("queue failed"); }
       return actual.getSyncOperationsForPrincipal(...args);
+    },
+    getAllSyncOperations: async (...args: Parameters<typeof actual.getAllSyncOperations>) => {
+      if (control.hangReads) return new Promise(() => {});
+      return actual.getAllSyncOperations(...args);
     },
   };
 });
@@ -51,9 +57,9 @@ vi.mock("../field-app/src/lib/api", async (importOriginal) => {
 });
 
 import { ApiError } from "../field-app/src/lib/api";
-import { closeFieldAppDb, combineDatabaseOpen, saveAuth } from "../field-app/src/lib/db";
-import { inspectionSaveFailureMessage, queueInspectionFailurePhoto } from "../field-app/src/lib/inspectionPhoto";
-import { noteSyncDiagnostic, onSyncStateChange, queueOpeningMutation, refreshPendingCount, runLocalWrite } from "../field-app/src/lib/sync";
+import { closeFieldAppDb, combineDatabaseOpen, getAllSyncOperations, saveAuth } from "../field-app/src/lib/db";
+import { inspectionSaveFailureMessage, lowStorageWarning, queueInspectionFailurePhoto } from "../field-app/src/lib/inspectionPhoto";
+import { flushOutbox, noteSyncDiagnostic, onSyncStateChange, queueOpeningMutation, refreshPendingCount, runLocalWrite } from "../field-app/src/lib/sync";
 
 const userId = "55555555-5555-4555-8555-555555555555";
 const organizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -69,6 +75,9 @@ afterEach(async () => {
   control.rejectNext = false;
   control.blockRetry = false;
   control.photos = 0;
+  control.hangReads = false;
+  control.hangWrite = false;
+  control.hangFlush = false;
   await closeFieldAppDb();
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.deleteDatabase("opening-intel-field");
@@ -212,6 +221,88 @@ it("leaves a server rejection for the form to show", async () => {
   await expect(queueOpeningMutation("inspection_event", openingId, inspectionPayload(), operationId)).rejects.toMatchObject({ status: 409, message: "visit_finished" });
   expect(inspectionSaveFailureMessage(new ApiError(409, "visit_finished"))).toContain("409: visit_finished");
   expect(inspectionSaveFailureMessage(new ApiError(409, "visit_finished"))).toContain("was not saved");
+});
+
+it("posts one no-photo inspection when the operation read never settles", async () => {
+  await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
+  online(true);
+  control.hangReads = true;
+  const started = Date.now();
+  let caught: unknown;
+  try {
+    await queueOpeningMutation("inspection_event", openingId, inspectionPayload(), operationId);
+  } catch (error) { caught = error; }
+  expect(Date.now() - started).toBeLessThan(6_000);
+  expect(caught).toBeInstanceOf(Error);
+  expect(inspectionSaveFailureMessage(caught)).toContain("TimeoutError");
+  expect(inspectionSaveFailureMessage(caught)).toContain("sent to the server");
+  expect(posts.calls).toHaveLength(1);
+  expect(posts.calls[0].operation_id).toBe(operationId);
+  expect((posts.calls[0].payload as { visit_id: string }).visit_id).toBe("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+  control.hangReads = false;
+  expect((await getAllSyncOperations()).some((item) => item.operationId === operationId)).toBe(false);
+});
+
+it("posts one inspection when the local write never settles and keeps stored rows", async () => {
+  await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
+  online(true);
+  await queueOpeningMutation("inspection_event", openingId, inspectionPayload(), operationId);
+  await vi.waitFor(() => expect(posts.calls.some((call) => call.operation_id === operationId)).toBe(true));
+  const before = (await getAllSyncOperations()).length;
+  expect(before).toBeGreaterThan(0);
+  posts.calls.length = 0;
+  control.hangWrite = true;
+  const otherId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  await expect(queueOpeningMutation("inspection_event", openingId, inspectionPayload(), otherId)).rejects.toThrow(/timed out/);
+  expect(posts.calls).toHaveLength(1);
+  expect(posts.calls[0].operation_id).toBe(otherId);
+  control.hangWrite = false;
+  const stored = await getAllSyncOperations();
+  expect(stored).toHaveLength(before);
+  expect(stored.some((item) => item.operationId === otherId)).toBe(false);
+  expect(stored.some((item) => item.operationId === operationId)).toBe(true);
+});
+
+it("posts one inspection when the payload digest never settles", async () => {
+  await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
+  online(true);
+  const digest = vi.spyOn(crypto.subtle, "digest").mockImplementation(() => new Promise(() => {}) as Promise<ArrayBuffer>);
+  try {
+    await expect(queueOpeningMutation("inspection_event", openingId, inspectionPayload(), operationId)).rejects.toThrow(/timed out/);
+    expect(posts.calls).toHaveLength(1);
+    expect(posts.calls[0].operation_id).toBe(operationId);
+  } finally { digest.mockRestore(); }
+});
+
+it("treats a storage estimate that never settles as unknown", async () => {
+  vi.stubGlobal("navigator", { onLine: true, storage: { estimate: () => new Promise(() => {}) } });
+  const started = Date.now();
+  await expect(lowStorageWarning()).resolves.toBeNull();
+  expect(Date.now() - started).toBeLessThan(4_000);
+});
+
+it("closes the shared database when a flush read never settles", async () => {
+  await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
+  online(true);
+  control.hangFlush = true;
+  control.resets = 0;
+  let syncing = true;
+  const stop = onSyncStateChange((state) => { syncing = state.syncing; });
+  const started = Date.now();
+  await flushOutbox(50);
+  expect(Date.now() - started).toBeLessThan(6_000);
+  expect(syncing).toBe(false);
+  expect(control.resets).toBeGreaterThan(0);
+  stop();
+  control.hangFlush = false;
+  posts.calls.length = 0;
+  let stillSyncing = false;
+  const watch = onSyncStateChange((state) => { stillSyncing = state.syncing; });
+  const saved = await queueOpeningMutation("inspection_event", openingId, inspectionPayload(), operationId);
+  expect(saved).toBe(operationId);
+  await vi.waitFor(() => expect(posts.calls.length).toBeGreaterThan(0));
+  await vi.waitFor(() => expect(stillSyncing).toBe(false));
+  watch();
 });
 
 it("records a pending-count failure and reopens the database", async () => {

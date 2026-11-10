@@ -70,4 +70,5 @@ it("opens the field guide without asking for a sign-in", async () => {
   await act(async () => root.render(<MemoryRouter><HowToUsePage /></MemoryRouter>));
   expect(host.textContent).toContain("How to use");
   expect(host.textContent).toContain("Technicians and inspectors");
+  expect(host.textContent).toContain("Build test-build");
 });

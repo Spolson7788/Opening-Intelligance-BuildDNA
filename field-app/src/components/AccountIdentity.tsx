@@ -4,6 +4,7 @@ import { useAuth } from "../lib/AuthContext";
 import { fetchCompanies } from "../lib/api";
 import { activeCompanyName, signedInLabel } from "../lib/accountLine";
 import type { CompanyOption } from "../lib/companySwitch";
+import { fieldBuildLabel } from "../lib/buildStamp";
 
 export function AccountIdentity() {
   const { auth, loading, identityChecking } = useAuth();
@@ -22,5 +23,6 @@ export function AccountIdentity() {
   return <aside aria-label="Current account" className="no-print">
     <p className="account-line" title={line}>{line}</p>
     <Link className="account-sync-link" to="/sync-issues">Synchronization review</Link>
+    <p className="field-build" style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 0" }}>{fieldBuildLabel()}</p>
   </aside>;
 }

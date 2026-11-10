@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { emailFailureText } from "../field-app/src/components/EmailInspectionReport";
 import { NFPA80_ITEMS } from "../field-app/src/lib/nfpa80Items";
+import { localCalendarDay } from "../field-app/src/lib/calendarDay";
 
 const api = vi.hoisted(() => ({
   recipients: vi.fn(),
@@ -330,6 +331,7 @@ it("does not queue a failed item that has no photo and no note", async () => {
       <Routes><Route path="/opening/:id/log-inspection" element={<LogInspectionEventPage />} /></Routes>
     </MemoryRouter>,
   ));
+  expect((host.querySelector("#event-date") as HTMLInputElement).value).toBe(localCalendarDay());
   const select = host.querySelector("#inspection-type") as HTMLSelectElement;
   await act(async () => {
     Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value")?.set?.call(select, "fire_door_nfpa80");

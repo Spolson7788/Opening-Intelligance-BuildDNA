@@ -7,12 +7,13 @@ import { getCachedOpening } from "../lib/db";
 import { componentLabel } from "../lib/serviceHistory";
 import type { ComponentRow, OpeningServiceView } from "../lib/serviceHistory";
 import { SyncBadge } from "../components/SyncBadge";
+import { localCalendarDay } from "../lib/calendarDay";
 
 export function LogServiceEventPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [workPerformed, setWorkPerformed] = useState("");
-  const [eventDate, setEventDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [eventDate, setEventDate] = useState(() => localCalendarDay());
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(false);
   const [searchParams] = useSearchParams();

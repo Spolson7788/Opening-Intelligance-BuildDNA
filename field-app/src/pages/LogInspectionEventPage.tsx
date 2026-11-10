@@ -14,6 +14,8 @@ import { noteSyncDiagnostic } from "../lib/sync";
 import { awaitInspectionSynced } from "../lib/sync";
 import { scrollPageToTop } from "../lib/scrollPage";
 import { ensureOpenVisit, recordVisitInspection, visitSummaryText } from "../lib/inspectionVisit";
+import { isRequestTimeout } from "../lib/deadline";
+import { localCalendarDay } from "../lib/calendarDay";
 import type { InspectionVisit } from "../lib/inspectionVisit";
 
 type ItemAnswer = { result: "" | "pass" | "fail" | "na"; note: string; photo: File | null };
@@ -29,7 +31,7 @@ export function LogInspectionEventPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [inspectionType, setInspectionType] = useState("general");
-  const [eventDate, setEventDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [eventDate, setEventDate] = useState(() => localCalendarDay());
   const [passed, setPassed] = useState<"pass" | "fail" | null>(null);
   const [notes, setNotes] = useState("");
   const [signedByName, setSignedByName] = useState("");
@@ -162,7 +164,10 @@ export function LogInspectionEventPage() {
     let inspectionId: string;
     let visitId: string | undefined;
     try {
-    if (type === "fire_door_nfpa80") visitId = (await ensureOpenVisit())?.id;
+    if (type === "fire_door_nfpa80") {
+      try { visitId = (await ensureOpenVisit())?.id; }
+      catch (error) { if (!isRequestTimeout(error)) throw error; }
+    }
     if (!inspectionAttemptId.current) inspectionAttemptId.current = crypto.randomUUID();
     inspectionId = await queueOpeningMutation("inspection_event", id!, {
         opening_id: id,

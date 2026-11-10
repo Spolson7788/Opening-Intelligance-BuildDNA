@@ -2,6 +2,7 @@ import { defineConfig } from "vitest/config";
 import { resolve } from "node:path";
 
 export default defineConfig({
+  define: { __FIELD_BUILD_SHA__: JSON.stringify(process.env.OI_FIELD_BUILD_SHA || "test-build") },
   resolve: {
     alias: {
       "react-router-dom": resolve("field-app/node_modules/react-router-dom"),

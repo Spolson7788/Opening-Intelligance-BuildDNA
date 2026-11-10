@@ -1,5 +1,5 @@
 import { openDB } from "idb";
-import { withTimeout } from "./deadline";
+import { isRequestTimeout, withTimeout } from "./deadline";
 import type { DBSchema, IDBPDatabase } from "idb";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
 import type {
@@ -105,8 +105,14 @@ export interface PhotoOutboxItem {
 }
 
 let dbPromise: Promise<IDBPDatabase<FieldAppDB>> | null = null;
+let lastAuth: { token: string; userId: string; organizationId: string; role: string; email?: string; signInEventId?: string; savedAt?: number } | undefined;
 
 export const DB_OPEN_TIMEOUT_MS = 4_000;
+export const DB_REQUEST_TIMEOUT_MS = 4_000;
+
+export function withDbTimeout<T>(work: Promise<T>): Promise<T> {
+  return withTimeout(work, DB_REQUEST_TIMEOUT_MS, "IndexedDB request timed out");
+}
 
 /** Reject when another connection blocks the open, or when the open itself does not finish. */
 export function combineDatabaseOpen<T>(opened: Promise<T>, blocked: Promise<T>, timeoutMs = DB_OPEN_TIMEOUT_MS): Promise<T> {
@@ -195,6 +201,7 @@ export async function resetFieldAppDb() {
 }
 
 export async function closeFieldAppDb() {
+  lastAuth = undefined;
   if (!dbPromise) return;
   const db = await dbPromise;
   db.close();
@@ -211,22 +218,22 @@ export async function saveEntityAndOperation(
   if (entity.organizationId !== operation.organizationId) {
     throw new Error("entity_operation_tenant_mismatch");
   }
-  assertNotWiped(); const db = await getDb();
+  assertNotWiped(); const db = await withDbTimeout(getDb());
   const tx = db.transaction(["entities", "operations"], "readwrite");
   if(operation.entityType==='service_request'){
-    const prior=await tx.objectStore('operations').get(operation.operationId);
+    const prior=await withDbTimeout(tx.objectStore('operations').get(operation.operationId));
     if(prior){
       if(prior.actorUserId!==operation.actorUserId||prior.organizationId!==operation.organizationId||prior.openingId!==operation.openingId||prior.entityId!==operation.entityId||prior.payloadHash!==operation.payloadHash){
         tx.abort();await tx.done.catch(()=>{});throw new Error('request_retry_changed');
       }
-      await tx.done;return;
+      await withDbTimeout(tx.done);return;
     }
   }
-  await Promise.all([
+  await withDbTimeout(Promise.all([
     tx.objectStore("entities").put(entity),
     tx.objectStore("operations").put(operation),
     tx.done,
-  ]);
+  ]));
 }
 
 export async function saveMediaAndOperation(media: OfflineMediaRecord, operation: SyncOperation) {
@@ -256,8 +263,8 @@ export async function getSyncOperationsForOpening(openingId: string) {
 }
 
 export async function getAllSyncOperations() {
-  const db = await getDb();
-  return db.getAll("operations");
+  const db = await withDbTimeout(getDb());
+  return withDbTimeout(db.getAll("operations"));
 }
 
 export async function getSyncOperationsForPrincipal(userId: string, organizationId: string) {
@@ -685,13 +692,13 @@ export async function putOpeningSnapshot(snapshot: OpeningSnapshot) {
 }
 
 export async function putOfflineSetting(setting: OfflineSetting) {
-  assertNotWiped(); const db = await getDb();
-  await db.put("settings", setting);
+  assertNotWiped(); const db = await withDbTimeout(getDb());
+  await withDbTimeout(db.put("settings", setting));
 }
 
 export async function getOfflineSetting(key: string) {
-  const db = await getDb();
-  return db.get("settings", key);
+  const db = await withDbTimeout(getDb());
+  return withDbTimeout(db.get("settings", key));
 }
 
 export async function cacheOpening(opening: any, principal?: {userId:string;organizationId:string}) {
@@ -782,8 +789,10 @@ export async function retryOutboxItem(id: string, photo: boolean) {
 
 export async function saveAuth(auth: { token: string; userId: string; organizationId: string; role: string; email?: string; signInEventId?: string }) {
   oiDataWiped = false; // a fresh sign-in re-enables local storage after a wipe
-  const db = await getDb();
-  await db.put("auth", { ...auth, savedAt: Date.now() }, "current");
+  const stored = { ...auth, savedAt: Date.now() };
+  lastAuth = stored;
+  const db = await withDbTimeout(getDb());
+  await withDbTimeout(db.put("auth", stored, "current"));
 }
 
 // Resume operations this app stopped only because the signed-in account changed while they were in
@@ -814,13 +823,21 @@ export async function requeueAfterFreshSignIn(input: { userId: string; organizat
 }
 
 export async function loadAuth() {
-  const db = await getDb();
-  return db.get("auth", "current");
+  try {
+    const db = await withDbTimeout(getDb());
+    const auth = await withDbTimeout(db.get("auth", "current"));
+    lastAuth = auth ?? undefined;
+    return auth;
+  } catch (error) {
+    if (isRequestTimeout(error) && lastAuth) return lastAuth;
+    throw error;
+  }
 }
 
 export async function clearAuth() {
-  const db = await getDb();
-  await db.delete("auth", "current");
+  lastAuth = undefined;
+  const db = await withDbTimeout(getDb());
+  await withDbTimeout(db.delete("auth", "current"));
 }
 
 // C2 (Stephan, 2026-10-28): when the API ends this account's access (401 session_revoked or

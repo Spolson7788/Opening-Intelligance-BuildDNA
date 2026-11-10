@@ -1,6 +1,7 @@
 import { getOfflineMedia, loadAuth, resetFieldAppDb, saveMediaAndOperation } from "./db";
 import { checksumBlob, getOrCreateDeviceId, noteSyncDiagnostic, refreshPendingCount, runLocalWrite } from "./sync";
 import { ApiError, confirmOfflinePhoto, reserveOfflinePhoto, uploadPrivatePhoto } from "./api";
+import { withTimeout } from "./deadline";
 import { DEVICE_STORAGE_MESSAGE, isDeviceStorageError, storageDiagnostic } from "./storageErrors";
 import { formatMegabytes, MAX_IMAGE_BYTES, MEDIA_TOO_LARGE } from "./mediaLimits";
 import { prepareImageForUpload, reducedFilename } from "./photoPreparation";
@@ -30,6 +31,8 @@ export function inspectionSaveFailureMessage(error: unknown): string {
   }
   if (error instanceof ApiError) return `The server did not save this inspection (${error.status}: ${message}). The inspection was not saved.`;
   if (name === "TimeoutError" || /timed out|open blocked/i.test(message)) {
+    const sent = error instanceof Error && (error as Error & { sentToServer?: boolean }).sentToServer === true;
+    if (sent) return `This device could not queue the inspection (${detail}). The same inspection was sent to the server. Save is available if you need to try again.`;
     return `This device could not queue the inspection (${detail}). Try again. The inspection was not saved.`;
   }
   if (/row-level security|\binternal_error\b/i.test(message)) {
@@ -42,11 +45,13 @@ export function inspectionSaveFailureMessage(error: unknown): string {
   return `This device could not queue the inspection (${detail}). Try again. The inspection was not saved.`;
 }
 
+const ESTIMATE_TIMEOUT_MS = 2_000;
+
 export async function lowStorageWarning(): Promise<string | null> {
   const estimate = navigator.storage?.estimate;
   if (!estimate) return null;
   try {
-    const { quota, usage } = await estimate.call(navigator.storage);
+    const { quota, usage } = await withTimeout(Promise.resolve(estimate.call(navigator.storage)), ESTIMATE_TIMEOUT_MS, "storage estimate timed out");
     if (quota == null || usage == null || quota <= 0) return null;
     const free = quota - usage;
     if (free < LOW_STORAGE_BYTES || usage / quota > 0.95) {

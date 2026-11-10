@@ -1,5 +1,5 @@
-import { claimSyncOperation, getAllSyncOperations, getOfflineMedia, getOfflineSetting, getSyncOperationsForPrincipal, loadAuth, putOfflineSetting, putSyncConflict, putSyncOperation, putSyncReceipt, reconcileRecoveredMediaOperationId, resetFieldAppDb, saveEntityAndOperation, OiDataWipedError } from "./db";
-import { withTimeout } from "./deadline";
+import { claimSyncOperation, DB_REQUEST_TIMEOUT_MS, getAllSyncOperations, getOfflineMedia, getOfflineSetting, getSyncOperationsForPrincipal, loadAuth, putOfflineSetting, putSyncConflict, putSyncOperation, putSyncReceipt, reconcileRecoveredMediaOperationId, resetFieldAppDb, saveEntityAndOperation, withDbTimeout, OiDataWipedError } from "./db";
+import { isRequestTimeout, withTimeout } from "./deadline";
 import { isDeviceStorageError, storageDiagnostic } from "./storageErrors";
 import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, submitServiceRequest, uploadPrivatePhoto, ApiError, PrincipalChangedError, isClientPrincipalChange, isSessionEnded } from "./api";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
@@ -13,6 +13,7 @@ import { assertSyncDispatchAllowed, SyncNavigationPaused } from './syncNavigatio
 type SyncListener = (state: SyncState) => void;
 export interface SyncState { pending: number; syncing: boolean; failed: number; conflicts: number; lastError?: string; checked?: boolean; checkFailed?: boolean; diagnostic?: string; userId?: string; organizationId?: string; }
 const APP_VERSION = "offline-protocol-1";
+let rememberedDeviceId: string | null = null;
 const DISPATCH_LEASE_MS = 2 * 60_000;
 const dispatchLeaseId = crypto.randomUUID();
 let listeners: SyncListener[] = [];
@@ -25,8 +26,8 @@ export function onSyncStateChange(listener: SyncListener) {
 }
 
 async function sha256Hex(value: string | Blob): Promise<string> {
-  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : new Uint8Array(await value.arrayBuffer());
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : new Uint8Array(await withTimeout(value.arrayBuffer(), DB_REQUEST_TIMEOUT_MS, "digest timed out"));
+  const digest = await withTimeout(crypto.subtle.digest("SHA-256", bytes), DB_REQUEST_TIMEOUT_MS, "digest timed out");
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 function canonicalize(value: unknown): unknown {
@@ -36,11 +37,21 @@ function canonicalize(value: unknown): unknown {
   return value;
 }
 export async function getOrCreateDeviceId(): Promise<string> {
-  const existing = await getOfflineSetting("device_id");
-  if (typeof existing?.value === "string") return existing.value;
-  const value = crypto.randomUUID();
-  await putOfflineSetting({ key: "device_id", value, updatedAt: new Date().toISOString() });
-  return value;
+  try {
+    const existing = await getOfflineSetting("device_id");
+    if (typeof existing?.value === "string") {
+      rememberedDeviceId = existing.value;
+      return existing.value;
+    }
+    const value = rememberedDeviceId ?? crypto.randomUUID();
+    rememberedDeviceId = value;
+    await putOfflineSetting({ key: "device_id", value, updatedAt: new Date().toISOString() });
+    return value;
+  } catch (error) {
+    if (!isRequestTimeout(error)) throw error;
+    if (!rememberedDeviceId) rememberedDeviceId = crypto.randomUUID();
+    return rememberedDeviceId;
+  }
 }
 let statusRead = 0;
 let pendingCountRetry: ReturnType<typeof setTimeout> | null = null;
@@ -87,7 +98,7 @@ export async function refreshPendingCount() {
   const read = ++statusRead;
   try {
   const auth = await loadAuth();
-  const operations = auth ? await getSyncOperationsForPrincipal(auth.userId, auth.organizationId) : [];
+  const operations = auth ? await withDbTimeout(getSyncOperationsForPrincipal(auth.userId, auth.organizationId)) : [];
   const latest = await loadAuth();
   if (read !== statusRead) return;
   if (auth?.userId !== latest?.userId || auth?.organizationId !== latest?.organizationId) {
@@ -117,12 +128,36 @@ function entityTypeForKind(kind: OutboxItem["kind"]): OfflineEntityType {
   if (kind === "inspection_event") return "inspection_event";
   return "completion";
 }
+function markSent(error: unknown): unknown {
+  if (error instanceof Error) (error as Error & { sentToServer?: boolean }).sentToServer = true;
+  return error;
+}
+
+async function postInspectionOnline(operation: SyncOperation, auth: Principal, cause: unknown): Promise<string> {
+  if (isRequestTimeout(cause)) await resetFieldAppDb().catch(() => undefined);
+  try {
+    await submitGeneralOperation(operation, auth);
+  } catch (serverError) {
+    noteSyncDiagnostic(serverError, true);
+    throw serverError;
+  }
+  if (isRequestTimeout(cause)) throw markSent(cause);
+  return operation.operationId;
+}
+
 export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: string, payload: any, id = crypto.randomUUID(), principal?: Principal) {
   const auth = await loadAuth(); if (!auth) throw new Error("auth_required");
   if(principal && (auth.userId!==principal.userId || auth.organizationId!==principal.organizationId))throw new PrincipalChangedError();
   const now = new Date().toISOString(); const entityType = entityTypeForKind(kind); const entityId = payload.id ?? id;
   const deviceId = await getOrCreateDeviceId(); const semanticPayload = { kind, ...payload };
-  const existingOperations = await getAllSyncOperations();
+  let existingOperations: SyncOperation[] = [];
+  let readTimedOut = false;
+  try {
+    existingOperations = await withDbTimeout(getAllSyncOperations());
+  } catch (error) {
+    if (!(entityType === "inspection_event" && isRequestTimeout(error))) throw error;
+    readTimedOut = true;
+  }
   if(entityType==='service_request'){
     const existing=existingOperations.find(op=>op.operationId===id);
     if(existing){
@@ -137,11 +172,21 @@ export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: 
     baseServerRevision = payload.expected_revision ?? null;
   }
   const dependencyOperationIds = dependencyIdsForOperation(existingOperations, entityType, openingId, payload);
+  let payloadHash = "unhashed";
+  try {
+    payloadHash = await sha256Hex(JSON.stringify(canonicalize(semanticPayload)));
+  } catch (error) {
+    if (!(entityType === "inspection_event" && isRequestTimeout(error) && browserIsOnline())) throw error;
+    readTimedOut = true;
+  }
   const operation: SyncOperation = { operationId: id, operationType: kind === "complete_opening" ? "complete" : baseServerRevision !== null ? "update" : "create",
     entityType, entityId, openingId, organizationId: auth.organizationId, actorUserId: auth.userId, deviceId,
-    baseServerRevision, payload: semanticPayload, payloadHash: await sha256Hex(JSON.stringify(canonicalize(semanticPayload))),
+    baseServerRevision, payload: semanticPayload, payloadHash,
     dependencyOperationIds, createdAtLocal: now, state: dependencyOperationIds.length ? "blocked_dependency" : "queued", attemptCount: 0,
     schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: APP_VERSION, protocolVersion: SYNC_PROTOCOL_VERSION };
+  if (readTimedOut && entityType === "inspection_event" && browserIsOnline()) {
+    return postInspectionOnline(operation, auth, new DOMException("IndexedDB request timed out", "TimeoutError"));
+  }
   const entity: OfflineEntityEnvelope = { key: entityKey(entityType, entityId), id: entityId, entityType,
     organizationId: auth.organizationId, openingId, parentEntityId: payload.door_leaf_id ?? payload.frame_id,
     createdByUserId: auth.userId, createdByDeviceId: deviceId, createdAtLocal: now, updatedAtLocal: now,
@@ -149,20 +194,13 @@ export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: 
     syncState: "queued", retryCount: 0, payload: semanticPayload };
   await assertPrincipal(auth);
   try {
-    await runLocalWrite(() => saveEntityAndOperation(entity, operation));
+    await runLocalWrite(() => withDbTimeout(saveEntityAndOperation(entity, operation)));
   } catch (error) {
-    if (entityType === "inspection_event" && browserIsOnline()) {
-      try {
-        await submitGeneralOperation(operation, auth);
-        return id;
-      } catch (serverError) {
-        noteSyncDiagnostic(serverError, true);
-        throw serverError;
-      }
-    }
+    if (entityType === "inspection_event" && browserIsOnline()) return postInspectionOnline(operation, auth, error);
     throw error;
   }
-  await refreshPendingCount(); void flushOutbox(); return id;
+  try { await refreshPendingCount(); } catch (error) { if (!isRequestTimeout(error)) throw error; }
+  void flushOutbox(); return id;
 }
 export function dependencyIdsForOperation(
   operations: SyncOperation[], entityType: OfflineEntityType, openingId: string, payload: Record<string, any>,
@@ -330,36 +368,47 @@ export async function awaitInspectionSynced(entityId: string): Promise<{ ok: tru
   if (operation.lastErrorCode) return { ok: false, waiting: true, reason: `Sync failed: ${operation.lastErrorCode}. It will try again.` };
   return { ok: false, waiting: true, reason: syncing };
 }
-export async function flushVersionedOperations() {
+type FlushRun = { stop: boolean };
+
+export async function flushVersionedOperations(run: FlushRun = { stop: false }) {
+  if (run.stop) return;
   try { assertSyncDispatchAllowed(); } catch { return; }
-  const auth = await loadAuth();
-  if (!auth) return;
+  if (run.stop) return;
+  const auth = await withDbTimeout(loadAuth());
+  if (run.stop || !auth) return;
   const principal = { userId: auth.userId, organizationId: auth.organizationId };
-  while (true) {
+  while (!run.stop) {
     try { assertSyncDispatchAllowed(); } catch { return; }
+    if (run.stop) return;
     try { await assertPrincipal(principal); }
     catch (error) {
       // The signed-in account changed since this pass started: stop this pass. The new account's
       // own pass handles its operations; this account's resume after it signs in again.
-      if (isClientPrincipalChange(error)) return;
+      if (isClientPrincipalChange(error) || run.stop) return;
       throw error;
     }
-    const operations = await getSyncOperationsForPrincipal(principal.userId, principal.organizationId);
+    if (run.stop) return;
+    const operations = await withDbTimeout(getSyncOperationsForPrincipal(principal.userId, principal.organizationId));
+    if (run.stop) return;
     const verified = new Set(operations.filter((item) => item.state === "verified").map((item) => item.operationId));
     const [candidate] = readyOperations(operations.filter((item) => item.state !== "verified"), verified, new Date().toISOString());
     if (!candidate) break;
     try { assertSyncDispatchAllowed(); } catch { return; }
-    const operation = await claimSyncOperation({ operationId: candidate.operationId, ...principal,
-      leaseId: dispatchLeaseId, nowIso: new Date().toISOString(), leaseDurationMs: DISPATCH_LEASE_MS });
-    if (!operation) continue;
+    if (run.stop) return;
+    const operation = await withDbTimeout(claimSyncOperation({ operationId: candidate.operationId, ...principal,
+      leaseId: dispatchLeaseId, nowIso: new Date().toISOString(), leaseDurationMs: DISPATCH_LEASE_MS }));
+    if (run.stop || !operation) continue;
     try {
       assertSyncDispatchAllowed();
       const row = operation.entityType === "photo" ? await submitPhoto(operation, principal)
         : operation.entityType === "component" ? await submitComponent(operation, principal)
           : await submitGeneralOperation(operation, principal);
-      await putSyncReceipt(receiptFromApi(row));
+      if (run.stop) return;
+      await withDbTimeout(putSyncReceipt(receiptFromApi(row)));
     }
     catch (error) {
+      if (run.stop) return;
+      if (isRequestTimeout(error)) throw error;
       if (error instanceof SyncNavigationPaused) {
         // Preserve identity and bytes for idempotent reconciliation on a later
         // explicit workspace visit; an earlier request may already have succeeded.
@@ -374,29 +423,36 @@ export async function flushVersionedOperations() {
     }
   }
 }
-const FLUSH_TIMEOUT_MS = 25_000;
-let flushToken = 0;
+export const FLUSH_TIMEOUT_MS = 25_000;
+let activeFlush: FlushRun | null = null;
 
-export async function flushOutbox() {
+export async function flushOutbox(timeoutMs = FLUSH_TIMEOUT_MS) {
   if (currentState.syncing || (typeof navigator !== "undefined" && navigator.onLine === false)) return;
-  const token = ++flushToken;
+  const run: FlushRun = { stop: false };
+  activeFlush = run;
   currentState = { ...currentState, syncing: true }; notify();
-  try { await withTimeout(flushVersionedOperations(), FLUSH_TIMEOUT_MS, "sync timed out"); }
+  try { await withTimeout(flushVersionedOperations(run), timeoutMs, "sync timed out"); }
   catch (error) {
-    if (token !== flushToken) return;
+    run.stop = true;
+    if (activeFlush !== run) return;
     noteSyncDiagnostic(error, true);
     currentState = { ...currentState, lastError: error instanceof Error ? error.message : "unknown_error" };
+    if (isRequestTimeout(error)) await resetFieldAppDb().catch(() => undefined);
   }
   finally {
-    if (token === flushToken) {
+    if (activeFlush === run) {
+      run.stop = true;
+      activeFlush = null;
       currentState = { ...currentState, syncing: false }; notify();
       await refreshPendingCount().catch(() => undefined);
     }
   }
 }
+function flushOnSchedule() { void flushOutbox(); }
+
 export function initSync() {
-  void refreshPendingCount(); window.addEventListener("online", flushOutbox);
-  const interval = setInterval(flushOutbox, 30_000); void flushOutbox();
-  return () => { window.removeEventListener("online", flushOutbox); clearInterval(interval); };
+  void refreshPendingCount(); window.addEventListener("online", flushOnSchedule);
+  const interval = setInterval(flushOnSchedule, 30_000); void flushOutbox();
+  return () => { window.removeEventListener("online", flushOnSchedule); clearInterval(interval); };
 }
 export async function checksumBlob(blob: Blob) { return sha256Hex(blob); }

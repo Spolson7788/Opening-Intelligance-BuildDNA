@@ -5,3 +5,7 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, message: string)
   });
   return Promise.race([promise, timeout]).finally(() => { if (timer) clearTimeout(timer); });
 }
+
+export function isRequestTimeout(error: unknown): boolean {
+  return error instanceof Error && (error.name === "TimeoutError" || /timed out/i.test(error.message));
+}

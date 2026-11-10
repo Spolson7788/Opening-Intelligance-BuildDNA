@@ -9,6 +9,7 @@ import { syncIssuesForRecords } from "../lib/syncIssuesModel";
 import type { SyncIssueView } from "../lib/syncIssuesModel";
 import { formatMegabytes, maximumMediaBytes } from "../lib/mediaLimits";
 import { prepareImageForUpload, reducedFilename } from "../lib/photoPreparation";
+import { fieldBuildLabel } from "../lib/buildStamp";
 
 function retryLabel(issue: SyncIssueView): string {
   if (issue.conflict) return "Keep local change and retry";
@@ -147,6 +148,7 @@ export function SyncIssuesPage() {
     <div className="screen">
       <section className="c04-band"><h2>Synchronization review</h2>
       <p>Entries remain stored on this device until synchronization succeeds. Review conflicts before retrying.</p>
+      <p className="field-build">{fieldBuildLabel(true)}</p>
       {diagnostic && <p className="c04-note">Storage diagnostic: {diagnostic}</p>}</section>
       {loadError ? <div className="c04-alert" role="alert"><p>Saved changes on this device could not be read. They were not removed.</p><button type="button" className="btn btn-secondary" onClick={() => { void load(); }}>Retry</button></div> : identityChecking || loadedPrincipal !== principal ? <p className="c04-band-blue">Checking saved changes for this account. If this does not finish, return after checking access.</p> : issues.length === 0 ? <div className="c04-band-blue">No synchronization issues for the signed-in technician.</div> : issues.map((issue) => <div className="c04-band" key={issue.id} data-issue-kind={issue.kind}>
         <strong style={{ textTransform: "capitalize" }}>{issue.label}</strong>

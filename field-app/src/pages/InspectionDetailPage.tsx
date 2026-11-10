@@ -4,6 +4,7 @@ import { fetchOpening } from "../lib/api";
 import { EmailInspectionReport } from "../components/EmailInspectionReport";
 import { NFPA80_ITEMS } from "../lib/nfpa80Items";
 import { SyncBadge } from "../components/SyncBadge";
+import { formatStoredCalendarDay } from "../lib/calendarDay";
 
 export function InspectionDetailPage() {
   const { id, eventId } = useParams();
@@ -40,7 +41,7 @@ export function InspectionDetailPage() {
           <>
             <section className="c04-band">
             <h2 style={{ marginBottom: 8 }}>Inspection</h2>
-            <p>{new Date(event.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</p>
+            <p>{formatStoredCalendarDay(String(event.event_date))}</p>
             <p style={{ textTransform: "capitalize" }}>{String(event.inspection_type || "general").replace(/_/g, " ")}</p>
             <p style={{ color: event.passed ? "var(--success)" : "var(--danger)", fontWeight: 700 }}>{event.passed ? "Passed" : "Failed"}</p>
             {event.signed_by_name && <p>Inspector {event.signed_by_name}</p>}

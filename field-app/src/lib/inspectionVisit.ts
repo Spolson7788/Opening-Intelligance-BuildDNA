@@ -1,4 +1,5 @@
 import { getOfflineSetting, loadAuth, putOfflineSetting } from "./db";
+import { isRequestTimeout, withTimeout } from "./deadline";
 import { selectedFacilityKey } from "./facilitySync";
 
 export interface VisitInspection {
@@ -89,25 +90,30 @@ export async function currentFacilityId(): Promise<string> {
   return typeof stored?.value === "string" ? stored.value : "";
 }
 
+async function readOrCreateOpenVisit(): Promise<InspectionVisit | null> {
+  const auth = await loadAuth();
+  if (!auth) return null;
+  const facilityId = await currentFacilityId();
+  if (!facilityId) return null;
+  const pointer = await getOfflineSetting(openVisitKey(auth.userId, auth.organizationId, facilityId));
+  const existing = typeof pointer?.value === "string" ? await readVisit(pointer.value) : null;
+  if (existing && existing.status === "open" && existing.facilityId === facilityId && existing.userId === auth.userId && existing.organizationId === auth.organizationId) {
+    return existing;
+  }
+  const created: InspectionVisit = {
+    id: crypto.randomUUID(), organizationId: auth.organizationId, userId: auth.userId,
+    facilityId, status: "open", inspections: [],
+  };
+  await putOfflineSetting({ key: visitKey(created.id), value: created, updatedAt: new Date().toISOString() });
+  await putOfflineSetting({ key: openVisitKey(auth.userId, auth.organizationId, facilityId), value: created.id, updatedAt: new Date().toISOString() });
+  return created;
+}
+
 export async function ensureOpenVisit(): Promise<InspectionVisit | null> {
   try {
-    const auth = await loadAuth();
-    if (!auth) return null;
-    const facilityId = await currentFacilityId();
-    if (!facilityId) return null;
-    const pointer = await getOfflineSetting(openVisitKey(auth.userId, auth.organizationId, facilityId));
-    const existing = typeof pointer?.value === "string" ? await readVisit(pointer.value) : null;
-    if (existing && existing.status === "open" && existing.facilityId === facilityId && existing.userId === auth.userId && existing.organizationId === auth.organizationId) {
-      return existing;
-    }
-    const created: InspectionVisit = {
-      id: crypto.randomUUID(), organizationId: auth.organizationId, userId: auth.userId,
-      facilityId, status: "open", inspections: [],
-    };
-    await putOfflineSetting({ key: visitKey(created.id), value: created, updatedAt: new Date().toISOString() });
-    await putOfflineSetting({ key: openVisitKey(auth.userId, auth.organizationId, facilityId), value: created.id, updatedAt: new Date().toISOString() });
-    return created;
-  } catch {
+    return await withTimeout(readOrCreateOpenVisit(), 4_000, "IndexedDB request timed out");
+  } catch (error) {
+    if (isRequestTimeout(error)) throw error;
     return null;
   }
 }

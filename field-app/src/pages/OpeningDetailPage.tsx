@@ -12,12 +12,13 @@ import { SyncBadge } from "../components/SyncBadge";
 import { PhotoCapture } from "../components/PhotoCapture";
 import { openingCompletionRequirements } from "../lib/openingCompletion";
 import { splitServiceHistory } from "../lib/serviceHistory";
+import { formatStoredCalendarDay } from "../lib/calendarDay";
 import type { ServiceEventRow } from "../lib/serviceHistory";
 
 function ServiceEventCard({ ev }: { ev: ServiceEventRow }) {
   return (
     <div className="card" data-service-event={ev.id}>
-      <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
+      <strong style={{ fontSize: 13 }}>{formatStoredCalendarDay(String(ev.event_date))}</strong>
       <p style={{ margin: "4px 0 0", fontSize: 14 }}>{ev.work_performed}</p>
     </div>
   );
@@ -460,7 +461,7 @@ export function OpeningDetailPage() {
             {opening.inspection_events.slice(0, 5).map((ev: any) => (
               <Link className="card" key={ev.id} to={`/opening/${opening.id}/inspection/${ev.id}`} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
+                  <strong style={{ fontSize: 13 }}>{formatStoredCalendarDay(String(ev.event_date))}</strong>
                   <span
                     className="badge"
                     style={{ color: ev.passed ? "var(--success)" : "var(--danger)", borderColor: ev.passed ? "var(--success)" : "var(--danger)" }}
