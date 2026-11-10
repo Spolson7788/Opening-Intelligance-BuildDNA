@@ -595,6 +595,7 @@ export interface DoorLeaf {
   material: string | null;
   width_in: number | null;
   height_in: number | null;
+  thickness_in: number | null;
   condition: string;
 }
 
