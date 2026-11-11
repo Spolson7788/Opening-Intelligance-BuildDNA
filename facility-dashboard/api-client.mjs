@@ -1,4 +1,6 @@
 // Same-origin, authenticated reads of canonical Field App records. No copied data.
+export const FACILITY_DASHBOARD_SIGN_IN = "/field/login?next=" + encodeURIComponent("/facility-dashboard/");
+const officeSignIn = `<p><a href="${FACILITY_DASHBOARD_SIGN_IN}">Sign in and return here</a></p>`;
 export async function readFieldSession() {
   return new Promise(resolve => {
     const request=indexedDB.open('opening-intel-field');
@@ -24,7 +26,7 @@ export async function api(path, body, expectedPrincipal) {
 export async function requireFacilityOfficePage() {
   const session = await readFieldSession();
   if (!session) {
-    document.body.innerHTML = '<main class="sheet"><h1>Facility Dashboard</h1><p>Sign in with your Field App account to view your company’s facilities.</p><p><a href="/field/scan">Sign in to Opening Intelligence</a></p></main>';
+    document.body.innerHTML = '<main class="sheet"><h1>Facility Dashboard</h1><p>Sign in to open the facility dashboard.</p>' + officeSignIn + '</main>';
     return false;
   }
   try {
@@ -32,7 +34,7 @@ export async function requireFacilityOfficePage() {
     if (!access || access.allowed !== true) throw Error('denied');
     return true;
   } catch {
-    document.body.innerHTML = '<main class="sheet"><h1>Facility Dashboard</h1><p role="alert">This account cannot open the facility dashboard. Facility customers sign in to their own dashboard. Field work stays in the Field App.</p><p><a href="/field/scan">Back to the Field App</a></p></main>';
+    document.body.innerHTML = '<main class="sheet"><h1>Facility Dashboard</h1><p role="alert">This account cannot open the facility dashboard for the company you are signed in to. A facility administrator can open it. Opening Intelligence staff can open it when they already belong to that company as an administrator or facilities manager.</p>' + officeSignIn + '</main>';
     return false;
   }
 }

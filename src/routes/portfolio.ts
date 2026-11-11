@@ -1,4 +1,4 @@
-import { customerMayOpenFacilityDashboard } from "../services/facilityDashboardAccess";
+import { mayOpenFacilityDashboard } from "../services/facilityDashboardAccess";
 import { getObjectBytes } from "../services/storage";
 import { loadInspectionVisit } from "../services/loadInspectionVisit";
 import { orderVisitDoors, visitCounts, visitSummaryText } from "../services/inspectionVisits";
@@ -17,8 +17,14 @@ portfolioRouter.use(enforceRolePermissions);
 portfolioRouter.use(auditLog);
 
 async function facilityDashboardAllowed(req: AuthedRequest): Promise<boolean> {
-  const org = await pool.query("SELECT org_type FROM organizations WHERE id=$1", [req.auth!.organizationId]);
-  return customerMayOpenFacilityDashboard(org.rows[0]?.org_type, req.auth!.role);
+  const auth = req.auth!;
+  const org = await pool.query("SELECT org_type FROM organizations WHERE id=$1", [auth.organizationId]);
+  return mayOpenFacilityDashboard({
+    orgType: org.rows[0]?.org_type,
+    role: auth.role,
+    staff: auth.staff === true,
+    mfaVerified: auth.mfaVerified === true,
+  });
 }
 
 // Checked before any facility list or opening payload. Unknown, loading, and revoked

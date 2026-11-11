@@ -205,6 +205,18 @@ export function verifyStaffMfa(mfaToken: string, body: { code: string }): Promis
   return staffMfaFetch(mfaToken, "/auth/mfa/verify", body);
 }
 
+/** True only when this signed-in staff session may open the facility dashboard for the selected company. */
+export async function facilityDashboardMenuVisible(): Promise<boolean> {
+  try {
+    const me = await authedFetch("/platform/me") as { staff?: boolean };
+    if (me?.staff !== true) return false;
+    const access = await authedFetch("/portfolio/facility-dashboard-access") as { allowed?: boolean };
+    return access?.allowed === true;
+  } catch {
+    return false;
+  }
+}
+
 export async function requestPasswordReset(email: string): Promise<void> {
   const res = await fetch(`${API_BASE}/auth/password-reset/request`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),

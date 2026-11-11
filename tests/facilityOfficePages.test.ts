@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import { afterEach, expect, it, vi } from "vitest";
 import request from "supertest";
 
@@ -24,7 +25,7 @@ vi.mock("../src/services/storage", async (importOriginal) => {
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
 import { failingFireDoorFields, passingFireDoorFields } from "./nfpa80Fixture";
 import { pool } from "../src/db/pool";
-import { customerMayOpenFacilityDashboard } from "../src/services/facilityDashboardAccess";
+import { customerMayOpenFacilityDashboard, mayOpenFacilityDashboard } from "../src/services/facilityDashboardAccess";
 import { readFileSync } from "node:fs";
 
 afterEach(() => storage.objects.clear());
@@ -58,10 +59,19 @@ async function account(orgType: "customer" | "service_partner" | "internal", rol
   return { token: login.body.token as string, organizationId: signup.body.organizationId as string, email };
 }
 
-it("keeps platform staff out of the customer office rule", () => {
+it("lets verified staff open only a customer office they already belong to", () => {
   expect(readFileSync("src/services/facilityDashboardAccess.ts", "utf8")).not.toContain("is_platform_staff");
-  expect(readFileSync("src/middleware/facilityOffice.ts", "utf8")).not.toContain("is_platform_staff");
   expect(customerMayOpenFacilityDashboard("internal", "admin")).toBe(false);
+  expect(customerMayOpenFacilityDashboard("customer", "admin")).toBe(true);
+  expect(mayOpenFacilityDashboard({ orgType: "customer", role: "facilities_manager", staff: false })).toBe(true);
+  expect(mayOpenFacilityDashboard({ orgType: "customer", role: "technician", staff: false })).toBe(false);
+  expect(mayOpenFacilityDashboard({ orgType: "customer", role: "inspector", staff: false })).toBe(false);
+  expect(mayOpenFacilityDashboard({ orgType: "internal", role: "admin", staff: true, mfaVerified: true })).toBe(false);
+  expect(mayOpenFacilityDashboard({ orgType: "customer", role: "technician", staff: true, mfaVerified: true })).toBe(false);
+  expect(mayOpenFacilityDashboard({ orgType: "customer", role: "admin", staff: true, mfaVerified: false })).toBe(false);
+  expect(mayOpenFacilityDashboard({ orgType: "customer", role: "admin", staff: true, mfaVerified: true })).toBe(true);
+  expect(mayOpenFacilityDashboard({ orgType: "customer", role: "facilities_manager", staff: true, mfaVerified: true })).toBe(true);
+  expect(mayOpenFacilityDashboard({ orgType: "service_partner", role: "admin", staff: true, mfaVerified: true })).toBe(false);
 });
 
 it("applies the customer office gate to catalog, planning, finance, and history", async () => {
@@ -99,6 +109,39 @@ it("applies the customer office gate to catalog, planning, finance, and history"
     expect(cross.body.openings).toBeUndefined();
     expect(JSON.stringify(cross.body)).not.toContain(opening.id);
   }
+});
+
+it("allows verified staff with an office membership and denies staff without one", async () => {
+  const customer = await account("customer", "admin");
+  const facility = await createPortfolioHierarchy(customer.token);
+  const opening = await createTestOpening(customer.token, facility.buildingId);
+  const staff = await reuseInternalAdmin();
+  const person = await pool.query("SELECT id, session_version FROM users WHERE lower(email)=lower($1)", [staff.email]);
+  await pool.query("INSERT INTO platform_staff (user_id, grant_reason) VALUES ($1, 'synthetic office grant')", [person.rows[0].id]);
+  const secret = process.env.JWT_SECRET as string;
+  const atHome = jwt.sign({ userId: person.rows[0].id, organizationId: staff.organizationId, role: "admin", sessionVersion: Number(person.rows[0].session_version), mfaVerified: true }, secret, { expiresIn: "1h" });
+  const homeGate = await request(app).get("/api/portfolio/facility-dashboard-access").set("Authorization", `Bearer ${atHome}`);
+  expect(homeGate.status).toBe(403);
+  expect(homeGate.body).toEqual({ error: "facility_dashboard_forbidden" });
+  await pool.query("INSERT INTO organization_memberships (user_id, organization_id, role, is_active, is_home) VALUES ($1,$2,'admin',true,false)", [person.rows[0].id, customer.organizationId]);
+  const asOffice = jwt.sign({ userId: person.rows[0].id, organizationId: customer.organizationId, role: "technician", sessionVersion: Number(person.rows[0].session_version), mfaVerified: true }, secret, { expiresIn: "1h" });
+  expect((await request(app).get("/api/portfolio/facility-dashboard-access").set("Authorization", `Bearer ${asOffice}`)).body).toEqual({ allowed: true });
+  expect((await request(app).get("/api/portfolio/facility-dashboard/" + facility.propertyId).set("Authorization", `Bearer ${asOffice}`)).status).toBe(200);
+  expect((await request(app).get("/api/commercial/context/" + opening.id).set("Authorization", `Bearer ${asOffice}`)).status).toBe(200);
+  expect((await request(app).get("/api/planning/" + opening.id).set("Authorization", `Bearer ${asOffice}`)).status).toBe(200);
+  const tech = await reuseInternalAdmin();
+  const techPerson = await pool.query("SELECT id, session_version FROM users WHERE lower(email)=lower($1)", [tech.email]);
+  await pool.query("INSERT INTO platform_staff (user_id, grant_reason) VALUES ($1, 'synthetic tech grant')", [techPerson.rows[0].id]);
+  await pool.query("INSERT INTO organization_memberships (user_id, organization_id, role, is_active, is_home) VALUES ($1,$2,'technician',true,false)", [techPerson.rows[0].id, customer.organizationId]);
+  const asTech = jwt.sign({ userId: techPerson.rows[0].id, organizationId: customer.organizationId, role: "admin", sessionVersion: Number(techPerson.rows[0].session_version), mfaVerified: true }, secret, { expiresIn: "1h" });
+  const techGate = await request(app).get("/api/commercial/context/" + opening.id).set("Authorization", `Bearer ${asTech}`);
+  expect(techGate.status).toBe(403);
+  expect(techGate.body).toEqual({ error: "facility_dashboard_forbidden" });
+  const other = await account("customer", "admin");
+  const otherFacility = await createPortfolioHierarchy(other.token);
+  const cross = await request(app).get("/api/portfolio/facility-dashboard/" + otherFacility.propertyId).set("Authorization", `Bearer ${asOffice}`);
+  expect(cross.status).toBe(404);
+  expect(cross.body.openings).toBeUndefined();
 });
 
 it("shows facility visits with the stored official PDF and records advised dates only when they exist", async () => {

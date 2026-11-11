@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { StaffMfaRequired, useAuth } from "../lib/AuthContext";
 import { ApiError, resendStaffSignInCode, verifyStaffMfa } from "../lib/api";
 import { clearPendingStaffSignIn, readPendingStaffSignIn, savePendingStaffSignIn, type PendingStaffSignIn } from "../lib/staffSignInPending";
 import { readLoginForm } from "../lib/loginForm";
 import { loginFailureMessage } from "../lib/authResponse";
 import { postAuthLanding, readLocationConfirmation } from "../lib/locationChoice";
+import { facilityDashboardReturn } from "../lib/facilityDashboardReturn";
 import { isQrDetailsPath } from '../lib/qrLanding';
 import { siteAccessRenewalUrl } from '../lib/siteAccess';
 import { RenewPrivateSiteAccess } from '../components/RenewPrivateSiteAccess';
@@ -30,6 +31,8 @@ export function LoginPage() {
   const { auth, loading, identityChecking, login, finishStaffSignIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [params] = useSearchParams();
+  const officeReturn = facilityDashboardReturn(params.get("next"));
   const [error, setError] = useState<string | null>(null);
   const [reference, setReference] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -46,6 +49,11 @@ export function LoginPage() {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [pending]);
+
+  function leave(confirmed: boolean) {
+    if (officeReturn) { window.location.assign(officeReturn); return; }
+    navigate(postAuthLanding(location.state?.from, confirmed), { replace: true });
+  }
 
   function remember(next: PendingStaffSignIn) {
     const store = browserSession();
@@ -74,7 +82,7 @@ export function LoginPage() {
       if (isQrDetailsPath(location.state?.from)) await login(credentials.email, credentials.password, false);
       else await login(credentials.email, credentials.password);
       forget();
-      navigate(postAuthLanding(location.state?.from, false), { replace: true });
+      leave(false);
     } catch (err) {
       if (err instanceof StaffMfaRequired) {
         remember({ mfaToken: err.mfaToken, email: credentials.email, sentAt: Date.now() });
@@ -101,7 +109,7 @@ export function LoginPage() {
       const resumeQueued = !isQrDetailsPath(location.state?.from);
       forget();
       await finishStaffSignIn(result.token, pending.email, resumeQueued);
-      navigate(postAuthLanding(location.state?.from, false), { replace: true });
+      leave(false);
     } catch (err) {
       setError(err instanceof ApiError ? mfaMessage(err.message) : "The sign-in code could not be checked. Try again.");
     } finally { setSubmitting(false); }
@@ -147,7 +155,7 @@ export function LoginPage() {
     <h1>Already signed in</h1>
     <p>Signed in as {auth.email || `Account ${auth.userId}`}</p>
     <p>This sign-in page does not switch accounts. To use a different account, go to Scan and sign out first. Saved changes remain associated with their original account.</p>
-    <button type="button" className="btn btn-primary" onClick={() => navigate(postAuthLanding(location.state?.from, !!readLocationConfirmation(browserSession(), auth)), { replace: true })}>Continue with this account</button>
+    <button type="button" className="btn btn-primary" onClick={() => leave(!!readLocationConfirmation(browserSession(), auth))}>Continue with this account</button>
     <button type="button" className="btn c04-choice" onClick={() => navigate(postAuthLanding("/scan", !!readLocationConfirmation(browserSession(), auth)), { replace: true })}>Go to Scan</button>
   </div></div>;
 

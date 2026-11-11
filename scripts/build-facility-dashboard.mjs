@@ -14,7 +14,8 @@ export function buildFacilityDashboard(destination,{production=false,sourceRoot}
  replace('import {url,key} from "./preview-config.mjs";', 'import {sb,refreshScope,refreshFacility,readFieldSession,api,downloadFacilityVisitPdf} from "./api-client.mjs";');
  replace("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';",'');
  replace('const SUPA_URL=url;', '');replace('const SUPA_KEY=key;','');replace('const sb=createClient(SUPA_URL,SUPA_KEY);','');
- replace('if(!session){',`if(!session){document.getElementById('loginView').innerHTML='<h2>Facility Dashboard</h2><p>Sign in with your Field App account to view your company’s facilities.</p><a href="/field/scan">Sign in to Opening Intelligence</a>';`);
+ const signIn='<a class="btn" href="/field/login?next='+encodeURIComponent('/facility-dashboard/')+'">Sign in and return here</a>';
+ replace('if(!session){',`if(!session){document.getElementById('loginView').innerHTML='<div class="login"><h1>Facility Dashboard</h1><p>Sign in to open the facility dashboard.</p>'+${JSON.stringify(signIn)}+'</div>';`);
  replace(`async function routeByType(session){
   try{
     const {data:prof}=await sb.from('profiles').select('user_type').eq('id',session.user.id).maybeSingle();
@@ -41,7 +42,7 @@ export function buildFacilityDashboard(destination,{production=false,sourceRoot}
     if(!access||access.allowed!==true) throw Error('denied');
     return false;
   } catch (e) {
-    login.innerHTML='<h2>Facility Dashboard</h2><p role="alert">This account cannot open the facility dashboard. Facility customers sign in to their own dashboard. Field work stays in the Field App.</p><p><a href="/field/scan">Back to the Field App</a></p>';
+    login.innerHTML='<div class="login"><h1>Facility Dashboard</h1><p role="alert">This account cannot open the facility dashboard for the company you are signed in to. A facility administrator can open it. Opening Intelligence staff can open it when they already belong to that company as an administrator or facilities manager.</p><p>'+${JSON.stringify(signIn)}+'</p></div>';
     return true;
   }
 }`);

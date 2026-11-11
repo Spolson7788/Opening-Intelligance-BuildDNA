@@ -436,7 +436,8 @@ test('facility dashboard packaging accepts CRLF checkout and still refuses a cha
     assert.equal(html.includes('\r'), false);
     assert.match(html, /Checking access for this account/);
     assert.match(html, /api\('\/portfolio\/facility-dashboard-access'\)/);
-    assert.match(html, /This account cannot open the facility dashboard/);
+    assert.match(html, /This account cannot open the facility dashboard for the company you are signed in to/);
+    assert.match(html, /\/field\/login\?next=%2Ffacility-dashboard%2F/);
     for (const name of ['commercial.html', 'planning.html', 'finance.html', 'history.html', 'concept04.css', 'display.mjs']) {
       assert.equal(existsSync(resolve(dest, name)), true, name);
     }

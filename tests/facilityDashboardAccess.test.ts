@@ -1,16 +1,32 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 import { readFileSync } from "node:fs";
+import bcrypt from "bcryptjs";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
 import { pool } from "../src/db/pool";
 import { customerMayOpenFacilityDashboard } from "../src/services/facilityDashboardAccess";
 import { AUTH_CONTEXT_SQL } from "../src/middleware/auth";
+
+async function reuseInternalAdmin() {
+  const org = await pool.query("SELECT id FROM organizations WHERE org_type='internal' LIMIT 1");
+  expect(org.rows.length).toBe(1);
+  const email = `internal-access-${Date.now()}-${Math.random().toString(36).slice(2)}@example.invalid`;
+  const hash = await bcrypt.hash("password12345", 4);
+  await pool.query(
+    "INSERT INTO users (organization_id, email, full_name, role, password_hash) VALUES ($1,$2,'Internal staff','admin',$3)",
+    [org.rows[0].id, email, hash],
+  );
+  const login = await request(app).post("/api/auth/login").send({ email, password: "password12345" });
+  expect(login.status).toBe(200);
+  return login.body.token as string;
+}
 
 async function account(orgType: "customer" | "service_partner" | "internal", role = "admin") {
   const stamp = `${orgType}-${role}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const signup = await request(app).post("/api/auth/signup").send({
     organization_name: `Synthetic ${stamp}`, org_type: orgType, email: `${stamp}@example.invalid`, password: "password12345", full_name: "Synthetic",
   });
+  if (orgType === "internal" && signup.status === 409) return reuseInternalAdmin();
   expect(signup.status).toBe(201);
   if (role === "admin") return signup.body.token as string;
   const email = `${role}-${stamp}@example.invalid`;
@@ -65,7 +81,10 @@ describe("facility dashboard office access", () => {
     const openingRead = await request(app).get("/api/openings/" + opening.id).set("Authorization", `Bearer ${sameTech}`);
     expect(openingRead.status).toBe(200);
     expect(openingRead.body.id).toBe(opening.id);
-    expect(readFileSync("field-app/src/pages/ScanPage.tsx", "utf8")).not.toContain("facility-dashboard");
+    const scan = readFileSync("field-app/src/pages/ScanPage.tsx", "utf8");
+    expect(scan).toContain("showFacilityDashboardShortcut");
+    expect(scan).toContain("if (!show) return null");
+    expect(scan).toContain('href="/facility-dashboard/"');
   });
 
   it("uses the active company after a real company switch", async () => {

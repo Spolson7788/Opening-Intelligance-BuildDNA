@@ -5,12 +5,29 @@ import { SyncBadge } from "../components/SyncBadge";
 import { FacilitySelector } from "../components/FacilitySelector";
 import { useAuth } from "../lib/AuthContext";
 import { parseOpeningQr } from "../lib/qrPayload";
-import { fetchInspectionVisit, fetchLabelConfig } from '../lib/api';
+import { facilityDashboardMenuVisible, fetchInspectionVisit, fetchLabelConfig } from '../lib/api';
+import { showFacilityDashboardShortcut, tokenHasVerifiedStaffSession } from '../lib/facilityDashboardReturn';
 import { getSyncOperationsForPrincipal, loadAuth } from "../lib/db";
 import { pendingInspectionIds, reconcileOpenVisit, startNewVisit, visitSummaryText, visitUploadMessage } from "../lib/inspectionVisit";
 import type { InspectionVisit } from "../lib/inspectionVisit";
 
 const SCANNER_ELEMENT_ID = "qr-reader";
+
+function FacilityDashboardLink() {
+  const { auth } = useAuth();
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    let live = true;
+    setShow(false);
+    if (!auth || !tokenHasVerifiedStaffSession(auth.token)) return;
+    void facilityDashboardMenuVisible().then((allowed) => {
+      if (live) setShow(showFacilityDashboardShortcut({ mfaVerified: true, staff: allowed, allowed, role: auth.role }));
+    });
+    return () => { live = false; };
+  }, [auth?.userId, auth?.organizationId, auth?.token, auth?.role]);
+  if (!show) return null;
+  return <a className="btn c04-choice" href="/facility-dashboard/">Facility Dashboard</a>;
+}
 
 export function ScanPage() {
   const navigate = useNavigate();
@@ -137,6 +154,7 @@ export function ScanPage() {
         </section>
         <button className="btn c04-btn-cyan" onClick={() => navigate("/setup-opening")}>Facilities and openings</button>
         <button className="btn c04-btn-green" onClick={() => navigate("/my-work-orders")}>My Work Orders</button>
+        <FacilityDashboardLink />
         <Link className="btn c04-choice" to="/how-to-use">How to use</Link>
         <button type="button" className="btn c04-choice" onClick={() => navigate("/change-password")}>Change Password</button>
         <button type="button" className="btn c04-choice" disabled={logoutPending} onClick={() => logout()}>

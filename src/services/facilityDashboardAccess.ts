@@ -1,8 +1,22 @@
 // The facility dashboard is the customer office view of one customer's own facilities.
-// Provider company admin, field technician, inspector, viewer, internal staff, and an
-// unknown organization type do not qualify. Platform staff status is not consulted:
-// it does not grant this dashboard. The active company and role come from requireAuth's
-// database lookup, not from the browser.
+// A customer administrator or facilities manager of the active company may open it.
+// Verified Opening Intelligence staff may open it only for a company they already
+// belong to in one of those office roles (organization_memberships, checked by
+// requireAuth through user_authorized_orgs). Staff status does not open every
+// facility, and a technician, inspector, or viewer membership does not qualify.
+const OFFICE_ROLES = new Set(["admin", "facilities_manager"]);
+
 export function customerMayOpenFacilityDashboard(orgType: unknown, role: unknown): boolean {
-  return orgType === "customer" && (role === "admin" || role === "facilities_manager");
+  return orgType === "customer" && OFFICE_ROLES.has(String(role));
+}
+
+export function mayOpenFacilityDashboard(input: {
+  orgType: unknown;
+  role: unknown;
+  staff?: boolean;
+  mfaVerified?: boolean;
+}): boolean {
+  const office = customerMayOpenFacilityDashboard(input.orgType, input.role);
+  if (input.staff !== true) return office;
+  return office && input.mfaVerified === true;
 }
