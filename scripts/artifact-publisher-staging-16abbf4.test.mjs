@@ -32,7 +32,7 @@ test('staging site is the only accepted target', () => {
 test('production and any other site are refused', () => {
   assert.throws(() => assertSite({ id: PRODUCTION_SITE_ID, name: 'oi-production', url: 'https://oi-production.netlify.app' }), /refusing_production/);
   assert.throws(() => assertSite({ id: '80fbbee8-b9d3-4b16-b93f-d2d8396591ec', name: 'oi-connected-release-candidate', url: 'https://oi-connected-release-candidate.netlify.app' }), /refusing_site_mismatch/);
-  assert.equal(PINNED_COMMIT, '5d1c899e1f79f72c79786093840e8909d4d39924');
+  assert.equal(PINNED_COMMIT, '26dfb951b06e3591386e6ac1fb7c75043a651747');
   assert.equal(packageCommitAllowed(PINNED_COMMIT), true);
   assert.equal(packageCommitAllowed('16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5'), false);
   assert.equal(packageCommitAllowed('9c0256e1b92182a55246bc7e6460ab456098a48d'), false);
@@ -437,6 +437,9 @@ test('facility dashboard packaging accepts CRLF checkout and still refuses a cha
     assert.match(html, /Checking access for this account/);
     assert.match(html, /api\('\/portfolio\/facility-dashboard-access'\)/);
     assert.match(html, /This account cannot open the facility dashboard/);
+    for (const name of ['commercial.html', 'planning.html', 'finance.html', 'history.html', 'concept04.css', 'display.mjs']) {
+      assert.equal(existsSync(resolve(dest, name)), true, name);
+    }
     assert.equal(html.includes('missing profile -> stay'), false);
     rmSync(dest, { recursive: true, force: true });
     rmSync(sourceRoot, { recursive: true, force: true });
