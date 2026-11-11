@@ -45,6 +45,15 @@ export function measurementReadPresentation(code: string): { message: string; co
   if (code === "measurement_reader_timeout") {
     return { empty: false, code, message: "Reading the measurement photo timed out. The opening was not changed." };
   }
+  if (code === "measurement_reader_auth") {
+    return { empty: false, code, message: "The measurement reader's key isn't working on this site. The opening was not changed." };
+  }
+  if (code === "measurement_reader_rate_limited" || code === "measurement_reader_overloaded") {
+    return { empty: false, code, message: "The measurement reader is busy. Try again in a minute. The opening was not changed." };
+  }
+  if (code === "measurement_reader_rejected") {
+    return { empty: false, code, message: "The measurement reader rejected this photo. The opening was not changed." };
+  }
   if (code === "measurement_network") {
     return { empty: false, code, message: "The measurement photo could not be sent. Check the connection and try again. The opening was not changed." };
   }

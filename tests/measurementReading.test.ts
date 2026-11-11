@@ -204,12 +204,13 @@ it("names a timeout, a provider failure, and an unsupported image type", async (
   expect(timedOut.status).toBe(504);
   expect(timedOut.body.error).toBe("measurement_reader_timeout");
   expect(measurementReadPresentation("measurement_reader_timeout").message).toContain("timed out");
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { message: "bad image" } }), { status: 400 })));
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { type: "invalid_request_error", message: "bad image" } }), { status: 400 })));
   const provider = await request(app).post(`/api/openings/${opening.id}/measurement-reading`).set(auth).send({
     content_type: "image/jpeg", image_base64: Buffer.from("plain-opening").toString("base64"),
   });
   expect(provider.status).toBe(502);
-  expect(provider.body.error).toBe("measurement_reader_failed");
+  expect(provider.body.error).toBe("measurement_reader_rejected");
+  expect(measurementReadPresentation("measurement_reader_rejected").message).toContain("rejected this photo");
   expect(measurementReadPresentation("measurement_reader_failed").code).toBe("measurement_reader_failed");
   const heic = await request(app).post(`/api/openings/${opening.id}/measurement-reading`).set(auth).send({
     content_type: "image/heic", image_base64: Buffer.from("plain-opening").toString("base64"),
@@ -218,4 +219,69 @@ it("names a timeout, a provider failure, and an unsupported image type", async (
   expect(heic.body.error).toBe("measurement_image_type");
   expect(measurementReadPresentation("measurement_reader_unconfigured").message).toContain("not available");
   expect(measurementReadPresentation("measurement_network").message).toContain("could not be sent");
+});
+
+it("logs Anthropic failures with a distinct code and never the key", async () => {
+  const secret = "sk-ant-test-key-must-not-appear";
+  process.env.OI_MEASUREMENT_READER = "anthropic";
+  process.env.OI_RECOGNITION_ENABLED = "true";
+  process.env.ANTHROPIC_API_KEY = secret;
+  const { opening, auth } = await openingWithFrame();
+  const image = Buffer.from("plain-opening");
+  const logs: string[] = [];
+  const spy = vi.spyOn(console, "error").mockImplementation((line) => { logs.push(String(line)); });
+  const cases = [
+    { status: 401, type: "authentication_error", message: `invalid x-api-key ${secret}`, code: "measurement_reader_auth", phrase: "isn't working" },
+    { status: 429, type: "rate_limit_error", message: "rate limited", code: "measurement_reader_rate_limited", phrase: "busy" },
+    { status: 529, type: "overloaded_error", message: "overloaded", code: "measurement_reader_overloaded", phrase: "busy" },
+    { status: 400, type: "invalid_request_error", message: "image was rejected", code: "measurement_reader_rejected", phrase: "rejected this photo" },
+  ];
+  for (const item of cases) {
+    logs.length = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { type: item.type, message: item.message } }), {
+      status: item.status,
+      headers: { "content-type": "application/json", "request-id": `req_${item.status}` },
+    })));
+    const reading = await request(app).post(`/api/openings/${opening.id}/measurement-reading`).set(auth).send({
+      content_type: "image/jpeg", image_base64: image.toString("base64"),
+    });
+    expect(reading.status).toBe(502);
+    expect(reading.body.error).toBe(item.code);
+    expect(measurementReadPresentation(item.code).message).toContain(item.phrase);
+    expect(logs).toHaveLength(1);
+    const line = JSON.parse(logs[0]);
+    expect(line).toMatchObject({
+      event: "measurement_reader_anthropic",
+      status: item.status,
+      errorType: item.type,
+      requestId: `req_${item.status}`,
+      model: "claude-sonnet-4-5-20250929",
+      imageBytes: image.length,
+      mediaType: "image/jpeg",
+    });
+    expect(line.errorMessage).not.toContain(secret);
+    expect(line.errorMessage.length).toBeLessThanOrEqual(300);
+    expect(typeof line.durationMs).toBe("number");
+    expect(Object.keys(line).sort()).toEqual(["durationMs", "errorMessage", "errorType", "event", "imageBytes", "mediaType", "model", "requestId", "status"]);
+    expect(logs[0]).not.toContain(secret);
+    expect(logs[0]).not.toContain(image.toString("base64"));
+  }
+  logs.length = 0;
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>not json</html>", {
+    status: 200,
+    headers: { "content-type": "text/html", "request-id": "req_html" },
+  })));
+  const unreadable = await request(app).post(`/api/openings/${opening.id}/measurement-reading`).set(auth).send({
+    content_type: "image/jpeg", image_base64: image.toString("base64"),
+  });
+  expect(unreadable.status).toBe(502);
+  expect(unreadable.body.error).toBe("measurement_reader_failed");
+  expect(logs).toHaveLength(1);
+  const unreadableLine = JSON.parse(logs[0]);
+  expect(unreadableLine.status).toBe(200);
+  expect(unreadableLine.errorType).toBe("");
+  expect(unreadableLine.requestId).toBe("req_html");
+  expect(logs[0]).not.toContain(secret);
+  expect(logs[0]).not.toContain("<html>");
+  spy.mockRestore();
 });

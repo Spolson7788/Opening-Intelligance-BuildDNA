@@ -93,6 +93,47 @@ export function parseMeasurementText(text: string): MeasurementSuggestion[] {
   });
 }
 
+export function measurementAnthropicFailureCode(status: number): string {
+  if (status === 401 || status === 403) return "measurement_reader_auth";
+  if (status === 429) return "measurement_reader_rate_limited";
+  if (status === 529 || status >= 500) return "measurement_reader_overloaded";
+  if (status === 400 || status === 404 || status === 413) return "measurement_reader_rejected";
+  return "measurement_reader_failed";
+}
+
+function scrubProviderText(value: string, secret: string): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  const hidden = secret ? compact.split(secret).join("[redacted]") : compact;
+  return hidden
+    .replace(/sk-ant-[A-Za-z0-9_-]+/g, "[redacted]")
+    .replace(/\bBearer\s+\S+/gi, "Bearer [redacted]")
+    .slice(0, 300);
+}
+
+function logAnthropicFailure(detail: {
+  status: number;
+  errorType: string;
+  errorMessage: string;
+  requestId: string;
+  model: string;
+  imageBytes: number;
+  mediaType: string;
+  durationMs: number;
+  secret: string;
+}) {
+  console.error(JSON.stringify({
+    event: "measurement_reader_anthropic",
+    status: detail.status,
+    errorType: scrubProviderText(detail.errorType, detail.secret),
+    errorMessage: scrubProviderText(detail.errorMessage, detail.secret),
+    requestId: scrubProviderText(detail.requestId, detail.secret),
+    model: scrubProviderText(detail.model, detail.secret),
+    imageBytes: detail.imageBytes,
+    mediaType: scrubProviderText(detail.mediaType, detail.secret),
+    durationMs: detail.durationMs,
+  }));
+}
+
 function anthropicProvider(): MeasurementProvider {
   return {
     name: "anthropic",
@@ -102,6 +143,7 @@ function anthropicProvider(): MeasurementProvider {
       const mediaType = measurementImageType(image.contentType || "");
       if (!mediaType) throw new MeasurementReaderError("measurement_image_type", 400);
       const model = process.env.OI_MEASUREMENT_READER_MODEL || DEFAULT_CLAUDE_MODEL;
+      const started = Date.now();
       let response: Response;
       try {
         response = await postAnthropicMessages({
@@ -117,10 +159,29 @@ function anthropicProvider(): MeasurementProvider {
         throw new MeasurementReaderError("measurement_network", 502);
       }
       const raw = await response.text();
-      let body: { content?: { text?: string }[]; error?: { message?: string } };
-      try { body = raw ? JSON.parse(raw) : {}; }
-      catch { throw new MeasurementReaderError("measurement_reader_failed", 502); }
-      if (!response.ok) throw new MeasurementReaderError("measurement_reader_failed", 502);
+      let body: { content?: { text?: string }[]; error?: { type?: string; message?: string } } | null = null;
+      let parsed = false;
+      try {
+        body = raw ? JSON.parse(raw) : {};
+        parsed = true;
+      } catch { body = null; }
+      if (!response.ok || !parsed || !body) {
+        const errorType = body?.error && typeof body.error.type === "string" ? body.error.type : "";
+        const errorMessage = body?.error && typeof body.error.message === "string" ? body.error.message : "";
+        logAnthropicFailure({
+          status: response.status,
+          errorType,
+          errorMessage,
+          requestId: response.headers.get("request-id") || "",
+          model,
+          imageBytes: image.bytes.length,
+          mediaType,
+          durationMs: Date.now() - started,
+          secret: key,
+        });
+        const code = response.ok ? "measurement_reader_failed" : measurementAnthropicFailureCode(response.status);
+        throw new MeasurementReaderError(code, 502);
+      }
       return parseMeasurementText(body.content?.[0]?.text || "");
     },
   };
