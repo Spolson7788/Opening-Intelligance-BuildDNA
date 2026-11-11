@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { fetchOpening, readMeasurementPhoto, setOpeningConfiguration } from "../lib/api";
 import { queueOpeningMutation } from "../lib/sync";
@@ -6,7 +6,7 @@ import { updateCachedOpening } from "../lib/db";
 import { PhotoCapture } from "../components/PhotoCapture";
 import { useAuth } from "../lib/AuthContext";
 import { dimensionDraft, dimensionPayload, parseInches, unevenPair } from "../lib/inchMeasure";
-import { draftsFromSuggestions, measurementErrorCode, measurementReadPresentation, measurementTargets, parseEditedInches, planMeasurementSave, targetLabel, validateMeasurementDrafts } from "../lib/measurementSuggestions";
+import { draftsFromSuggestions, measurementErrorCode, measurementReadPresentation, measurementSavedSummary, measurementTargets, parseEditedInches, planMeasurementSave, targetLabel, validateMeasurementDrafts } from "../lib/measurementSuggestions";
 import type { MeasurementDraft } from "../lib/measurementSuggestions";
 import { prepareMeasurementImage } from "../lib/photoPreparation";
 import type { DimensionDraft } from "../lib/inchMeasure";
@@ -71,6 +71,13 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
   const [reading, setReading] = useState(false);
   const [savedNotice, setSavedNotice] = useState("");
   const [supportCode, setSupportCode] = useState("");
+  const [pendingNote, setPendingNote] = useState("");
+  const savingLock = useRef(false);
+
+  useEffect(() => {
+    if (!savedNotice) return;
+    document.getElementById("measurement-saved")?.scrollIntoView?.({ block: "start" });
+  }, [savedNotice]);
 
   const activeIn = parseInches(leafWidth.active?.text ?? "");
   const inactiveIn = parseInches(leafWidth.inactive?.text ?? "");
@@ -195,7 +202,6 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
 
   function updateDraft(draftId: string, patch: Partial<MeasurementDraft>) {
     setDrafts((current) => current.map((draft) => draft.id === draftId ? { ...draft, ...patch } : draft));
-    setSavedNotice("");
   }
 
   function addDraft() {
@@ -206,14 +212,18 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
   }
 
   async function saveMeasurements() {
+    if (savingLock.current) return;
     const checked = validateMeasurementDrafts(drafts, configuration);
     if (!checked.ok) {
       setMessage("");
+      setPendingNote("");
       setError(checked.problems.join(" "));
       return;
     }
+    savingLock.current = true;
     setSaving(true);
     setError("");
+    setPendingNote("");
     setSupportCode("");
     setMessage("Saving to Door & Frame…");
     const plan = planMeasurementSave(checked.accepted, configuration);
@@ -253,21 +263,24 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
           });
         }
       }
-      const lines = plan.flatMap((group) => group.lines);
-      const notice = `Saved to Door & Frame. ${lines.join(" ")} It will synchronize automatically.`;
-      setSavedNotice(notice);
-      setMessage(notice);
-      document.getElementById("frame-width")?.scrollIntoView?.();
-    } catch (caught) {
-      setSavedNotice("");
+      const waiting = typeof navigator !== "undefined" && navigator.onLine === false;
+      setDrafts([]);
       setMessage("");
-      const pending = caught instanceof Error && caught.message === "structure_sync_pending_review";
-      setError(pending
-        ? "These sizes are already waiting to synchronize. They were not written again."
-        : caught instanceof Error && caught.message === "unreadable_dimension"
+      setSavedNotice(measurementSavedSummary(checked.accepted, configuration, waiting));
+    } catch (caught) {
+      setMessage("");
+      if (caught instanceof Error && caught.message === "structure_sync_pending_review") {
+        setError("");
+        setPendingNote("These sizes are already waiting to synchronize. They were not written again.");
+      } else {
+        setError(caught instanceof Error && caught.message === "unreadable_dimension"
           ? "A size could not be read. Use feet and inches, such as 3' 11\", or a number of inches."
           : "Door & Frame was not saved. Check the connection and try again.");
-    } finally { setSaving(false); }
+      }
+    } finally {
+      savingLock.current = false;
+      setSaving(false);
+    }
   }
 
   async function changeConfiguration(next: "single" | "pair") {
@@ -338,6 +351,8 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
         {measurePreview && <img src={measurePreview} alt="Measurement photo" style={{ width: "100%", maxHeight: 220, objectFit: "contain", background: "#fff", borderRadius: 8 }} />}
         <PhotoCapture openingId={id} relatedEntityType="opening" relatedEntityId={id} sources="saved-or-camera" onQueued={() => { setSupportCode(""); setMessage("Measurement photo saved locally."); }} onPicked={pickMeasurement} />
         <button type="button" className="btn btn-secondary" disabled={!measureFile || reading || saving} onClick={() => { void readMeasurement(); }}>{reading ? "Reading…" : "Read measurements"}</button>
+        {savedNotice && <p id="measurement-saved" className="c04-band-green" role="status">{savedNotice}</p>}
+        {pendingNote && <p role="status">{pendingNote}</p>}
         {drafts.map((draft) => {
           const inches = parseEditedInches(draft.text);
           return <div key={draft.id} style={{ marginTop: 12, background: "#fff", borderRadius: 8, padding: 10 }}>
@@ -361,15 +376,12 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
             <button type="button" className="btn btn-secondary" onClick={() => setDrafts((current) => current.filter((item) => item.id !== draft.id))}>Remove</button>
           </div>;
         })}
-        {drafts.length > 0 && <>
-          <button type="button" className="btn btn-secondary" style={{ marginTop: 8 }} onClick={addDraft}>Add a size</button>
-          <button type="button" className="btn c04-btn-green" style={{ marginTop: 8 }} disabled={saving} onClick={() => { void saveMeasurements(); }}>{saving ? "Saving…" : "Save to Door & Frame"}</button>
-        </>}
+        <button type="button" className="btn btn-secondary" style={{ marginTop: 8 }} onClick={addDraft}>Add a size</button>
+        {drafts.length > 0 && <button type="button" className="btn c04-btn-green" style={{ marginTop: 8 }} disabled={saving} onClick={() => { void saveMeasurements(); }}>{saving ? "Saving…" : "Save to Door & Frame"}</button>}
       </div>
       {error && <p className="c04-step-alert" role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
       {supportCode && <p style={{ fontSize: 12 }}>Support code: {supportCode}</p>}
-      {savedTargets.length > 0 && <p>Return to the opening and refresh saved records before editing these targets again.</p>}
     </div>
   </div>;
 }

@@ -115,6 +115,16 @@ export function planMeasurementSave(accepted: AcceptedMeasurement[], configurati
   return [...groups.values()];
 }
 
+export function measurementSavedSummary(accepted: AcceptedMeasurement[], configuration: "single" | "pair", waitingToSync: boolean): string {
+  const items = accepted.map((row) => {
+    const base = `${targetLabel(row.field, configuration)} ${formatInches(row.inches)} (${row.inches} in)`;
+    if (row.source === "edited") return `${base}, edited`;
+    if (row.source === "manual") return `${base}, added`;
+    return base;
+  });
+  return `Saved to Door & Frame: ${items.join(", ")}. ${waitingToSync ? "Waiting to sync." : "Saved."}`;
+}
+
 export function suggestionLabel(field: MeasurementSuggestion["field"]): string {
   switch (field) {
     case "frame_width": return "Frame width";

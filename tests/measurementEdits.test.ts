@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { draftsFromSuggestions, parseEditedInches, planMeasurementSave, validateMeasurementDrafts } from "../field-app/src/lib/measurementSuggestions";
+import { draftsFromSuggestions, measurementSavedSummary, parseEditedInches, planMeasurementSave, validateMeasurementDrafts } from "../field-app/src/lib/measurementSuggestions";
 import type { MeasurementDraft } from "../field-app/src/lib/measurementSuggestions";
 
 function draft(patch: Partial<MeasurementDraft> & Pick<MeasurementDraft, "field" | "text">): MeasurementDraft {
@@ -30,6 +30,8 @@ it("keeps a photo value, marks an edit, and plans one frame save", () => {
     { field: "frame_width", inches: 47, source: "photo" },
     { field: "frame_height", inches: 96, source: "edited" },
   ]);
+  expect(measurementSavedSummary(checked.accepted, "pair", false)).toBe("Saved to Door & Frame: Frame width 3' 11\" (47 in), Frame height 8' 0\" (96 in), edited. Saved.");
+  expect(measurementSavedSummary(checked.accepted, "pair", true)).toContain("Waiting to sync.");
   expect(planMeasurementSave(checked.accepted, "pair")).toEqual([{
     kind: "opening_frame",
     role: null,
