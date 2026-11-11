@@ -168,7 +168,23 @@ export async function queueOpeningMutation(kind: OutboxItem["kind"], openingId: 
   let baseServerRevision: number | null = null;
   if (entityType === "frame" || entityType === "door_leaf") {
     const owned = existingOperations.filter(op => op.entityId === entityId && op.actorUserId === auth.userId && op.organizationId === auth.organizationId);
-    if (owned.some(op => op.state !== "verified")) throw new Error("structure_sync_pending_review");
+    const pending = owned.find(op => op.state !== "verified");
+    if (pending) {
+      const deviceForPending = await getOrCreateDeviceId();
+      const nowPending = new Date().toISOString();
+      const nextPayload = { ...pending.payload as Record<string, unknown>, ...payload, kind, id: entityId, expected_revision: pending.baseServerRevision };
+      const nextHash = await sha256Hex(JSON.stringify(canonicalize(nextPayload)));
+      const operation: SyncOperation = { ...pending, payload: nextPayload, payloadHash: nextHash, state: "queued",
+        nextAttemptAt: undefined, lastErrorCode: undefined, dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined };
+      const entity: OfflineEntityEnvelope = { key: entityKey(entityType, entityId), id: entityId, entityType,
+        organizationId: auth.organizationId, openingId, createdByUserId: auth.userId, createdByDeviceId: deviceForPending,
+        createdAtLocal: pending.createdAtLocal, updatedAtLocal: nowPending, serverRevision: null, baseSnapshotHash: null,
+        schemaVersion: OFFLINE_SCHEMA_VERSION, appVersion: APP_VERSION, syncState: "queued", retryCount: 0, payload: nextPayload };
+      await runLocalWrite(() => withDbTimeout(saveEntityAndOperation(entity, operation)));
+      try { await refreshPendingCount(); } catch (error) { if (!isRequestTimeout(error)) throw error; }
+      void flushOutbox();
+      return pending.operationId;
+    }
     baseServerRevision = payload.expected_revision ?? null;
   }
   const dependencyOperationIds = dependencyIdsForOperation(existingOperations, entityType, openingId, payload);
@@ -415,6 +431,7 @@ export async function flushVersionedOperations(run: FlushRun = { stop: false }) 
         await putSyncOperation({ ...operation, state: 'queued', dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined });
         return;
       }
+      if (await recoverSizeSync(operation, error)) continue;
       await recordFailure(operation, error);
       if (isMediaSizeRejection(error)) continue;
       if (isClientPrincipalChange(error)) return;
@@ -423,6 +440,41 @@ export async function flushVersionedOperations(run: FlushRun = { stop: false }) 
     }
   }
 }
+function sizeSync(operation: SyncOperation): boolean {
+  return operation.entityType === "frame" || operation.entityType === "door_leaf";
+}
+
+async function recoverSizeSync(operation: SyncOperation, error: unknown): Promise<boolean> {
+  if (!sizeSync(operation) || !(error instanceof ApiError) || error.status !== 409) return false;
+  if (error.message === "revision_conflict" && typeof error.serverRevision === "number" && error.serverRevision !== operation.baseServerRevision) {
+    const payload = { ...(operation.payload as Record<string, unknown>), expected_revision: error.serverRevision };
+    await putSyncOperation({ ...operation, baseServerRevision: error.serverRevision, payload,
+      payloadHash: await sha256Hex(JSON.stringify(canonicalize(payload))), state: "queued", nextAttemptAt: undefined,
+      lastErrorCode: undefined, dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined });
+    return true;
+  }
+  if (error.message === "idempotency_key_reused" && typeof error.serverRevision === "number") {
+    await putSyncOperation({ ...operation, state: "verified", lastErrorCode: undefined, dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined });
+    const now = new Date().toISOString();
+    const payload = { ...(operation.payload as Record<string, unknown>), expected_revision: error.serverRevision };
+    const next: SyncOperation = { ...operation, operationId: crypto.randomUUID(), baseServerRevision: error.serverRevision, payload,
+      payloadHash: await sha256Hex(JSON.stringify(canonicalize(payload))), state: "queued", attemptCount: 0, createdAtLocal: now,
+      lastErrorCode: undefined, nextAttemptAt: undefined, dependencyOperationIds: [], dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined };
+    await saveEntityAndOperation({ key: entityKey(operation.entityType, operation.entityId), id: operation.entityId, entityType: operation.entityType,
+      organizationId: operation.organizationId, openingId: operation.openingId, createdByUserId: operation.actorUserId,
+      createdByDeviceId: operation.deviceId, createdAtLocal: now, updatedAtLocal: now, serverRevision: null, baseSnapshotHash: null,
+      schemaVersion: operation.schemaVersion, appVersion: operation.appVersion, syncState: "queued", retryCount: 0, payload }, next);
+    return true;
+  }
+  if (error.message === "leaf_role_configuration_mismatch" || error.message === "permanent_entity_identity_conflict") {
+    await putSyncOperation({ ...operation, state: "permanent_failure", lastErrorCode: error.message, dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined });
+    currentState = { ...currentState, lastError: error.message };
+    notify();
+    return true;
+  }
+  return false;
+}
+
 export const FLUSH_TIMEOUT_MS = 25_000;
 let activeFlush: FlushRun | null = null;
 

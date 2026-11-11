@@ -57,6 +57,7 @@ export class ApiError extends Error {
   status: number;
   reference?: string;
   missing?: string[];
+  serverRevision?: number;
   constructor(status: number, message: string, reference?: string) {
     super(message);
     this.status = status;
@@ -148,6 +149,7 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
       }
     }
     const failure = new ApiError(res.status, typeof body.error === "string" ? body.error : `request_failed_${res.status}`, typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
+    if (typeof body.server_revision === "number") failure.serverRevision = body.server_revision;
     if (Array.isArray(body.missing)) failure.missing = body.missing.filter((name: unknown) => typeof name === "string" && /^[A-Z][A-Z0-9_]+$/.test(name));
     throw failure;
   }

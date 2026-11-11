@@ -246,7 +246,9 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       if (prior.actor_user_id !== userId) { await client.query("ROLLBACK"); return res.status(409).json({ error: "idempotency_key_reused" }); }
       const replay = assertReceiptReplay(prior, { entityId: b.entity_id, payloadHash });
       await client.query("ROLLBACK");
-      return replay === "idempotency_key_reused" ? res.status(409).json({ error: replay }) : res.json({ ...prior, status: "already_applied" });
+      return replay === "idempotency_key_reused"
+        ? res.status(409).json({ error: replay, server_revision: prior.resulting_server_revision == null ? null : Number(prior.resulting_server_revision) })
+        : res.json({ ...prior, status: "already_applied" });
     }
     if (b.entity_type !== "frame" && b.entity_type !== "door_leaf" && (b.operation_type === "update" || b.base_server_revision !== null)) {
       await client.query("ROLLBACK"); return res.status(400).json({ error: "operation_entity_mismatch" });
@@ -273,7 +275,11 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
         revision=opening_frames.revision+1,updated_at=now() WHERE opening_frames.revision=$11 RETURNING *`,
       [b.entity_id,b.opening_id,payload.material??null,payload.frame_type??null,widthSet ? payload.width_in ?? null : null,heightSet ? payload.height_in ?? null : null,
         payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id,b.base_server_revision,widthSet,heightSet]); record=result.rows[0];
-      if (!record) { await client.query("ROLLBACK"); return res.status(409).json({ error: "revision_conflict" }); }
+      if (!record) {
+        await client.query("ROLLBACK");
+        const current = await pool.query("SELECT revision FROM opening_frames WHERE opening_id=$1", [b.opening_id]);
+        return res.status(409).json({ error: "revision_conflict", server_revision: current.rows[0] ? Number(current.rows[0].revision) : null });
+      }
     } else if (b.entity_type === "door_leaf") {
       if ((opening.opening_configuration === "single") !== (payload.leaf_role === "single")) {
         await client.query("ROLLBACK"); return res.status(409).json({ error: "leaf_role_configuration_mismatch" });
@@ -302,7 +308,11 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       [b.entity_id,b.opening_id,payload.leaf_role,payload.handing??null,payload.material??null,widthSet ? payload.width_in ?? null : null,
         heightSet ? payload.height_in ?? null : null,thicknessSet ? payload.thickness_in ?? null : null,payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id,b.base_server_revision,
         widthSet,heightSet,thicknessSet]); record=result.rows[0];
-      if (!record) { await client.query("ROLLBACK"); return res.status(409).json({ error: "revision_conflict" }); }
+      if (!record) {
+        await client.query("ROLLBACK");
+        const current = await pool.query("SELECT revision FROM door_leaves WHERE opening_id=$1 AND leaf_role=$2", [b.opening_id, payload.leaf_role]);
+        return res.status(409).json({ error: "revision_conflict", server_revision: current.rows[0] ? Number(current.rows[0].revision) : null });
+      }
     } else if (b.entity_type === "service_event") {
       if (payload.performed_by_org_id && payload.performed_by_org_id !== orgId) {
         await client.query("ROLLBACK");

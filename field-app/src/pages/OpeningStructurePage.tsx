@@ -71,7 +71,6 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
   const [reading, setReading] = useState(false);
   const [savedNotice, setSavedNotice] = useState("");
   const [supportCode, setSupportCode] = useState("");
-  const [pendingNote, setPendingNote] = useState("");
   const savingLock = useRef(false);
 
   useEffect(() => {
@@ -208,7 +207,7 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
     const used = new Set(drafts.filter((draft) => draft.included).map((draft) => draft.field));
     const field = measurementTargets(configuration).find((target) => !used.has(target)) ?? "frame_width";
     setDrafts((current) => [...current, { id: crypto.randomUUID(), field, text: "", included: true, readInches: null, confidence: null, bounds: "" }]);
-    setMessage("Suggestions stay on this screen until you save. Nothing was written yet.");
+    if (!savedNotice) setMessage("Suggestions stay on this screen until you save. Nothing was written yet.");
   }
 
   async function saveMeasurements() {
@@ -216,14 +215,12 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
     const checked = validateMeasurementDrafts(drafts, configuration);
     if (!checked.ok) {
       setMessage("");
-      setPendingNote("");
       setError(checked.problems.join(" "));
       return;
     }
     savingLock.current = true;
     setSaving(true);
     setError("");
-    setPendingNote("");
     setSupportCode("");
     setMessage("Saving to Door & Frame…");
     const plan = planMeasurementSave(checked.accepted, configuration);
@@ -269,14 +266,9 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
       setSavedNotice(measurementSavedSummary(checked.accepted, configuration, waiting));
     } catch (caught) {
       setMessage("");
-      if (caught instanceof Error && caught.message === "structure_sync_pending_review") {
-        setError("");
-        setPendingNote("These sizes are already waiting to synchronize. They were not written again.");
-      } else {
-        setError(caught instanceof Error && caught.message === "unreadable_dimension"
-          ? "A size could not be read. Use feet and inches, such as 3' 11\", or a number of inches."
-          : "Door & Frame was not saved. Check the connection and try again.");
-      }
+      setError(caught instanceof Error && caught.message === "unreadable_dimension"
+        ? "A size could not be read. Use feet and inches, such as 3' 11\", or a number of inches."
+        : "Door & Frame was not saved. Check the connection and try again.");
     } finally {
       savingLock.current = false;
       setSaving(false);
@@ -352,7 +344,6 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
         <PhotoCapture openingId={id} relatedEntityType="opening" relatedEntityId={id} sources="saved-or-camera" onQueued={() => { setSupportCode(""); setMessage("Measurement photo saved locally."); }} onPicked={pickMeasurement} />
         <button type="button" className="btn btn-secondary" disabled={!measureFile || reading || saving} onClick={() => { void readMeasurement(); }}>{reading ? "Reading…" : "Read measurements"}</button>
         {savedNotice && <p id="measurement-saved" className="c04-band-green" role="status">{savedNotice}</p>}
-        {pendingNote && <p role="status">{pendingNote}</p>}
         {drafts.map((draft) => {
           const inches = parseEditedInches(draft.text);
           return <div key={draft.id} style={{ marginTop: 12, background: "#fff", borderRadius: 8, padding: 10 }}>

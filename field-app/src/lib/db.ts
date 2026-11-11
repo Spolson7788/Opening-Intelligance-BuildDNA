@@ -308,7 +308,9 @@ export async function claimSyncOperation(input: {
   }
   const now = Date.parse(input.nowIso);
   const staleLease = interruptedOperationIsRecoverable(operation, input.nowIso);
-  if (!["queued", "retry_wait", "blocked_dependency"].includes(operation.state) && !staleLease) {
+  const sizeRebase = operation.state === "conflict" && operation.lastErrorCode === "revision_conflict"
+    && (operation.entityType === "frame" || operation.entityType === "door_leaf");
+  if (!["queued", "retry_wait", "blocked_dependency"].includes(operation.state) && !staleLease && !sizeRebase) {
     await tx.done;
     return undefined;
   }

@@ -186,15 +186,17 @@ it("keeps the cards when a save fails and ignores a second tap while saving", as
   expect((host.querySelector("[id^='measure-value-']") as HTMLInputElement).value).toBe("40");
 });
 
-it("shows a pending sync as a status when the earlier write is still queued", async () => {
+it("closes the cards when a save replaces an earlier queued write", async () => {
   await readPair([
-    { field: "frame_height", inches: 96, confidence: 0.9, bounds: "height" },
+    { field: "frame_width", inches: 47, confidence: 0.95, bounds: "frame width: 3' 11\"" },
+    { field: "frame_height", inches: 96, confidence: 0.95, bounds: "frame height: 8'" },
   ]);
-  vi.mocked(queueOpeningMutation).mockRejectedValueOnce(new Error("structure_sync_pending_review"));
   const save = [...host.querySelectorAll("button")].find((button) => button.textContent === "Save to Door & Frame") as HTMLButtonElement;
   await act(async () => { save.click(); });
   expect(host.querySelector(".c04-step-alert")).toBeNull();
-  expect(host.textContent).toContain("already waiting to synchronize");
-  expect(host.querySelector("[id^='measure-value-']")).not.toBeNull();
+  expect(host.textContent).not.toContain("already waiting");
   expect(host.textContent).not.toContain("Return to the opening");
+  expect(host.querySelector("[id^='measure-value-']")).toBeNull();
+  expect(host.textContent).toContain("Saved to Door & Frame:");
+  expect(host.textContent).toContain("Saved.");
 });
