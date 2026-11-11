@@ -16,11 +16,16 @@ function reportOf(value){
 }
 function text(parent,tag,value){const el=document.createElement(tag);el.textContent=value;parent.append(el);return el;}
 function render(report){
- const root=$('content');root.replaceChildren();text(root,'p',`Facility ${report.property_id}; saved snapshot ${report.as_of}. ${report.openings.length} openings, including retired records.`);
- const list=document.createElement('ul');root.append(list);for(const note of report.limitations)text(list,'li',note);
+ const root=$('content');root.replaceChildren();
+ if($('facilityBack'))$('facilityBack').href='./?facility='+encodeURIComponent(report.property_id)+'&opening='+encodeURIComponent(anchor);
+ const kpis=document.createElement('div');kpis.className='kpis';
+ for(const [lab,val] of [['Openings',report.openings.length],['Parts',report.hardware_components.length],['Service events',report.service_events.length]]){const tile=document.createElement('article');tile.className='tile';const name=document.createElement('div');name.className='lab';name.textContent=lab;const value=document.createElement('div');value.className='val';value.textContent=String(val);tile.append(name,value);kpis.append(tile);}
+ root.append(kpis);
+ const about=document.createElement('details');about.className='method';text(about,'summary','Show details');text(about,'p',`Facility ${report.property_id}; saved snapshot ${report.as_of}. ${report.openings.length} openings, including retired records.`);
+ const list=document.createElement('ul');about.append(list);for(const note of report.limitations)text(list,'li',note);root.append(about);
  const grouped=new Map();for(const key of tables.filter(k=>k!=='openings')){const groups=new Map();for(const record of report[key]){if(!groups.has(record.opening_id))groups.set(record.opening_id,[]);groups.get(record.opening_id).push(record);}grouped.set(key,groups);}
- for(const opening of report.openings){const card=document.createElement('article');root.append(card);text(card,'h2',`${opening.opening_code} — ${opening.status} — ${opening.id}`);
-  text(card,'p',`Legacy installation date: ${opening.install_date??'unknown'} (unreviewed).`);
+ for(const opening of report.openings){const card=document.createElement('article');card.className='card';root.append(card);const heading=text(card,'h2',`${opening.opening_code} — ${opening.status}`);heading.className='band-title';
+  const aboutOpening=document.createElement('details');aboutOpening.className='method';text(aboutOpening,'summary','Show details');text(aboutOpening,'p',`Opening ID ${opening.id}. Legacy installation date: ${opening.install_date??'unknown'} (unreviewed).`);card.append(aboutOpening);
   for(const key of tables.filter(k=>k!=='openings')){const records=grouped.get(key).get(opening.id)||[];const section=document.createElement('details');card.append(section);text(section,'summary',`${key.replaceAll('_',' ')} (${records.length})`);
    let rendered=false;section.addEventListener('toggle',()=>{if(!section.open||rendered)return;rendered=true;
     for(const record of [...records].sort((a,b)=>String(a.recorded_at??a.event_date??'').localeCompare(String(b.recorded_at??b.event_date??''))||a.id.localeCompare(b.id))){text(section,'h3',record.id);if('correction_of' in record)text(section,'p',`${record.correction_of?'Correction of '+record.correction_of:'Original record'}; ${record.is_current?'not superseded':'superseded'}. Not a latest-condition score.`);text(section,'pre',JSON.stringify(record,null,2));}

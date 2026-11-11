@@ -430,6 +430,9 @@ async function boot(){
  const {rows,homeTerritory,homeTerritoryName}=await loadTerritoryContext(sb,authorized);
     facilities=rows;
     mountFacilitySearch($('facPickWrap'),rows,fac=>load(fac).catch(e=>{$('facSub').textContent=e.message;}),{homeState,homeTerritory,homeTerritoryName});
+    const wanted=new URLSearchParams(location.search).get('facility');
+    const picker=$('facPickWrap')?.querySelector('select');
+    if(wanted&&picker&&[...picker.options].some(o=>o.value===wanted)){picker.value=wanted;picker.dispatchEvent(new Event('change'));}
   } catch(e) { $('facName').textContent='Facilities unavailable';$('facSub').textContent=e.message; }
 
 }
@@ -550,6 +553,8 @@ async function render(ops){
     });
   });
   $('rows').innerHTML=html;
+  const wantedOpening=new URLSearchParams(location.search).get('opening');
+  if(wantedOpening){const index=OPEN.findIndex(o=>o.parts.some(p=>p.assembly_id===wantedOpening));if(index>=0)openDetail(index);}
 }
 var VIEW=[];
 var LASTINSP={};

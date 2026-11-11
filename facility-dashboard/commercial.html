@@ -1,28 +1,110 @@
-<!doctype html><html lang="en" class="c04"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Catalog and replacement estimates</title>
+<!doctype html>
+<html lang="en" class="c04">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catalog and replacement estimates</title>
 <link rel="stylesheet" href="./concept04.css">
-<a href="./">Facility Dashboard</a><h1>Catalog and replacement estimates</h1><p>Connection required. Reviews do not issue purchase orders or send messages. Amounts use explicitly selected currency and minor-unit precision; taxes and fees must be supplied explicitly. Provider estimates are not binding quotes. Per-SKU time must exclude shared work already included elsewhere; choose whole-job labor for shared jobs.</p><p id="status" role="status">Loading authorized opening…</p><p id="error" role="alert" class="error"></p><button id="reload">Reload saved versions</button><button id="retry" hidden>Retry identical submission</button>
-<main id="content" hidden>
-<section id="retainedRecovery" hidden><p>Recover the existing synthetic PDF as a new metadata series. Its original title and submission ID are unavailable. This reads and verifies the existing file; it does not upload it again.</p><button id="recoverRetained" type="button">Recover retained synthetic PDF metadata</button></section>
-<a id="planningLink" hidden>Planning and sandbox purchasing</a>
-<h2 id="opening"></h2><p id="storage"></p><p>Warranty proof documents can be uploaded here with facility scope, then linked by version ID from the installation lifecycle screen.</p>
-<div id="writeForms" class="grid">
-<form id="documentForm"><fieldset><legend>Private document version</legend>
-<label>Document series<select id="docSeries"><option value="">New document</option></select></label>
-<label>Document title<input id="docTitle" required maxlength="200"></label>
-<label>Document kind<select id="docKind"><option value="cut_sheet">Cut sheet</option><option value="technical">Technical</option><option value="installation">Installation instructions</option><option value="warranty">Warranty evidence</option><option value="estimate">Estimate document</option><option value="invoice">Invoice or credit evidence</option><option value="payment_evidence">Payment evidence</option></select></label>
-<label>Document scope<select id="docScope"><option value="catalog">My provider catalog</option><option value="facility">This facility</option></select></label>
-<label>PDF file (maximum 2 MB)<input id="docFile" type="file" accept="application/pdf" required></label><button>Save private document version</button></fieldset></form>
-<form id="catalogForm"><fieldset><legend>My provider catalog version</legend>
-<label>Catalog item<select id="catalogSeries"><option value="">New SKU</option></select></label>
-<label>Provider SKU<input id="sku" required maxlength="120"></label><label>Description<input id="description" required></label><label>Manufacturer<input id="manufacturer" required></label><label>Model<input id="model" required></label><label>Component type<input id="componentType" required placeholder="closer"></label>
-<label>Currency code<input id="currency" required pattern="[A-Z]{3}" placeholder="USD"></label><label>Minor-unit decimal digits<input id="digits" type="number" required min="0" max="3" step="1" placeholder="2"></label><label>Unit price in minor units (blank = unknown)<input id="price" type="number" min="0" step="1"></label>
-<label>SKU quantity unit<select id="unitLabel"><option value="">Unknown</option><option value="each">Each</option><option value="pair">Pair</option><option value="set">Set</option><option value="pack">Pack</option></select></label><label>Provider installation minutes per SKU unit (blank = unknown)<input id="installationMinutes" type="number" min="0" max="100000" step="1"></label><label>Provider input as-of (UTC; blank = unknown)<input id="pricingAsOf" type="datetime-local" step="0.001"></label><label>Installation time source / assumptions<input id="installationSource" maxlength="2000"></label><label>Verified catalog document versions<select id="catalogDocs" multiple required size="4"></select></label><button>Save catalog version</button></fieldset></form>
-<form id="estimateForm"><fieldset><legend>Replacement estimate version</legend>
-<label>Estimate series<select id="estimateSeries"><option value="">New estimate</option></select></label>
-<label>Current component<select id="component"></select></label><label>My catalog version<select id="estimateCatalog"></select></label><label>Quantity<input id="quantity" type="number" min="1" step="1" value="1"></label><button type="button" id="addPart">Add component line</button><button type="button" id="clearParts">Clear lines</button><ul id="parts"></ul>
-<label>Estimate currency<input id="estimateCurrency" required pattern="[A-Z]{3}"></label><label>Estimate minor-unit digits<input id="estimateDigits" type="number" min="0" max="3" step="1" required></label>
-<label>Expiry (UTC, YYYY-MM-DDTHH:mm)<input id="expiry" required pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}" placeholder="2026-12-31T23:59"></label>
-<label>Labor pricing<select id="laborKind"><option value="per_sku_hourly">Hourly rate × SKU installation time × quantity</option><option value="fixed">Whole-job fixed labor (shared work counted once)</option><option value="hourly">Whole-job hourly labor (shared work counted once)</option></select></label><label>Fixed labor price in minor units (blank = unknown)<input id="laborFixed" type="number" min="0" step="1"></label><label>Hourly rate in minor units (blank = unknown)<input id="laborRate" type="number" min="0" step="1"></label><label>Whole-job labor minutes (ignored for per-SKU pricing; blank = unknown)<input id="laborMinutes" type="number" min="0" step="1"></label>
-<label>Tax in minor units (blank = unknown)<input id="tax" type="number" min="0" step="1"></label><label>Tax basis / source<input id="taxNote"></label><label>Fees in minor units (blank = unknown)<input id="fees" type="number" min="0" step="1"></label><label>Fee basis / source<input id="feesNote"></label><label>Estimate notes<textarea id="note"></textarea></label><button>Save estimate version</button></fieldset></form>
-</div><h2>Document versions</h2><section id="documents"></section><h2>Provider catalog versions</h2><section id="catalog"></section><h2>Estimate history and review</h2><p>Every review is historical evidence. Revalidate the current version before further purchasing steps; no purchase authorization is issued here.</p><section id="estimates"></section>
-</main><script type="module" src="./commercial.mjs"></script></html>
+</head>
+<body>
+<header class="top"><div class="top-inner">
+  <div class="idblk">
+    <span class="logochip"><img src="./oi-logo.png" alt="Opening Intelligence"></span>
+    <div><h1>Catalog and replacement estimates</h1><p class="sub" id="opening">Loading opening…</p></div>
+  </div>
+  <div class="brand"><a id="facilityBack" href="./">Facility dashboard</a></div>
+</div></header>
+<div class="toolbar">
+  <a class="tool" id="planningLink" hidden>Planning</a>
+  <div class="tools">
+    <button id="reload" class="tool" type="button">Refresh saved records</button>
+    <button id="retry" class="tool" type="button" hidden>Retry identical submission</button>
+  </div>
+</div>
+<p id="status" role="status" class="hint page">Loading authorized opening…</p>
+<p id="error" role="alert" class="error page"></p>
+<main id="content" class="page" hidden>
+  <div class="kpis">
+    <article class="tile"><div class="lab">Documents</div><div class="val" id="sumDocuments">—</div></article>
+    <article class="tile"><div class="lab">Catalog items</div><div class="val" id="sumCatalog">—</div></article>
+    <article class="tile"><div class="lab">Estimates</div><div class="val" id="sumEstimates">—</div><div class="st" id="sumEstimateTotal"></div></article>
+  </div>
+  <section class="card">
+    <h2 class="band-title">Saved versions</h2>
+    <details class="method"><summary>Show details</summary>
+      <p>Connection required. Reviews do not issue purchase orders or send messages. Amounts use explicitly selected currency and minor-unit precision; taxes and fees must be supplied explicitly. Provider estimates are not binding quotes. Per-SKU time must exclude shared work already included elsewhere; choose whole-job labor for shared jobs.</p>
+      <p id="storage"></p>
+      <p>Warranty proof documents can be uploaded here with facility scope, then linked by version ID from the installation lifecycle screen.</p>
+    </details>
+    <section id="retainedRecovery" hidden><p>Recover the existing synthetic PDF as a new metadata series. Its original title and submission ID are unavailable. This reads and verifies the existing file; it does not upload it again.</p><button id="recoverRetained" class="tool" type="button">Recover retained synthetic PDF metadata</button></section>
+  </section>
+  <section id="writeForms" class="card">
+    <h2 class="band-title">Add a version</h2>
+      <button type="button" class="tool green" id="editDocument">Add document</button>
+      <form id="documentForm" class="editor"><fieldset><legend>Private document version</legend>
+        <label>Document series<select id="docSeries"><option value="">New document</option></select></label>
+        <label>Document title<input id="docTitle" required maxlength="200"></label>
+        <label>Document kind<select id="docKind"><option value="cut_sheet">Cut sheet</option><option value="technical">Technical</option><option value="installation">Installation instructions</option><option value="warranty">Warranty evidence</option><option value="estimate">Estimate document</option><option value="invoice">Invoice or credit evidence</option><option value="payment_evidence">Payment evidence</option></select></label>
+        <label>Document scope<select id="docScope"><option value="catalog">My provider catalog</option><option value="facility">This facility</option></select></label>
+        <label>PDF file (maximum 2 MB)<input id="docFile" type="file" accept="application/pdf" required></label>
+        <button>Save private document version</button>
+      </fieldset></form>
+      <button type="button" class="tool green" id="editCatalog">Add catalog item</button>
+      <form id="catalogForm" class="editor"><fieldset><legend>My provider catalog version</legend>
+        <label>Catalog item<select id="catalogSeries"><option value="">New SKU</option></select></label>
+        <label>Provider SKU<input id="sku" required maxlength="120"></label>
+        <label>Description<input id="description" required></label>
+        <label>Manufacturer<input id="manufacturer" required></label>
+        <label>Model<input id="model" required></label>
+        <label>Component type<input id="componentType" required placeholder="closer"></label>
+        <label>Currency code<input id="currency" required pattern="[A-Z]{3}" placeholder="USD"></label>
+        <label>Minor-unit decimal digits<input id="digits" type="number" required min="0" max="3" step="1" placeholder="2"></label>
+        <label>Unit price in minor units (blank = unknown)<input id="price" type="number" min="0" step="1"></label>
+        <label>SKU quantity unit<select id="unitLabel"><option value="">Unknown</option><option value="each">Each</option><option value="pair">Pair</option><option value="set">Set</option><option value="pack">Pack</option></select></label>
+        <label>Provider installation minutes per SKU unit (blank = unknown)<input id="installationMinutes" type="number" min="0" max="100000" step="1"></label>
+        <label>Provider input as-of (UTC; blank = unknown)<input id="pricingAsOf" type="datetime-local" step="0.001"></label>
+        <label>Installation time source / assumptions<input id="installationSource" maxlength="2000"></label>
+        <label>Verified catalog document versions<select id="catalogDocs" multiple required size="4"></select></label>
+        <button>Save catalog version</button>
+      </fieldset></form>
+      <button type="button" class="tool green" id="editEstimate">Add estimate</button>
+      <form id="estimateForm" class="editor"><fieldset><legend>Replacement estimate version</legend>
+        <label>Estimate series<select id="estimateSeries"><option value="">New estimate</option></select></label>
+        <label>Current component<select id="component"></select></label>
+        <label>My catalog version<select id="estimateCatalog"></select></label>
+        <label>Quantity<input id="quantity" type="number" min="1" step="1" value="1"></label>
+        <button type="button" id="addPart">Add component line</button>
+        <button type="button" id="clearParts">Clear lines</button>
+        <ul id="parts"></ul>
+        <label>Estimate currency<input id="estimateCurrency" required pattern="[A-Z]{3}"></label>
+        <label>Estimate minor-unit digits<input id="estimateDigits" type="number" min="0" max="3" step="1" required></label>
+        <label>Expiry (UTC, YYYY-MM-DDTHH:mm)<input id="expiry" required pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}" placeholder="2026-12-31T23:59"></label>
+        <label>Labor pricing<select id="laborKind"><option value="per_sku_hourly">Hourly rate × SKU installation time × quantity</option><option value="fixed">Whole-job fixed labor (shared work counted once)</option><option value="hourly">Whole-job hourly labor (shared work counted once)</option></select></label>
+        <label>Fixed labor price in minor units (blank = unknown)<input id="laborFixed" type="number" min="0" step="1"></label>
+        <label>Hourly rate in minor units (blank = unknown)<input id="laborRate" type="number" min="0" step="1"></label>
+        <label>Whole-job labor minutes (ignored for per-SKU pricing; blank = unknown)<input id="laborMinutes" type="number" min="0" step="1"></label>
+        <label>Tax in minor units (blank = unknown)<input id="tax" type="number" min="0" step="1"></label>
+        <label>Tax basis / source<input id="taxNote"></label>
+        <label>Fees in minor units (blank = unknown)<input id="fees" type="number" min="0" step="1"></label>
+        <label>Fee basis / source<input id="feesNote"></label>
+        <label>Estimate notes<textarea id="note"></textarea></label>
+        <button>Save estimate version</button>
+      </fieldset></form>
+  </section>
+  <section class="card">
+    <h2 class="band-cyan">Documents</h2>
+    <div id="documents" class="stack"></div>
+  </section>
+  <section class="card">
+    <h2 class="band-title">Provider catalog</h2>
+    <div id="catalog" class="stack"></div>
+  </section>
+  <section class="card">
+    <h2 class="band-cyan">Estimates</h2>
+    <details class="method"><summary>Show details</summary><p>Every review is historical evidence. Revalidate the current version before further purchasing steps; no purchase authorization is issued here.</p></details>
+    <div id="estimates" class="stack"></div>
+  </section>
+</main>
+<script type="module" src="./commercial.mjs"></script>
+</body>
+</html>
