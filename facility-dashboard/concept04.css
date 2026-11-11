@@ -9,13 +9,17 @@ html.c04 [hidden] { display: none !important; }
 html.c04 .top { background: #fff; border-bottom: 1px solid var(--line); }
 html.c04 .top-inner, html.c04 .toolbar, html.c04 .page { max-width: 1140px; margin: 0 auto; padding: 16px 20px; }
 html.c04 .top-inner, html.c04 .idblk, html.c04 .toolbar, html.c04 .tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-html.c04 .toolbar { justify-content: space-between; padding-top: 8px; padding-bottom: 8px; }
+html.c04 .toolbar { justify-content: space-between; padding-top: 8px; padding-bottom: 0; }
 html.c04 .tools { margin-left: auto; }
 html.c04 .logochip { display: inline-flex; background: #fff; border-radius: 10px; padding: 4px 8px; }
 html.c04 .logochip img { height: 46px; width: auto; display: block; }
 html.c04 .sub, html.c04 .hint, html.c04 .brand { color: var(--sec); font-size: 14px; }
 html.c04 .brand { margin-left: auto; }
-html.c04 .page { padding-top: 8px; padding-bottom: 48px; }
+html.c04 .page { padding-top: 0; padding-bottom: 48px; }
+html.c04 #status { display: none; margin: 0; padding: 0; }
+html.c04 #status.is-error { display: block; margin: 4px 20px 0; font-size: 14px; }
+html.c04 #error:empty { display: none; }
+html.c04 #error { margin: 4px 20px 0; }
 html.c04 .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 8px 0 18px; }
 html.c04 .tile, html.c04 .card, html.c04 .stack article {
   background: #fff; border: 1px solid var(--line); border-radius: 14px; min-width: 0;
@@ -25,10 +29,18 @@ html.c04 .tile .lab { font-size: 12px; font-weight: 800; letter-spacing: .04em; 
 html.c04 .tile .val { font-size: 32px; font-weight: 800; margin-top: 4px; line-height: 1.1; }
 html.c04 .tile .st { margin-top: 6px; font-size: 13px; font-weight: 700; color: var(--sec); }
 html.c04 .card { padding: 0 0 8px; margin: 0 0 16px; overflow: hidden; }
-html.c04 .card h2.band-title, html.c04 .card h2.band-cyan { margin: 0 0 12px; padding: 12px 18px; font-size: 18px; }
+html.c04 .card h2.band-title, html.c04 .card h2.band-cyan,
+html.c04 .band-row h2 { margin: 0; padding: 12px 18px; font-size: 18px; background: transparent; }
+html.c04 .band-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
+html.c04 .band-row.band-title { background: var(--blue); color: #fff; }
+html.c04 .band-row.band-cyan { background: var(--cyan); color: var(--ink); }
+html.c04 .band-row .tool { margin: 8px 16px 8px 0; flex: 0 0 auto; }
 html.c04 .card h2.band-title { background: var(--blue); color: #fff; }
 html.c04 .card h2.band-cyan { background: var(--cyan); color: var(--ink); }
 html.c04 .card .body, html.c04 .card > p, html.c04 .card > div, html.c04 .card > section, html.c04 .card > ul, html.c04 .card > details, html.c04 .card > form, html.c04 .card > button, html.c04 .card > a { margin-left: 18px; margin-right: 18px; }
+html.c04 .card > .band-row { margin-left: 0; margin-right: 0; }
+html.c04 .band-row.band-title h2 { color: #fff; }
+html.c04 .band-row.band-cyan h2 { color: var(--ink); }
 html.c04 .stack { display: grid; gap: 10px; }
 html.c04 .stack article { padding: 12px 14px; margin: 0; }
 html.c04 .stack article h3 { margin: 0 0 4px; font-size: 16px; }

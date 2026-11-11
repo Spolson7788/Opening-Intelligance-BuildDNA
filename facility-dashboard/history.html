@@ -3,26 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Facility condition and lifecycle evidence</title>
+<title>Condition history</title>
 <link rel="stylesheet" href="./concept04.css">
 </head>
 <body>
 <header class="top"><div class="top-inner">
   <div class="idblk">
     <span class="logochip"><img src="./oi-logo.png" alt="Opening Intelligence"></span>
-    <div><h1>Condition and lifecycle evidence</h1><p class="sub">Read-only saved history. Observations do not overwrite the current assessment.</p><p id="account" hidden></p></div>
+    <div><h1>Condition history</h1><p class="sub">Read-only saved history. Observations do not overwrite the current assessment.</p><p id="account" hidden></p></div>
   </div>
   <div class="brand"><a id="facilityBack" href="./">Facility dashboard</a> · <a id="back">Planning</a></div>
 </div></header>
 <div class="toolbar">
-  <span class="hint">Separate from financial sandbox evidence.</span>
   <div class="tools">
-    <button id="reload" class="tool" type="button">Refresh saved evidence</button>
-    <button id="exportReport" class="tool" type="button" disabled>Export evidence</button>
+    <button id="reload" class="tool" type="button">Refresh</button>
+    <button id="exportReport" class="tool" type="button" disabled>Export records</button>
   </div>
 </div>
-<p id="status" role="status" class="hint page">Checking account and saved evidence.</p>
-<p id="error" role="alert" class="error page"></p>
+<p id="status" role="status" class="hint">Checking account and saved evidence.</p>
+<p id="error" role="alert" class="error"></p>
 <main id="content" class="page"></main>
 <script type="module" src="./history.mjs"></script>
 </body>
