@@ -2,7 +2,7 @@
 import {it,expect,vi} from 'vitest';
 import {readFileSync} from 'node:fs';
 const state=vi.hoisted(()=>({api:vi.fn(),principal:{userId:'owner',organizationId:'org',role:'admin',token:'synthetic'}}));
-vi.mock('../facility-dashboard/api-client.mjs',()=>({api:state.api,readFieldSession:async()=>state.principal}));
+vi.mock('../facility-dashboard/api-client.mjs',()=>({api:state.api,readFieldSession:async()=>state.principal,requireFacilityOfficePage:async()=>true}));
 it('does not silently replay a pending review when a different review is clicked',async()=>{
  vi.spyOn(globalThis,'setInterval').mockReturnValue(0 as any);
  document.documentElement.innerHTML=readFileSync('facility-dashboard/commercial.html','utf8');history.replaceState(null,'','?opening=synthetic-opening');

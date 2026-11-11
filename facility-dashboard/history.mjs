@@ -1,4 +1,5 @@
-import {api,readFieldSession} from './api-client.mjs';
+import {api,readFieldSession,requireFacilityOfficePage} from './api-client.mjs';
+if(!(await requireFacilityOfficePage())) throw Error('facility_dashboard_forbidden');
 const $=id=>document.getElementById(id),anchor=new URLSearchParams(location.search).get('opening');
 const principal=await readFieldSession();
 let epoch=0,data=null,loading=false,exporting=false,lost=false;

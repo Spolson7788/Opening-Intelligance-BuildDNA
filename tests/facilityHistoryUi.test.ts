@@ -1,7 +1,8 @@
+// @vitest-environment jsdom
 import {beforeEach,afterEach,it,expect,vi} from 'vitest';
 import {readFileSync} from 'node:fs';
 const state=vi.hoisted(()=>({api:vi.fn(),session:vi.fn()}));
-vi.mock('../facility-dashboard/api-client.mjs',()=>({api:state.api,readFieldSession:state.session}));
+vi.mock('../facility-dashboard/api-client.mjs',()=>({api:state.api,readFieldSession:state.session,requireFacilityOfficePage:async()=>true}));
 const principal={userId:'a',organizationId:'org-a',token:'synthetic-do-not-export'};
 let interval:()=>Promise<void>,blobs:Blob[],downloads:string[];
 const projection=()=>({report_type:'facility_condition_lifecycle_evidence',report_version:1,scope:'authorized_openings_in_one_facility_including_retired_instances',property_id:'facility-a',access_anchor_opening_id:'opening-a',as_of:'2026-10-26T21:00:00Z',limitations:['Unknown remains unknown'],openings:[{id:'opening-a',opening_code:'A',install_date:null,status:'active'}],frames:[],door_leaves:[],hardware_components:[{id:'retired',opening_id:'opening-a',lifecycle_state:'retired',condition:'good'}],installation_facts:[],condition_observations:[{id:'old',opening_id:'opening-a',correction_of:null,is_current:false,observed_date:{certainty:'unknown',year:null}},{id:'new',opening_id:'opening-a',correction_of:'old',is_current:true}],lifecycle_records:[],positions:[],replacements:[],service_events:[{id:'job',opening_id:'opening-a',cost:null}]});

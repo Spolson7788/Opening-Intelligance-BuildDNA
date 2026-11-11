@@ -21,6 +21,37 @@ export async function api(path, body, expectedPrincipal) {
   if(payload===null)throw Error('Invalid response. Reload saved records.');
   return payload;
 }
+export async function requireFacilityOfficePage() {
+  const session = await readFieldSession();
+  if (!session) {
+    document.body.innerHTML = '<main class="sheet"><h1>Facility Dashboard</h1><p>Sign in with your Field App account to view your company’s facilities.</p><p><a href="/field/scan">Sign in to Opening Intelligence</a></p></main>';
+    return false;
+  }
+  try {
+    const access = await api('/portfolio/facility-dashboard-access');
+    if (!access || access.allowed !== true) throw Error('denied');
+    return true;
+  } catch {
+    document.body.innerHTML = '<main class="sheet"><h1>Facility Dashboard</h1><p role="alert">This account cannot open the facility dashboard. Facility customers sign in to their own dashboard. Field work stays in the Field App.</p><p><a href="/field/scan">Back to the Field App</a></p></main>';
+    return false;
+  }
+}
+export async function downloadFacilityVisitPdf(facilityId, visitId) {
+  const session = await readFieldSession();
+  if (!session) throw Error('Sign in through the Field App.');
+  const response = await fetch('/api/portfolio/facility-dashboard/' + encodeURIComponent(facilityId) + '/inspection-visits/' + encodeURIComponent(visitId) + '/report.pdf', {
+    headers: { Authorization: 'Bearer ' + session.token }, cache: 'no-store',
+  });
+  if (response.status === 404) throw Error('Official PDF not stored yet.');
+  if (!response.ok) throw Error('Access unavailable. Sign in again or contact your administrator.');
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'fire-door-inspection-visit.pdf';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 // Same wording as the Field App (field-app/src/lib/serviceHistory.ts componentLabel).
 export function componentLabel(h,o){
   const type=String(h.component_type||'').replace(/_/g,' ');
@@ -36,7 +67,7 @@ export function latestComponentServiceDate(events, componentId) {
     .sort().at(-1) || null;
 }
 export function mapSnapshot(snapshot) {
-  const tables={opening_assemblies:[],opening_structure:[],opening_components:[],service_events:[],assembly_photos:[],opening_last_inspection:[]};
+  const tables={opening_assemblies:[],opening_structure:[],opening_components:[],service_events:[],assembly_photos:[],opening_last_inspection:[],work_records:[]};
   for(const o of snapshot.openings||[]){
     const base={facility_id:snapshot.id,assembly_id:o.id,opening_no:o.opening_code,area:[o.building_name,o.floor_label,o.location_description].filter(Boolean).join(' · '),fire_rated:o.fire_rated,opening_health_score:o.health_score===null?null:Number(o.health_score),completion_state:o.completion_state};
     tables.opening_assemblies.push({...base,id:o.id});
@@ -51,6 +82,7 @@ export function mapSnapshot(snapshot) {
     for(const p of o.photos||[])tables.assembly_photos.push({...base,...p,storage_path:p.id,component_id:p.related_entity_type==='hardware_component'?p.related_entity_id:null,structure_id:['frame','door_leaf'].includes(p.related_entity_type)?p.related_entity_id:null});
     const dates=(o.inspection_events||[]).filter(i=>i.inspection_type==='fire_door_nfpa80').map(i=>String(i.event_date).slice(0,10)).sort();
     if(dates.length)tables.opening_last_inspection.push({...base,last_inspected_at:dates.at(-1)});
+    for(const w of o.work_records||[])tables.work_records.push({...base,...w,performed_on:w.performed_on?String(w.performed_on).slice(0,10):null,advised_on:w.advised_on?String(w.advised_on).slice(0,10):null});
   }
   return tables;
 }

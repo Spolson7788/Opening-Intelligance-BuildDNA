@@ -1,4 +1,5 @@
 import { customerMayOpenFacilityDashboard } from "../services/facilityDashboardAccess";
+import { getObjectBytes } from "../services/storage";
 import { loadInspectionVisit } from "../services/loadInspectionVisit";
 import { orderVisitDoors, visitCounts, visitSummaryText } from "../services/inspectionVisits";
 import { databaseRoute } from '../db/databaseRoute';
@@ -50,16 +51,165 @@ portfolioRouter.get("/facility-dashboard/:id", async (req: AuthedRequest, res) =
           'photos', COALESCE((SELECT jsonb_agg(jsonb_build_object(
             'id', ph.id, 'related_entity_type', ph.related_entity_type,
             'related_entity_id', ph.related_entity_id, 'created_at', ph.created_at
-          ) ORDER BY ph.created_at,ph.id) FROM photos ph WHERE ph.opening_id=o.id AND ${photoVisibleSql('ph', 2)}),'[]'::jsonb)
+          ) ORDER BY ph.created_at,ph.id) FROM photos ph WHERE ph.opening_id=o.id AND ${photoVisibleSql('ph', 2)}),'[]'::jsonb),
+          'work_records', COALESCE((
+            SELECT jsonb_agg(item ORDER BY item->>'performed_on' DESC NULLS LAST, item->>'kind', item->>'id')
+            FROM (
+              SELECT jsonb_build_object(
+                'id', e.id, 'kind', 'service', 'label', e.work_performed,
+                'performed_on', e.event_date,
+                'advised_on', (
+                  SELECT MIN((sr.created_at AT TIME ZONE 'UTC')::date)
+                  FROM service_requests sr
+                  JOIN service_request_targets t ON t.request_id = sr.id
+                  WHERE sr.opening_id = e.opening_id
+                    AND e.hardware_component_id IS NOT NULL
+                    AND t.hardware_component_id = e.hardware_component_id
+                    AND (sr.created_at AT TIME ZONE 'UTC')::date <= e.event_date
+                )
+              ) AS item
+              FROM service_events e
+              WHERE e.opening_id = o.id AND ${serviceEventVisibleSql('e', 2)}
+              UNION ALL
+              SELECT jsonb_build_object(
+                'id', r.id, 'kind', 'replacement',
+                'label', 'Replaced ' || COALESCE(pred.component_type, 'part'),
+                'performed_on', (r.recorded_at AT TIME ZONE 'UTC')::date,
+                'advised_on', (
+                  SELECT MIN((co.recorded_at AT TIME ZONE 'UTC')::date)
+                  FROM condition_observations co
+                  WHERE co.hardware_component_id = r.predecessor_id
+                    AND co.condition IN ('worn', 'failed')
+                    AND co.correction_of IS NULL
+                    AND co.recorded_at <= r.recorded_at
+                    AND NOT EXISTS (SELECT 1 FROM condition_observations fix WHERE fix.correction_of = co.id)
+                )
+              )
+              FROM component_replacements r
+              JOIN hardware_components pred ON pred.id = r.predecessor_id
+              WHERE r.opening_id = o.id
+            ) records
+          ), '[]'::jsonb)
         ) ORDER BY o.opening_code,o.id)
         FROM openings o JOIN buildings b ON b.id=o.building_id WHERE b.property_id=p.id
       ), '[]'::jsonb) AS openings
       FROM properties p JOIN portfolios pf ON pf.id=p.portfolio_id
       WHERE p.id=$1 AND ${facilityAccessPredicate(2)}`, [req.params.id, req.auth!.organizationId]);
     if (!result.rows.length) return res.status(404).json({ error: "not_found" });
-    res.set("Cache-Control", "no-store").json(result.rows[0]);
+    const payload = result.rows[0];
+    const openingIds = (payload.openings || []).map((opening: { id: string }) => opening.id);
+    if (openingIds.length) {
+      try {
+        const repairs = await pool.query(
+          `SELECT id, opening_id, repair_note,
+                  to_char((repaired_at AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS performed_on,
+                  to_char((created_at AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS advised_on
+           FROM fire_door_deficiencies
+           WHERE opening_id = ANY($1::uuid[]) AND repaired_at IS NOT NULL`,
+          [openingIds],
+        );
+        const byOpening = new Map<string, any[]>();
+        for (const row of repairs.rows) {
+          const list = byOpening.get(row.opening_id) ?? [];
+          list.push({
+            id: row.id, kind: "repair",
+            label: "Fire-door repair" + (row.repair_note ? ": " + row.repair_note : ""),
+            performed_on: row.performed_on, advised_on: row.advised_on,
+          });
+          byOpening.set(row.opening_id, list);
+        }
+        for (const opening of payload.openings) {
+          opening.work_records = [...(opening.work_records || []), ...(byOpening.get(opening.id) || [])];
+        }
+      } catch (error) {
+        if (!isMissingSchema(error)) throw error;
+      }
+    }
+    res.set("Cache-Control", "no-store").json(payload);
   } catch (error) {
     console.error("Facility dashboard read failed", error);
+    res.status(503).json({ error: "facility_dashboard_unavailable" });
+  }
+});
+
+portfolioRouter.get("/facility-dashboard/:id/inspection-visits", async (req: AuthedRequest, res) => {
+  if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_facility" });
+  try {
+    if (!await facilityDashboardAllowed(req)) return res.status(403).json({ error: "facility_dashboard_forbidden" });
+    const owned = await pool.query(
+      `SELECT p.id FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id WHERE p.id = $1 AND ${facilityAccessPredicate(2)}`,
+      [req.params.id, req.auth!.organizationId],
+    );
+    if (!owned.rows.length) return res.status(404).json({ error: "not_found" });
+    const rows = await pool.query(
+      `SELECT v.id,
+              COALESCE(
+                (SELECT to_char(MAX(i.event_date), 'YYYY-MM-DD')
+                 FROM inspection_events i
+                 WHERE i.visit_id = v.id AND i.inspection_type = 'fire_door_nfpa80'),
+                to_char(v.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')
+              ) AS visit_date,
+              org.name AS provider_company,
+              COALESCE(
+                (SELECT NULLIF(btrim(i2.signed_by_name), '')
+                 FROM inspection_events i2
+                 WHERE i2.visit_id = v.id AND NULLIF(btrim(i2.signed_by_name), '') IS NOT NULL
+                 ORDER BY i2.created_at DESC LIMIT 1),
+                NULLIF(btrim(u.full_name), '')
+              ) AS inspector_name,
+              COALESCE(c.inspected, 0)::int AS inspected,
+              COALESCE(c.passed, 0)::int AS passed,
+              COALESCE(c.failed, 0)::int AS failed,
+              v.report_storage_key IS NOT NULL AS report_stored
+       FROM inspection_visits v
+       JOIN organizations org ON org.id = v.organization_id
+       JOIN users u ON u.id = v.inspector_user_id
+       LEFT JOIN (
+         SELECT visit_id,
+                COUNT(*)::int AS inspected,
+                COUNT(*) FILTER (WHERE passed IS TRUE)::int AS passed,
+                COUNT(*) FILTER (WHERE passed IS NOT TRUE)::int AS failed
+         FROM (
+           SELECT DISTINCT ON (visit_id, opening_id) visit_id, passed
+           FROM inspection_events
+           WHERE inspection_type = 'fire_door_nfpa80' AND checklist_result->>'status' = 'complete'
+           ORDER BY visit_id, opening_id, created_at DESC
+         ) latest
+         GROUP BY visit_id
+       ) c ON c.visit_id = v.id
+       WHERE v.property_id = $1
+       ORDER BY v.created_at DESC
+       LIMIT 50`,
+      [req.params.id],
+    );
+    res.set("Cache-Control", "no-store").json({ visits: rows.rows });
+  } catch (error) {
+    console.error("Facility visit list failed", error);
+    res.status(503).json({ error: "facility_dashboard_unavailable" });
+  }
+});
+
+portfolioRouter.get("/facility-dashboard/:id/inspection-visits/:visitId/report.pdf", async (req: AuthedRequest, res) => {
+  if (!z.string().uuid().safeParse(req.params.id).success || !z.string().uuid().safeParse(req.params.visitId).success) {
+    return res.status(400).json({ error: "invalid_visit" });
+  }
+  try {
+    if (!await facilityDashboardAllowed(req)) return res.status(403).json({ error: "facility_dashboard_forbidden" });
+    const stored = await pool.query(
+      `SELECT v.report_storage_key
+       FROM inspection_visits v
+       JOIN properties p ON p.id = v.property_id
+       JOIN portfolios pf ON pf.id = p.portfolio_id
+       WHERE v.id = $1 AND v.property_id = $2 AND ${facilityAccessPredicate(3)}`,
+      [req.params.visitId, req.params.id, req.auth!.organizationId],
+    );
+    if (!stored.rows.length) return res.status(404).json({ error: "not_found" });
+    const key = stored.rows[0].report_storage_key as string | null;
+    if (!key) return res.status(404).json({ error: "official_pdf_not_stored" });
+    const pdf = Buffer.from(await getObjectBytes(key, 25 * 1024 * 1024));
+    res.set("Cache-Control", "no-store").set("Content-Type", "application/pdf").set("Content-Disposition", "attachment; filename=\"fire-door-inspection-visit.pdf\"").send(pdf);
+  } catch (error) {
+    console.error("Facility visit PDF failed", error);
     res.status(503).json({ error: "facility_dashboard_unavailable" });
   }
 });

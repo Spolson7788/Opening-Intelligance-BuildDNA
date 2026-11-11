@@ -7,7 +7,8 @@ import {enforceRolePermissions} from '../middleware/permissions';
 import {canonicalPayloadHash} from '../services/syncProtocol';
 import {conditionCohorts,PROCUREMENT_GAPS} from '../services/planningProjection';
 import {downtimeSummary} from '../services/lifecycleRecords';
-export const planningRouter=Router();planningRouter.use(requireAuth,enforceRolePermissions);
+import {requireCustomerOffice} from '../middleware/facilityOffice';
+export const planningRouter=Router();planningRouter.use(requireAuth,enforceRolePermissions,requireCustomerOffice);
 const uuid=z.string().uuid();
 class DomainError extends Error {constructor(public code:string,public status=409){super(code);}}
 function endpoint(method:'get'|'post',path:string,fn:(c:any,r:AuthedRequest)=>Promise<any>){planningRouter[method](path,async(req:AuthedRequest,res)=>{

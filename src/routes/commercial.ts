@@ -11,7 +11,8 @@ import {canonicalPayloadHash} from '../services/syncProtocol';
 import {documentHash,verifiedDocument} from '../services/commercialStorage';
 import {money,laborSchema,estimateTotals} from '../services/estimateMath';
 import {purchasingReview} from '../services/purchasingReview';
-export const commercialRouter=Router();commercialRouter.use(requireAuth,enforceRolePermissions);
+import {requireCustomerOffice} from '../middleware/facilityOffice';
+export const commercialRouter=Router();commercialRouter.use(requireAuth,enforceRolePermissions,requireCustomerOffice);
 const uuid=z.string().uuid(),revision=z.number().int().min(0),currency=z.string().regex(/^[A-Z]{3}$/),precision=z.number().int().min(0).max(3);
 const versionCommand={id:uuid,version_id:uuid,expected_version:revision};
 class Conflict extends Error {constructor(public code:string,public status=409){super(code);}}

@@ -1,0 +1,28 @@
+html.c04, html.c04 body { margin: 0; background: #f4f7f6; color: #142C3C; font: 16px system-ui, -apple-system, "Segoe UI", sans-serif; }
+html.c04 body { max-width: 1100px; margin: 0 auto; padding: 20px; }
+html.c04 a { color: #00689C; font-weight: 700; }
+html.c04 h1 { font-size: 28px; margin: 8px 0; }
+html.c04 h2 { font-size: 20px; }
+html.c04 p, html.c04 li { overflow-wrap: anywhere; }
+html.c04 fieldset, html.c04 article, html.c04 details, html.c04 .sheet {
+  background: #fff; border: 1px solid #d5e0e4; border-radius: 14px; padding: 16px; margin: 16px 0; min-width: 0;
+}
+html.c04 legend, html.c04 h2, html.c04 h3 { color: #142C3C; }
+html.c04 input, html.c04 select, html.c04 textarea {
+  font: inherit; color: #142C3C; background: #fff; border: 1px solid #d5e0e4; border-radius: 10px;
+  padding: 10px; width: 100%; max-width: 100%; box-sizing: border-box; margin-top: 4px;
+}
+html.c04 label { display: block; margin: 10px 0; font-weight: 700; }
+html.c04 button, html.c04 .tool {
+  font: inherit; font-weight: 700; background: #A8D978; color: #142C3C; border: 1px solid #A8D978;
+  border-radius: 10px; padding: 10px 12px; margin: 8px 8px 8px 0; cursor: pointer;
+}
+html.c04 table { width: 100%; border-collapse: collapse; }
+html.c04 td, html.c04 th { text-align: left; padding: 8px; border-bottom: 1px solid #d5e0e4; overflow-wrap: anywhere; }
+html.c04 .error, html.c04 [role="alert"] { color: #8f2020; font-weight: 700; }
+html.c04 pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+html.c04 [hidden] { display: none !important; }
+@media (max-width: 700px) {
+  html.c04 body { padding: 12px; }
+  html.c04 h1 { font-size: 24px; }
+}
