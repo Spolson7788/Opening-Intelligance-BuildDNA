@@ -16,10 +16,12 @@ const api = vi.hoisted(() => ({
   platformMe: vi.fn(),
   fetchCompanyHome: vi.fn(),
   facilityDashboardAccess: vi.fn(),
+  switchCompany: vi.fn(),
 }));
+const auth = vi.hoisted(() => ({ adoptToken: vi.fn() }));
 vi.mock("../dashboard/src/lib/api", () => api);
 vi.mock("../dashboard/src/lib/AuthContext", () => ({
-  useAuth: () => ({ auth: { role: "admin", userId: "u", organizationId: "org-1" }, logout: () => {} }),
+  useAuth: () => ({ auth: { role: "admin", userId: "u", organizationId: "org-1" }, logout: () => {}, adoptToken: auth.adoptToken }),
 }));
 vi.mock("../dashboard/src/lib/LocationContext", () => ({
   useLocations: () => ({
@@ -50,7 +52,14 @@ beforeEach(() => {
     { id: "o1", opening_code: "A-1", building_id: "b1", floor_label: "1", location_description: "Lobby", opening_type: "door", fire_rated: true, life_safety_critical: false, is_electrified: false, health_score: 80, status: "active", opening_configuration: "single", completion_state: "complete" },
     { id: "o2", opening_code: "A-2", building_id: "b1", floor_label: null, location_description: null, opening_type: "door", fire_rated: false, life_safety_critical: false, is_electrified: false, health_score: 30, status: "active", opening_configuration: "single", completion_state: "complete" },
   ]);
-  api.listCompanies.mockResolvedValue([{ organization_id: "org-1", name: "Acme Doors", role: "admin", is_home: true }]);
+  api.listCompanies.mockResolvedValue([
+    { organization_id: "org-1", name: "OI Synthetic Acceptance A", role: "admin", is_home: true },
+    { organization_id: "provider-1", name: "TEST PD Provider", role: "facilities_manager", is_home: false },
+    { organization_id: "tech-1", name: "Field Tech Co", role: "technician", is_home: false },
+    { organization_id: "view-1", name: "View Only Co", role: "viewer", is_home: false },
+  ]);
+  api.switchCompany.mockResolvedValue({ token: "switched-token" });
+  auth.adoptToken.mockReset();
   api.fetchCapitalForecastRollup.mockResolvedValue({ properties: [{ property_id: "p1", property_name: "Main", total_openings: 2, buckets: { urgent: { label: "Urgent", total: 1, by_type: {}, needing_estimate_by_type: { door: 1 }, known_cost_total: 400 } } }] });
   api.fetchComplianceAlerts.mockResolvedValue({ total_flagged: 1, counts: { never_inspected: 1, overdue: 0, due_soon: 0 }, alerts: [{ id: "c1", opening_code: "A-2", floor_label: null, location_description: null, fire_rated: false, life_safety_critical: true, building_name: "North", property_name: "Main", property_id: "p1", last_inspection_date: null, alert_level: "never_inspected" }] });
   api.platformMe.mockResolvedValue({ staff: false });
@@ -95,6 +104,15 @@ it("renders the overview from API data and leaves service cost unavailable", asy
   expect(chip("Facility accounts").className).not.toContain("on");
   expect(chip("Walk-in").className).not.toContain("on");
   await act(async () => chip("Walk-in").click());
+  await vi.waitFor(() => expect(host.querySelector("select[aria-label='Company']")).toBeTruthy());
+  const company = host.querySelector("select[aria-label='Company']") as HTMLSelectElement;
+  expect([...company.options].map((option) => option.textContent)).toEqual(["OI Synthetic Acceptance A (home)", "TEST PD Provider"]);
+  await act(async () => {
+    company.value = "provider-1";
+    company.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(api.switchCompany).toHaveBeenCalledWith("provider-1");
+  expect(auth.adoptToken).toHaveBeenCalledWith("switched-token");
   expect(chip("Walk-in").className).toContain("on");
   expect(chip("All").className).not.toContain("on");
   expect(host.textContent).toContain("No customers in this list.");

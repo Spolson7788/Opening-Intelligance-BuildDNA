@@ -22,6 +22,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     let live = true;
+    setFilter("all");
     setLoading(true);
     fetchCompanyHome()
       .then((home) => {
