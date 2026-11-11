@@ -11,6 +11,32 @@ export async function readFieldSession() {
       get.onsuccess=()=>resolve(get.result||null);get.onerror=()=>resolve(null);tx.oncomplete=()=>db.close();};
   });
 }
+export function dashboardError(status, payload) {
+  const code = payload && typeof payload.error === "string" ? payload.error : "";
+  if (status === 401) return "Sign in again to continue.";
+  if (status === 403 || code === "facility_dashboard_forbidden") return "You do not have permission to do that for this company.";
+  if (status === 404) return "Those records were not found for this company.";
+  if (code === "invalid_review") return "Purchasing review was refused because too many openings were sent at once.";
+  if (status >= 500) return "The server could not load those records. Reload to retry.";
+  if (code) return "The request was refused: " + code.replaceAll("_", " ") + ".";
+  return "The request was refused. Reload to retry.";
+}
+export async function reviewPurchasing(ids) {
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += 100) chunks.push(ids.slice(i, i + 100));
+  const parts = [];
+  for (const chunk of chunks) parts.push(await api("/purchasing/review", { opening_ids: chunk }));
+  if (parts.length === 1) return parts[0];
+  const openings = parts.flatMap((part) => part.openings || []);
+  const decisions = parts.flatMap((part) => part.decisions || []);
+  const blocked = parts.some((part) => part.blocked);
+  return {
+    review_only: true, nothing_sent_or_ordered: true, blocked, openings, decisions,
+    items: blocked ? [] : decisions.filter((item) => item.eligible),
+    excluded: decisions.filter((item) => !item.replacement_required),
+    status: blocked ? "blocked" : decisions.some((item) => item.eligible) ? "eligible" : "no_replacements",
+  };
+}
 export async function api(path, body, expectedPrincipal) {
   const before=await readFieldSession();if(!before)throw Error('Sign in through the Field App.');
   if(expectedPrincipal&&(before.userId!==expectedPrincipal.userId||before.organizationId!==expectedPrincipal.organizationId||before.token!==expectedPrincipal.token))throw Error('Account changed. Reopen the Dashboard.');
@@ -19,7 +45,7 @@ export async function api(path, body, expectedPrincipal) {
   const after=await readFieldSession();
   if(!after||after.userId!==before.userId||after.organizationId!==before.organizationId||after.token!==before.token)throw Error('Account changed. Reload the Dashboard.');
   if(!response.ok&&path.startsWith('/commercial/'))throw Error(String(payload?.error||'Commercial records unavailable').replace(/_/g,' '));
-  if(!response.ok)throw Error([401,403,404].includes(response.status)?'Access unavailable. Sign in again or contact your administrator.':'Connected records unavailable. Reload to retry.');
+  if(!response.ok)throw Error(dashboardError(response.status, payload));
   if(payload===null)throw Error('Invalid response. Reload saved records.');
   return payload;
 }

@@ -11,7 +11,7 @@ export function buildFacilityDashboard(destination,{production=false,sourceRoot}
  const replace=(a,b)=>{const needle=asLf(a);if(!html.includes(needle))throw Error('Dashboard source changed: '+needle.slice(0,80));html=html.replace(needle,asLf(b));};
  // oi-production shows no nonproduction preview banner; staging keeps it.
  if(production)replace(PREVIEW_BANNER,'');
- replace('import {url,key} from "./preview-config.mjs";', 'import {sb,refreshScope,refreshFacility,readFieldSession,api,downloadFacilityVisitPdf} from "./api-client.mjs";');
+ replace('import {url,key} from "./preview-config.mjs";', 'import {sb,refreshScope,refreshFacility,readFieldSession,api,downloadFacilityVisitPdf,reviewPurchasing} from "./api-client.mjs";');
  replace("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';",'');
  replace('const SUPA_URL=url;', '');replace('const SUPA_KEY=key;','');replace('const sb=createClient(SUPA_URL,SUPA_KEY);','');
  const signIn='<a class="btn" href="/field/login?next='+encodeURIComponent('/facility-dashboard/')+'">Sign in and return here</a>';
@@ -87,7 +87,7 @@ export function buildFacilityDashboard(destination,{production=false,sourceRoot}
  tools.prepend(purchase);tools.prepend(refresh);
  purchase.onclick=async()=>{result.replaceChildren();const stamp=facilityEpoch,ids=[...new Set(VIEW.map(o=>o.parts[0]?.assembly_id).filter(Boolean))];
  if(!ids.length){result.textContent='No openings selected.';return;}purchase.disabled=true;
- try{const review=await api('/purchasing/review',{opening_ids:ids});if(stamp!==facilityEpoch)return;
+ try{const review=await reviewPurchasing(ids);if(stamp!==facilityEpoch)return;
  const title=document.createElement('h2');title.textContent=review.blocked?'Purchasing review: requirements unresolved':review.status==='no_replacements'?'No replacements required':'Purchasing review: eligible replacements';result.append(title);
  const notice=document.createElement('p');notice.textContent='Review only — nothing is sent or ordered.';result.append(notice);
  for(const o of review.openings.filter(o=>!o.opening_complete)){const p=document.createElement('p');const label=VIEW.find(v=>v.parts[0]?.assembly_id===o.opening_id)?.opening_no||o.opening_id;p.textContent=label+': complete, assess and review the entire opening first.';result.append(p);}

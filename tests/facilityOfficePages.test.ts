@@ -129,6 +129,13 @@ it("allows verified staff with an office membership and denies staff without one
   expect((await request(app).get("/api/portfolio/facility-dashboard/" + facility.propertyId).set("Authorization", `Bearer ${asOffice}`)).status).toBe(200);
   expect((await request(app).get("/api/commercial/context/" + opening.id).set("Authorization", `Bearer ${asOffice}`)).status).toBe(200);
   expect((await request(app).get("/api/planning/" + opening.id).set("Authorization", `Bearer ${asOffice}`)).status).toBe(200);
+  const review = await request(app).post("/api/purchasing/review").set("Authorization", `Bearer ${asOffice}`).send({ opening_ids: [opening.id] });
+  expect(review.status).toBe(200);
+  expect(review.body.review_only).toBe(true);
+  const tooMany = Array.from({ length: 139 }, () => randomUUID());
+  const overLimit = await request(app).post("/api/purchasing/review").set("Authorization", `Bearer ${asOffice}`).send({ opening_ids: tooMany });
+  expect(overLimit.status).not.toBe(400);
+  expect(overLimit.body.error).not.toBe("invalid_review");
   const tech = await reuseInternalAdmin();
   const techPerson = await pool.query("SELECT id, session_version FROM users WHERE lower(email)=lower($1)", [tech.email]);
   await pool.query("INSERT INTO platform_staff (user_id, grant_reason) VALUES ($1, 'synthetic tech grant')", [techPerson.rows[0].id]);

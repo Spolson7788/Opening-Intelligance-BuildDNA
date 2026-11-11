@@ -12,7 +12,7 @@ import {resolvePurchasingDestination, sendPurchasingPackage} from '../services/p
 export const purchasingRouter=Router();
 purchasingRouter.use(requireAuth,enforceRolePermissions,auditLog);
 purchasingRouter.post('/review',async(req:AuthedRequest,res)=>{
- const p=z.object({opening_ids:z.array(z.string().uuid()).min(1).max(100)}).strict().safeParse(req.body);
+ const p=z.object({opening_ids:z.array(z.string().uuid()).min(1).max(500)}).strict().safeParse(req.body);
  if(!p.success)return res.status(400).json({error:'invalid_review'});
  const c = await acquireClient(res); if (!c) return;try{await c.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
  const result=await purchasingReview(c,req.auth!.organizationId,p.data.opening_ids);await c.query('COMMIT');
