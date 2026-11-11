@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { fetchOpening, readMeasurementPhoto, setOpeningConfiguration } from "../lib/api";
-import type { MeasurementSuggestion } from "../lib/api";
 import { queueOpeningMutation } from "../lib/sync";
 import { updateCachedOpening } from "../lib/db";
 import { PhotoCapture } from "../components/PhotoCapture";
 import { useAuth } from "../lib/AuthContext";
 import { dimensionDraft, dimensionPayload, parseInches, unevenPair } from "../lib/inchMeasure";
-import { confirmedDimension, measurementErrorCode, measurementReadPresentation, suggestionLabel } from "../lib/measurementSuggestions";
+import { draftsFromSuggestions, measurementErrorCode, measurementReadPresentation, measurementTargets, parseEditedInches, planMeasurementSave, targetLabel, validateMeasurementDrafts } from "../lib/measurementSuggestions";
+import type { MeasurementDraft } from "../lib/measurementSuggestions";
 import { prepareMeasurementImage } from "../lib/photoPreparation";
 import type { DimensionDraft } from "../lib/inchMeasure";
 
@@ -67,8 +67,9 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
   const [error, setError] = useState("");
   const [measurePreview, setMeasurePreview] = useState<string | null>(null);
   const [measureFile, setMeasureFile] = useState<File | null>(null);
-  const [suggestions, setSuggestions] = useState<MeasurementSuggestion[]>([]);
+  const [drafts, setDrafts] = useState<MeasurementDraft[]>([]);
   const [reading, setReading] = useState(false);
+  const [savedNotice, setSavedNotice] = useState("");
   const [supportCode, setSupportCode] = useState("");
 
   const activeIn = parseInches(leafWidth.active?.text ?? "");
@@ -149,7 +150,8 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
       if (current) URL.revokeObjectURL(current);
       return URL.createObjectURL(file);
     });
-    setSuggestions([]);
+    setDrafts([]);
+    setSavedNotice("");
   }
 
   async function readMeasurement() {
@@ -174,13 +176,14 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
       const encoded = dataUrl.split(",")[1] || "";
       if (!encoded) throw new Error("measurement_image_unreadable");
       const result = await readMeasurementPhoto(id, prepared.contentType, encoded);
-      setSuggestions(result.suggestions);
+      setDrafts(draftsFromSuggestions(result.suggestions, configuration, () => crypto.randomUUID()));
+      setSavedNotice("");
       if (result.suggestions.length === 0) {
         const empty = measurementReadPresentation("measurement_none_found");
         setMessage(empty.message);
         setSupportCode(empty.code);
       } else {
-        setMessage("Suggestions stay on this screen until you use one and save. Nothing was written yet.");
+        setMessage("Suggestions stay on this screen until you save. Nothing was written yet.");
       }
     } catch (caught) {
       const outcome = measurementReadPresentation(measurementErrorCode(caught));
@@ -190,19 +193,81 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
     } finally { setReading(false); }
   }
 
-  function useSuggestion(suggestion: MeasurementSuggestion) {
-    const next = confirmedDimension(suggestion);
-    if (suggestion.field === "frame_width") setFrameWidth(next);
-    if (suggestion.field === "frame_height") setFrameHeight(next);
-    if (suggestion.field === "active_width" || suggestion.field === "inactive_width") {
-      const role = suggestion.field.startsWith("inactive") ? "inactive" : "active";
-      setLeafWidth((current) => ({ ...current, [role]: next }));
+  function updateDraft(draftId: string, patch: Partial<MeasurementDraft>) {
+    setDrafts((current) => current.map((draft) => draft.id === draftId ? { ...draft, ...patch } : draft));
+    setSavedNotice("");
+  }
+
+  function addDraft() {
+    const used = new Set(drafts.filter((draft) => draft.included).map((draft) => draft.field));
+    const field = measurementTargets(configuration).find((target) => !used.has(target)) ?? "frame_width";
+    setDrafts((current) => [...current, { id: crypto.randomUUID(), field, text: "", included: true, readInches: null, confidence: null, bounds: "" }]);
+    setMessage("Suggestions stay on this screen until you save. Nothing was written yet.");
+  }
+
+  async function saveMeasurements() {
+    const checked = validateMeasurementDrafts(drafts, configuration);
+    if (!checked.ok) {
+      setMessage("");
+      setError(checked.problems.join(" "));
+      return;
     }
-    if (suggestion.field === "active_height" || suggestion.field === "inactive_height") {
-      const role = suggestion.field.startsWith("inactive") ? "inactive" : "active";
-      setLeafHeight((current) => ({ ...current, [role]: next }));
-    }
-    setMessage(`${suggestionLabel(suggestion.field)} is on the form. Save the frame or leaf to keep it.`);
+    setSaving(true);
+    setError("");
+    setSupportCode("");
+    setMessage("Saving to Door & Frame…");
+    const plan = planMeasurementSave(checked.accepted, configuration);
+    try {
+      for (const group of plan) {
+        if (group.kind === "opening_frame") {
+          const payload: Record<string, unknown> = {
+            id: frameId,
+            expected_revision: opening?.frame?.revision == null ? null : Number(opening.frame.revision),
+            material: frameMaterial || undefined,
+            condition: frameCondition,
+          };
+          if (group.width_in != null) payload.width_in = group.width_in;
+          if (group.height_in != null) payload.height_in = group.height_in;
+          await queueOpeningMutation("opening_frame", id, payload, undefined, principal);
+          if (group.width_in != null) setFrameWidth(dimensionDraft(group.width_in));
+          if (group.height_in != null) setFrameHeight(dimensionDraft(group.height_in));
+          await updateCachedOpening(id, (cached) => ({ ...cached, frame: { ...cached.frame, id: frameId, material: frameMaterial || null, condition: frameCondition, width_in: group.width_in ?? cached.frame?.width_in, height_in: group.height_in ?? cached.frame?.height_in, pending_sync: true } }));
+        } else {
+          const role = group.role || "single";
+          const payload: Record<string, unknown> = {
+            id: leafIds[role],
+            expected_revision: leafOf(opening, role)?.revision == null ? null : Number(leafOf(opening, role).revision),
+            leaf_role: role,
+            material: leafMaterial[role] || undefined,
+            handing: leafHanding[role] || undefined,
+            condition: leafCondition[role] || "unverified",
+          };
+          if (group.width_in != null) payload.width_in = group.width_in;
+          if (group.height_in != null) payload.height_in = group.height_in;
+          await queueOpeningMutation("door_leaf", id, payload, undefined, principal);
+          if (group.width_in != null) setLeafWidth((current) => ({ ...current, [role]: dimensionDraft(group.width_in) }));
+          if (group.height_in != null) setLeafHeight((current) => ({ ...current, [role]: dimensionDraft(group.height_in) }));
+          await updateCachedOpening(id, (cached) => {
+            const pending = { id: leafIds[role], leaf_role: role, material: leafMaterial[role] || null, handing: leafHanding[role] || null, condition: leafCondition[role], width_in: group.width_in ?? leafOf(cached, role)?.width_in, height_in: group.height_in ?? leafOf(cached, role)?.height_in, thickness_in: leafOf(cached, role)?.thickness_in, pending_sync: true };
+            return { ...cached, door_leaves: [...(cached.door_leaves || []).filter((leaf: any) => leaf.leaf_role !== role), pending] };
+          });
+        }
+      }
+      const lines = plan.flatMap((group) => group.lines);
+      const notice = `Saved to Door & Frame. ${lines.join(" ")} It will synchronize automatically.`;
+      setSavedNotice(notice);
+      setMessage(notice);
+      document.getElementById("frame-width")?.scrollIntoView?.();
+    } catch (caught) {
+      setSavedNotice("");
+      setMessage("");
+      const pending = caught instanceof Error && caught.message === "structure_sync_pending_review";
+      setError(pending
+        ? "These sizes are already waiting to synchronize. They were not written again."
+        : caught instanceof Error && caught.message === "unreadable_dimension"
+          ? "A size could not be read. Use feet and inches, such as 3' 11\", or a number of inches."
+          : "Door & Frame was not saved. Check the connection and try again.");
+    } finally { setSaving(false); }
   }
 
   async function changeConfiguration(next: "single" | "pair") {
@@ -234,6 +299,7 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
     <div className="top-bar"><button className="btn btn-secondary" onClick={() => navigate(-1)}>← Back</button></div>
     <div className="screen">
       <h2>Door &amp; Frame</h2>
+      {savedNotice && <p className="c04-band-green" role="status">{savedNotice}</p>}
       <p style={{ color: "#142C3C" }}>{configuration === "pair" ? "One frame with active and inactive door leaves." : "One frame with one door leaf."}</p>
       <div className="c04-band-blue">
         <div className="field">
@@ -267,16 +333,38 @@ function StructureEditor({ id, opening, onOpening }: { id: string; opening: any;
       </div>)}
       <div className="c04-band-blue">
         <div className="section-label">Measurement photo</div>
-        <p>Choose a saved Apple Measure screenshot, or take a photo. Saving the photo works offline. Reading it needs a connection and does not change a size until you use a suggestion and save.</p>
+        <p>Choose a saved Apple Measure screenshot, or take a photo. Saving the photo works offline. Reading it needs a connection. Nothing is written until you save.</p>
         <p>On a pair, a line across both doors is the whole opening. Put that width on the frame, or on the leaves, then save.</p>
         {measurePreview && <img src={measurePreview} alt="Measurement photo" style={{ width: "100%", maxHeight: 220, objectFit: "contain", background: "#fff", borderRadius: 8 }} />}
         <PhotoCapture openingId={id} relatedEntityType="opening" relatedEntityId={id} sources="saved-or-camera" onQueued={() => { setSupportCode(""); setMessage("Measurement photo saved locally."); }} onPicked={pickMeasurement} />
         <button type="button" className="btn btn-secondary" disabled={!measureFile || reading || saving} onClick={() => { void readMeasurement(); }}>{reading ? "Reading…" : "Read measurements"}</button>
-        {suggestions.map((suggestion) => <div key={suggestion.field} style={{ marginTop: 8 }}>
-          <p><strong>{suggestionLabel(suggestion.field)}</strong> {confirmedDimension(suggestion).text} · confidence {Math.round(suggestion.confidence * 100)}%</p>
-          <p>{suggestion.bounds}</p>
-          <button type="button" className="btn btn-secondary" onClick={() => useSuggestion(suggestion)}>Use this value</button>
-        </div>)}
+        {drafts.map((draft) => {
+          const inches = parseEditedInches(draft.text);
+          return <div key={draft.id} style={{ marginTop: 12, background: "#fff", borderRadius: 8, padding: 10 }}>
+            <label style={{ display: "flex", gap: 8, alignItems: "center", color: "#142C3C" }}>
+              <input type="checkbox" checked={draft.included} aria-label={`Include ${targetLabel(draft.field, configuration)}`} onChange={(event) => updateDraft(draft.id, { included: event.target.checked })} />
+              Include
+            </label>
+            <div className="field">
+              <label htmlFor={`measure-target-${draft.id}`}>Save to</label>
+              <select id={`measure-target-${draft.id}`} value={draft.field} onChange={(event) => updateDraft(draft.id, { field: event.target.value as MeasurementDraft["field"] })}>
+                {measurementTargets(configuration).map((target) => <option key={target} value={target}>{targetLabel(target, configuration)}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor={`measure-value-${draft.id}`}>Size</label>
+              <input id={`measure-value-${draft.id}`} inputMode="decimal" value={draft.text} placeholder={'3\' 11" or 47'} onChange={(event) => updateDraft(draft.id, { text: event.target.value })} />
+              <p>{inches == null ? "Use feet and inches, such as 3' 11\", 8', 47, or 47in." : `${inches} in`}</p>
+            </div>
+            {draft.confidence != null && <p>confidence {Math.round(draft.confidence * 100)}%</p>}
+            {draft.bounds && <p>{draft.bounds}</p>}
+            <button type="button" className="btn btn-secondary" onClick={() => setDrafts((current) => current.filter((item) => item.id !== draft.id))}>Remove</button>
+          </div>;
+        })}
+        {drafts.length > 0 && <>
+          <button type="button" className="btn btn-secondary" style={{ marginTop: 8 }} onClick={addDraft}>Add a size</button>
+          <button type="button" className="btn c04-btn-green" style={{ marginTop: 8 }} disabled={saving} onClick={() => { void saveMeasurements(); }}>{saving ? "Saving…" : "Save to Door & Frame"}</button>
+        </>}
       </div>
       {error && <p className="c04-step-alert" role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
