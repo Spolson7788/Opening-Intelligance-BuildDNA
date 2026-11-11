@@ -6,7 +6,7 @@ import { useLocations } from "../lib/LocationContext";
 import { fetchCompanyHome, listProperties, type CompanyCustomer } from "../lib/api";
 import { facilitiesErrorMessage } from "../lib/scheduleUi";
 
-type KindFilter = "facility" | "small" | "walkin";
+type KindFilter = "all" | "facility" | "small" | "walkin";
 
 export function DashboardPage() {
   const { auth } = useAuth();
@@ -15,7 +15,7 @@ export function DashboardPage() {
   const [counts, setCounts] = useState({ open_work_orders: 0, failed_or_overdue: 0, inspections_due_30_days: 0, quotes: 0 });
   const [companyName, setCompanyName] = useState("");
   const [note, setNote] = useState("");
-  const [filter, setFilter] = useState<KindFilter>("facility");
+  const [filter, setFilter] = useState<KindFilter>("all");
   const [error, setError] = useState<string | null>(null);
   const [propertiesError, setPropertiesError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,7 +40,10 @@ export function DashboardPage() {
     return () => { live = false; };
   }, [auth?.organizationId]);
 
-  const visible = customers.filter((customer) => customer.kind === filter);
+  const visible = filter === "all" ? customers : customers.filter((customer) => customer.kind === filter);
+  const empty = !loading && visible.length === 0
+    ? (customers.length === 0 ? "This company has no service customers yet." : "No customers in this list.")
+    : "";
 
   return (
     <CompanyShell title={companyName || "Management home"}>
@@ -77,14 +80,14 @@ export function DashboardPage() {
         </div>
         <div className="c04-body">
           <div className="c04-filters" aria-label="Customer filter">
-            {(["facility", "small", "walkin"] as KindFilter[]).map((kind) => (
-              <button key={kind} type="button" className={filter === kind ? "c04-chip on" : "c04-chip"} onClick={() => setFilter(kind)}>
-                {kind === "facility" ? "Facility accounts" : kind === "small" ? "Small accounts" : "Walk-in"}
+            {(["all", "facility", "small", "walkin"] as KindFilter[]).map((kind) => (
+              <button key={kind} type="button" aria-pressed={filter === kind} className={filter === kind ? "c04-chip on" : "c04-chip"} onClick={() => setFilter(kind)}>
+                {kind === "all" ? "All" : kind === "facility" ? "Facility accounts" : kind === "small" ? "Small accounts" : "Walk-in"}
               </button>
             ))}
           </div>
           <p className="c04-note">{note}</p>
-          {!loading && visible.length === 0 && <p className="c04-note">No customers in this list.</p>}
+          {empty && <p className="c04-note">{empty}</p>}
           <div className="c04-stack" style={{ marginTop: 12 }}>
             {visible.map((customer) => (
               <Link key={customer.id} className="c04-row" to={`/customers/${customer.id}`}>

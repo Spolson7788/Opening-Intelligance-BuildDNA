@@ -89,6 +89,31 @@ it("renders the overview from API data and leaves service cost unavailable", asy
   expect(host.textContent).toContain("Small accounts");
   expect(host.textContent).toContain("Walk-in");
   expect(host.textContent).toContain("1 needs attention");
-  const facility = [...host.querySelectorAll("button")].find((button) => button.textContent === "Facility accounts") as HTMLButtonElement;
-  expect(facility.className).toContain("on");
+  const chip = (name: string) => [...host.querySelectorAll("button")].find((button) => button.textContent === name) as HTMLButtonElement;
+  expect(chip("All").className).toContain("on");
+  expect(chip("All").getAttribute("aria-pressed")).toBe("true");
+  expect(chip("Facility accounts").className).not.toContain("on");
+  expect(chip("Walk-in").className).not.toContain("on");
+  await act(async () => chip("Walk-in").click());
+  expect(chip("Walk-in").className).toContain("on");
+  expect(chip("All").className).not.toContain("on");
+  expect(host.textContent).toContain("No customers in this list.");
+  expect(host.textContent).not.toContain("Northwind Clinics");
+  expect(host.textContent).not.toContain("This company has no service customers yet.");
+});
+
+it("says when the company has no service customers", async () => {
+  api.fetchCompanyHome.mockResolvedValue({
+    company_name: "OI Synthetic Acceptance A",
+    classification_note: "Account kind is stored for each site.",
+    counts: { open_work_orders: 0, failed_or_overdue: 0, inspections_due_30_days: 0, quotes: 0 },
+    customers: [],
+  });
+  await act(async () => {
+    root.render(createElement(MemoryRouter, { basename: "/dashboard/", initialEntries: ["/dashboard/"] }, createElement(DashboardPage)));
+  });
+  await vi.waitFor(() => expect(host.textContent).toContain("This company has no service customers yet."));
+  const walkin = [...host.querySelectorAll("button")].find((button) => button.textContent === "Walk-in") as HTMLButtonElement;
+  expect(walkin.className).not.toContain("on");
+  expect(host.textContent).not.toContain("No customers in this list.");
 });
