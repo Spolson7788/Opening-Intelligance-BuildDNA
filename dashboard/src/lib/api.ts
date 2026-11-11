@@ -998,6 +998,38 @@ export async function fetchAuthedBlob(path: string): Promise<Blob> {
   return res.blob();
 }
 
+export interface CompanyCounts { open_work_orders: number; failed_or_overdue: number; inspections_due_30_days: number; quotes: number }
+export interface CompanyCustomer {
+  id: string; name: string; kind: "facility" | "small" | "walkin"; kind_label: string;
+  opening_count: number; attention_count: number; attention: string;
+  last_visit: string | null; next_due: string | null; property_ids: string[];
+}
+export interface CompanyHome { company_name: string; classification_note: string; counts: CompanyCounts; customers: CompanyCustomer[] }
+export interface CompanyCustomerDetail {
+  id: string; name: string; kind: CompanyCustomer["kind"]; kind_label: string; classification_note: string;
+  sites: Array<{ id: string; name: string; address: string; opening_count: number; attention: string; last_visit: string | null; next_due: string | null }>;
+}
+export interface CompanySite {
+  id: string; name: string; address: string; kind: CompanyCustomer["kind"]; kind_label: string;
+  customer_id: string; customer_name: string;
+  openings: Array<{ id: string; opening_code: string; location_description: string | null; opening_type: string; fire_rated: boolean; health_score: number | null; building_name: string; needs_attention: boolean }>;
+  visits: Array<{ id: string; visit_date: string; report_stored: boolean }>;
+  work_orders: Array<{ id: string; title: string; status: string; due_date: string | null; opening_code: string }>;
+  quotes: Array<{ id: string; opening_id: string; opening_code: string; total_minor: number | null }>;
+}
+export interface CompanyOpening {
+  id: string; opening_code: string; location_description: string | null; opening_type: string; fire_rated: boolean;
+  health_score: number | null; needs_attention: boolean; building_name: string; property_id: string; property_name: string;
+  address: string; kind: CompanyCustomer["kind"]; kind_label: string; customer_id: string; customer_name: string;
+  work_records: Array<{ id: string; kind: string; label: string; performed_on: string | null; advised_on: string | null }>;
+  quotes: Array<{ id: string; total_minor: number | null }>;
+}
+export const fetchCompanyHome = (): Promise<CompanyHome> => authedFetch("/company-dashboard");
+export const fetchCompanyCustomer = (id: string): Promise<CompanyCustomerDetail> => authedFetch(`/company-dashboard/customers/${encodeURIComponent(id)}`);
+export const fetchCompanySite = (id: string): Promise<CompanySite> => authedFetch(`/company-dashboard/sites/${id}`);
+export const fetchCompanyOpening = (id: string): Promise<CompanyOpening> => authedFetch(`/company-dashboard/openings/${id}`);
+export const facilityDashboardAccess = (): Promise<{ allowed: boolean }> => authedFetch("/portfolio/facility-dashboard-access");
+
 export async function downloadAuthedFile(path: string, filename: string) {
   const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });

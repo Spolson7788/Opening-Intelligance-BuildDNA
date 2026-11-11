@@ -147,7 +147,7 @@ it("keeps the mobile menu collapsed until opened, then closes it after a choice"
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
   expect(host.querySelector(".sidebar")?.classList.contains("is-open")).toBe(true);
   await act(async () => { await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))); });
-  expect(document.activeElement?.textContent).toBe("Portfolio Overview");
+  expect(document.activeElement?.textContent).toBe("Company dashboard");
 
   await act(async () => {
     document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
