@@ -84,7 +84,7 @@ it("renders the overview from API data and leaves service cost unavailable", asy
   expect(host.textContent).toContain("Failed or overdue");
   expect(host.textContent).toContain("Inspections due");
   expect(host.textContent).toContain("Quotes");
-  expect(host.textContent).toContain("Saved estimates. Approval status is not stored yet.");
+  expect(host.textContent).toContain("Saved estimates. Approval is recorded on each quote.");
   expect(host.textContent).toContain("Facility accounts");
   expect(host.textContent).toContain("Small accounts");
   expect(host.textContent).toContain("Walk-in");

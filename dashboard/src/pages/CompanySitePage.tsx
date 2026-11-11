@@ -1,16 +1,35 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { CompanyShell, formatDay, formatMoney, plainType } from "../components/CompanyShell";
-import { downloadAuthedFile, fetchCompanySite, type CompanySite } from "../lib/api";
+import { downloadAuthedFile, fetchCompanySite, setQuoteApproval, type CompanySite } from "../lib/api";
 import { facilitiesErrorMessage } from "../lib/scheduleUi";
 
 type Tab = "openings" | "visits" | "work" | "purchasing";
+
+function quoteStatus(status: string) {
+  if (status === "awaiting_approval") return "Awaiting approval";
+  if (status === "approved") return "Approved";
+  if (status === "declined") return "Declined";
+  return "Draft";
+}
 
 export function CompanySitePage() {
   const { propertyId = "" } = useParams();
   const [site, setSite] = useState<CompanySite | null>(null);
   const [tab, setTab] = useState<Tab>("openings");
   const [error, setError] = useState<string | null>(null);
+  async function reload() {
+    setSite(await fetchCompanySite(propertyId));
+  }
+  async function markQuote(id: string, approval_status: "awaiting_approval" | "approved" | "declined") {
+    setError(null);
+    try {
+      await setQuoteApproval(id, approval_status);
+      await reload();
+    } catch (err) {
+      setError(facilitiesErrorMessage(err));
+    }
+  }
   useEffect(() => {
     let live = true;
     fetchCompanySite(propertyId)
@@ -79,7 +98,12 @@ export function CompanySitePage() {
                   <article key={quote.id} className="c04-row">
                     <h3>Estimate · {quote.opening_code}</h3>
                     <p>{formatMoney(quote.total_minor)}</p>
-                    <p className="c04-note">Saved estimate. Approval status is not stored yet.</p>
+                    <p className="c04-note">{quoteStatus(quote.approval_status)}. Approving here does not send a purchase.</p>
+                    <div className="c04-actions">
+                      <button type="button" className="c04-btn" onClick={() => markQuote(quote.id, "awaiting_approval")}>Awaiting approval</button>
+                      <button type="button" className="c04-btn green" onClick={() => markQuote(quote.id, "approved")}>Approved</button>
+                      <button type="button" className="c04-btn" onClick={() => markQuote(quote.id, "declined")}>Declined</button>
+                    </div>
                   </article>
                 ))}
               </div>

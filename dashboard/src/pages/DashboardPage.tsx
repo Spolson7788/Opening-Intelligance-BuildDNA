@@ -65,7 +65,7 @@ export function DashboardPage() {
         <article className="c04-tile">
           <div className="lab">Quotes</div>
           <div className="val">{loading ? "…" : counts.quotes}</div>
-          <div className="st">Saved estimates. Approval status is not stored yet.</div>
+          <div className="st">Saved estimates. Approval is recorded on each quote.</div>
         </article>
       </section>
       <section className="c04-card">

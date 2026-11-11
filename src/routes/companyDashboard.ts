@@ -6,7 +6,7 @@ import { requireAuth, AuthedRequest, isMissingSchema } from "../middleware/auth"
 import { auditLog } from "../middleware/auditLog";
 import { getObjectBytes } from "../services/storage";
 import {
-  ACCOUNT_KIND_NOTE, accountKind, accountKindLabel, attentionText, customerKey, groupCustomers,
+  ACCOUNT_KIND_NOTE, accountKindLabel, attentionText, customerKey, groupCustomers, resolveAccountKind,
   mayOpenCompanyDashboard, COMPANY_DASHBOARD_REFUSAL, type SiteRollup,
 } from "../services/companyDashboard";
 
@@ -30,15 +30,33 @@ function addressOf(row: { address_line1?: string | null; city?: string | null; s
   return [row.address_line1, row.city, row.state].filter((part) => part && String(part).trim()).join(", ");
 }
 
+function accountJoin(orgParameter: string) {
+  return `LEFT JOIN LATERAL (
+      SELECT pa.id AS account_id, pa.kind AS account_kind, pa.display_name AS account_name
+      FROM provider_account_sites pas
+      JOIN provider_accounts pa ON pa.id = pas.account_id
+      WHERE pas.property_id = p.id AND pa.provider_organization_id = ${orgParameter}
+      ORDER BY pa.created_at, pa.id
+      LIMIT 1
+    ) acct ON true`;
+}
+
 async function visibleProperties(orgId: string) {
-  const sql = `SELECT p.id, p.name, p.address_line1, p.city, p.state,
-      (pf.organization_id = $1) AS is_owner, owner.id AS owner_id, owner.name AS owner_name
-    FROM properties p
+  const columns = `p.id, p.name, p.address_line1, p.city, p.state,
+      (pf.organization_id = $1) AS is_owner, owner.id AS owner_id, owner.name AS owner_name`;
+  const from = `FROM properties p
     JOIN portfolios pf ON pf.id = p.portfolio_id
-    JOIN organizations owner ON owner.id = pf.organization_id
-    WHERE ${facilityAccessPredicate(1)}
-    ORDER BY owner.name, p.name`;
-  return pool.query(sql, [orgId]);
+    JOIN organizations owner ON owner.id = pf.organization_id`;
+  const where = `WHERE ${facilityAccessPredicate(1)} ORDER BY owner.name, p.name`;
+  try {
+    return await pool.query(
+      `SELECT ${columns}, acct.account_id, acct.account_kind, acct.account_name ${from} ${accountJoin("$1")} ${where}`,
+      [orgId],
+    );
+  } catch (error) {
+    if (!isMissingSchema(error)) throw error;
+    return pool.query(`SELECT ${columns} ${from} ${where}`, [orgId]);
+  }
 }
 
 async function optionalQuery(sql: string, params: unknown[]) {
@@ -167,6 +185,9 @@ function sitesFrom(rows: any[], stats: Map<string, { openings: number; attention
       isOwner: row.is_owner === true,
       ownerId: row.owner_id,
       ownerName: row.owner_name,
+      storedKind: row.account_kind ?? null,
+      accountId: row.account_id ?? null,
+      accountName: row.account_name ?? null,
       openingCount: stat?.openings ?? 0,
       attentionCount: stat?.attention ?? 0,
       lastVisit: stat?.lastVisit ?? null,
@@ -206,14 +227,15 @@ companyDashboardRouter.get("/customers/:id", async (req: AuthedRequest, res) => 
   try {
     const sites = await loadSites(req.auth!.organizationId);
     const match = sites.filter((site) => {
-      const kind = accountKind(site.isOwner, site.name);
-      return customerKey(kind, site.ownerId, site.id) === id || (kind === "facility" && site.ownerId === id);
+      const kind = resolveAccountKind(site);
+      const groupId = kind === "facility" ? site.ownerId : (site.accountId || site.id);
+      return customerKey(kind, site.ownerId, groupId) === id || (kind === "facility" && site.ownerId === id);
     });
     if (!match.length) return res.status(404).json({ error: "not_found" });
-    const kind = accountKind(match[0].isOwner, match[0].name);
+    const kind = resolveAccountKind(match[0]);
     res.set("Cache-Control", "no-store").json({
       id,
-      name: kind === "facility" ? match[0].ownerName : match[0].name,
+      name: kind === "facility" ? match[0].ownerName : (match[0].accountName || (kind === "walkin" ? "Walk-in" : match[0].name)),
       kind,
       kind_label: accountKindLabel(kind),
       classification_note: ACCOUNT_KIND_NOTE,
@@ -234,16 +256,27 @@ companyDashboardRouter.get("/customers/:id", async (req: AuthedRequest, res) => 
 });
 
 async function propertyVisible(orgId: string, propertyId: string) {
-  const row = await pool.query(
-    `SELECT p.id, p.name, p.address_line1, p.city, p.state,
-            (pf.organization_id = $2) AS is_owner, owner.id AS owner_id, owner.name AS owner_name
-     FROM properties p
+  const columns = `p.id, p.name, p.address_line1, p.city, p.state,
+            (pf.organization_id = $2) AS is_owner, owner.id AS owner_id, owner.name AS owner_name`;
+  const from = `FROM properties p
      JOIN portfolios pf ON pf.id = p.portfolio_id
-     JOIN organizations owner ON owner.id = pf.organization_id
-     WHERE p.id = $1 AND ${facilityAccessPredicate(2)}`,
-    [propertyId, orgId],
-  );
-  return row.rows[0] ?? null;
+     JOIN organizations owner ON owner.id = pf.organization_id`;
+  const where = `WHERE p.id = $1 AND ${facilityAccessPredicate(2)}`;
+  try {
+    const row = await pool.query(
+      `SELECT ${columns}, acct.account_id, acct.account_kind, acct.account_name ${from} ${accountJoin("$2")} ${where}`,
+      [propertyId, orgId],
+    );
+    return row.rows[0] ?? null;
+  } catch (error) {
+    if (!isMissingSchema(error)) throw error;
+    const row = await pool.query(`SELECT ${columns} ${from} ${where}`, [propertyId, orgId]);
+    return row.rows[0] ?? null;
+  }
+}
+
+function kindOf(row: { is_owner?: boolean; name?: string; account_kind?: string | null; account_id?: string | null; account_name?: string | null; owner_id?: string; owner_name?: string }) {
+  return resolveAccountKind({ storedKind: row.account_kind, isOwner: row.is_owner === true, name: row.name || "" });
 }
 
 companyDashboardRouter.get("/sites/:id", async (req: AuthedRequest, res) => {
@@ -252,7 +285,7 @@ companyDashboardRouter.get("/sites/:id", async (req: AuthedRequest, res) => {
   try {
     const property = await propertyVisible(req.auth!.organizationId, req.params.id);
     if (!property) return res.status(404).json({ error: "not_found" });
-    const kind = accountKind(property.is_owner === true, property.name);
+    const kind = kindOf(property);
     const openings = await pool.query(
       `SELECT o.id, o.opening_code, o.location_description, o.opening_type, o.fire_rated, o.health_score, b.name AS building_name
        FROM openings o JOIN buildings b ON b.id = o.building_id
@@ -272,35 +305,27 @@ companyDashboardRouter.get("/sites/:id", async (req: AuthedRequest, res) => {
        ORDER BY wo.due_date NULLS LAST, wo.created_at DESC LIMIT 50`,
       [property.id],
     );
-    const quotes = await optionalQuery(
-      `SELECT e.id, o.opening_code, o.id AS opening_id, v.snapshot
-       FROM replacement_estimates e
-       JOIN openings o ON o.id = e.opening_id
-       JOIN buildings b ON b.id = o.building_id
-       LEFT JOIN replacement_estimate_versions v ON v.estimate_id = e.id AND v.version = e.head_version
-       WHERE b.property_id = $1 AND e.provider_id = $2
-       ORDER BY o.opening_code`,
-      [property.id, req.auth!.organizationId],
-    );
+    const quotes = await quoteRows(property.id, req.auth!.organizationId);
     res.set("Cache-Control", "no-store").json({
       id: property.id,
       name: property.name,
       address: addressOf(property),
       kind,
       kind_label: accountKindLabel(kind),
-      customer_id: customerKey(kind, property.owner_id, property.id),
-      customer_name: kind === "facility" ? property.owner_name : property.name,
+      customer_id: customerKey(kind, property.owner_id, kind === "facility" ? property.owner_id : (property.account_id || property.id)),
+      customer_name: kind === "facility" ? property.owner_name : (property.account_name || (kind === "walkin" ? "Walk-in" : property.name)),
       openings: openings.rows.map((row) => ({
         ...row,
         needs_attention: row.health_score !== null && Number(row.health_score) < 50,
       })),
       visits: visits.rows,
       work_orders: work.rows.map((row) => ({ ...row, due_date: day(row.due_date) })),
-      quotes: quotes.rows.map((row) => ({
+      quotes: quotes.map((row) => ({
         id: row.id,
         opening_id: row.opening_id,
         opening_code: row.opening_code,
         total_minor: row.snapshot?.totals?.total_minor ?? null,
+        approval_status: row.approval_status || "draft",
       })),
     });
   } catch (error) {
@@ -309,24 +334,98 @@ companyDashboardRouter.get("/sites/:id", async (req: AuthedRequest, res) => {
   }
 });
 
-companyDashboardRouter.get("/openings/:id", async (req: AuthedRequest, res) => {
-  if (refuseOffice(req, res)) return;
-  if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_opening" });
+async function quoteRows(scopeId: string, providerId: string, byOpening = false) {
+  const where = byOpening ? "e.opening_id = $1" : "b.property_id = $1";
+  const join = byOpening ? "" : "JOIN buildings b ON b.id = o.building_id";
+  const withStatus = `SELECT e.id, o.opening_code, o.id AS opening_id, e.approval_status, v.snapshot
+       FROM replacement_estimates e
+       JOIN openings o ON o.id = e.opening_id
+       ${join}
+       LEFT JOIN replacement_estimate_versions v ON v.estimate_id = e.id AND v.version = e.head_version
+       WHERE ${where} AND e.provider_id = $2
+       ORDER BY o.opening_code`;
   try {
-    const opening = await pool.query(
-      `SELECT o.*, b.name AS building_name, p.id AS property_id, p.name AS property_name, p.address_line1, p.city, p.state,
-              (pf.organization_id = $2) AS is_owner, owner.id AS owner_id, owner.name AS owner_name
+    return (await pool.query(withStatus, [scopeId, providerId])).rows;
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code !== "42703" && !isMissingSchema(error)) throw error;
+    const plain = `SELECT e.id, o.opening_code, o.id AS opening_id, v.snapshot
+       FROM replacement_estimates e
+       JOIN openings o ON o.id = e.opening_id
+       ${join}
+       LEFT JOIN replacement_estimate_versions v ON v.estimate_id = e.id AND v.version = e.head_version
+       WHERE ${where} AND e.provider_id = $2
+       ORDER BY o.opening_code`;
+    return (await optionalQuery(plain, [scopeId, providerId])).rows;
+  }
+}
+
+companyDashboardRouter.post("/quotes/:id/approval", async (req: AuthedRequest, res) => {
+  if (refuseOffice(req, res)) return;
+  const parsed = z.object({
+    approval_status: z.enum(["awaiting_approval", "approved", "declined"]),
+  }).strict().safeParse(req.body);
+  if (!z.string().uuid().safeParse(req.params.id).success || !parsed.success) {
+    return res.status(400).json({ error: "invalid_quote_approval" });
+  }
+  try {
+    const updated = await pool.query(
+      `UPDATE replacement_estimates e SET approval_status = $3
        FROM openings o
        JOIN buildings b ON b.id = o.building_id
        JOIN properties p ON p.id = b.property_id
        JOIN portfolios pf ON pf.id = p.portfolio_id
-       JOIN organizations owner ON owner.id = pf.organization_id
-       WHERE o.id = $1 AND ${facilityAccessPredicate(2)}`,
-      [req.params.id, req.auth!.organizationId],
+       WHERE e.id = $1 AND e.opening_id = o.id AND e.provider_id = $2 AND ${facilityAccessPredicate(2)}
+       RETURNING e.id, e.approval_status`,
+      [req.params.id, req.auth!.organizationId, parsed.data.approval_status],
     );
+    if (!updated.rows.length) return res.status(404).json({ error: "not_found" });
+    res.set("Cache-Control", "no-store").json(updated.rows[0]);
+  } catch (error) {
+    if ((error as { code?: string }).code === "42703" || isMissingSchema(error)) {
+      return res.status(503).json({ error: "quote_approval_unavailable" });
+    }
+    console.error("Quote approval update failed", error);
+    res.status(503).json({ error: "company_dashboard_unavailable" });
+  }
+});
+
+companyDashboardRouter.get("/openings/:id", async (req: AuthedRequest, res) => {
+  if (refuseOffice(req, res)) return;
+  if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_opening" });
+  try {
+    let opening;
+    try {
+      opening = await pool.query(
+        `SELECT o.*, b.name AS building_name, p.id AS property_id, p.name AS property_name, p.address_line1, p.city, p.state,
+                (pf.organization_id = $2) AS is_owner, owner.id AS owner_id, owner.name AS owner_name,
+                acct.account_id, acct.account_kind, acct.account_name
+         FROM openings o
+         JOIN buildings b ON b.id = o.building_id
+         JOIN properties p ON p.id = b.property_id
+         JOIN portfolios pf ON pf.id = p.portfolio_id
+         JOIN organizations owner ON owner.id = pf.organization_id
+         ${accountJoin("$2")}
+         WHERE o.id = $1 AND ${facilityAccessPredicate(2)}`,
+        [req.params.id, req.auth!.organizationId],
+      );
+    } catch (error) {
+      if (!isMissingSchema(error)) throw error;
+      opening = await pool.query(
+        `SELECT o.*, b.name AS building_name, p.id AS property_id, p.name AS property_name, p.address_line1, p.city, p.state,
+                (pf.organization_id = $2) AS is_owner, owner.id AS owner_id, owner.name AS owner_name
+         FROM openings o
+         JOIN buildings b ON b.id = o.building_id
+         JOIN properties p ON p.id = b.property_id
+         JOIN portfolios pf ON pf.id = p.portfolio_id
+         JOIN organizations owner ON owner.id = pf.organization_id
+         WHERE o.id = $1 AND ${facilityAccessPredicate(2)}`,
+        [req.params.id, req.auth!.organizationId],
+      );
+    }
     const row = opening.rows[0];
     if (!row) return res.status(404).json({ error: "not_found" });
-    const kind = accountKind(row.is_owner === true, row.property_name);
+    const kind = kindOf({ ...row, name: row.property_name });
     let records: any[] = [];
     try {
       const service = await pool.query(
@@ -351,12 +450,7 @@ companyDashboardRouter.get("/openings/:id", async (req: AuthedRequest, res) => {
       );
       records = service.rows;
     }
-    const quotes = await optionalQuery(
-      `SELECT e.id, v.snapshot FROM replacement_estimates e
-       LEFT JOIN replacement_estimate_versions v ON v.estimate_id = e.id AND v.version = e.head_version
-       WHERE e.opening_id = $1 AND e.provider_id = $2`,
-      [row.id, req.auth!.organizationId],
-    );
+    const quotes = await quoteRows(row.id, req.auth!.organizationId, true);
     res.set("Cache-Control", "no-store").json({
       id: row.id,
       opening_code: row.opening_code,
@@ -371,8 +465,8 @@ companyDashboardRouter.get("/openings/:id", async (req: AuthedRequest, res) => {
       address: addressOf(row),
       kind,
       kind_label: accountKindLabel(kind),
-      customer_id: customerKey(kind, row.owner_id, row.property_id),
-      customer_name: kind === "facility" ? row.owner_name : row.property_name,
+      customer_id: customerKey(kind, row.owner_id, kind === "facility" ? row.owner_id : (row.account_id || row.property_id)),
+      customer_name: kind === "facility" ? row.owner_name : (row.account_name || (kind === "walkin" ? "Walk-in" : row.property_name)),
       work_records: records.map((item) => ({
         id: item.id,
         kind: item.kind,
@@ -380,7 +474,11 @@ companyDashboardRouter.get("/openings/:id", async (req: AuthedRequest, res) => {
         performed_on: day(item.performed_on),
         advised_on: day(item.advised_on),
       })),
-      quotes: quotes.rows.map((item) => ({ id: item.id, total_minor: item.snapshot?.totals?.total_minor ?? null })),
+      quotes: quotes.map((item) => ({
+        id: item.id,
+        total_minor: item.snapshot?.totals?.total_minor ?? null,
+        approval_status: item.approval_status || "draft",
+      })),
     });
   } catch (error) {
     console.error("Company dashboard opening failed", error);

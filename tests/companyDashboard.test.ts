@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { app, createPortfolioHierarchy, createTestOpening } from "./helpers";
-import { accountKind, attentionText, groupCustomers, mayOpenCompanyDashboard, COMPANY_DASHBOARD_REFUSAL } from "../src/services/companyDashboard";
+import { accountKind, attentionText, groupCustomers, resolveAccountKind, mayOpenCompanyDashboard, COMPANY_DASHBOARD_REFUSAL } from "../src/services/companyDashboard";
+import { pool } from "../src/db/pool";
 
 describe("company dashboard account kinds", () => {
   it("keeps facility grants separate from provider-owned sites", () => {
@@ -25,6 +27,13 @@ describe("company dashboard account kinds", () => {
     expect(facility).toMatchObject({ name: "Northwind", opening_count: 5, attention_count: 1, last_visit: "2026-11-01", next_due: "2026-11-15" });
     expect(rows.find((row) => row.name === "Maple Street Offices")?.kind).toBe("small");
     expect(rows.find((row) => row.name === "Walk-in calls")?.kind).toBe("walkin");
+    expect(resolveAccountKind({ storedKind: "small", isOwner: true, name: "Walk-in calls" })).toBe("small");
+    const stored = groupCustomers([
+      { id: "p5", name: "Front desk", address: "15 Mill", isOwner: true, ownerId: "prov", ownerName: "Harbor", storedKind: "walkin", accountId: "bucket", accountName: "Walk-in", openingCount: 1, attentionCount: 0, lastVisit: null, nextDue: null },
+      { id: "p6", name: "Side gate", address: "88 Depot", isOwner: true, ownerId: "prov", ownerName: "Harbor", storedKind: "walkin", accountId: "bucket", accountName: "Walk-in", openingCount: 2, attentionCount: 0, lastVisit: null, nextDue: null },
+    ]);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ name: "Walk-in", kind: "walkin", opening_count: 3 });
   });
 });
 
@@ -65,7 +74,10 @@ describe("company dashboard access", () => {
     expect(home.body.counts.quotes).toBe(0);
     const kinds = home.body.customers.map((row: { kind: string; name: string }) => `${row.kind}:${row.name}`);
     expect(kinds).toContain("small:Maple Street Offices");
-    expect(kinds).toContain("walkin:Walk-in calls");
+    expect(kinds).toContain("walkin:Walk-in");
+    await pool.query("UPDATE properties SET name='Front desk' WHERE id=$1", [walkin.body.id]);
+    const renamed = await request(app).get("/api/company-dashboard").set("Authorization", `Bearer ${provider.token}`);
+    expect(renamed.body.customers.some((row: { kind: string; property_ids: string[] }) => row.kind === "walkin" && row.property_ids.includes(walkin.body.id))).toBe(true);
     expect(home.body.customers.some((row: { kind: string; opening_count: number }) => row.kind === "facility" && row.opening_count >= 1)).toBe(true);
     expect(home.body.classification_note).toContain("Walk-in");
 
@@ -74,6 +86,21 @@ describe("company dashboard access", () => {
     expect(site.body.kind).toBe("small");
     expect(site.body.openings).toEqual([]);
     expect(site.body.visits).toEqual([]);
+    const building = await request(app).post("/api/portfolio/buildings").set("Authorization", `Bearer ${provider.token}`).send({ property_id: small.body.id, name: "Main" });
+    expect(building.status).toBe(201);
+    const opening = await createTestOpening(provider.token, building.body.id);
+    const estimateId = randomUUID();
+    await pool.query(
+      "INSERT INTO replacement_estimates (id, provider_id, opening_id, head_version, approval_status) VALUES ($1,$2,$3,0,'awaiting_approval')",
+      [estimateId, provider.organizationId, opening.id],
+    );
+    const quoted = await request(app).get(`/api/company-dashboard/sites/${small.body.id}`).set("Authorization", `Bearer ${provider.token}`);
+    expect(quoted.body.quotes).toEqual([expect.objectContaining({ id: estimateId, approval_status: "awaiting_approval" })]);
+    const approved = await request(app).post(`/api/company-dashboard/quotes/${estimateId}/approval`).set("Authorization", `Bearer ${provider.token}`).send({ approval_status: "approved" });
+    expect(approved.status).toBe(200);
+    expect(approved.body.approval_status).toBe("approved");
+    const declined = await request(app).post(`/api/company-dashboard/quotes/${estimateId}/approval`).set("Authorization", `Bearer ${technician.token}`).send({ approval_status: "declined" });
+    expect(declined.status).toBe(403);
 
     for (const token of [technician.token, inspector.token]) {
       const denied = await request(app).get("/api/company-dashboard").set("Authorization", `Bearer ${token}`);

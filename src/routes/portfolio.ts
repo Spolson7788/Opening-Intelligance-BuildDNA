@@ -1,4 +1,5 @@
 import { mayOpenFacilityDashboard } from "../services/facilityDashboardAccess";
+import { recordOwnedProviderSite } from "../services/companyDashboardAccounts";
 import { getObjectBytes } from "../services/storage";
 import { loadInspectionVisit } from "../services/loadInspectionVisit";
 import { orderVisitDoors, visitCounts, visitSummaryText } from "../services/inspectionVisits";
@@ -323,6 +324,11 @@ portfolioRouter.post("/properties", async (req: AuthedRequest, res) => {
        b.state_code ? b.state_code.toUpperCase() : null, b.county_fips ?? null,
        b.postal_code ?? null, b.property_type ?? null, b.latitude ?? null, b.longitude ?? null, b.contact_email ?? null]
     );
+    try {
+      await recordOwnedProviderSite(orgId, result.rows[0].id, result.rows[0].name);
+    } catch (error) {
+      console.error("Provider account record failed", error);
+    }
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);

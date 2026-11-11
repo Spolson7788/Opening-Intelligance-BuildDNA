@@ -9,7 +9,7 @@ export const COMPANY_DASHBOARD_REFUSAL =
   "Company administrators and managers use this dashboard. Technicians and inspectors use the field app.";
 
 export const ACCOUNT_KIND_NOTE =
-  "Facility accounts are sites a customer has granted. A site this company owns is Walk-in when its name contains Walk-in, and a Small account otherwise.";
+  "Account kind is stored for each site. Facility accounts are sites a customer has granted. Provider-owned sites are Small accounts, except a name containing Walk-in, which belongs to that company's one Walk-in bucket.";
 
 export type AccountKind = "facility" | "small" | "walkin";
 
@@ -20,6 +20,11 @@ export function mayOpenCompanyDashboard(role: unknown): boolean {
 export function accountKind(isOwner: boolean, siteName: string): AccountKind {
   if (!isOwner) return "facility";
   return /\bwalk[-\s]?in\b/i.test(siteName) ? "walkin" : "small";
+}
+
+export function resolveAccountKind(site: { storedKind?: string | null; isOwner: boolean; name: string }): AccountKind {
+  if (site.storedKind === "facility" || site.storedKind === "small" || site.storedKind === "walkin") return site.storedKind;
+  return accountKind(site.isOwner, site.name);
 }
 
 export function accountKindLabel(kind: AccountKind): string {
@@ -47,6 +52,9 @@ export interface SiteRollup {
   isOwner: boolean;
   ownerId: string;
   ownerName: string;
+  storedKind?: AccountKind | null;
+  accountId?: string | null;
+  accountName?: string | null;
   openingCount: number;
   attentionCount: number;
   lastVisit: string | null;
@@ -79,30 +87,21 @@ function sooner(a: string | null, b: string | null): string | null {
 }
 
 export function groupCustomers(sites: SiteRollup[]): CustomerRow[] {
-  const facility = new Map<string, CustomerRow>();
-  const rows: CustomerRow[] = [];
+  const grouped = new Map<string, CustomerRow>();
   for (const site of sites) {
-    const kind = accountKind(site.isOwner, site.name);
-    if (kind !== "facility") {
-      rows.push({
-        id: customerKey(kind, site.ownerId, site.id),
-        name: site.name,
-        kind,
-        kind_label: accountKindLabel(kind),
-        opening_count: site.openingCount,
-        attention_count: site.attentionCount,
-        attention: attentionText(site.attentionCount),
-        last_visit: site.lastVisit,
-        next_due: site.nextDue,
-        property_ids: [site.id],
-      });
-      continue;
-    }
-    const existing = facility.get(site.ownerId);
+    const kind = resolveAccountKind(site);
+    const groupId = kind === "facility" ? site.ownerId : (site.accountId || site.id);
+    const id = customerKey(kind, site.ownerId, groupId);
+    const name = kind === "facility"
+      ? site.ownerName
+      : kind === "walkin"
+        ? (site.accountName || (site.accountId ? "Walk-in" : site.name))
+        : (site.accountName || site.name);
+    const existing = grouped.get(id);
     if (!existing) {
-      facility.set(site.ownerId, {
-        id: site.ownerId,
-        name: site.ownerName,
+      grouped.set(id, {
+        id,
+        name,
         kind,
         kind_label: accountKindLabel(kind),
         opening_count: site.openingCount,
@@ -121,5 +120,5 @@ export function groupCustomers(sites: SiteRollup[]): CustomerRow[] {
     existing.next_due = sooner(existing.next_due, site.nextDue);
     existing.property_ids.push(site.id);
   }
-  return [...facility.values(), ...rows].sort((a, b) => a.name.localeCompare(b.name));
+  return [...grouped.values()].sort((a, b) => a.name.localeCompare(b.name));
 }

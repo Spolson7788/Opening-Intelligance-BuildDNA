@@ -68,7 +68,7 @@ export function CompanyOpeningPage() {
                   <article key={quote.id} className="c04-row">
                     <h3>Estimate</h3>
                     <p>{formatMoney(quote.total_minor)}</p>
-                    <p className="c04-note">Not an approval. Nothing is sent or ordered from this page.</p>
+                    <p className="c04-note">{quote.approval_status === "awaiting_approval" ? "Awaiting approval" : quote.approval_status === "approved" ? "Approved" : quote.approval_status === "declined" ? "Declined" : "Draft"}. Nothing is sent or ordered from this page.</p>
                   </article>
                 ))}
               </div>
