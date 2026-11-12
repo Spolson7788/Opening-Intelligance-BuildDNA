@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { BackLink, CompanyShell, formatDay, formatMoney, plainType } from "../components/CompanyShell";
+import { quoteStatus } from "./CompanySitePage";
 import { fetchCompanyOpening, type CompanyOpening } from "../lib/api";
 import { facilitiesErrorMessage } from "../lib/scheduleUi";
 
@@ -40,7 +41,10 @@ export function CompanyOpeningPage() {
             <article className="c04-tile">
               <div className="lab">Quote</div>
               <div className="val" style={{ fontSize: 22 }}>{opening.quotes[0] ? formatMoney(opening.quotes[0].total_minor) : "—"}</div>
-              <div className="st">Saved estimates.</div>
+              <div className="st">
+                {opening.quotes[0] ? quoteStatus(opening.quotes[0].approval_status) : "No saved estimate."}
+                {opening.quotes[0] && <> <Link to={`/sites/${opening.property_id}?tab=work`}>Change it on the site's Work & quotes tab.</Link></>}
+              </div>
             </article>
           </section>
           <section className="c04-card">
@@ -69,7 +73,7 @@ export function CompanyOpeningPage() {
                   <article key={quote.id} className="c04-row">
                     <h3>Estimate</h3>
                     <p>{formatMoney(quote.total_minor)}</p>
-                    <p className="c04-note">{quote.approval_status === "awaiting_approval" ? "Awaiting approval" : quote.approval_status === "approved" ? "Approved" : quote.approval_status === "declined" ? "Declined" : "Draft"}. Nothing is sent or ordered from this page.</p>
+                    <p className="c04-note">{quoteStatus(quote.approval_status)}. <Link to={`/sites/${opening.property_id}?tab=work`}>Change it on the site's Work & quotes tab.</Link> Nothing is sent or ordered from this page.</p>
                   </article>
                 ))}
               </div>

@@ -1,22 +1,28 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { BackLink, CompanyShell, formatDay, formatMoney, plainType } from "../components/CompanyShell";
 import { downloadAuthedFile, fetchCompanySite, setQuoteApproval, type CompanySite } from "../lib/api";
 import { facilitiesErrorMessage } from "../lib/scheduleUi";
 
 type Tab = "openings" | "visits" | "work" | "purchasing";
 
-function quoteStatus(status: string) {
+export function quoteStatus(status: string) {
   if (status === "awaiting_approval") return "Awaiting approval";
   if (status === "approved") return "Approved";
   if (status === "declined") return "Declined";
   return "Draft";
 }
 
+export function siteTabFromQuery(value: string | null): Tab {
+  if (value === "visits" || value === "work" || value === "purchasing") return value;
+  return "openings";
+}
+
 export function CompanySitePage() {
   const { propertyId = "" } = useParams();
+  const [params] = useSearchParams();
   const [site, setSite] = useState<CompanySite | null>(null);
-  const [tab, setTab] = useState<Tab>("openings");
+  const [tab, setTab] = useState<Tab>(siteTabFromQuery(params.get("tab")));
   const [error, setError] = useState<string | null>(null);
   async function reload() {
     setSite(await fetchCompanySite(propertyId));
