@@ -90,9 +90,9 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   app.locals.commercialInputsEnabled=options.commercialInputsEnabled===true;
   app.locals.facilityBudgetEnabled=options.facilityBudgetEnabled===true;
   app.locals.planningSandboxEnabled=options.planningSandboxEnabled===true;
-  // Recognition, reference library and recognition usage/billing need tables that
-  // production does not have. Default on keeps existing local/test behavior; the
-  // Netlify entry point turns them on only for the known staging sites.
+  // Default on keeps existing local/test behavior. The Netlify entry turns the
+  // routes on for the two staging sites, and for production only while the
+  // recognition and Measure flags are set. Other site ids stay off.
   const recognitionFeaturesEnabled=options.recognitionFeaturesEnabled!==false;
   app.locals.recognitionFeaturesEnabled=recognitionFeaturesEnabled;
   const allowedOrigins = corsOriginsFromEnv();

@@ -192,7 +192,7 @@ Optional non-secret:
 
 Staging flags that stay off for this launch: `OI_PROVIDER_ESTIMATES_ENABLED`, `OI_FACILITY_BUDGET_ENABLED`, `OI_COMMERCIAL_STORAGE_API_KEY`, `OI_STORAGE_IDENTITY_EMAIL`, `OI_STORAGE_IDENTITY_PASSWORD`, `OI_STORAGE_IDENTITY_USER_ID`, `ROBOFLOW_API_KEY`, `GOOGLE_MAPS_API_KEY`.
 
-Two code and schema facts still block "on" even after those names are set. `netlify/functions/api.ts` enables recognition only for staging sites `b64bf33c-a131-4ae2-b2b0-9aec16e9f77b` and `80fbbee8-b9d3-4b16-b93f-d2d8396591ec`. The production site id is excluded, and the Measure route checks that same flag. This commit does not change that allowlist. The recognition tables are in the production schema bundle, which is not approved to apply. Env names alone do not turn the feature on.
+`netlify/functions/api.ts` now includes production site `b4e0fc62-86ce-4a26-9ebf-26d7386f4b01` on the recognition and Measure allowlist only while `OI_RECOGNITION_ENABLED` is `true` and `OI_MEASUREMENT_READER` is `anthropic`. Without those flags the routes stay off. Other site ids stay off even with the flags. The recognition tables are still in the production schema bundle, which is not approved to apply. The flags do not create those tables.
 
 Also still needed for the rest of the app: the names production already has, plus `OI_FIELD_APP_URL` for QR links and `CORS_ORIGINS` set to the production origin. `NODE_ENV` is set by `netlify.toml` for the production context. `DATABASE_CA_CERT` only if the database connection is given a custom CA. `STAFF_MFA_ENCRYPTION_KEY` is required only if staff MFA is used. Do not copy staging values.
 

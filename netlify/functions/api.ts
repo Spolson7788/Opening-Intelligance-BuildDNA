@@ -5,6 +5,7 @@ import {runtimeStorageIdentity} from '../../src/services/storageTechnicalIdentit
 import type { Config, Context } from "@netlify/functions";
 import { createApp } from "../../src/app";
 import { recoveryDeploymentAllowed } from "../../src/services/recoveryDeployment";
+import { recognitionFeaturesEnabledForSite } from "../../src/services/recognitionSite";
 import { netlifyExpressAdapter } from "./_shared/expressAdapter";
 
 export default async (request: Request, context: Context): Promise<Response> => {
@@ -19,9 +20,10 @@ export default async (request: Request, context: Context): Promise<Response> => 
     facilityBudgetEnabled:capabilities.facilityBudget,
     accountRecoveryEnabled: recoveryDeploymentAllowed(context),
     // SQL metadata-write denial alone does not prevent legacy presigned uploads.
-    // Fail closed: any site other than the two staging sites (e.g. production) gets
-    // no recognition, reference library or recognition usage/billing endpoints.
-    recognitionFeaturesEnabled:['b64bf33c-a131-4ae2-b2b0-9aec16e9f77b','80fbbee8-b9d3-4b16-b93f-d2d8396591ec'].includes(context?.site?.id??''),
+    // Staging sites keep recognition on. Production is included only while
+    // OI_RECOGNITION_ENABLED=true and OI_MEASUREMENT_READER=anthropic.
+    // Any other site id stays off.
+    recognitionFeaturesEnabled: recognitionFeaturesEnabledForSite(context?.site?.id, process.env),
     // Legacy document uploads stay off on staging and on oi-production.
     legacyDocumentsEnabled: !["b64bf33c-a131-4ae2-b2b0-9aec16e9f77b","b4e0fc62-86ce-4a26-9ebf-26d7386f4b01"].includes(context?.site?.id ?? ""),
   });
