@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, expect, it } from "vitest";
 import { closeFieldAppDb, getOfflineSetting, getSyncOperationsForPrincipal, putOfflineSetting, putSyncOperation, requeueFinishedVisitInspection, saveAuth } from "../field-app/src/lib/db";
-import { ensureOpenVisit, finishVisit, pendingInspectionIds, readOpenVisit, readVisitById, reconcileOpenVisit, recordVisitInspection, startNewVisit, visitSummaryText, visitUploadMessage, withInspection } from "../field-app/src/lib/inspectionVisit";
+import { ensureOpenVisit, finishVisit, openingCountText, pendingInspectionIds, readOpenVisit, readVisitById, reconcileOpenVisit, recordVisitInspection, startNewVisit, visitSummaryText, visitUploadMessage, withInspection } from "../field-app/src/lib/inspectionVisit";
 import { syncIssueCanDiscard, syncIssueMessage } from "../field-app/src/lib/syncIssueMessage";
 import { OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "../field-app/src/lib/offlineTypes";
 import { selectedFacilityKey } from "../field-app/src/lib/facilitySync";
@@ -58,6 +58,8 @@ it("reuses one visit for the same facility and does not duplicate a repeated sav
   const stored = await readVisitById(first!.id);
   expect(stored?.inspections).toHaveLength(2);
   expect(stored?.facilityId).toBe(facilityId);
+  expect(openingCountText(1)).toBe("1 opening");
+  expect(visitSummaryText([{ inspectionId: "only", openingId: "door-1", passed: false }])).toBe("This visit: 1 opening (0 passed, 1 failed)");
   expect(visitSummaryText(stored!.inspections)).toBe("This visit: 2 openings (1 passed, 1 failed)");
   await recordVisitInspection(first!.id, { inspectionId: "insp-1b", openingId: "door-1", passed: true, inspectedAt: "2026-11-09T12:07:00.000Z" });
   const repeated = await readVisitById(first!.id);

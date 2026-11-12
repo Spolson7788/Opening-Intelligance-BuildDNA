@@ -79,15 +79,36 @@ it("hides a visit the server already finished and keeps the local inspections", 
   expect(store.operations).toHaveLength(1);
 });
 
-it("leaves the visit band when the server cannot be checked", async () => {
+function buttonNamed(label: string) {
+  return [...host.querySelectorAll("button")].find((item) => item.textContent === label);
+}
+
+it("keeps the green band to the current visit and puts a new visit below Change facility", async () => {
   openVisit();
   store.server = null;
   await act(async () => root.render(<MemoryRouter><ScanPage /></MemoryRouter>));
   await act(async () => {});
-  expect(host.textContent).toContain("This visit: 3 openings");
-  expect(host.textContent).toContain("Finish visit / Send combined report");
-  expect(host.textContent).toContain("Start a new visit");
+  const band = host.querySelector(".c04-band-green")!;
+  const finish = band.querySelector("button")!;
+  expect(band.textContent).toContain("This visit: 3 openings (2 passed, 1 failed)");
+  expect(finish.textContent).toBe("Finish visit / Send combined report");
+  expect(finish.className).toContain("c04-btn-blue");
+  expect(finish.className).toContain("c04-visit-finish");
+  expect(band.textContent).not.toContain("Start a new visit");
+  expect([...band.querySelectorAll("button")]).toHaveLength(1);
+  const labels = [...host.querySelectorAll("button")].map((item) => item.textContent);
+  expect(labels.indexOf("Start a new visit")).toBeGreaterThan(labels.indexOf("Change facility"));
+  const start = buttonNamed("Start a new visit")!;
+  expect(start.className).toContain("c04-visit-secondary");
+  expect(start.className).not.toContain("c04-btn-cyan");
   expect(store.settings.get("inspection-visit-open:u:org:facility-1")).toBe(visitId);
+});
+
+it("says 1 opening when the visit has one door", async () => {
+  store.openVisit = { id: visitId, inspections: [{ inspectionId: "insp-1", openingId: "door-1", passed: true }] };
+  await act(async () => root.render(<MemoryRouter><ScanPage /></MemoryRouter>));
+  await act(async () => {});
+  expect(host.querySelector(".c04-band-green")?.textContent).toContain("This visit: 1 opening (1 passed, 0 failed)");
 });
 
 it("shows the open server visit when this phone has no pointer", async () => {
@@ -105,18 +126,48 @@ it("shows the open server visit when this phone has no pointer", async () => {
   expect(host.textContent).toContain("Start a new visit");
 });
 
+it("asks before leaving an open visit and can keep it", async () => {
+  openVisit();
+  store.server = null;
+  await act(async () => root.render(<MemoryRouter><ScanPage /></MemoryRouter>));
+  await act(async () => {});
+  await act(async () => buttonNamed("Start a new visit")!.click());
+  const confirm = host.querySelector("[role='dialog']")!;
+  expect(confirm.textContent).toContain("This visit has 3 openings and stays open and unfinished. Nothing is discarded.");
+  expect(confirm.textContent).toContain("Finish this visit first");
+  expect(confirm.textContent).toContain("Start a new visit anyway");
+  expect(host.querySelector(".c04-band-green")?.textContent).not.toContain("Start a new visit");
+  await act(async () => buttonNamed("Not now")!.click());
+  expect(host.querySelector("[role='dialog']")).toBeNull();
+  expect(store.settings.get("inspection-visit-open:u:org:facility-1")).toBe(visitId);
+  expect(host.textContent).toContain("This visit: 3 openings");
+});
+
 it("starts a new visit without dropping an inspection that is not on the server", async () => {
   openVisit();
   store.server = { status: "open", report_sent: false, inspection_ids: ["insp-1"] };
   store.operations = [{ entityId: "insp-3", entityType: "inspection_event", state: "queued" }];
   await act(async () => root.render(<MemoryRouter><ScanPage /></MemoryRouter>));
   await act(async () => {});
-  const button = [...host.querySelectorAll("button")].find((item) => item.textContent === "Start a new visit");
-  await act(async () => button!.click());
+  await act(async () => buttonNamed("Start a new visit")!.click());
+  expect(store.settings.get("inspection-visit-open:u:org:facility-1")).toBe(visitId);
+  await act(async () => buttonNamed("Start a new visit anyway")!.click());
   expect(host.textContent).toContain("2 inspection(s) are still uploading, try again");
   expect(host.textContent).toContain("were not removed");
   expect(host.textContent).not.toContain("This visit: 3 openings");
   expect(store.operations).toHaveLength(1);
   expect(store.settings.get("inspection-visit-open:u:org:facility-1")).not.toBe(visitId);
+  expect((store.settings.get(`inspection-visit:${visitId}`) as { status: string; inspections: unknown[] }).status).toBe("open");
   expect((store.settings.get(`inspection-visit:${visitId}`) as { inspections: unknown[] }).inspections).toHaveLength(3);
+});
+
+it("starts a new visit immediately when none is open", async () => {
+  await act(async () => root.render(<MemoryRouter><ScanPage /></MemoryRouter>));
+  await act(async () => {});
+  expect(host.querySelector(".c04-band-green")).toBeNull();
+  await act(async () => buttonNamed("Start a new visit")!.click());
+  expect(host.querySelector("[role='dialog']")).toBeNull();
+  expect(host.textContent).not.toContain("stays open and unfinished");
+  expect(typeof store.settings.get("inspection-visit-open:u:org:facility-1")).toBe("string");
+  expect(store.settings.get("inspection-visit-open:u:org:facility-1")).not.toBe("");
 });

@@ -1,7 +1,7 @@
 import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { NFPA80_ITEMS } from "../src/services/nfpa80Checklist";
-import { orderVisitDoors, visitReportOutline, type VisitDoor } from "../src/services/inspectionVisits";
+import { openingCountText, orderVisitDoors, visitReportOutline, visitSummaryText, type VisitDoor } from "../src/services/inspectionVisits";
 import { CONCEPT, drawablePhoto, generateNfpaVisitPdf, pdfRgb, prepareReportPhoto, setReportImageLoaderForTests } from "../src/services/nfpa80Report";
 
 function door(code: string, passed: boolean, note?: string): VisitDoor {
@@ -17,6 +17,12 @@ function door(code: string, passed: boolean, note?: string): VisitDoor {
 }
 
 describe("combined fire door visit report", () => {
+  it("says 1 opening when a visit has one door", () => {
+    expect(openingCountText(0)).toBe("0 openings");
+    expect(openingCountText(1)).toBe("1 opening");
+    expect(visitSummaryText([door("510A", true)])).toBe("This visit: 1 opening (1 passed, 0 failed)");
+  });
+
   it("puts failed doors before passed doors for a 50-door visit", async () => {
     const doors = Array.from({ length: 50 }, (_, index) => door(`D-${String(index + 1).padStart(2, "0")}`, index % 5 !== 0, `Note ${index + 1}`));
     const ordered = orderVisitDoors(doors);

@@ -119,7 +119,7 @@ it("keeps the facility and adds one inspection when save is tapped twice", async
   const visit = store.settings.get(`inspection-visit:${payload.visit_id}`) as { facilityId: string; inspections: unknown[] };
   expect(visit.facilityId).toBe("facility-1");
   expect(visit.inspections).toHaveLength(1);
-  expect(host.textContent).toContain("This visit: 1 openings (1 passed, 0 failed)");
+  expect(host.textContent).toContain("This visit: 1 opening (1 passed, 0 failed)");
   expect(host.textContent).toContain("Add an Additional Opening");
   expect(host.textContent).toContain("Email this report");
   const add = [...host.querySelectorAll("button")].find((button) => button.textContent === "Add an Additional Opening");

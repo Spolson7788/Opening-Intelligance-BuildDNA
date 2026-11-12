@@ -8,7 +8,7 @@ import { parseOpeningQr } from "../lib/qrPayload";
 import { facilityDashboardMenuVisible, fetchInspectionVisit, fetchLabelConfig, fetchOpenInspectionVisit } from '../lib/api';
 import { showFacilityDashboardShortcut, tokenHasVerifiedStaffSession } from '../lib/facilityDashboardReturn';
 import { getSyncOperationsForPrincipal, loadAuth } from "../lib/db";
-import { pendingInspectionIds, reconcileOpenVisit, startNewVisit, visitSummaryText, visitUploadMessage } from "../lib/inspectionVisit";
+import { openingCountText, pendingInspectionIds, reconcileOpenVisit, startNewVisit, visitCounts, visitSummaryText, visitUploadMessage } from "../lib/inspectionVisit";
 import type { InspectionVisit } from "../lib/inspectionVisit";
 
 const SCANNER_ELEMENT_ID = "qr-reader";
@@ -39,6 +39,7 @@ export function ScanPage() {
   const [scanning, setScanning] = useState(false);
   const [visit, setVisit] = useState<InspectionVisit | null>(null);
   const [visitNote, setVisitNote] = useState<string | null>(null);
+  const [confirmNewVisit, setConfirmNewVisit] = useState(false);
   useEffect(() => {
     let live = true;
     void reconcileOpenVisit((id) => fetchInspectionVisit(id), fetchOpenInspectionVisit).then((open) => { if (live) setVisit(open); });
@@ -125,11 +126,17 @@ export function ScanPage() {
         <h1>Scan opening</h1>
         {visit && <div className="c04-band-green">
           <p role="status">{visitSummaryText(visit.inspections)}</p>
-          <button type="button" className="btn c04-btn-green" onClick={() => navigate(`/visit/${visit.id}`)}>Finish visit / Send combined report</button>
-          <button type="button" className="btn c04-btn-cyan" onClick={() => { void beginNewVisit(); }}>Start a new visit</button>
+          <button type="button" className="btn c04-btn-blue c04-visit-finish" onClick={() => navigate(`/visit/${visit.id}`)}>Finish visit / Send combined report</button>
         </div>}
         {visitNote && <p className="c04-note" role="status">{visitNote}</p>}
         <button type="button" className="btn c04-btn-cyan" onClick={() => navigate("/choose-location")}>Change facility</button>
+        {confirmNewVisit && visit ? <section className="c04-panel" role="dialog" aria-labelledby="start-new-visit-title">
+          <h2 id="start-new-visit-title">Start a new visit?</h2>
+          <p>This visit has {openingCountText(visitCounts(visit.inspections).inspected)} and stays open and unfinished. Nothing is discarded.</p>
+          <button type="button" className="btn c04-btn-blue" onClick={() => navigate(`/visit/${visit.id}`)}>Finish this visit first</button>
+          <button type="button" className="btn c04-visit-secondary" onClick={() => { setConfirmNewVisit(false); void beginNewVisit(); }}>Start a new visit anyway</button>
+          <button type="button" className="btn c04-choice" onClick={() => setConfirmNewVisit(false)}>Not now</button>
+        </section> : <button type="button" className="btn c04-visit-secondary" onClick={() => { if (visit) setConfirmNewVisit(true); else void beginNewVisit(); }}>Start a new visit</button>}
         <FacilitySelector />
         <section className="c04-band" aria-label="Scan or enter an opening code">
         <h2>Scan or enter an opening code</h2>

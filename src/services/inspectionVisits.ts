@@ -89,9 +89,13 @@ export function orderVisitDoors(doors: VisitDoor[]): VisitDoor[] {
   return [...doors].sort((a, b) => Number(a.passed) - Number(b.passed) || a.openingCode.localeCompare(b.openingCode));
 }
 
+export function openingCountText(count: number): string {
+  return `${count} ${count === 1 ? "opening" : "openings"}`;
+}
+
 export function visitSummaryText(doors: VisitDoor[]): string {
   const counts = visitCounts(doors);
-  return `This visit: ${counts.inspected} openings (${counts.passed} passed, ${counts.failed} failed)`;
+  return `This visit: ${openingCountText(counts.inspected)} (${counts.passed} passed, ${counts.failed} failed)`;
 }
 
 /** Failed doors, then every door. Passed doors do not appear in the failure section. */

@@ -65,9 +65,13 @@ export function pendingInspectionIds(
   });
 }
 
+export function openingCountText(count: number): string {
+  return `${count} ${count === 1 ? "opening" : "openings"}`;
+}
+
 export function visitSummaryText(inspections: VisitInspection[]): string {
   const counts = visitCounts(inspections);
-  return `This visit: ${counts.inspected} openings (${counts.passed} passed, ${counts.failed} failed)`;
+  return `This visit: ${openingCountText(counts.inspected)} (${counts.passed} passed, ${counts.failed} failed)`;
 }
 
 export function withInspection(visit: InspectionVisit, inspection: VisitInspection): InspectionVisit {
