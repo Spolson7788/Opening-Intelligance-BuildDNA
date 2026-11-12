@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import { listFieldProperties } from "../lib/api";
 import { getOfflineSetting, putOfflineSetting } from "../lib/db";
@@ -21,6 +21,7 @@ export function ChooseLocationPage() {
   const [draft, setDraft] = useState<LocationDraft>({ stateKey: null, countyKey: null, facilityId: "" });
   const [preferred, setPreferred] = useState<string | null>(null);
   const [changing, setChanging] = useState(true);
+  const [facilityHint, setFacilityHint] = useState("");
   const principal = auth ? { userId: auth.userId, organizationId: auth.organizationId } : null;
 
   useEffect(() => {
@@ -68,12 +69,16 @@ export function ChooseLocationPage() {
     setDraft(narrowDraft(list, next, changed));
   }
 
-  async function continueWithLocation() {
-    if (!principal || !chosen) return;
+  async function acceptLocation(destination: "/scan" | "/setup-opening") {
+    if (!principal || !chosen) {
+      setFacilityHint("Choose a facility and tap Continue first.");
+      return;
+    }
+    setFacilityHint("");
     await putOfflineSetting({ key: selectedFacilityKey(principal), value: chosen.id, updatedAt: new Date().toISOString() });
     writeLocationConfirmation(sessionStorage, principal, chosen.id);
     sync?.select(chosen.id);
-    navigate("/scan", { replace: true });
+    navigate(destination, { replace: true });
   }
 
   return <div className="app-shell c04"><div className="screen">
@@ -91,7 +96,7 @@ export function ChooseLocationPage() {
         <p className="c04-eyebrow">Last location</p>
         <p><strong>{describeLocation(list, preferred)}</strong></p>
         <p>Continue confirms this location. Change it if you are working somewhere else.</p>
-        <button type="button" className="btn c04-btn-blue" onClick={() => void continueWithLocation()}>Continue</button>
+        <button type="button" className="btn c04-btn-blue" onClick={() => void acceptLocation("/scan")}>Continue</button>
         <button type="button" className="btn c04-btn-cyan" onClick={() => setChanging(true)}>Change location</button>
       </section>}
       {(!preferred || changing) && <section className="c04-band" aria-label="State, county, and facility">
@@ -114,11 +119,14 @@ export function ChooseLocationPage() {
           </select>
         </div>
         {chosen && <p role="status">Selected location: {describeLocation(list, chosen.id)}</p>}
-        <button type="button" className="btn c04-btn-blue" disabled={!canContinue} onClick={() => void continueWithLocation()}>Continue</button>
+        <button type="button" className="btn c04-btn-blue" disabled={!canContinue} onClick={() => void acceptLocation("/scan")}>Continue</button>
         {preferred && <button type="button" className="btn c04-choice" onClick={() => { setChanging(false); setDraft(initialDraft(list, preferred)); }}>Keep last location</button>}
       </section>}
     </>}
-    {(auth?.role === "admin" || auth?.role === "facilities_manager") && <Link className="btn c04-choice" to="/setup-opening">Facilities and openings</Link>}
+    {(auth?.role === "admin" || auth?.role === "facilities_manager") && <>
+      {facilityHint && <p className="c04-note" role="status">{facilityHint}</p>}
+      <button type="button" className="btn c04-choice" onClick={() => void acceptLocation("/setup-opening")}>Facilities and openings</button>
+    </>}
     <button type="button" className="btn c04-choice" disabled={logoutPending} onClick={() => void logout()}>{logoutPending ? "Signing out…" : "Sign out"}</button>
   </div></div>;
 }

@@ -1,6 +1,6 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
@@ -38,7 +38,15 @@ beforeEach(() => {
   root = createRoot(host);
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
-const render = () => act(async () => root.render(<MemoryRouter><ChooseLocationPage /></MemoryRouter>));
+const render = () => act(async () => root.render(
+  <MemoryRouter initialEntries={["/choose-location"]}>
+    <Routes>
+      <Route path="/choose-location" element={<ChooseLocationPage />} />
+      <Route path="/setup-opening" element={<p>Facilities destination</p>} />
+      <Route path="/scan" element={<p>Scan destination</p>} />
+    </Routes>
+  </MemoryRouter>,
+));
 const select = (id: string) => host.querySelector(id) as HTMLSelectElement;
 async function choose(id: string, value: string) {
   const element = select(id);
@@ -78,6 +86,35 @@ it("does not offer Scan when the account has no facilities", async () => {
   expect(host.textContent).toContain("Scan does not open");
   expect(button("Continue")).toBeUndefined();
   expect(host.querySelector('a[href="/setup-opening"]')).toBeNull();
+});
+
+it("accepts a complete selection from Facilities and openings", async () => {
+  state.auth = { ...state.auth, role: "admin" };
+  await render();
+  await choose("#location-state", "CA");
+  await choose("#location-county", "037");
+  expect(select("#location-facility").value).toBe("a");
+  await act(async () => button("Facilities and openings").click());
+  expect(host.textContent).toContain("Facilities destination");
+  expect(host.textContent).not.toContain("Choose a location");
+  expect(sessionStorage.getItem("location-confirmed:tech:org-a")).toBe("a");
+  expect(state.selected).toEqual(["a"]);
+});
+
+it("stays on the chooser and keeps the selection when a facility is not chosen", async () => {
+  state.auth = { ...state.auth, role: "facilities_manager" };
+  await render();
+  await choose("#location-state", "CA");
+  expect(select("#location-county").value).toBe("");
+  await act(async () => button("Facilities and openings").click());
+  expect(host.textContent).toContain("Choose a facility and tap Continue first.");
+  expect(host.textContent).toContain("Choose a location");
+  expect(host.textContent).not.toContain("Facilities destination");
+  expect(select("#location-state").value).toBe("CA");
+  expect(select("#location-county").value).toBe("");
+  expect(select("#location-facility").value).toBe("");
+  expect(sessionStorage.getItem("location-confirmed:tech:org-a")).toBeNull();
+  expect(state.selected).toEqual([]);
 });
 
 it("asks a returning account to confirm the last location and can change it", async () => {
