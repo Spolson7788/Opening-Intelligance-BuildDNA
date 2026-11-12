@@ -121,7 +121,7 @@ A production publisher is not built here. What a later, separately approved scri
 6. No write of `GOOGLE_MAPS_API_KEY`. No copy of staging secret values.
 7. A written approval that names the pin before `--publish-approved` is run. This document is not that approval.
 
-Until that script exists, there is no production publish command.
+`scripts/artifact-publisher-production.mjs` is that separate script. It refuses every mode unless `--approve-production-site b4e0fc62-86ce-4a26-9ebf-26d7386f4b01` is present. It refuses the staging site id. It does not contain `sso_login` and does not change the visitor gate. `--publish-approved` passes the local pin, clean-tree, and package checks, writes `dist/production-publish-journal/publication-attempt.json`, and then stops with `production_upload_not_wired`. The Netlify upload is not connected, so this script cannot publish. Connecting it is a separate decision. Do not run it against Netlify from this commit.
 
 ## f. Rollback, in step order
 
@@ -144,3 +144,36 @@ Anything destructive or easy to get wrong:
 - A public bucket or `S3_PUBLIC_BASE_URL` on inspection photos and visit PDFs.
 - Turning off `sso_login` before the app and database for that release are ready.
 - `20261103230000_production_access_rules.sql` is on production and not in git. Do not replace it.
+
+## Part 2 runbook
+
+Checked against the schema-only dump of production taken 2026-11-12 07:05 MST and a local PostgreSQL 17 restore. Nothing in this commit was run against a hosted database.
+
+Production `public.schema_migrations` has 45 rows and no `sha256`. The latest filename is `20261103230000_production_access_rules.sql`, which is not in the repo. It created 69 `prod_api_*` policies. `supabase_migrations.schema_migrations` has four rows (`016_password_reset`, staff MFA, staff sign-in codes, `sec4_function_search_path`); those objects exist. Twenty repo filenames are missing from the public ledger. Production data at the time of the executor read: 5 users, 3 organizations, 5 memberships, 16 audit rows, and 0 openings, work orders, and photos.
+
+Do these steps only after a separate approval for each one. Stop on the first failure.
+
+1. Restore or read the production schema. The local proof used PostgreSQL 17 and the attached schema-only dump. Do not point `DATABASE_URL` at `bekaxmatcvxqpjixwsqn` or `boaoedvyvifppuklbwad`.
+2. Run `node scripts/production-schema-precheck.mjs` on that local database. It is read-only. It expects 69 `prod_api_*` policies, the password-reset and staff MFA tables, and no `provider_accounts` or `inspection_visits`.
+3. Run `node scripts/apply-production-schema-bundle.mjs`. It applies `migrations/production/20261112140500_r59_production_schema.sql` in one transaction. The bundle is the 20 missing repo files, then `prod_api_select`, `prod_api_insert`, and `prod_api_update` on each new table (plus `prod_api_delete` on the two purchasing tables). It does not drop an existing `prod_api_*` policy. It inserts the 20 filenames into `public.schema_migrations`. A second run stops with `production_r59_bundle_already_applied`.
+4. Run `node scripts/production-schema-postcheck.mjs`. It is read-only.
+5. Publish is not step 5 yet. `scripts/artifact-publisher-production.mjs` is refused without `--approve-production-site b4e0fc62-86ce-4a26-9ebf-26d7386f4b01`. Even with that flag, `--publish-approved` does not upload.
+6. Open the visitor gate only after the schema and the app deploy exist: set `sso_login` to false on site `b4e0fc62-86ce-4a26-9ebf-26d7386f4b01` only. Revert by setting `sso_login` back to true. That restores the HTML 401 and leaves the deploy in place. Do not change the staging site. This repository does not perform that change.
+
+Rollback of the schema is `migrations/production/20261112140500_r59_production_schema_rollback.sql`. On the local proof it returned the public tables, columns, policies, functions, triggers, and grants to the restored dump. It does not drop password-reset or staff MFA objects. It does not drop the original 69 `prod_api_*` policies.
+
+### Environment names
+
+Production Netlify already has: `APP_BASE_URL`, `DATABASE_URL`, `EMAIL_FROM`, `EMAIL_PROVIDER`, `EMAIL_PROVIDER_API_KEY`, `JWT_SECRET`, `OI_DATABASE_POOL_PROFILE`, `PASSWORD_RESET_FROM_EMAIL`, `PASSWORD_RESET_PUBLIC_URL`, `RESEND_API_KEY`, `S3_ACCESS_KEY_ID`, `S3_BUCKET`, `S3_ENDPOINT`, `S3_REGION`, `S3_SECRET_ACCESS_KEY`.
+
+Missing on production and present on staging, by name only: `ANTHROPIC_API_KEY`, `CORS_ORIGINS`, `DATABASE_CA_CERT`, `NODE_ENV`, `OI_COMMERCIAL_STORAGE_API_KEY`, `OI_FACILITY_BUDGET_ENABLED`, `OI_FIELD_APP_URL`, `OI_MEASUREMENT_READER`, `OI_PROVIDER_ESTIMATES_ENABLED`, `OI_RECOGNITION_ENABLED`, `OI_STORAGE_IDENTITY_EMAIL`, `OI_STORAGE_IDENTITY_PASSWORD`, `OI_STORAGE_IDENTITY_USER_ID`, `ROBOFLOW_API_KEY`, `STAFF_MFA_ENCRYPTION_KEY`.
+
+Required for field, facility dashboard, and company dashboard with photos and mail: the names production already has, plus `OI_FIELD_APP_URL` for QR links and `CORS_ORIGINS` set to the production origin. `NODE_ENV` is set by `netlify.toml` for the production context. `STAFF_MFA_ENCRYPTION_KEY` is required only if staff MFA is used. `GOOGLE_MAPS_API_KEY` stays unset. Recognition, measurement, commercial storage, Roboflow, and facility-budget names are optional and stay off unless a later approval enables them. Do not copy staging values.
+
+### Storage
+
+`oi-production-media` is private, limited to 100 MiB, and has no storage policies. Keep it private. Do not set `S3_PUBLIC_BASE_URL`. Visit PDFs use `private/org/{organizationId}/facility/{propertyId}/inspection-visit/{visitId}.pdf`. Inspection photos use `private/org/{organizationId}/opening/{openingId}/photo/{photoId}.{ext}`. The API key needs put and get on those prefixes. Staging policies on `oi-video-workflows-media` allow one technical user to upload `commercial-documents/v1/{uuid}.pdf` only. Do not copy them onto `oi-production-media`.
+
+### Not reversible
+
+The NFPA migration installs `BEFORE DELETE` triggers on `inspection_events`, `fire_door_deficiencies`, and `photos`. They are new on the Nov 12 dump. Rollback drops them. It cannot restore a later hand-edited function body. While they are installed, a delete of recent inspection evidence fails. The recognition files replace `platform_audit_events_action_check` and the final list matches the Nov 12 dump. If an existing audit row uses an action outside that list, the bundle aborts and changes nothing. Phase 2 backfills account rows from existing sites. Production had 0 openings when the executor read it, so that backfill inserts nothing until sites exist. The rollback drops the new account, route, and pickup tables.
