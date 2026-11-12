@@ -130,7 +130,7 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
       const now = await loadAuth();
       if (auth && now && now.userId === auth.userId && now.organizationId === auth.organizationId && now.token === auth.token) await clearAuth();
     }
-    if (endedReference && ((res.status === 401 && body.error === "session_revoked") || (res.status === 403 && body.error === "account_deactivated"))) {
+    if (endedReference && ((res.status === 401 && body.error === "session_revoked") || (res.status === 403 && (body.error === "account_deactivated" || body.error === "company_deactivated")))) {
       // C2: the API ended this account's access. Wipe all OI data on this device, but only while the
       // same account is still the one signed in here (never another person's data).
       const now = await loadAuth();

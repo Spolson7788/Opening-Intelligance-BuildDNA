@@ -7,6 +7,7 @@ import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { recognitionUsageReport } from "../services/recognitionUsageReport";
 import { StaffMfaError, unlockStaffMfa } from "../services/staffMfa";
 import { recognitionRunRecordsMonthly, reprocessRecordOutbox, recordOutboxStatus } from "../services/recognitionRunRecords";
+import { CompanyDeactivationError, deactivateCompany, reactivateCompany } from "../services/companyDeactivation";
 
 // OI staff read access (multi-company design, part B): READ ONLY overviews by facility and by
 // service-provider company. Staff status is re-checked in the database on every request
@@ -170,12 +171,36 @@ platformRouter.get("/me", (req: AuthedRequest, res) => { res.json({ staff: true,
 
 platformRouter.get("/organizations", async (_req, res) => {
   try {
-    const r = await pool.query(`SELECT o.id, o.name, o.org_type, o.parent_organization_id,
+    const r = await pool.query(`SELECT o.id, o.name, o.org_type, o.parent_organization_id, o.deactivated_at,
       (SELECT count(*)::int FROM users u WHERE u.organization_id = o.id AND u.is_active) AS active_users
       FROM organizations o ORDER BY o.org_type, o.name LIMIT 2000`);
     res.json(r.rows);
   } catch { res.status(503).json({ error: "service_unavailable" }); }
 });
+
+const companyStateSchema = z.object({ reason: reasonSchema }).strict();
+
+async function changeCompanyState(req: AuthedRequest, res: any, mode: "deactivate" | "reactivate") {
+  const id = uuid.safeParse(req.params.id);
+  const body = companyStateSchema.safeParse(req.body ?? {});
+  if (!id.success || !body.success) return res.status(400).json({ error: "invalid_company_state" });
+  try {
+    const args = { actorId: req.auth!.userId, actorOrgId: req.auth!.organizationId, organizationId: id.data, reason: body.data.reason };
+    if (mode === "deactivate") {
+      const out = await tx(res, (client) => deactivateCompany(client, args));
+      if (out) res.json(out);
+      return;
+    }
+    const out = await tx(res, (client) => reactivateCompany(client, args));
+    if (out) res.json(out);
+  } catch (err) {
+    if (err instanceof CompanyDeactivationError) return res.status(err.status).json({ error: err.code });
+    fail(res, err, mode === "deactivate" ? "company_deactivate_failed" : "company_reactivate_failed");
+  }
+}
+
+platformRouter.post("/organizations/:id/deactivate", (req, res) => changeCompanyState(req as AuthedRequest, res, "deactivate"));
+platformRouter.post("/organizations/:id/reactivate", (req, res) => changeCompanyState(req as AuthedRequest, res, "reactivate"));
 
 platformRouter.get("/organizations/:id/users", async (req, res) => {
   const id = uuid.safeParse(req.params.id); if (!id.success) return res.status(400).json({ error: "invalid_request" });

@@ -928,7 +928,7 @@ export async function getLocations(): Promise<LocationsResponse> {
 // ---- M5: OI staff tools (the server re-checks staff status on every request) ----
 export interface PlatformFacility { property_id: string; property_name: string; state: string | null; owner_organization_id: string; owner_name: string; top_organization_id: string | null; active_provider_ids: string[]; building_count: number; opening_count: number }
 export interface PlatformProvider { provider_organization_id: string; provider_name: string; active_facility_count: number; active_property_ids: string[] }
-export interface PlatformOrganization { id: string; name: string; org_type: "customer" | "service_partner" | "internal"; parent_organization_id: string | null; active_users: number }
+export interface PlatformOrganization { id: string; name: string; org_type: "customer" | "service_partner" | "internal"; parent_organization_id: string | null; active_users: number; deactivated_at?: string | null }
 export interface PlatformOrgUser { id: string; email: string; full_name: string; role: string; is_active: boolean; is_home: boolean }
 export interface ProviderRequest { id: string; property_id: string; property_name: string; provider_organization_id: string; provider_name: string; action: "assign" | "unassign"; reason: string; status: string; requested_at: string; requested_by_user_id: string; requested_by_name?: string; facility_organization_name?: string; reviewed_at?: string | null; review_note?: string | null }
 export interface PlatformStaffRow { user_id: string; email: string; full_name: string; granted_at: string; grant_reason: string; revoked_at: string | null; revoke_reason: string | null; active: boolean }
@@ -944,6 +944,7 @@ export const platformFacilities = (): Promise<PlatformFacility[]> => authedFetch
 export const platformProviders = (): Promise<PlatformProvider[]> => authedFetch("/platform/providers");
 export const platformOrganizations = (): Promise<PlatformOrganization[]> => authedFetch("/platform/organizations");
 export const platformOrgUsers = (orgId: string): Promise<PlatformOrgUser[]> => authedFetch(`/platform/organizations/${orgId}/users`);
+export const setCompanyActive = (orgId: string, active: boolean, reason: string) => post(`/platform/organizations/${orgId}/${active ? "reactivate" : "deactivate"}`, { reason });
 export const setOrganizationParent = (orgId: string, body: { parent_organization_id: string | null; reason: string; confirm_provider_link?: true }):
   Promise<{ id: string; parent_organization_id: string | null; tree: PlatformOrganization[] }> => post(`/platform/organizations/${orgId}/parent`, body, "PUT");
 export const platformProviderRequests = (status = "pending"): Promise<ProviderRequest[]> => authedFetch(`/platform/provider-requests?status=${encodeURIComponent(status)}`);

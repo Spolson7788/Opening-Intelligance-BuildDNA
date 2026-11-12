@@ -67,7 +67,9 @@ const S = () => tok('staff', 'oi');
 const ev = async (action: string, target?: string) => (await sql(`SELECT * FROM platform_audit_events WHERE action=$1 ${target ? 'AND (target_id=$2 OR request_ref=$2)' : ''} ORDER BY id`, target ? [action, target] : [action])).rows;
 const PLATFORM = [
   ['get', '/api/platform/me'], ['get', '/api/platform/facilities'], ['get', '/api/platform/providers'], ['get', '/api/platform/organizations'],
-  ['get', '/api/platform/organizations/X/users'], ['put', '/api/platform/organizations/X/parent'], ['get', '/api/platform/provider-requests'],
+  ['get', '/api/platform/organizations/X/users'], ['put', '/api/platform/organizations/X/parent'],
+  ['post', '/api/platform/organizations/X/deactivate'], ['post', '/api/platform/organizations/X/reactivate'],
+  ['get', '/api/platform/provider-requests'],
   ['post', '/api/platform/provider-requests/X/approve'], ['post', '/api/platform/provider-requests/X/decline'], ['post', '/api/platform/companies'],
   ['get', '/api/platform/staff'], ['post', '/api/platform/staff'], ['delete', '/api/platform/staff/X'],
 ] as const;

@@ -26,13 +26,18 @@ export interface AuthedRequest extends Request {
 // Multi-company (milestone 1): the token names the active company; requireAuth re-checks on every
 // request that the person is active, the session is current, and they still hold an active
 // membership (or parent-tree access) in that company. Email domain never grants anything.
-export const AUTH_CONTEXT_SQL = `SELECT u.id, u.organization_id AS home_organization_id, u.is_active, u.session_version,
+const AUTH_CONTEXT_COLUMNS = `u.id, u.organization_id AS home_organization_id, u.is_active, u.session_version,
        (to_jsonb(u) ->> 'must_change_password')::boolean AS must_change_password,
        a.organization_id, a.role, a.access,
        (SELECT array_agg(t.organization_id) FROM user_authorized_orgs(u.id) t WHERE t.via_organization_id = $2) AS allowed_organization_ids,
-       is_platform_staff(u.id) AS is_platform_staff
-FROM users u LEFT JOIN LATERAL (SELECT x.organization_id, x.role, x.access FROM user_authorized_orgs(u.id) x WHERE x.organization_id = $2) a ON true
+       is_platform_staff(u.id) AS is_platform_staff`;
+const AUTH_CONTEXT_FROM = `FROM users u LEFT JOIN LATERAL (SELECT x.organization_id, x.role, x.access FROM user_authorized_orgs(u.id) x WHERE x.organization_id = $2) a ON true
 WHERE u.id = $1`;
+export const AUTH_CONTEXT_SQL = `SELECT ${AUTH_CONTEXT_COLUMNS},
+       (SELECT o.deactivated_at IS NOT NULL FROM organizations o WHERE o.id = $2) AS company_deactivated
+${AUTH_CONTEXT_FROM}`;
+const AUTH_CONTEXT_SQL_WITHOUT_COMPANY = `SELECT ${AUTH_CONTEXT_COLUMNS}
+${AUTH_CONTEXT_FROM}`;
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -55,6 +60,9 @@ async function loadAuthContext(userId: string, organizationId: string) {
   try {
     return await pool.query(AUTH_CONTEXT_SQL, [userId, organizationId]);
   } catch (error) {
+    if ((error as { code?: string } | null)?.code === "42703") {
+      return pool.query(AUTH_CONTEXT_SQL_WITHOUT_COMPANY, [userId, organizationId]);
+    }
     if (!isMissingSchema(error)) throw error;
     return pool.query(LEGACY_AUTH_SQL, [userId, organizationId]);
   }
@@ -96,6 +104,7 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     const current = await loadAuthContext(payload.userId, payload.organizationId);
     const user = current.rows[0];
     if (!user) return deny(401, "invalid_token_subject");
+    if (user.company_deactivated === true) return deny(403, "company_deactivated");
     if (!user.is_active) return deny(403, "account_deactivated");
 
     if (!user.organization_id || !user.role || user.organization_id !== payload.organizationId) return deny(403, "membership_inactive");

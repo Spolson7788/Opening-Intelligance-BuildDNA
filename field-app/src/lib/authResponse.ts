@@ -5,7 +5,7 @@ export function loginFailureMessage(status: number, code: string, reference?: st
   if (appResponse && status === 401 && code === 'invalid_credentials') {
     return "Email or password didn't match. Try again.";
   }
-  if (appResponse && status === 403 && code === 'account_deactivated') {
+  if (appResponse && status === 403 && (code === 'account_deactivated' || code === 'company_deactivated')) {
     return 'This account is deactivated. Contact an administrator.';
   }
   if (status === 401 || status === 403) {

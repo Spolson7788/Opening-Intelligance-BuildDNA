@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Sidebar } from "../components/Sidebar";
 import {
-  createCompanyWithAdmin, createProviderFacility, grantMembership, platformMe, grantStaff, platformFacilities, platformOrganizations, platformOrgUsers, platformProviderRequests, platformProviders,
+  createCompanyWithAdmin, createProviderFacility, grantMembership, platformMe, grantStaff, platformFacilities, platformOrganizations, platformOrgUsers, platformProviderRequests, platformProviders, setCompanyActive,
   platformRecognitionUsage, platformUsageSettings, setSafetyCap, updateUsageSettings, platformStaff, reviewProviderRequest, revokeStaff, unlockStaffMfa, setOrganizationParent,
   type PlatformFacility, type PlatformOrganization, type PlatformOrgUser, type PlatformProvider, type PlatformStaffRow, type ProviderRequest, type RecognitionUsageReport, type SafetyCapRow, type UsageSettings, serverFeatures } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
@@ -121,7 +121,9 @@ function Companies({ orgs, reload }: { orgs: PlatformOrganization[]; reload: () 
   const [msg, setMsg] = useState<string | null>(null);
   const [m, setM] = useState({ email: "", role: "viewer", organization_id: "", reason: "" });
   const [usersOf, setUsersOf] = useState(""); const [users, setUsers] = useState<PlatformOrgUser[]>([]);
+  const [companyId, setCompanyId] = useState(""); const [companyReason, setCompanyReason] = useState("");
   useEffect(() => { if (usersOf) platformOrgUsers(usersOf).then(setUsers).catch(() => setUsers([])); else setUsers([]); }, [usersOf]);
+  const chosen = orgs.find((o) => o.id === companyId);
   async function create() {
     setMsg(null); setCreated(null);
     try { const r = await createCompanyWithAdmin({ ...f, name: f.name.trim(), reason: f.reason.trim(), ...(f.org_type === "service_partner" && ownFacility ? { create_provider_facility: true } : {}) });
@@ -157,6 +159,25 @@ function Companies({ orgs, reload }: { orgs: PlatformOrganization[]; reload: () 
     <input aria-label="Membership reason" placeholder="Reason" value={m.reason} onChange={(e) => setM({ ...m, reason: e.target.value })} />{" "}
     <button className="btn" disabled={!m.email || !m.organization_id || !m.reason.trim()} onClick={grant}>Grant</button>
     {msg && <p role="status">{msg}</p>}
+    <h2>Deactivate or reactivate a company</h2>
+    <p className="muted">Shuts off that company's sign-ins. Facilities, openings, photos, and PDFs stay in Opening Intelligence. Other companies' assignments are not changed.</p>
+    <select aria-label="Company to deactivate" value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
+      <option value="">Company…</option>
+      {orgs.filter((o) => o.org_type !== "internal").map((o) => <option key={o.id} value={o.id}>{o.name}{o.deactivated_at ? " (deactivated)" : ""}</option>)}
+    </select>{" "}
+    <input aria-label="Company state reason" placeholder="Reason" value={companyReason} onChange={(e) => setCompanyReason(e.target.value)} />{" "}
+    <button className="btn" disabled={!chosen || !companyReason.trim()} onClick={() => {
+      if (!chosen) return;
+      void (async () => {
+        setMsg(null);
+        try {
+          await setCompanyActive(chosen.id, Boolean(chosen.deactivated_at), companyReason.trim());
+          setMsg(chosen.deactivated_at ? "Company reactivated." : "Company deactivated.");
+          setCompanyReason("");
+          reload();
+        } catch (x) { setMsg(err(x)); }
+      })();
+    }}>{chosen?.deactivated_at ? "Reactivate company" : "Deactivate company"}</button>
     <h2>People in a company</h2>
     <select aria-label="Company people" value={usersOf} onChange={(e) => setUsersOf(e.target.value)}><option value="">Company…</option>{orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>
     <table><tbody>{users.map((u) => <tr key={u.id}><td>{u.full_name}</td><td>{u.email}</td><td>{u.role}</td><td>{u.is_active ? "active" : "inactive"}{u.is_home ? " · home" : ""}</td></tr>)}</tbody></table>

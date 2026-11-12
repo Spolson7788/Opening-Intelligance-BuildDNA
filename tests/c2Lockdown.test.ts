@@ -138,7 +138,7 @@ afterEach(async () => {
 });
 
 describe('C2 field app wipes all OI data when access ends', () => {
-  for (const [status, error] of [[401, 'session_revoked'], [403, 'account_deactivated']] as const) {
+  for (const [status, error] of [[401, 'session_revoked'], [403, 'account_deactivated'], [403, 'company_deactivated']] as const) {
     it(`${status} ${error}: every store is emptied, including unsynced work, and nothing is written back`, async () => {
       await seedDevice();
       const before = await storeCounts();

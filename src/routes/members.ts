@@ -253,7 +253,9 @@ membersRouter.post("/memberships", async (req: AuthedRequest, res) => {
   try { client = await pool.connect(); } catch { return res.status(503).json({ error: "database_unavailable" }); }
   try {
     await client.query("BEGIN");
-    if (!(await client.query("SELECT 1 FROM organizations WHERE id=$1", [orgId])).rows.length) { await client.query("ROLLBACK"); return res.status(404).json({ error: "organization_not_found" }); }
+    const org = (await client.query("SELECT id, deactivated_at FROM organizations WHERE id=$1", [orgId])).rows[0];
+    if (!org) { await client.query("ROLLBACK"); return res.status(404).json({ error: "organization_not_found" }); }
+    if (org.deactivated_at) { await client.query("ROLLBACK"); return res.status(409).json({ error: "company_deactivated" }); }
     const u = (await client.query("SELECT id, is_active FROM users WHERE lower(email) = $1", [parsed.data.email])).rows[0];
     if (!u || !u.is_active) { await client.query("ROLLBACK"); return res.status(404).json({ error: "person_not_found_or_inactive" }); }
     const existing = await membershipOf(client, u.id, orgId, true);
