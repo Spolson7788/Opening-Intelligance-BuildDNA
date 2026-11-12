@@ -33,6 +33,7 @@ vi.mock("../field-app/src/lib/api", () => ({
   emailInspectionReport: vi.fn(),
   inspectionVisitRecipients: vi.fn(async () => ({ to: ["building@example.com", "signer@example.com"], facility_contact_email: "building@example.com", inspector_email: "signer@example.com" })),
   fetchInspectionVisit: vi.fn(async () => ({ inspected: store.serverIds.length, inspection_ids: store.serverIds })),
+  fetchOpenInspectionVisit: vi.fn(async () => null),
   emailInspectionVisit: (...args: unknown[]) => store.email(...args),
   storeInspectionVisitPdf: vi.fn(async () => ({ stored: true, reused: false, bytes: 1200 })),
   reserveOfflinePhoto: vi.fn(),
@@ -125,6 +126,15 @@ it("keeps the facility and adds one inspection when save is tapped twice", async
   await act(async () => add!.click());
   expect(host.textContent).toContain("Scan opening");
   expect(host.textContent).not.toContain("Choose location");
+});
+
+it("shows Saved when the server accepted the inspection but the response timed out", async () => {
+  const timeout = Object.assign(new Error("inspection post timed out"), { name: "TimeoutError", sentToServer: true });
+  store.queued.mockImplementation(() => Promise.reject(timeout));
+  await saveFireDoor();
+  expect(host.textContent).toContain("Saved.");
+  expect(host.textContent).not.toContain("Saving…");
+  expect(host.textContent).toContain("sent to the server");
 });
 
 it("does not send the combined report while 310A is still off the server", async () => {

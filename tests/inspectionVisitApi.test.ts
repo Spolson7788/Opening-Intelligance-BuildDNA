@@ -290,3 +290,28 @@ it("counts a door once and keeps both inspection records", async () => {
   expect(again.body.reused).toBe(true);
   expect(Buffer.from(storage.objects.get(added[0])!).equals(before)).toBe(true);
 });
+
+it("joins the open visit when a later save does not send a visit id", async () => {
+  const org = await signupTestOrg("Visit join");
+  const { buildingId, propertyId } = await createPortfolioHierarchy(org.token);
+  const firstOpening = await createTestOpening(org.token, buildingId, { opening_code: "510A", fire_rated: true });
+  const secondOpening = await createTestOpening(org.token, buildingId, { opening_code: "610A", fire_rated: true });
+  const auth = { Authorization: `Bearer ${org.token}` };
+  const visitId = randomUUID();
+  const firstId = randomUUID();
+  const post = (operationId: string, openingId: string, visit?: string) => request(app).post("/api/sync/operations").set(auth).send({
+    operation_id: operationId, operation_type: "create", entity_id: operationId, entity_type: "inspection_event",
+    opening_id: openingId, device_id: randomUUID(), base_server_revision: null, schema_version: 3,
+    app_version: "visit", protocol_version: 1,
+    payload: { event_date: "2026-11-12", inspection_type: "fire_door_nfpa80", ...(visit ? { visit_id: visit } : {}), ...passingFireDoorFields() },
+  });
+  expect((await post(firstId, firstOpening.id, visitId)).status).toBe(201);
+  const secondId = randomUUID();
+  expect((await post(secondId, secondOpening.id)).status).toBe(201);
+  const joined = await pool.query("SELECT visit_id FROM inspection_events WHERE id = ANY($1::uuid[]) ORDER BY created_at", [[firstId, secondId]]);
+  expect(joined.rows.map((row: { visit_id: string }) => row.visit_id)).toEqual([visitId, visitId]);
+  const open = await request(app).get(`/api/events/inspection-visits/open?property_id=${propertyId}`).set(auth);
+  expect(open.status).toBe(200);
+  expect(open.body.visit.id).toBe(visitId);
+  expect(open.body.visit.inspections).toHaveLength(2);
+});

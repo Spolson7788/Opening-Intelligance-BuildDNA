@@ -5,7 +5,7 @@ import { SyncBadge } from "../components/SyncBadge";
 import { FacilitySelector } from "../components/FacilitySelector";
 import { useAuth } from "../lib/AuthContext";
 import { parseOpeningQr } from "../lib/qrPayload";
-import { facilityDashboardMenuVisible, fetchInspectionVisit, fetchLabelConfig } from '../lib/api';
+import { facilityDashboardMenuVisible, fetchInspectionVisit, fetchLabelConfig, fetchOpenInspectionVisit } from '../lib/api';
 import { showFacilityDashboardShortcut, tokenHasVerifiedStaffSession } from '../lib/facilityDashboardReturn';
 import { getSyncOperationsForPrincipal, loadAuth } from "../lib/db";
 import { pendingInspectionIds, reconcileOpenVisit, startNewVisit, visitSummaryText, visitUploadMessage } from "../lib/inspectionVisit";
@@ -41,7 +41,7 @@ export function ScanPage() {
   const [visitNote, setVisitNote] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    void reconcileOpenVisit((id) => fetchInspectionVisit(id)).then((open) => { if (live) setVisit(open); });
+    void reconcileOpenVisit((id) => fetchInspectionVisit(id), fetchOpenInspectionVisit).then((open) => { if (live) setVisit(open); });
     return () => { live = false; };
   }, []);
 
@@ -123,7 +123,7 @@ export function ScanPage() {
       </div>
       <div className="screen">
         <h1>Scan opening</h1>
-        {visit && visit.inspections.length > 0 && <div className="c04-band-green">
+        {visit && <div className="c04-band-green">
           <p role="status">{visitSummaryText(visit.inspections)}</p>
           <button type="button" className="btn c04-btn-green" onClick={() => navigate(`/visit/${visit.id}`)}>Finish visit / Send combined report</button>
           <button type="button" className="btn c04-btn-cyan" onClick={() => { void beginNewVisit(); }}>Start a new visit</button>

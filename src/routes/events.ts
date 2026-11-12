@@ -4,7 +4,7 @@ import { pool } from "../db/pool";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
-import { openingsForOrgSubquery } from "../db/tenantScope";
+import { facilityAccessPredicate, openingsForOrgSubquery } from "../db/tenantScope";
 import { areaAllowsOpening } from "../db/areaAccess";
 import { acquireClient } from "../db/acquireClient";
 import { prepareFireDoorChecklist, applyFireDoorFollowUp } from "../services/nfpa80Inspection";
@@ -298,6 +298,31 @@ async function visitForRequest(id: string, orgId: string, userId: string) {
   }
   return { status: 200 as const, loaded };
 }
+
+eventsRouter.get("/inspection-visits/open", async (req: AuthedRequest, res) => {
+  const propertyId = z.string().uuid().safeParse(typeof req.query.property_id === "string" ? req.query.property_id : "");
+  if (!propertyId.success) return res.status(400).json({ error: "invalid_visit" });
+  try {
+    const allowed = await pool.query(
+      `SELECT 1 FROM properties p JOIN portfolios pf ON pf.id = p.portfolio_id WHERE p.id = $1 AND ${facilityAccessPredicate(2)}`,
+      [propertyId.data, req.auth!.organizationId],
+    );
+    if (!allowed.rows[0]) return res.status(404).json({ error: "not_found" });
+    const open = await pool.query(
+      `SELECT v.id,
+        COALESCE((SELECT json_agg(json_build_object('inspectionId', i.id, 'openingId', i.opening_id, 'passed', i.passed) ORDER BY i.created_at)
+          FROM inspection_events i WHERE i.visit_id = v.id), '[]'::json) AS inspections
+       FROM inspection_visits v
+       WHERE v.organization_id = $1 AND v.property_id = $2 AND v.inspector_user_id = $3 AND v.status = 'open'
+       ORDER BY v.created_at DESC LIMIT 1`,
+      [req.auth!.organizationId, propertyId.data, req.auth!.userId],
+    );
+    const row = open.rows[0];
+    res.set("Cache-Control", "no-store").json({
+      visit: row ? { id: row.id, inspections: Array.isArray(row.inspections) ? row.inspections : [] } : null,
+    });
+  } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
+});
 
 eventsRouter.get("/inspection-visits/:id", async (req: AuthedRequest, res) => {
   try {

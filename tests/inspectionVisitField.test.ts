@@ -19,6 +19,32 @@ afterEach(async () => {
   });
 });
 
+it("joins the server's open visit when this phone lost the pointer", async () => {
+  await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
+  await putOfflineSetting({ key: selectedFacilityKey({ userId, organizationId }), value: facilityId, updatedAt: new Date().toISOString() });
+  const serverId = "191f5a79-1534-49fb-b486-c4bff94195b7";
+  let lookups = 0;
+  const joined = await ensureOpenVisit(async () => {
+    lookups += 1;
+    return { id: serverId, inspections: [{ inspectionId: "insp-510", openingId: "door-510", passed: true }] };
+  });
+  expect(joined?.id).toBe(serverId);
+  expect(lookups).toBe(1);
+  const again = await ensureOpenVisit(async () => { throw new Error("lookup"); });
+  expect(again?.id).toBe(serverId);
+  expect((await readOpenVisit())?.inspections).toHaveLength(1);
+});
+
+it("keeps an explicit new visit instead of jumping back to the server visit", async () => {
+  await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
+  await putOfflineSetting({ key: selectedFacilityKey({ userId, organizationId }), value: facilityId, updatedAt: new Date().toISOString() });
+  await ensureOpenVisit(async () => ({ id: "191f5a79-1534-49fb-b486-c4bff94195b7", inspections: [] }));
+  const started = await startNewVisit();
+  const next = await ensureOpenVisit(async () => ({ id: "191f5a79-1534-49fb-b486-c4bff94195b7", inspections: [] }));
+  expect(next?.id).toBe(started?.id);
+  expect(next?.id).not.toBe("191f5a79-1534-49fb-b486-c4bff94195b7");
+});
+
 it("reuses one visit for the same facility and does not duplicate a repeated save", async () => {
   await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
   await putOfflineSetting({ key: selectedFacilityKey({ userId, organizationId }), value: facilityId, updatedAt: new Date().toISOString() });

@@ -1,5 +1,5 @@
 import { loadAuth, cacheOpening, getCachedOpening, wipeAllOiData, clearAuth } from "./db";
-import { withTimeout } from "./deadline";
+import { isRequestTimeout, withTimeout } from "./deadline";
 import { isNetlifyAccessResponse, redirectToFieldLogin, SITE_ACCESS_REQUIRED } from "./siteAccess";
 import {diagnosticActor,diagnosticAvailable,PROBES,readBoundedProbe,runPhotoProbes} from './photoDiagnostic';
 import type {Principal,ProbeResponse} from './photoDiagnostic';
@@ -156,7 +156,14 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
   const current=await loadAuth();
   if(!auth||!current||current.userId!==auth.userId||current.organizationId!==auth.organizationId)throw new PrincipalChangedError();
   if (res.status === 204) return null; // DELETE endpoints return no body
-  return res.json();
+  try {
+    return await withTimeout(res.json(), 15_000, "response body timed out");
+  } catch (error) {
+    if (!isRequestTimeout(error)) throw error;
+    const timed = new DOMException("response body timed out", "TimeoutError") as DOMException & { sentToServer?: boolean };
+    timed.sentToServer = true;
+    throw timed;
+  }
 }
 
 // Only the candidate diagnostic imports this export. No new auth mechanism.
@@ -545,6 +552,13 @@ export function inspectionVisitRecipients(id: string): Promise<{ to: string[]; f
 
 export function fetchInspectionVisit(id: string): Promise<{ inspected: number; inspection_ids: string[]; status?: string; report_sent?: boolean }> {
   return authedFetch(`/events/inspection-visits/${id}`);
+}
+
+export function fetchOpenInspectionVisit(propertyId: string): Promise<{ id: string; inspections: { inspectionId: string; openingId: string; passed: boolean }[] } | null> {
+  return authedFetch(`/events/inspection-visits/open?property_id=${encodeURIComponent(propertyId)}`).then((body: { visit?: { id: string; inspections?: { inspectionId: string; openingId: string; passed: boolean }[] } | null }) => {
+    if (!body?.visit?.id) return null;
+    return { id: body.visit.id, inspections: Array.isArray(body.visit.inspections) ? body.visit.inspections : [] };
+  });
 }
 
 const VISIT_REPORT_TIMEOUT_MS = 25_000;

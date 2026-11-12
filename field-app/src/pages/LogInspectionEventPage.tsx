@@ -13,6 +13,7 @@ import { holdFacilityDownload } from "../lib/facilitySync";
 import { noteSyncDiagnostic } from "../lib/sync";
 import { awaitInspectionSynced } from "../lib/sync";
 import { scrollPageToTop } from "../lib/scrollPage";
+import { fetchOpenInspectionVisit } from "../lib/api";
 import { ensureOpenVisit, recordVisitInspection, visitSummaryText } from "../lib/inspectionVisit";
 import { isRequestTimeout } from "../lib/deadline";
 import { localCalendarDay } from "../lib/calendarDay";
@@ -161,14 +162,16 @@ export function LogInspectionEventPage() {
       checklist = { status: "complete", items };
     }
 
-    let inspectionId: string;
+    let inspectionId: string | undefined;
     let visitId: string | undefined;
+    if (!inspectionAttemptId.current) inspectionAttemptId.current = crypto.randomUUID();
+    const attemptId = inspectionAttemptId.current;
+    const sentToServer = (error: unknown) => error instanceof Error && (error as { sentToServer?: boolean }).sentToServer === true;
     try {
     if (type === "fire_door_nfpa80") {
-      try { visitId = (await ensureOpenVisit())?.id; }
+      try { visitId = (await ensureOpenVisit(fetchOpenInspectionVisit))?.id; }
       catch (error) { if (!isRequestTimeout(error)) throw error; }
     }
-    if (!inspectionAttemptId.current) inspectionAttemptId.current = crypto.randomUUID();
     inspectionId = await queueOpeningMutation("inspection_event", id!, {
         opening_id: id,
         event_date: eventDate,
@@ -181,10 +184,11 @@ export function LogInspectionEventPage() {
         inspector_license_number: type === "fire_door_nfpa80" ? licenseNumber.trim() : undefined,
         checklist_result: type === "fire_door_nfpa80" ? checklist : undefined,
         visit_id: visitId,
-    }, inspectionAttemptId.current);
+    }, attemptId);
 
     setSaved(true);
     setSubmitting(false);
+    savingRef.current = false;
     unlockDownload();
     if (type === "fire_door_nfpa80") {
       setSavedInspectionId(inspectionId);
@@ -202,6 +206,16 @@ export function LogInspectionEventPage() {
     setTimeout(() => navigate(`/opening/${id}`), 700);
     } catch (error) {
       noteSyncDiagnostic(error, true);
+      if (sentToServer(error)) {
+        setSaved(true);
+        setSavedInspectionId(inspectionId ?? attemptId);
+        if (visitId) setVisit(await recordVisitInspection(visitId, { inspectionId: inspectionId ?? attemptId, openingId: id!, passed: resultPassed }).catch(() => null));
+        setSignatureError(inspectionSaveFailureMessage(error));
+        setSubmitting(false);
+        savingRef.current = false;
+        unlockDownload();
+        return;
+      }
       setSignatureError(inspectionSaveFailureMessage(error));
       release();
     }
@@ -224,6 +238,7 @@ export function LogInspectionEventPage() {
         {saved ? (
           <div className="card">
             <p style={{ textAlign: "center", color: "var(--success)" }}>Saved.</p>
+            {signatureError && <p role="status">{signatureError}</p>}
             {visit && <p className="c04-band-green" role="status">{visitSummaryText(visit.inspections)}</p>}
             {savedInspectionId && visit && <>
               <button type="button" className="btn c04-btn-blue" onClick={() => navigate("/scan")}>Add an Additional Opening</button>

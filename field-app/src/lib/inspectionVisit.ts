@@ -90,29 +90,54 @@ export async function currentFacilityId(): Promise<string> {
   return typeof stored?.value === "string" ? stored.value : "";
 }
 
-async function readOrCreateOpenVisit(): Promise<InspectionVisit | null> {
+export type OpenVisitLookup = (facilityId: string) => Promise<{ id: string; inspections?: VisitInspection[] } | null>;
+
+async function rememberVisit(visit: InspectionVisit) {
+  const now = new Date().toISOString();
+  await putOfflineSetting({ key: visitKey(visit.id), value: visit, updatedAt: now });
+  await putOfflineSetting({ key: openVisitKey(visit.userId, visit.organizationId, visit.facilityId), value: visit.id, updatedAt: now });
+}
+
+async function readOrCreateOpenVisit(lookup: OpenVisitLookup | undefined, attempt: { cancelled: boolean }): Promise<InspectionVisit | null> {
   const auth = await loadAuth();
   if (!auth) return null;
   const facilityId = await currentFacilityId();
   if (!facilityId) return null;
   const pointer = await getOfflineSetting(openVisitKey(auth.userId, auth.organizationId, facilityId));
-  const existing = typeof pointer?.value === "string" ? await readVisit(pointer.value) : null;
+  const existing = typeof pointer?.value === "string" && pointer.value ? await readVisit(pointer.value) : null;
   if (existing && existing.status === "open" && existing.facilityId === facilityId && existing.userId === auth.userId && existing.organizationId === auth.organizationId) {
     return existing;
   }
+  if (lookup) {
+    try {
+      const found = await withTimeout(lookup(facilityId), 4_000, "open visit lookup timed out");
+      if (found?.id) {
+        const adopted: InspectionVisit = {
+          id: found.id, organizationId: auth.organizationId, userId: auth.userId, facilityId, status: "open",
+          inspections: Array.isArray(found.inspections) ? found.inspections : [],
+        };
+        if (!attempt.cancelled) await rememberVisit(adopted);
+        return adopted;
+      }
+    } catch {
+      // A missed lookup must not block the save. The server still joins an open visit when no id is sent.
+    }
+  }
+  if (attempt.cancelled) return null;
   const created: InspectionVisit = {
     id: crypto.randomUUID(), organizationId: auth.organizationId, userId: auth.userId,
     facilityId, status: "open", inspections: [],
   };
-  await putOfflineSetting({ key: visitKey(created.id), value: created, updatedAt: new Date().toISOString() });
-  await putOfflineSetting({ key: openVisitKey(auth.userId, auth.organizationId, facilityId), value: created.id, updatedAt: new Date().toISOString() });
+  await rememberVisit(created);
   return created;
 }
 
-export async function ensureOpenVisit(): Promise<InspectionVisit | null> {
+export async function ensureOpenVisit(lookup?: OpenVisitLookup): Promise<InspectionVisit | null> {
+  const attempt = { cancelled: false };
   try {
-    return await withTimeout(readOrCreateOpenVisit(), 4_000, "IndexedDB request timed out");
+    return await withTimeout(readOrCreateOpenVisit(lookup, attempt), 8_000, "IndexedDB request timed out");
   } catch (error) {
+    attempt.cancelled = true;
     if (isRequestTimeout(error)) throw error;
     return null;
   }
@@ -138,8 +163,25 @@ export function serverVisitIsClosed(server: { status?: string | null; report_sen
 /** Clear the open pointer when the server has finished this visit. A failed lookup leaves the local visit in place. */
 export async function reconcileOpenVisit(
   fetchServer: (id: string) => Promise<{ status?: string | null; report_sent?: boolean | null } | null>,
+  lookup?: OpenVisitLookup,
 ): Promise<InspectionVisit | null> {
-  const open = await readOpenVisit();
+  let open = await readOpenVisit();
+  if (!open && lookup) {
+    try {
+      const auth = await loadAuth();
+      const facilityId = await currentFacilityId();
+      const found = auth && facilityId ? await withTimeout(lookup(facilityId), 4_000, "open visit lookup timed out") : null;
+      if (auth && facilityId && found?.id) {
+        open = {
+          id: found.id, organizationId: auth.organizationId, userId: auth.userId, facilityId, status: "open",
+          inspections: Array.isArray(found.inspections) ? found.inspections : [],
+        };
+        await rememberVisit(open);
+      }
+    } catch {
+      open = await readOpenVisit();
+    }
+  }
   if (!open) return null;
   try {
     const server = await fetchServer(open.id);

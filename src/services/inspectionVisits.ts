@@ -134,10 +134,6 @@ export async function bindInspectionVisit(
   db: Queryable,
   input: { visitId: string | null | undefined; inspectionId: string; openingId: string; organizationId: string; userId: string },
 ): Promise<{ error?: string }> {
-  if (!input.visitId) return {};
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.visitId)) {
-    return { error: "invalid_visit" };
-  }
   const place = await db.query(
     `SELECT p.id AS property_id FROM openings o
      JOIN buildings b ON b.id = o.building_id
@@ -147,11 +143,25 @@ export async function bindInspectionVisit(
   );
   const propertyId = place.rows[0]?.property_id as string | undefined;
   if (!propertyId) return { error: "visit_facility_mismatch" };
-  const existing = await db.query("SELECT organization_id, property_id, inspector_user_id, status FROM inspection_visits WHERE id = $1", [input.visitId]);
+  let visitId = input.visitId || undefined;
+  if (!visitId) {
+    const open = await db.query(
+      `SELECT id FROM inspection_visits
+       WHERE organization_id = $1 AND property_id = $2 AND inspector_user_id = $3 AND status = 'open'
+       ORDER BY created_at DESC LIMIT 1`,
+      [input.organizationId, propertyId, input.userId],
+    );
+    visitId = open.rows[0]?.id as string | undefined;
+    if (!visitId) return {};
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(visitId)) {
+    return { error: "invalid_visit" };
+  }
+  const existing = await db.query("SELECT organization_id, property_id, inspector_user_id, status FROM inspection_visits WHERE id = $1", [visitId]);
   if (!existing.rows[0]) {
     await db.query(
       `INSERT INTO inspection_visits (id, organization_id, property_id, inspector_user_id) VALUES ($1,$2,$3,$4)`,
-      [input.visitId, input.organizationId, propertyId, input.userId],
+      [visitId, input.organizationId, propertyId, input.userId],
     );
   } else if (existing.rows[0].organization_id !== input.organizationId || existing.rows[0].property_id !== propertyId) {
     return { error: "visit_facility_mismatch" };
@@ -160,6 +170,6 @@ export async function bindInspectionVisit(
   } else if (existing.rows[0].status === "finished") {
     return { error: "visit_finished" };
   }
-  await db.query("UPDATE inspection_events SET visit_id = $1 WHERE id = $2", [input.visitId, input.inspectionId]);
+  await db.query("UPDATE inspection_events SET visit_id = $1 WHERE id = $2", [visitId, input.inspectionId]);
   return {};
 }

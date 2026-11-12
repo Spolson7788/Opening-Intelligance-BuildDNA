@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { afterEach, expect, it, vi } from "vitest";
 
-const control = vi.hoisted(() => ({ failsLeft: 0, writes: 0, resets: 0, readFails: 0, rejectNext: false, blockRetry: false, photos: 0, hangReads: false, hangWrite: false, hangFlush: false }));
+const control = vi.hoisted(() => ({ failsLeft: 0, writes: 0, resets: 0, readFails: 0, rejectNext: false, blockRetry: false, photos: 0, hangReads: false, hangWrite: false, hangFlush: false, hangPost: false }));
 const posts = vi.hoisted(() => ({ calls: [] as Record<string, unknown>[] }));
 
 vi.mock("../field-app/src/lib/db", async (importOriginal) => {
@@ -45,6 +45,7 @@ vi.mock("../field-app/src/lib/api", async (importOriginal) => {
     uploadPrivatePhoto: vi.fn(async () => {}),
     submitOfflineOperation: vi.fn(async (payload: Record<string, unknown>) => {
       posts.calls.push(payload);
+      if (control.hangPost) return new Promise(() => {});
       if (control.rejectNext) { control.rejectNext = false; throw new actual.ApiError(409, "visit_finished"); }
       return {
         operation_id: payload.operation_id, entity_id: payload.entity_id, entity_type: payload.entity_type,
@@ -78,6 +79,7 @@ afterEach(async () => {
   control.hangReads = false;
   control.hangWrite = false;
   control.hangFlush = false;
+  control.hangPost = false;
   await closeFieldAppDb();
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.deleteDatabase("opening-intel-field");
@@ -241,6 +243,39 @@ it("posts one no-photo inspection when the operation read never settles", async 
   expect((posts.calls[0].payload as { visit_id: string }).visit_id).toBe("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
   control.hangReads = false;
   expect((await getAllSyncOperations()).some((item) => item.operationId === operationId)).toBe(false);
+});
+
+it("stops Saving when the server got the inspection but the response never finishes", async () => {
+  await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
+  online(true);
+  control.failsLeft = 2;
+  control.hangPost = true;
+  const started = Date.now();
+  let caught: unknown;
+  try {
+    await queueOpeningMutation("inspection_event", openingId, inspectionPayload(), operationId);
+  } catch (error) { caught = error; }
+  expect(Date.now() - started).toBeLessThan(20_000);
+  expect(caught).toMatchObject({ name: "TimeoutError", sentToServer: true });
+  expect(inspectionSaveFailureMessage(caught)).toContain("sent to the server");
+  expect(posts.calls).toHaveLength(1);
+  control.hangPost = false;
+});
+
+it("clears Syncing when a confirmed inspection's upload never finishes", async () => {
+  await saveAuth({ token: "preview.e30.sig", userId, organizationId, role: "inspector" });
+  online(false);
+  await queueOpeningMutation("inspection_event", openingId, inspectionPayload(), operationId);
+  online(true);
+  control.hangPost = true;
+  let syncing = true;
+  let lastError = "";
+  const stop = onSyncStateChange((state) => { syncing = state.syncing; lastError = state.lastError ?? ""; });
+  await flushOutbox(40);
+  expect(syncing).toBe(false);
+  expect(lastError).toMatch(/timed out/);
+  stop();
+  control.hangPost = false;
 });
 
 it("posts one inspection when the local write never settles and keeps stored rows", async () => {

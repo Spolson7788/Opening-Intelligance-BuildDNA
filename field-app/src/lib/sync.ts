@@ -105,11 +105,13 @@ export async function refreshPendingCount() {
     currentState = { pending: 0, syncing: currentState.syncing, failed: 0, conflicts: 0, checked: false }; notify(); return;
   }
   pendingCountAttempt = 0;
+  const pending = operations.filter((item) => ["local_committed", "queued", "retry_wait", "blocked_dependency", "in_flight", "verifying"].includes(item.state)).length;
+  const failed = operations.filter((item) => ["permanent_failure", "auth_required", "storage_pressure", "schema_blocked"].includes(item.state)).length;
+  const conflicts = operations.filter((item) => item.state === "conflict").length;
   currentState = { ...currentState,
     checked: true, checkFailed: false, diagnostic: undefined, userId: auth?.userId, organizationId: auth?.organizationId,
-    pending: operations.filter((item) => ["local_committed", "queued", "retry_wait", "blocked_dependency", "in_flight", "verifying"].includes(item.state)).length,
-    failed: operations.filter((item) => ["permanent_failure", "auth_required", "storage_pressure", "schema_blocked"].includes(item.state)).length,
-    conflicts: operations.filter((item) => item.state === "conflict").length };
+    pending, failed, conflicts,
+    lastError: pending || failed || conflicts ? currentState.lastError : undefined };
   notify();
   } catch (error) {
     if (read !== statusRead) return;
@@ -133,12 +135,15 @@ function markSent(error: unknown): unknown {
   return error;
 }
 
+const INSPECTION_POST_TIMEOUT_MS = 12_000;
+
 async function postInspectionOnline(operation: SyncOperation, auth: Principal, cause: unknown): Promise<string> {
   if (isRequestTimeout(cause)) await resetFieldAppDb().catch(() => undefined);
   try {
-    await submitGeneralOperation(operation, auth);
+    await withTimeout(submitGeneralOperation(operation, auth), INSPECTION_POST_TIMEOUT_MS, "inspection post timed out");
   } catch (serverError) {
     noteSyncDiagnostic(serverError, true);
+    if (isRequestTimeout(serverError)) throw markSent(serverError);
     throw serverError;
   }
   if (isRequestTimeout(cause)) throw markSent(cause);
@@ -370,9 +375,9 @@ export async function awaitInspectionSynced(entityId: string): Promise<{ ok: tru
       if (!state.syncing) { stop(); resolve(); }
     });
   });
-  await idle();
+  await withTimeout(idle(), 8_000, "sync timed out").catch(() => undefined);
   await flushOutbox();
-  await idle();
+  await withTimeout(idle(), 8_000, "sync timed out").catch(() => undefined);
   const auth = await loadAuth();
   if (!auth) return { ok: false, waiting: false, reason: "Sign in to sync this inspection." };
   const operations = await getSyncOperationsForPrincipal(auth.userId, auth.organizationId);
@@ -479,11 +484,22 @@ export const FLUSH_TIMEOUT_MS = 25_000;
 let activeFlush: FlushRun | null = null;
 
 export async function flushOutbox(timeoutMs = FLUSH_TIMEOUT_MS) {
-  if (currentState.syncing || (typeof navigator !== "undefined" && navigator.onLine === false)) return;
+  if (activeFlush || currentState.syncing || (typeof navigator !== "undefined" && navigator.onLine === false)) return;
   const run: FlushRun = { stop: false };
   activeFlush = run;
-  currentState = { ...currentState, syncing: true }; notify();
-  try { await withTimeout(flushVersionedOperations(run), timeoutMs, "sync timed out"); }
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  try {
+    currentState = { ...currentState, syncing: true, lastError: undefined };
+    notify();
+    watchdog = setTimeout(() => {
+      if (activeFlush !== run) return;
+      run.stop = true;
+      activeFlush = null;
+      currentState = { ...currentState, syncing: false, lastError: currentState.lastError || "sync timed out" };
+      notify();
+    }, timeoutMs + 500);
+    await withTimeout(flushVersionedOperations(run), timeoutMs, "sync timed out");
+  }
   catch (error) {
     run.stop = true;
     if (activeFlush !== run) return;
@@ -492,10 +508,12 @@ export async function flushOutbox(timeoutMs = FLUSH_TIMEOUT_MS) {
     if (isRequestTimeout(error)) await resetFieldAppDb().catch(() => undefined);
   }
   finally {
+    if (watchdog) clearTimeout(watchdog);
     if (activeFlush === run) {
       run.stop = true;
       activeFlush = null;
-      currentState = { ...currentState, syncing: false }; notify();
+      currentState = { ...currentState, syncing: false };
+      notify();
       await refreshPendingCount().catch(() => undefined);
     }
   }

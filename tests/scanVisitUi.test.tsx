@@ -8,6 +8,7 @@ const store = vi.hoisted(() => ({
   settings: new Map<string, unknown>(),
   operations: [] as { entityId: string; entityType: string; state: string }[],
   server: { status: "open", report_sent: false, inspection_ids: ["insp-1"] } as { status: string; report_sent: boolean; inspection_ids: string[] } | null,
+  openVisit: null as { id: string; inspections: { inspectionId: string; openingId: string; passed: boolean }[] } | null,
 }));
 vi.mock("html5-qrcode", () => ({
   Html5Qrcode: class { start() { return Promise.reject(new Error("no camera")); } stop() { return Promise.resolve(); } },
@@ -21,6 +22,7 @@ vi.mock("../field-app/src/lib/api", () => ({
     if (!store.server) throw new Error("offline");
     return store.server;
   },
+  fetchOpenInspectionVisit: async () => store.openVisit,
 }));
 vi.mock("../field-app/src/lib/db", () => ({
   loadAuth: async () => ({ token: "t", userId: "u", organizationId: "org", role: "inspector" }),
@@ -41,6 +43,7 @@ beforeEach(() => {
   store.settings.clear();
   store.operations = [];
   store.server = { status: "open", report_sent: false, inspection_ids: ["insp-1"] };
+  store.openVisit = null;
   store.settings.set("selected-facility:u:org", "facility-1");
   host = document.createElement("div");
   document.body.append(host);
@@ -82,7 +85,24 @@ it("leaves the visit band when the server cannot be checked", async () => {
   await act(async () => root.render(<MemoryRouter><ScanPage /></MemoryRouter>));
   await act(async () => {});
   expect(host.textContent).toContain("This visit: 3 openings");
+  expect(host.textContent).toContain("Finish visit / Send combined report");
+  expect(host.textContent).toContain("Start a new visit");
   expect(store.settings.get("inspection-visit-open:u:org:facility-1")).toBe(visitId);
+});
+
+it("shows the open server visit when this phone has no pointer", async () => {
+  store.openVisit = {
+    id: visitId,
+    inspections: [
+      { inspectionId: "insp-1", openingId: "door-1", passed: true },
+      { inspectionId: "insp-2", openingId: "door-2", passed: false },
+    ],
+  };
+  await act(async () => root.render(<MemoryRouter><ScanPage /></MemoryRouter>));
+  await act(async () => {});
+  expect(host.textContent).toContain("This visit: 2 openings (1 passed, 1 failed)");
+  expect(host.textContent).toContain("Finish visit / Send combined report");
+  expect(host.textContent).toContain("Start a new visit");
 });
 
 it("starts a new visit without dropping an inspection that is not on the server", async () => {

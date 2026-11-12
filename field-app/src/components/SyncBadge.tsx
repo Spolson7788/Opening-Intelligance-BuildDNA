@@ -46,8 +46,12 @@ export function SyncBadge() {
     );
   }
 
-  if (syncState.syncing) {
+  if (syncState.syncing && !syncState.lastError) {
     return <span className="badge">Syncing…</span>;
+  }
+
+  if (syncState.lastError && syncState.pending === 0 && syncState.failed === 0 && syncState.conflicts === 0) {
+    return <Link to="/sync-issues" className="badge badge-offline" title={syncState.lastError}>Sync failed — {syncState.lastError}</Link>;
   }
 
   if (syncState.conflicts > 0) {
