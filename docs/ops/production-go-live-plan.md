@@ -68,14 +68,17 @@ A live dump of the staging Netlify environment was not taken for this plan. The 
 | `PASSWORD_RESET_PUBLIC_URL` | Required for reset links. | Unknown in this plan. |
 | `STAFF_MFA_ENCRYPTION_KEY` | Required only if staff MFA is turned on. Customers are not given MFA by that migration. | Unknown in this plan. |
 | `GOOGLE_MAPS_API_KEY` | Optional. Not approved. When unset, Today's route uses the straight-line estimate. Do not add it as part of go-live. | Not approved for staging either. The r59 publisher does not set it. |
-| `OI_MEASUREMENT_READER` | Optional for these three screens. Unset means the measurement route answers that no reader is selected. Production code does not enable the recognition feature on the production site id. | Set on the staging Netlify site. The approved value recorded by the publisher is the Anthropic reader. Do not copy the value into this file. |
-| `OI_RECOGNITION_ENABLED` | Optional. Must be `true` before an Anthropic measurement or recognition call. The production function build leaves recognition off. | Checked by name on staging. Presence is not recorded here. |
-| `ANTHROPIC_API_KEY` | Optional. Used only when recognition is enabled. | Checked by name on staging. Presence is not recorded here. |
-| `OI_MEASUREMENT_READER_MODEL` | Optional. Unset uses the model named in `docs/ops/MEASUREMENT-READER.md`. | Unknown in this plan. |
-| `OI_COMMERCIAL_STORAGE_API_KEY` | Optional. Commercial storage is not required for field, facility dashboard, or company dashboard. | Unknown in this plan. |
-| `OI_STORAGE_IDENTITY_EMAIL` | Optional. Same commercial storage path. | Unknown in this plan. |
-| `OI_STORAGE_IDENTITY_PASSWORD` | Optional. Same path. | Unknown in this plan. |
-| `OI_STORAGE_IDENTITY_USER_ID` | Optional. Same path. | Unknown in this plan. |
+| `OI_RECOGNITION_ENABLED` | Required for launch. Non-secret flag. Required value: `true`. Claude photo recognition and the Measure reader both refuse the call when this is not `true`. | Checked by name on staging. Do not copy the secret that sits beside it. |
+| `OI_MEASUREMENT_READER` | Required for launch. Non-secret flag. Required value: `anthropic`. That selects the Claude Measure reader. | Staging already has this name. Do not copy the staging value into git. The launch value is `anthropic`. |
+| `ANTHROPIC_API_KEY` | Required for launch. Secret. Claude-primary recognition runs and the Measure reader both use it. Name only. No value in git. | Present on staging by name. Do not copy the value. |
+| `OI_MEASUREMENT_READER_MODEL` | Optional. Non-secret. Unset uses `claude-sonnet-4-5-20250929`, the same model the Claude recognition runs use. | Unknown in this plan. |
+| `ROBOFLOW_API_KEY` | Not required for Claude-primary recognition or the Measure reader. Required only for the Roboflow door-hardware identify path. Leave it unset for this launch. Secret if it is ever set. | Present on staging by name. Do not copy it. |
+| `OI_COMMERCIAL_STORAGE_API_KEY` | Stay off. Not used by Claude recognition or Measure. | Present on staging by name. Do not copy it. |
+| `OI_STORAGE_IDENTITY_EMAIL` | Stay off. Storage identity is the commercial-storage path, not Claude. | Present on staging by name. Do not copy it. |
+| `OI_STORAGE_IDENTITY_PASSWORD` | Stay off. Secret. Same commercial-storage path. | Present on staging by name. Do not copy it. |
+| `OI_STORAGE_IDENTITY_USER_ID` | Stay off. Same commercial-storage path. | Present on staging by name. Do not copy it. |
+| `OI_PROVIDER_ESTIMATES_ENABLED` | Stay off. Staging-only commercial input. | Present on staging by name. |
+| `OI_FACILITY_BUDGET_ENABLED` | Stay off. Staging-only commercial input. | Present on staging by name. |
 | `SITE_ID` | Optional. Used by the photo-deletion schedule to confirm the site. | Unknown in this plan. |
 
 ## c. Storage for visit PDFs and inspection photos
@@ -121,7 +124,7 @@ A production publisher is not built here. What a later, separately approved scri
 6. No write of `GOOGLE_MAPS_API_KEY`. No copy of staging secret values.
 7. A written approval that names the pin before `--publish-approved` is run. This document is not that approval.
 
-`scripts/artifact-publisher-production.mjs` is that separate script. It refuses every mode unless `--approve-production-site b4e0fc62-86ce-4a26-9ebf-26d7386f4b01` is present. It refuses the staging site id. It does not contain `sso_login` and does not change the visitor gate. `--publish-approved` passes the local pin, clean-tree, and package checks, writes `dist/production-publish-journal/publication-attempt.json`, and then stops with `production_upload_not_wired`. The Netlify upload is not connected, so this script cannot publish. Connecting it is a separate decision. Do not run it against Netlify from this commit.
+`scripts/artifact-publisher-production.mjs` is that separate script. It refuses every mode unless `--approve-production-site b4e0fc62-86ce-4a26-9ebf-26d7386f4b01` is present. It refuses the staging site id. It does not contain the visitor-gate setting name and does not change that setting. It does not write environment variables. The upload path matches the staging publisher: digest and file-list checks, `--upload-check`, a dry run when `--publish-approved` is absent, one `--publish-approved`, and read-only `--diagnose` / `--check-deploy`. It records the live production deploy as the rollback. It does not reuse the staging rollback deploy. The app pin is `bc7c4b975a5e7a694dbe2ad8208f7bc323eb8b71`. A journal template is `docs/ops/production-publish-journal-template.json`. The script writes a real journal under `dist/production-publish-journal` only when someone runs it. Do not run it from this commit. Do not pass `--publish-approved`.
 
 ## f. Rollback, in step order
 
@@ -157,7 +160,7 @@ Do these steps only after a separate approval for each one. Stop on the first fa
 2. Run `node scripts/production-schema-precheck.mjs` on that local database. It is read-only. It expects 69 `prod_api_*` policies, the password-reset and staff MFA tables, and no `provider_accounts` or `inspection_visits`.
 3. Run `node scripts/apply-production-schema-bundle.mjs`. It applies `migrations/production/20261112140500_r59_production_schema.sql` in one transaction. The bundle is the 20 missing repo files, then `prod_api_select`, `prod_api_insert`, and `prod_api_update` on each new table (plus `prod_api_delete` on the two purchasing tables). It does not drop an existing `prod_api_*` policy. It inserts the 20 filenames into `public.schema_migrations`. A second run stops with `production_r59_bundle_already_applied`.
 4. Run `node scripts/production-schema-postcheck.mjs`. It is read-only.
-5. Publish is not step 5 yet. `scripts/artifact-publisher-production.mjs` is refused without `--approve-production-site b4e0fc62-86ce-4a26-9ebf-26d7386f4b01`. Even with that flag, `--publish-approved` does not upload.
+5. Publish is still not this step. `scripts/artifact-publisher-production.mjs` can upload when someone later passes `--approve-production-site b4e0fc62-86ce-4a26-9ebf-26d7386f4b01` and `--publish-approved` on a clean tree at the pinned app. Do not run it from this commit. The schema bundle is still not approved.
 6. Open the visitor gate only after the schema and the app deploy exist: set `sso_login` to false on site `b4e0fc62-86ce-4a26-9ebf-26d7386f4b01` only. Revert by setting `sso_login` back to true. That restores the HTML 401 and leaves the deploy in place. Do not change the staging site. This repository does not perform that change.
 
 Rollback of the schema is `migrations/production/20261112140500_r59_production_schema_rollback.sql`. On the local proof it returned the public tables, columns, policies, functions, triggers, and grants to the restored dump. It does not drop password-reset or staff MFA objects. It does not drop the original 69 `prod_api_*` policies.
@@ -168,7 +171,28 @@ Production Netlify already has: `APP_BASE_URL`, `DATABASE_URL`, `EMAIL_FROM`, `E
 
 Missing on production and present on staging, by name only: `ANTHROPIC_API_KEY`, `CORS_ORIGINS`, `DATABASE_CA_CERT`, `NODE_ENV`, `OI_COMMERCIAL_STORAGE_API_KEY`, `OI_FACILITY_BUDGET_ENABLED`, `OI_FIELD_APP_URL`, `OI_MEASUREMENT_READER`, `OI_PROVIDER_ESTIMATES_ENABLED`, `OI_RECOGNITION_ENABLED`, `OI_STORAGE_IDENTITY_EMAIL`, `OI_STORAGE_IDENTITY_PASSWORD`, `OI_STORAGE_IDENTITY_USER_ID`, `ROBOFLOW_API_KEY`, `STAFF_MFA_ENCRYPTION_KEY`.
 
-Required for field, facility dashboard, and company dashboard with photos and mail: the names production already has, plus `OI_FIELD_APP_URL` for QR links and `CORS_ORIGINS` set to the production origin. `NODE_ENV` is set by `netlify.toml` for the production context. `STAFF_MFA_ENCRYPTION_KEY` is required only if staff MFA is used. `GOOGLE_MAPS_API_KEY` stays unset. Recognition, measurement, commercial storage, Roboflow, and facility-budget names are optional and stay off unless a later approval enables them. Do not copy staging values.
+Photo recognition (Claude primary) and the Measure reader are approved to be on at launch. The production publisher does not set these. Set them on the production site before that launch publish. Names and non-secret values only:
+
+Required non-secret flags:
+
+- `OI_RECOGNITION_ENABLED` = `true`
+- `OI_MEASUREMENT_READER` = `anthropic`
+
+Required secret, name only:
+
+- `ANTHROPIC_API_KEY`
+
+Optional non-secret:
+
+- `OI_MEASUREMENT_READER_MODEL`. Unset uses `claude-sonnet-4-5-20250929`.
+
+`ROBOFLOW_API_KEY` is not required for Claude-primary recognition runs or the Measure reader. The Roboflow door-hardware identify path is the only caller. Leave `ROBOFLOW_API_KEY` unset. Storage-identity names are not required either: `OI_COMMERCIAL_STORAGE_API_KEY`, `OI_STORAGE_IDENTITY_EMAIL`, `OI_STORAGE_IDENTITY_PASSWORD`, `OI_STORAGE_IDENTITY_USER_ID`.
+
+Staging flags that stay off for this launch: `OI_PROVIDER_ESTIMATES_ENABLED`, `OI_FACILITY_BUDGET_ENABLED`, `OI_COMMERCIAL_STORAGE_API_KEY`, `OI_STORAGE_IDENTITY_EMAIL`, `OI_STORAGE_IDENTITY_PASSWORD`, `OI_STORAGE_IDENTITY_USER_ID`, `ROBOFLOW_API_KEY`, `GOOGLE_MAPS_API_KEY`.
+
+Two code and schema facts still block "on" even after those names are set. `netlify/functions/api.ts` enables recognition only for staging sites `b64bf33c-a131-4ae2-b2b0-9aec16e9f77b` and `80fbbee8-b9d3-4b16-b93f-d2d8396591ec`. The production site id is excluded, and the Measure route checks that same flag. This commit does not change that allowlist. The recognition tables are in the production schema bundle, which is not approved to apply. Env names alone do not turn the feature on.
+
+Also still needed for the rest of the app: the names production already has, plus `OI_FIELD_APP_URL` for QR links and `CORS_ORIGINS` set to the production origin. `NODE_ENV` is set by `netlify.toml` for the production context. `DATABASE_CA_CERT` only if the database connection is given a custom CA. `STAFF_MFA_ENCRYPTION_KEY` is required only if staff MFA is used. Do not copy staging values.
 
 ### Storage
 

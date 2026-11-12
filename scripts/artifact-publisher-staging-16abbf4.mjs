@@ -318,7 +318,7 @@ async function loadDevUtils(cliDir) {
   return import(pathToFileURL(utils).href);
 }
 
-async function authorize(cliDir) {
+export async function authorize(cliDir) {
   const { getGlobalConfigStore, getAPIToken } = await loadDevUtils(cliDir);
   const store = await getGlobalConfigStore();
   const userId = store.get('userId');
@@ -703,7 +703,7 @@ export function checkLocalLookups(fileMap, functionMap) {
   return missing;
 }
 
-async function bundleFunctions(cliDir) {
+export async function bundleFunctions(cliDir) {
   try {
     return await bundleFunctionsUncaught(cliDir);
   } catch (error) {
@@ -1473,7 +1473,7 @@ async function uploadOutstanding(token, deployId, diff, fileMap, functionMap, jo
   }
 }
 
-function deployFiles() {
+export function deployFiles() {
   return includeNetlifyToml(digestFiles(resolve(packageDir, 'publish')), resolve(root, 'netlify.toml'));
 }
 
