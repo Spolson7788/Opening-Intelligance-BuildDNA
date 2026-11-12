@@ -23,9 +23,13 @@ function day(value: unknown): string | null {
   return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : null;
 }
 
-function addressOf(row: { address_line1?: string | null; city?: string | null; state?: string | null; name?: string | null }): string {
+function streetAddress(row: { address_line1?: string | null; city?: string | null; state?: string | null }): string | null {
   const line = [row.address_line1, row.city, row.state].filter((part) => part && String(part).trim()).join(", ");
-  return line || row.name || "Address not recorded";
+  return line || null;
+}
+
+function addressOf(row: { address_line1?: string | null; city?: string | null; state?: string | null; name?: string | null }): string {
+  return streetAddress(row) || row.name || "Address not recorded";
 }
 
 async function assignees(orgId: string) {
@@ -161,6 +165,9 @@ async function loadRoute(orgId: string, routeId: string) {
   const shaped = stops.rows.map((row) => ({
     ...row,
     address: addressOf(row),
+    navigation_address: streetAddress(row),
+    latitude: row.latitude === null || row.latitude === undefined ? null : Number(row.latitude),
+    longitude: row.longitude === null || row.longitude === undefined ? null : Number(row.longitude),
     done: row.work_kind === "work_order" && row.work_order_status === "done",
     maps: {
       apple: mapsLink(addressOf(row), true),

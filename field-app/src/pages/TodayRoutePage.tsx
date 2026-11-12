@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchFieldRoute, fetchNearbyWork, markFieldStopDone, requestNearbyWork, type FieldRoute, type NearbyWork } from "../lib/fieldRoutes";
+import { fetchFieldRoute, fetchNearbyWork, markFieldStopDone, requestNearbyWork, type FieldRoute, type FieldStop, type NearbyWork } from "../lib/fieldRoutes";
+import { APPLE_MAPS_NOTE, NAVIGATE_CAP_NOTE, googleStopUrl, navigateAllStops } from "../lib/navigateStops";
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -10,6 +11,10 @@ function workLabel(kind: string) {
   if (kind === "inspection") return "Inspection";
   if (kind === "advised_repair") return "Advised repair";
   return "Work order";
+}
+
+function navStop(stop: FieldStop) {
+  return { done: stop.done, address: stop.navigation_address, latitude: stop.latitude, longitude: stop.longitude };
 }
 
 export function TodayRoutePage() {
@@ -59,12 +64,20 @@ export function TodayRoutePage() {
 
   const stops = route?.stops ?? [];
   const next = stops.find((stop) => !stop.done);
+  const navigation = navigateAllStops(stops.map(navStop));
 
   return (
     <div className="app-shell c04">
       <div className="screen">
         <Link className="btn c04-btn-green" to="/scan">Back</Link>
         <h1>Today's route</h1>
+        {navigation.url && (
+          <>
+            <a className="btn c04-btn-blue" href={navigation.url}>Navigate all stops</a>
+            {navigation.capped && <p className="c04-map-note">{NAVIGATE_CAP_NOTE}</p>}
+            <p className="c04-map-note">{APPLE_MAPS_NOTE}</p>
+          </>
+        )}
         {error && <p className="c04-alert" role="alert">{error}</p>}
         {note && <p role="status">{note}</p>}
         {!route && <p>No route is assigned to you for today.</p>}
@@ -74,19 +87,23 @@ export function TodayRoutePage() {
             {next && <p>Next: {next.property_name}</p>}
           </section>
         )}
-        {stops.map((stop, index) => (
-          <article className="c04-band" key={stop.id}>
-            <h2>{index + 1}. {stop.property_name}</h2>
-            <p>{stop.address}</p>
-            <p>{stop.time_window || "No time window"}</p>
-            <p>{workLabel(stop.work_kind)} · {stop.summary}{stop.opening_code ? ` · ${stop.opening_code}` : ""}</p>
-            <p>{stop.drive_minutes === null ? (index === 0 ? "Start of the route" : "No map location, so this stop is not in the drive time.") : `${stop.drive_minutes} min from the previous stop`}</p>
-            <a className="btn c04-btn-blue" href={apple ? stop.maps.apple : stop.maps.google} target="_blank" rel="noreferrer">Open in Maps</a>
-            {stop.done
-              ? <p>Done</p>
-              : <button type="button" className="btn c04-btn-green" onClick={() => { void done(stop.id); }}>Mark done</button>}
-          </article>
-        ))}
+        {stops.map((stop, index) => {
+          const google = googleStopUrl({ address: stop.navigation_address, latitude: stop.latitude, longitude: stop.longitude });
+          return (
+            <article className="c04-band" key={stop.id}>
+              <h2>{index + 1}. {stop.property_name}</h2>
+              <p>{stop.address}</p>
+              <p>{stop.time_window || "No time window"}</p>
+              <p>{workLabel(stop.work_kind)} · {stop.summary}{stop.opening_code ? ` · ${stop.opening_code}` : ""}</p>
+              <p>{stop.drive_minutes === null ? (index === 0 ? "Start of the route" : "No map location, so this stop is not in the drive time.") : `${stop.drive_minutes} min from the previous stop`}</p>
+              <a className="btn c04-btn-blue" href={apple ? stop.maps.apple : stop.maps.google} target="_blank" rel="noreferrer">Open in Maps</a>
+              {google && <a className="c04-google-link" href={google}>Google Maps</a>}
+              {stop.done
+                ? <p>Done</p>
+                : <button type="button" className="btn c04-btn-green" onClick={() => { void done(stop.id); }}>Mark done</button>}
+            </article>
+          );
+        })}
         <button type="button" className="btn c04-btn-cyan" onClick={() => setShowNearby((open) => !open)}>Nearby work</button>
         {showNearby && (
           <section aria-label="Nearby work">

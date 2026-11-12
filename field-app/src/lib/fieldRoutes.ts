@@ -11,6 +11,9 @@ export interface FieldStop {
   opening_code: string | null;
   property_name: string;
   address: string;
+  navigation_address: string | null;
+  latitude: number | null;
+  longitude: number | null;
   time_window: string | null;
   drive_minutes: number | null;
   done: boolean;

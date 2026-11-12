@@ -436,6 +436,8 @@ body.c04-on .company-switch select {
 .c04-facilities { margin-bottom: 12px; }
 .c04-actions { display: flex; flex-direction: column; }
 .c04-note { color: #3A4E5C; font-size: 16px; }
+.c04-map-note { color: #3A4E5C; font-size: 14px; margin: -4px 0 12px; }
+.c04-google-link { display: flex; align-items: center; min-height: 44px; margin: -4px 0 8px; color: #00689C; font-weight: 700; font-size: 15px; }
 .c04-alert {
   color: #8E1B22;
   background: #FDECEE;
