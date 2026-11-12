@@ -1,4 +1,4 @@
-// One staging publish of the approved app commit 57549898cacee76a9920bad0e6f0ae1f2ad914f8.
+// One staging publish of the approved app commit f11b17d197983f101a49af381976b458ffda295e.
 // Publisher-file commits after that pin are allowed. App changes are not.
 // Hard-locked to oi-video-workflows-staging. Refuses production. One attempt.
 // Does not print secrets. Default is a dry run; publish requires --publish-approved.
@@ -10,7 +10,7 @@ import https from 'node:https';
 import { resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
-export const PINNED_COMMIT = '57549898cacee76a9920bad0e6f0ae1f2ad914f8';
+export const PINNED_COMMIT = 'f11b17d197983f101a49af381976b458ffda295e';
 export const STAGING_SITE_ID = 'b64bf33c-a131-4ae2-b2b0-9aec16e9f77b';
 export const STAGING_SITE_NAME = 'oi-video-workflows-staging';
 export const STAGING_URL = 'https://oi-video-workflows-staging.netlify.app';
@@ -98,7 +98,7 @@ const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r58');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r59');
 const resumePath = resolve(journalDir, 'resume-attempt.json');
 const ROLLBACK_DEPLOY_ID = '6af230ff9978904131f1329d';
 const rollbackDir = resolve(root, 'dist/staging-publish-journal-16abbf4-rollback');
@@ -161,6 +161,7 @@ const PRIOR_JOURNALS = [
   'dist/staging-publish-journal-16abbf4-r55/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r56/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r57/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r58/publication-attempt.json',
 ];
 const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
