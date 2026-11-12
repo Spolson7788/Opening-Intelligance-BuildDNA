@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { CompanyShell, formatDay, formatMoney, plainType } from "../components/CompanyShell";
+import { BackLink, CompanyShell, formatDay, formatMoney, plainType } from "../components/CompanyShell";
 import { fetchCompanyOpening, type CompanyOpening } from "../lib/api";
 import { facilitiesErrorMessage } from "../lib/scheduleUi";
 
@@ -17,6 +17,7 @@ export function CompanyOpeningPage() {
   }, [id]);
   return (
     <CompanyShell title={opening?.location_description || opening?.opening_code || "Opening"}>
+      {opening && <BackLink to={`/sites/${opening.property_id}`}>Back to {opening.property_name}</BackLink>}
       {error && <p className="c04-error" role="alert">{error}</p>}
       {opening && (
         <>
@@ -39,7 +40,7 @@ export function CompanyOpeningPage() {
             <article className="c04-tile">
               <div className="lab">Quote</div>
               <div className="val" style={{ fontSize: 22 }}>{opening.quotes[0] ? formatMoney(opening.quotes[0].total_minor) : "—"}</div>
-              <div className="st">Saved estimates. Approval status is not stored yet.</div>
+              <div className="st">Saved estimates.</div>
             </article>
           </section>
           <section className="c04-card">

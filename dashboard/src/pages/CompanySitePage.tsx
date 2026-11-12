@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { CompanyShell, formatDay, formatMoney, plainType } from "../components/CompanyShell";
+import { BackLink, CompanyShell, formatDay, formatMoney, plainType } from "../components/CompanyShell";
 import { downloadAuthedFile, fetchCompanySite, setQuoteApproval, type CompanySite } from "../lib/api";
 import { facilitiesErrorMessage } from "../lib/scheduleUi";
 
@@ -39,6 +39,9 @@ export function CompanySitePage() {
   }, [propertyId]);
   return (
     <CompanyShell title={site?.name ?? "Site"}>
+      <BackLink to={site && site.customer_name !== site.name ? `/customers/${site.customer_id}` : "/"}>
+        {site && site.customer_name !== site.name ? `Back to ${site.customer_name}` : "Back to customers"}
+      </BackLink>
       <p className="c04-note">
         <Link to="/">Customers</Link>
         {site && site.customer_name !== site.name && <> · <Link to={`/customers/${site.customer_id}`}>{site.customer_name}</Link></>}

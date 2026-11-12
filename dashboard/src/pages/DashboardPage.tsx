@@ -72,6 +72,7 @@ export function DashboardPage() {
           <div className="st">Saved estimates. Approval is recorded on each quote.</div>
         </article>
       </section>
+      <p><Link className="c04-back" to="/route">Today's route</Link></p>
       <section className="c04-card">
         <div className="c04-band blue">
           <div>

@@ -22,6 +22,7 @@ import { LogHardwarePage } from "./pages/LogHardwarePage";
 import { IdentifyHardwarePage } from "./pages/IdentifyHardwarePage";
 import { EditHardwarePage } from "./pages/EditHardwarePage";
 import { MyWorkOrdersPage } from "./pages/MyWorkOrdersPage";
+import { TodayRoutePage } from "./pages/TodayRoutePage";
 import { FacilityOpeningsPage } from "./pages/FacilityOpeningsPage";
 import { FacilitySyncProvider } from "./components/FacilitySelector";
 import { OpeningStructurePage } from "./pages/OpeningStructurePage";
@@ -94,6 +95,7 @@ function AppRoutes() {
       <Route path="/choose-location" element={<RequireAuth><ChooseLocationPage /></RequireAuth>} />
       <Route path="/scan" element={<RequireAuth><RequireLocation><ScanPage /></RequireLocation></RequireAuth>} />
       <Route path="/my-work-orders" element={<RequireAuth><MyWorkOrdersPage /></RequireAuth>} />
+      <Route path="/today-route" element={<RequireAuth><TodayRoutePage /></RequireAuth>} />
       <Route path="/facility-openings" element={<RequireAuth><FacilityOpeningsPage /></RequireAuth>} />
       <Route path="/sync-issues" element={<RequireAuth><SyncIssuesPage /></RequireAuth>} />
       <Route path="/opening/by-qr/:qrToken/details" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />

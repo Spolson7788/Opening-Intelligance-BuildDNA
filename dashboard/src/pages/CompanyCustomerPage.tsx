@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { CompanyShell, formatDay } from "../components/CompanyShell";
+import { BackLink, CompanyShell, formatDay } from "../components/CompanyShell";
 import { fetchCompanyCustomer, type CompanyCustomerDetail } from "../lib/api";
 import { facilitiesErrorMessage } from "../lib/scheduleUi";
 
@@ -17,6 +17,7 @@ export function CompanyCustomerPage() {
   }, [customerId]);
   return (
     <CompanyShell title={customer?.name ?? "Customer"}>
+      <BackLink to="/">Back to customers</BackLink>
       <p className="c04-note"><Link to="/">Customers</Link> · {customer?.name ?? "Customer"}</p>
       {error && <p className="c04-error" role="alert">{error}</p>}
       {customer && (

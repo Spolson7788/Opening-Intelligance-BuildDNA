@@ -23,6 +23,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { CompanyCustomerPage } from "./pages/CompanyCustomerPage";
 import { CompanySitePage } from "./pages/CompanySitePage";
 import { CompanyOpeningPage } from "./pages/CompanyOpeningPage";
+import { CompanyRoutePage } from "./pages/CompanyRoutePage";
 import { FacilitySchedulesPage } from "./pages/FacilitySchedulesPage";
 import { ScheduleImportPage, ScheduleImportStartPage } from "./pages/ScheduleImportPage";
 import { ScheduleComparisonPage } from "./pages/ScheduleComparisonPage";
@@ -85,6 +86,7 @@ function AppRoutes() {
       <Route path="/customers/:customerId" element={<RequireAuth><RequireOffice><CompanyCustomerPage /></RequireOffice></RequireAuth>} />
       <Route path="/sites/:propertyId" element={<RequireAuth><RequireOffice><CompanySitePage /></RequireOffice></RequireAuth>} />
       <Route path="/company/opening/:id" element={<RequireAuth><RequireOffice><CompanyOpeningPage /></RequireOffice></RequireAuth>} />
+      <Route path="/route" element={<RequireAuth><RequireOffice><CompanyRoutePage /></RequireOffice></RequireAuth>} />
       <Route path="/properties/new" element={<RequireAuth><RequireOneLocation><RequireOffice><NewPropertyPage /></RequireOffice></RequireOneLocation></RequireAuth>} />
       <Route path="/openings/new" element={<RequireAuth><RequireOneLocation><RequireOffice><NewOpeningPage /></RequireOffice></RequireOneLocation></RequireAuth>} />
       <Route path="/openings/import" element={<RequireAuth><RequireOneLocation><RequireOffice><ImportOpeningsPage /></RequireOffice></RequireOneLocation></RequireAuth>} />

@@ -1032,6 +1032,30 @@ export const fetchCompanySite = (id: string): Promise<CompanySite> => authedFetc
 export const fetchCompanyOpening = (id: string): Promise<CompanyOpening> => authedFetch(`/company-dashboard/openings/${id}`);
 export const facilityDashboardAccess = (): Promise<{ allowed: boolean }> => authedFetch("/portfolio/facility-dashboard-access");
 
+export interface RouteCandidate {
+  work_id: string; work_kind: string; summary: string; opening_code: string | null; property_id: string;
+  property_name: string; address: string; due_date: string | null; latitude: number | null; longitude: number | null;
+}
+export interface RouteStop {
+  id: string; position: number; status: string; work_kind: string; work_id: string; summary: string;
+  opening_code: string | null; property_name: string; address: string; time_window: string | null;
+  drive_minutes: number | null; done: boolean;
+}
+export interface ServiceRoute {
+  id: string; service_date: string; assigned_user_id: string; assignee_name: string | null;
+  total_minutes: number; stops: RouteStop[];
+}
+export const fetchRouteAssignees = (): Promise<{ people: Array<{ id: string; full_name: string; role: string }> }> =>
+  authedFetch("/company-dashboard/routes/assignees");
+export const fetchRouteCandidates = (date: string): Promise<{ candidates: RouteCandidate[] }> =>
+  authedFetch(`/company-dashboard/routes/candidates?date=${encodeURIComponent(date)}`);
+export const fetchServiceRoutes = (date: string): Promise<{ routes: ServiceRoute[]; drive_label?: string }> =>
+  authedFetch(`/company-dashboard/routes?date=${encodeURIComponent(date)}`);
+export const buildServiceRoute = (body: { service_date: string; assigned_user_id: string; stops: Array<{ work_kind: string; work_id: string; time_window?: string }> }) =>
+  post("/company-dashboard/routes", body) as Promise<{ route: ServiceRoute; drive_source: string; drive_label: string; total_minutes: number }>;
+export const decideRouteStop = (id: string, decision: "approve" | "decline") =>
+  post(`/company-dashboard/routes/stops/${id}/decision`, { decision }) as Promise<{ route: ServiceRoute }>;
+
 export async function downloadAuthedFile(path: string, filename: string) {
   const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });

@@ -28,6 +28,7 @@ import { hardwareRouter } from "./routes/hardware";
 import { photosRouter } from "./routes/photos";
 import { portfolioRouter } from "./routes/portfolio";
 import { companyDashboardRouter } from "./routes/companyDashboard";
+import { companyServiceRoutesRouter, fieldServiceRoutesRouter } from "./routes/serviceRoutes";
 import { platformRouter } from "./routes/platform";
 import { providerRequestsRouter } from "./routes/providerRequests";
 import { locationsRouter } from "./routes/locations";
@@ -149,7 +150,9 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   app.use("/api/hardware", hardwareRouter);
   app.use("/api/photos", photosRouter);
   app.use("/api/portfolio", portfolioRouter);
+  app.use("/api/company-dashboard/routes", companyServiceRoutesRouter);
   app.use("/api/company-dashboard", companyDashboardRouter);
+  app.use("/api/field-routes", fieldServiceRoutesRouter);
   app.use("/api/platform", platformRouter);
   app.use("/api/provider-requests", providerRequestsRouter);
   app.use("/api/export", exportRouter);

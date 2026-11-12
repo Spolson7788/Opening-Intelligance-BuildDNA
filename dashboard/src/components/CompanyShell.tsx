@@ -1,9 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import logo from "../../../field-app/src/assets/oi-logo.png";
 import { facilityDashboardAccess, listCompanies, switchCompany, type CompanyChoice } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { officeCompanies } from "../lib/officeCompanies";
 import "../company.css";
+
+export function BackLink({ to, children }: { to: string; children: ReactNode }) {
+  return <Link className="c04-back" to={to}>{children}</Link>;
+}
 
 export function CompanyShell({ title, children }: { title: string; children: ReactNode }) {
   const { auth, adoptToken } = useAuth();

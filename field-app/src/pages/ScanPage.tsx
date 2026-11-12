@@ -153,6 +153,7 @@ export function ScanPage() {
         </form>
         </section>
         <button className="btn c04-btn-cyan" onClick={() => navigate("/setup-opening")}>Facilities and openings</button>
+        <button className="btn c04-btn-green" onClick={() => navigate("/today-route")}>Today's route</button>
         <button className="btn c04-btn-green" onClick={() => navigate("/my-work-orders")}>My Work Orders</button>
         <FacilityDashboardLink />
         <Link className="btn c04-choice" to="/how-to-use">How to use</Link>
