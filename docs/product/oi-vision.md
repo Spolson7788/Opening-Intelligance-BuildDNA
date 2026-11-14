@@ -103,3 +103,20 @@ Nothing is removed. Office-only and setup screens stay behind Details or the acc
 | Office roles | Provider dashboard, Facility Dashboard, OI staff tools | No new products. Task pages are a thinner front on those screens. |
 
 No new tables are required for the four tech pages. Routes, visits, inspections, and service notes already exist. The phone change is which screen is first and which control is the one big button.
+
+## Build plan
+
+Stephan wants this before production launch. Build it behind a staging switch so today's screens stay available until the new path is the one a tech walks. Proposed flag: `OI_TECH_TASKS`. Off unless set. On for staging first. Production stays off until the four tech pages pass a real day on staging. The switch does not change the server.
+
+| Step | What ships | Beside today's screens |
+|---|---|---|
+| 1 | Switch, sync dot, back, and the account mark. The mark still opens the current account line, company picker, and Synchronization review. | Scan remains one tap away. |
+| 2 | Start my day, wrapping today's route, Maps, done/left, and pick-a-site when there is no route. | Today's route and Choose a location stay. |
+| 3 | Finish the visit, wrapping the visit door list and the one report email. | The visit page stays. |
+| 4 | Inspect this door: scan, last result, checklist, photos, Save, and Fix this door that returns to the same inspection. | Log Inspection and Scan stay. |
+| 5 | Fix or service this door: one Save. Inspectors get a request, not a hardware edit. | Log service and request service stay. |
+| 6 | Details drawer and the account menu. With the switch on, Scan's button list is no longer home. | Every current screen is still reachable from Details or the account menu. |
+
+**Blocks launch.** The four tech pages, with one primary button each. Start my day works with a manager route and without one. Inspect this door can jump to Fix and come back without losing the checklist. Finish the visit sends one report and does not email before that tap. The sync dot is still visible. A tech or inspector still has no dashboard. The switch has been walked on staging, with today's screens still reachable, before it is the production default.
+
+**Can follow launch.** Thinner task pages for the provider manager, the facility manager, and OI staff. Those office screens already exist. Nearby-work polish. Rearranging the inside of each Details screen. Schedule comparison, company branches, and the photo diagnostic stay off the tech path. None of those block the tech day.
