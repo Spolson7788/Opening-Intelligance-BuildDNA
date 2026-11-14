@@ -9,6 +9,7 @@ export interface FieldStop {
   work_kind: string;
   summary: string;
   opening_code: string | null;
+  property_id: string;
   property_name: string;
   address: string;
   navigation_address: string | null;

@@ -37,6 +37,12 @@ import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { QrInformationPage } from './pages/QrInformationPage';
 import { isQrLandingPath, isQrLogin, isQrDetailsPath } from './lib/qrLanding';
 import { scanNeedsChooser } from './lib/locationChoice';
+import { techTasksEnabled } from './lib/techTasks';
+import { StartMyDayPage } from './pages/StartMyDayPage';
+import { InspectDoorPage } from './pages/InspectDoorPage';
+import { FixDoorPage } from './pages/FixDoorPage';
+import { FinishVisitPage } from './pages/FinishVisitPage';
+import { SiteDoorsPage } from './pages/SiteDoorsPage';
 import { ChooseLocationPage } from './pages/ChooseLocationPage';
 import { setSyncReadOnly } from './lib/syncNavigation';
 const PhotoIsolationPage=__PHOTO_ISOLATION_ENABLED__?lazy(()=>import('./pages/PhotoIsolationPage')):null;
@@ -51,6 +57,11 @@ function RequireLocation({ children }: { children: React.ReactElement }) {
   const { auth } = useAuth();
   const storage = typeof sessionStorage === "undefined" ? null : sessionStorage;
   if (scanNeedsChooser(auth, storage)) return <Navigate to="/choose-location" replace />;
+  return children;
+}
+
+function TaskGate({ children }: { children: React.ReactElement }) {
+  if (!techTasksEnabled()) return <Navigate to="/scan" replace />;
   return children;
 }
 
@@ -94,6 +105,12 @@ function AppRoutes() {
       <Route path="/opening/:id/lifecycle-records" element={<RequireAuth><LifecycleOperationsPage /></RequireAuth>} />
       <Route path="/choose-location" element={<RequireAuth><ChooseLocationPage /></RequireAuth>} />
       <Route path="/scan" element={<RequireAuth><RequireLocation><ScanPage /></RequireLocation></RequireAuth>} />
+      <Route path="/tasks/day" element={<RequireAuth><RequireLocation><TaskGate><StartMyDayPage /></TaskGate></RequireLocation></RequireAuth>} />
+      <Route path="/tasks/site" element={<RequireAuth><RequireLocation><TaskGate><SiteDoorsPage /></TaskGate></RequireLocation></RequireAuth>} />
+      <Route path="/tasks/inspect" element={<RequireAuth><RequireLocation><TaskGate><InspectDoorPage /></TaskGate></RequireLocation></RequireAuth>} />
+      <Route path="/tasks/inspect/:id" element={<RequireAuth><RequireLocation><TaskGate><InspectDoorPage /></TaskGate></RequireLocation></RequireAuth>} />
+      <Route path="/tasks/fix/:id" element={<RequireAuth><RequireLocation><TaskGate><FixDoorPage /></TaskGate></RequireLocation></RequireAuth>} />
+      <Route path="/tasks/finish" element={<RequireAuth><RequireLocation><TaskGate><FinishVisitPage /></TaskGate></RequireLocation></RequireAuth>} />
       <Route path="/my-work-orders" element={<RequireAuth><MyWorkOrdersPage /></RequireAuth>} />
       <Route path="/today-route" element={<RequireAuth><TodayRoutePage /></RequireAuth>} />
       <Route path="/facility-openings" element={<RequireAuth><FacilityOpeningsPage /></RequireAuth>} />
@@ -130,12 +147,13 @@ export function FieldApplication() {
     <Route path="/opening/by-qr/:qrToken" element={<QrInformationPage />} />
     <Route path="*" element={<QrInformationPage />} />
     </Routes></>;
+  const tasks = techTasksEnabled() && location.pathname.startsWith("/tasks");
   return (
     <AuthProvider>
         <header className="c04-header no-print">
           <FieldBrand />
-          <AccountIdentity />
-          <CompanySwitcher />
+          {!tasks && <AccountIdentity />}
+          {!tasks && <CompanySwitcher />}
         </header>
         <AppRoutes />
     </AuthProvider>

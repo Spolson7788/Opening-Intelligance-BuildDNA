@@ -1,5 +1,6 @@
 import type { FacilityProperty } from "./facilityOpenings";
 import { loginReturnPath } from "./qrPayload";
+import { techHome } from "./techTasks";
 
 export interface AreaOption { key: string; label: string }
 export interface LocationDraft { stateKey: string | null; countyKey: string | null; facilityId: string }
@@ -108,6 +109,6 @@ export function scanNeedsChooser(principal: { userId: string; organizationId: st
 export function postAuthLanding(from: unknown, confirmed: boolean): string {
   const path = loginReturnPath(from);
   if (isDirectOpeningPath(path)) return path;
-  if (path === "/scan") return confirmed ? "/scan" : "/choose-location";
+  if (path === "/scan" || path === "/tasks/day") return confirmed ? techHome() : "/choose-location";
   return path;
 }

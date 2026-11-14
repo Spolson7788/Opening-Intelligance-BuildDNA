@@ -13,6 +13,7 @@ interface Props {
   targetLabel?: string;
   /** Measurement photos need a library choice. Other captures keep the camera and video controls. */
   sources?: "camera" | "saved-or-camera";
+  buttonLabel?: string;
   onQueued: () => void; // fires the instant a photo/video is saved locally, not once it's uploaded
   onPicked?: (file: File) => void;
 }
@@ -30,7 +31,7 @@ function recentMessage(key: string) {
   return entry && Date.now() - entry.at < MESSAGE_TTL_MS ? entry : undefined;
 }
 
-export function PhotoCapture({ openingId, relatedEntityType = "opening", relatedEntityId, targetLabel, sources = "camera", onQueued, onPicked }: Props) {
+export function PhotoCapture({ openingId, relatedEntityType = "opening", relatedEntityId, targetLabel, sources = "camera", buttonLabel, onQueued, onPicked }: Props) {
   const captureTarget = targetLabel ?? relatedEntityType.replace(/_/g, " ");
   const inputSuffix = `${openingId}-${relatedEntityType}-${relatedEntityId ?? openingId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
   const [saving, setSaving] = useState(false);
@@ -174,7 +175,7 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
           </label>
         </> : <>
           <label htmlFor={`photo-input-${inputSuffix}`} className="btn btn-secondary" style={buttonStyle}>
-            {saving ? "Saving…" : `+ Add photo to ${captureTarget}`}
+            {saving ? "Saving…" : (buttonLabel || `+ Add photo to ${captureTarget}`)}
             <input
               id={`photo-input-${inputSuffix}`}
               aria-label={`Choose photo for ${captureTarget}`}
@@ -186,7 +187,7 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
               style={fileInputStyle}
             />
           </label>
-          <label htmlFor={`video-input-${inputSuffix}`} className="btn btn-secondary" style={buttonStyle}>
+          {!buttonLabel && <label htmlFor={`video-input-${inputSuffix}`} className="btn btn-secondary" style={buttonStyle}>
             {saving ? "Saving…" : `+ Add video to ${captureTarget}`}
             <input
               id={`video-input-${inputSuffix}`}
@@ -198,7 +199,7 @@ export function PhotoCapture({ openingId, relatedEntityType = "opening", related
               disabled={saving}
               style={fileInputStyle}
             />
-          </label>
+          </label>}
         </>}
       </div>
       {notice && <p role="status" style={{ marginTop: 8, color: "var(--text-secondary)" }}>{notice}</p>}

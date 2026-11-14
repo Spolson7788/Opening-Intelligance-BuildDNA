@@ -10,6 +10,7 @@ import {
   countiesFrom, describeLocation, facilitiesFrom, initialDraft, keyFromOption, narrowDraft, optionValue,
   statesFrom, writeLocationConfirmation, type LocationDraft,
 } from "../lib/locationChoice";
+import { techSite } from "../lib/techTasks";
 
 export function ChooseLocationPage() {
   const { auth, logout, logoutPending } = useAuth();
@@ -69,7 +70,7 @@ export function ChooseLocationPage() {
     setDraft(narrowDraft(list, next, changed));
   }
 
-  async function acceptLocation(destination: "/scan" | "/setup-opening") {
+  async function acceptLocation(destination: string) {
     if (!principal || !chosen) {
       setFacilityHint("Choose a facility and tap Continue first.");
       return;
@@ -96,7 +97,7 @@ export function ChooseLocationPage() {
         <p className="c04-eyebrow">Last location</p>
         <p><strong>{describeLocation(list, preferred)}</strong></p>
         <p>Continue confirms this location. Change it if you are working somewhere else.</p>
-        <button type="button" className="btn c04-btn-blue" onClick={() => void acceptLocation("/scan")}>Continue</button>
+        <button type="button" className="btn c04-btn-blue" onClick={() => void acceptLocation(techSite())}>Continue</button>
         <button type="button" className="btn c04-btn-cyan" onClick={() => setChanging(true)}>Change location</button>
       </section>}
       {(!preferred || changing) && <section className="c04-band" aria-label="State, county, and facility">
@@ -119,7 +120,7 @@ export function ChooseLocationPage() {
           </select>
         </div>
         {chosen && <p role="status">Selected location: {describeLocation(list, chosen.id)}</p>}
-        <button type="button" className="btn c04-btn-blue" disabled={!canContinue} onClick={() => void acceptLocation("/scan")}>Continue</button>
+        <button type="button" className="btn c04-btn-blue" disabled={!canContinue} onClick={() => void acceptLocation(techSite())}>Continue</button>
         {preferred && <button type="button" className="btn c04-choice" onClick={() => { setChanging(false); setDraft(initialDraft(list, preferred)); }}>Keep last location</button>}
       </section>}
     </>}

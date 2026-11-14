@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ApiError, confirmDoorHardware, identifyDoorHardware, reserveOfflinePhoto, confirmOfflinePhoto, uploadPrivatePhoto, type DoorHardwareItem, type DoorHardwareRun } from "../lib/api";
 import { loadAuth } from "../lib/db";
 import { MAX_IMAGE_BYTES } from "../lib/mediaLimits";
@@ -97,9 +97,15 @@ async function uploadOne(openingId: string, file: File, principal: { userId: str
   return photoId;
 }
 
+function taskReturn(state: unknown): string | null {
+  const value = state && typeof state === "object" && "returnTo" in state ? (state as { returnTo?: unknown }).returnTo : "";
+  return typeof value === "string" && value.startsWith("/tasks/") ? value : null;
+}
+
 export function IdentifyHardwarePage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const backTo = taskReturn(useLocation().state) ?? (id ? `/opening/${id}` : "/scan");
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);
   const [phase, setPhase] = useState<"capture" | "working" | "review" | "saved">("capture");
   const [status, setStatus] = useState("");
@@ -196,7 +202,7 @@ export function IdentifyHardwarePage() {
   return (
     <div className="app-shell c04">
       <div className="top-bar">
-        <Link to={id ? `/opening/${id}` : "/scan"} className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13, textDecoration: "none" }}>← Opening</Link>
+        <Link to={backTo} className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13, textDecoration: "none" }}>← Opening</Link>
         <SyncBadge />
       </div>
       <div className="screen">
@@ -262,7 +268,7 @@ export function IdentifyHardwarePage() {
         {phase === "saved" && (
           <section className="c04-band-green" role="status">
             <p>Saved {savedCount} hardware {savedCount === 1 ? "item" : "items"}. Confirmed photographs and labels are kept for training.</p>
-            <button type="button" className="btn btn-primary" onClick={() => id && navigate(`/opening/${id}`)}>Back to opening</button>
+            <button type="button" className="btn btn-primary" onClick={() => navigate(backTo)}>Back to opening</button>
           </section>
         )}
       </div>
