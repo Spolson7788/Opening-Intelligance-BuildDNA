@@ -13,14 +13,14 @@ export function FacilitySchedulesPage() {
     fetchFacilitySchedulesForOpening(id).then(setSchedules).catch(() => setFailed(true));
   }, [id]);
   return (
-    <div className="page">
+    <div className="app-shell c04"><div className="screen">
       <p><Link to={`/opening/${id}`}>Back to opening</Link></p>
       <h1>Facility schedules</h1>
-      {failed && <p role="alert">Schedules could not be loaded.</p>}
-      {!failed && schedules === null && <p>Loading schedules.</p>}
-      {schedules && schedules.length === 0 && <p>No schedules have been uploaded for this facility.</p>}
+      {failed && <p className="c04-alert" role="alert">Schedules could not be loaded.</p>}
+      {!failed && schedules === null && <p className="c04-band" role="status">Loading schedules.</p>}
+      {schedules && schedules.length === 0 && <p className="c04-band-blue">No schedules have been uploaded for this facility.</p>}
       {schedules?.map((s) => (
-        <section key={s.id} className="card" aria-label={s.title}>
+        <section key={s.id} className={s.kind === "door" ? "c04-band" : "c04-band-green"} aria-label={s.title}>
           <h2>{s.title}</h2>
           <p>{s.kind === "door" ? "Door schedule" : "Door hardware schedule"}</p>
           <ul>
@@ -32,6 +32,6 @@ export function FacilitySchedulesPage() {
           </ul>
         </section>
       ))}
-    </div>
+    </div></div>
   );
 }

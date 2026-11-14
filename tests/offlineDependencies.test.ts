@@ -37,6 +37,19 @@ describe("offline operation dependencies", () => {
     expect(readyOperations([child], verified, "2026-09-19T12:01:00.000Z").map((item) => item.operationId)).toEqual([child.operationId]);
   });
 
+  it("holds a fire-door inspection until its failure photo is confirmed", () => {
+    const photoId = "99999999-9999-4999-8999-999999999999";
+    const photo = operation("photo", photoId, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    const payload = { checklist_result: { items: { holes_breaks: { photo_id: photoId, result: "fail" } } } };
+    expect(dependencyIdsForOperation([photo], "inspection_event", openingId, payload)).toEqual([photo.operationId]);
+    const inspection = operation("inspection_event", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", [photo.operationId]);
+    const verified = new Set<string>();
+    expect(readyOperations([photo, inspection], verified, "2026-09-19T12:01:00.000Z").map((item) => item.operationId)).toEqual([photo.operationId]);
+    verified.add(photo.operationId);
+    expect(readyOperations([inspection], verified, "2026-09-19T12:01:00.000Z").map((item) => item.operationId)).toEqual([inspection.operationId]);
+    expect(dependencyIdsForOperation([{ ...photo, state: "verified" }], "inspection_event", openingId, payload)).toEqual([]);
+  });
+
   it("blocks completion on every unsynchronized frame, leaf, and component for the same opening", () => {
     const parents = [
       operation("frame", "55555555-5555-4555-8555-555555555555", "66666666-6666-4666-8666-666666666666"),

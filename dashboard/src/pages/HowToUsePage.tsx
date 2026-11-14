@@ -1,0 +1,15 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { HowToUse, type GuideAudience } from "../guide/howToUse";
+
+export function HowToUsePage() {
+  const navigate = useNavigate();
+  const [audience, setAudience] = useState<GuideAudience>("facility");
+  return (
+    <div className="app-shell">
+      <div className="main">
+        <HowToUse audience={audience} onAudience={setAudience} onBack={() => navigate(-1)} />
+      </div>
+    </div>
+  );
+}

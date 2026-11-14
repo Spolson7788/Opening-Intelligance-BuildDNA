@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
+import { passingFireDoorFields } from "./nfpa80Fixture";
 
 const SAMPLE_SIGNATURE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
@@ -17,7 +18,7 @@ describe("inspector sign-off", () => {
         opening_id: opening.id,
         event_date: "2026-02-01",
         inspection_type: "fire_door_nfpa80",
-        passed: true,
+        ...passingFireDoorFields(),
         signature_data: SAMPLE_SIGNATURE,
         signed_by_name: "Jamie Rivera",
       });
@@ -74,7 +75,7 @@ describe("inspector sign-off", () => {
         opening_id: opening.id,
         event_date: "2026-02-01",
         inspection_type: "fire_door_nfpa80",
-        passed: true,
+        ...passingFireDoorFields(),
         signature_data: SAMPLE_SIGNATURE,
         signed_by_name: "Jamie Rivera",
       });

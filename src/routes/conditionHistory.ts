@@ -9,6 +9,7 @@ import { enforceRolePermissions } from '../middleware/permissions';
 import { canonicalPayloadHash, findSyncReceipt, writeSyncReceiptAndAudit } from '../services/syncProtocol';
 import { conditionObservationSchema, conditionObservationView, conditionTargetView } from '../services/conditionObservations';
 import { facilityHistory } from '../services/facilityHistory';
+import { requireCustomerOffice } from '../middleware/facilityOffice';
 
 export const conditionHistoryRouter = Router();
 conditionHistoryRouter.use(requireAuth, enforceRolePermissions);
@@ -25,7 +26,7 @@ class ConditionConflict extends Error {
   constructor(public code: string, public status = 409) { super(code); }
 }
 
-conditionHistoryRouter.get('/facility/:openingId', async (req: AuthedRequest, res) => {
+conditionHistoryRouter.get('/facility/:openingId', requireCustomerOffice, async (req: AuthedRequest, res) => {
   res.set('Cache-Control', 'no-store');
   if (!uuid.safeParse(req.params.openingId).success) return res.status(400).json({ error: 'invalid_opening' });
   let c: PoolClient | undefined;

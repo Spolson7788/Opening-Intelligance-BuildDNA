@@ -162,18 +162,20 @@ export function LoginPage() {
           </div>
           {error && <p className="error-text">{error}</p>}
           {error && siteAccess && <p className="error-text" role="alert">{SITE_ACCESS_LOGIN_MESSAGE}</p>}
-          {error && siteAccess && renewalUrl && <a className="btn btn-primary" href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a>}
+          {error && siteAccess && renewalUrl && <a className="btn btn-primary" href={renewalUrl}>Renew private site access</a>}
           <button type="submit" className="btn btn-primary" disabled={submitting}>
             {submitting ? "Signing in…" : "Sign In"}
           </button>
         </form>
         <p style={{ fontSize: 13, marginTop: 12, textAlign: "center" }}>
           <Link to="/forgot-password">Forgot password?</Link>
+          {" · "}
+          <Link to="/how-to-use">How to use</Link>
         </p>
         <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 16, textAlign: "center" }}>
           Need access? Ask your administrator for an invite.
         </p>
-        {renewalUrl && <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 8, textAlign: "center" }}><a href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a> if this private preview asks for access again.</p>}
+        {renewalUrl && <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 8, textAlign: "center" }}><a href={renewalUrl}>Renew private site access</a> if this private preview asks for access again.</p>}
       </div>
     </div>
   );

@@ -28,6 +28,55 @@ export interface DecodedImage {
 
 export type ImageDecoder = (blob: Blob) => Promise<DecodedImage>;
 
+/** Claude accepts 5 MB. This function accepts 8 MB decoded, and a Netlify request stops at 6 MB.
+ *  Base64 grows by about one third, so the phone sends at most 1.5 MB of JPEG, PNG, GIF, or WebP. */
+export const MEASUREMENT_READER_MAX_BYTES = 1_500_000;
+export const MEASUREMENT_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+const MEASUREMENT_READER_LADDER: ReadonlyArray<{ longEdge: number; quality: number }> = [
+  { longEdge: 1600, quality: 0.82 },
+  { longEdge: 1280, quality: 0.72 },
+  { longEdge: 1024, quality: 0.6 },
+  { longEdge: 800, quality: 0.5 },
+];
+
+export function measurementImageType(contentType: string): string | null {
+  const type = contentType.split(";")[0].trim().toLowerCase();
+  return (MEASUREMENT_IMAGE_TYPES as readonly string[]).includes(type) ? type : null;
+}
+
+/** A saved Measure screenshot or a camera photo, small enough for the reader and always a type Claude accepts. */
+export async function prepareMeasurementImage(
+  file: Blob,
+  decode: ImageDecoder = decodeWithCanvas,
+): Promise<{ blob: Blob; contentType: string }> {
+  const type = measurementImageType(file.type || "");
+  if (type && file.size > 0 && file.size <= MEASUREMENT_READER_MAX_BYTES) return { blob: file, contentType: type };
+  let decoded: DecodedImage;
+  try { decoded = await decode(file); }
+  catch { throw new Error("measurement_image_unreadable"); }
+  try {
+    const longest = Math.max(decoded.width, decoded.height);
+    const tried = new Set<string>();
+    for (const step of MEASUREMENT_READER_LADDER) {
+      const edge = longest > 0 ? Math.min(step.longEdge, longest) : step.longEdge;
+      const key = `${edge}:${step.quality}`;
+      if (tried.has(key)) continue;
+      tried.add(key);
+      const out = await decoded.encode(edge, step.quality);
+      if (out.blob.type && out.blob.type !== "image/jpeg") continue;
+      if (out.blob.size > 0 && out.blob.size <= MEASUREMENT_READER_MAX_BYTES) {
+        return { blob: out.blob, contentType: "image/jpeg" };
+      }
+    }
+    throw new Error("measurement_image_unreadable");
+  } catch (error) {
+    if (error instanceof Error && error.message === "measurement_image_unreadable") throw error;
+    throw new Error("measurement_image_unreadable");
+  } finally {
+    decoded.close();
+  }
+}
+
 export const REDUCTION_LADDER: ReadonlyArray<{ longEdge: number; quality: number }> = [
   { longEdge: 4032, quality: 0.85 },
   { longEdge: 3072, quality: 0.85 },
@@ -37,6 +86,18 @@ export const REDUCTION_LADDER: ReadonlyArray<{ longEdge: number; quality: number
   { longEdge: 1600, quality: 0.72 },
   { longEdge: 1280, quality: 0.7 },
 ];
+
+/** Always a JPEG, small enough to travel with an inspection sync. HEIC stays unreadable on the server. */
+export async function checklistPhotoJpeg(file: Blob): Promise<Blob> {
+  const decoded = await decodeWithCanvas(file);
+  try {
+    const encoded = await decoded.encode(1600, 0.72);
+    if (!encoded.blob.size) throw new Error("encode_failed");
+    return encoded.blob;
+  } finally {
+    decoded.close();
+  }
+}
 
 export async function prepareImageForUpload(
   file: Blob,

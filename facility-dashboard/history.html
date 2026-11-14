@@ -1,7 +1,28 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Facility condition and lifecycle evidence</title>
-<style>body{font:16px system-ui;max-width:1100px;margin:auto;padding:20px;background:#14191c;color:#eee}a{color:#91c9ff}button{font:inherit;padding:12px;margin:8px}article,details{border:1px solid #778;padding:16px;margin:12px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere}p,li,h2,h3{overflow-wrap:anywhere}[hidden]{display:none!important}</style>
-<a id="back">Opening planning</a><h1>Facility condition and lifecycle evidence</h1>
-<p>Read-only saved history, including retired physical instances. Observations do not overwrite current assessment. This is separate from financial sandbox evidence.</p>
-<p id="account"></p><p id="status" role="status">Checking account and saved evidence.</p><p id="error" role="alert"></p>
-<button id="reload">Refresh saved evidence</button><button id="exportReport" disabled>Export facility condition and lifecycle evidence (JSON)</button>
-<main id="content"></main><script type="module" src="./history.mjs"></script></html>
+<!doctype html>
+<html lang="en" class="c04">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Condition history</title>
+<link rel="stylesheet" href="./concept04.css">
+</head>
+<body>
+<header class="top"><div class="top-inner">
+  <div class="idblk">
+    <span class="logochip"><img src="./oi-logo.png" alt="Opening Intelligence"></span>
+    <div><h1>Condition history</h1><p class="sub">Read-only saved history. Observations do not overwrite the current assessment.</p><p id="account" hidden></p></div>
+  </div>
+  <div class="brand"><a id="facilityBack" href="./">Facility dashboard</a> · <a id="back">Planning</a></div>
+</div></header>
+<div class="toolbar">
+  <div class="tools">
+    <button id="reload" class="tool" type="button">Refresh</button>
+    <button id="exportReport" class="tool" type="button" disabled>Export records</button>
+  </div>
+</div>
+<p id="status" role="status" class="hint">Checking account and saved evidence.</p>
+<p id="error" role="alert" class="error"></p>
+<main id="content" class="page"></main>
+<script type="module" src="./history.mjs"></script>
+</body>
+</html>

@@ -80,7 +80,9 @@ export function readyOperations(
   const now = Date.parse(nowIso);
   return operations
     .filter((operation) => operation.state === "queued" || operation.state === "retry_wait" || operation.state === "blocked_dependency" ||
-      interruptedOperationIsRecoverable(operation, nowIso))
+      interruptedOperationIsRecoverable(operation, nowIso) ||
+      (operation.state === "conflict" && operation.lastErrorCode === "revision_conflict" &&
+        (operation.entityType === "frame" || operation.entityType === "door_leaf")))
     .filter((operation) => !operation.nextAttemptAt || Date.parse(operation.nextAttemptAt) <= now)
     .filter((operation) => operation.dependencyOperationIds.every((id) => verifiedOperationIds.has(id)))
     .sort((a, b) => a.createdAtLocal.localeCompare(b.createdAtLocal));

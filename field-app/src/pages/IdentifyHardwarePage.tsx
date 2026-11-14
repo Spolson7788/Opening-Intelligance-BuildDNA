@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ApiError, confirmDoorHardware, identifyDoorHardware, reserveOfflinePhoto, confirmOfflinePhoto, uploadPrivatePhoto, type DoorHardwareItem, type DoorHardwareRun } from "../lib/api";
 import { loadAuth } from "../lib/db";
 import { MAX_IMAGE_BYTES } from "../lib/mediaLimits";
@@ -97,9 +97,15 @@ async function uploadOne(openingId: string, file: File, principal: { userId: str
   return photoId;
 }
 
+function taskReturn(state: unknown): string | null {
+  const value = state && typeof state === "object" && "returnTo" in state ? (state as { returnTo?: unknown }).returnTo : "";
+  return typeof value === "string" && value.startsWith("/tasks/") ? value : null;
+}
+
 export function IdentifyHardwarePage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const backTo = taskReturn(useLocation().state) ?? (id ? `/opening/${id}` : "/scan");
   const [photos, setPhotos] = useState<LocalPhoto[]>([]);
   const [phase, setPhase] = useState<"capture" | "working" | "review" | "saved">("capture");
   const [status, setStatus] = useState("");
@@ -194,9 +200,9 @@ export function IdentifyHardwarePage() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell c04">
       <div className="top-bar">
-        <Link to={id ? `/opening/${id}` : "/scan"} className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13, textDecoration: "none" }}>← Opening</Link>
+        <Link to={backTo} className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13, textDecoration: "none" }}>← Opening</Link>
         <SyncBadge />
       </div>
       <div className="screen">
@@ -208,7 +214,7 @@ export function IdentifyHardwarePage() {
         {status && <p role="status">{status}</p>}
 
         {phase === "capture" && (
-          <section className="card" aria-label="Photographs for identification">
+          <section className="c04-band" aria-label="Photographs for identification">
             <p>{photos.length} of {MIN_PHOTOS}–{MAX_PHOTOS} photographs</p>
             <ul style={{ listStyle: "none", padding: 0, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
               {photos.map((photo, index) => (
@@ -234,7 +240,7 @@ export function IdentifyHardwarePage() {
               if (!draft) return null;
               const showTip = item.model_unknown && !draft.model_number.trim() && item.next_photo;
               return (
-                <article key={item.id} className="card" aria-label={`Item ${item.ordinal}`}>
+                <article key={item.id} className="c04-band-green" aria-label={`Item ${item.ordinal}`}>
                   <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <input type="checkbox" checked={draft.include} onChange={(event) => updateDraft(item.id, { include: event.target.checked })} />
                     Save this item
@@ -260,9 +266,9 @@ export function IdentifyHardwarePage() {
         )}
 
         {phase === "saved" && (
-          <section className="card" role="status">
+          <section className="c04-band-green" role="status">
             <p>Saved {savedCount} hardware {savedCount === 1 ? "item" : "items"}. Confirmed photographs and labels are kept for training.</p>
-            <button type="button" className="btn btn-primary" onClick={() => id && navigate(`/opening/${id}`)}>Back to opening</button>
+            <button type="button" className="btn btn-primary" onClick={() => navigate(backTo)}>Back to opening</button>
           </section>
         )}
       </div>

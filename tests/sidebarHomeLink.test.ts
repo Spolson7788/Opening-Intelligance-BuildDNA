@@ -43,14 +43,14 @@ async function renderAt(path: string) {
   await vi.waitFor(() => expect(link("OI staff tools")).toBeTruthy());
 }
 
-it("links Portfolio Overview home under the dashboard basename and keeps the other sidebar links", async () => {
+it("links Company dashboard home under the dashboard basename and keeps the other sidebar links", async () => {
   const css = readFileSync("dashboard/src/index.css", "utf8");
   expect(css).toMatch(/\.sidebar-home:hover\s*\{[^}]*background:/);
   expect(css).toMatch(/\.sidebar-home\.active\s*\{[^}]*border-color:\s*var\(--accent\)/);
   expect(css).toMatch(/\.sidebar-home:focus-visible\s*\{[^}]*outline:/);
 
   await renderAt("/dashboard/");
-  const home = link("Portfolio Overview");
+  const home = link("Company dashboard");
   expect(home.tagName).toBe("A");
   expect(home.getAttribute("href")).toBe("/dashboard/");
   expect(home.className).toContain("sidebar-home");
@@ -65,7 +65,7 @@ it("links Portfolio Overview home under the dashboard basename and keeps the oth
   expect(link("Change password").getAttribute("href")).toBe("/dashboard/change-password");
 
   await renderAt("/dashboard/coverage");
-  const away = link("Portfolio Overview");
+  const away = link("Company dashboard");
   expect(away.getAttribute("href")).toBe("/dashboard/");
   expect(away.classList.contains("active")).toBe(false);
   expect(away.getAttribute("aria-current")).toBeNull();

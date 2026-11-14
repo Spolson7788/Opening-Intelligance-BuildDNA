@@ -1,13 +1,33 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
 import { SyncBadge } from "../components/SyncBadge";
 import { FacilitySelector } from "../components/FacilitySelector";
 import { useAuth } from "../lib/AuthContext";
 import { parseOpeningQr } from "../lib/qrPayload";
-import { fetchLabelConfig } from '../lib/api';
+import { facilityDashboardMenuVisible, fetchInspectionVisit, fetchLabelConfig, fetchOpenInspectionVisit } from '../lib/api';
+import { showFacilityDashboardShortcut, tokenHasVerifiedStaffSession } from '../lib/facilityDashboardReturn';
+import { getSyncOperationsForPrincipal, loadAuth } from "../lib/db";
+import { openingCountText, pendingInspectionIds, reconcileOpenVisit, startNewVisit, visitCounts, visitSummaryText, visitUploadMessage } from "../lib/inspectionVisit";
+import type { InspectionVisit } from "../lib/inspectionVisit";
 
 const SCANNER_ELEMENT_ID = "qr-reader";
+
+function FacilityDashboardLink() {
+  const { auth } = useAuth();
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    let live = true;
+    setShow(false);
+    if (!auth || !tokenHasVerifiedStaffSession(auth.token)) return;
+    void facilityDashboardMenuVisible().then((allowed) => {
+      if (live) setShow(showFacilityDashboardShortcut({ mfaVerified: true, staff: allowed, allowed, role: auth.role }));
+    });
+    return () => { live = false; };
+  }, [auth?.userId, auth?.organizationId, auth?.token, auth?.role]);
+  if (!show) return null;
+  return <a className="btn c04-choice" href="/facility-dashboard/">Facility Dashboard</a>;
+}
 
 export function ScanPage() {
   const navigate = useNavigate();
@@ -17,6 +37,48 @@ export function ScanPage() {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [visit, setVisit] = useState<InspectionVisit | null>(null);
+  const [visitNote, setVisitNote] = useState<string | null>(null);
+  const [confirmNewVisit, setConfirmNewVisit] = useState(false);
+  useEffect(() => {
+    let live = true;
+    const refresh = () => {
+      void reconcileOpenVisit((id) => fetchInspectionVisit(id), fetchOpenInspectionVisit).then((open) => { if (live) setVisit(open); });
+    };
+    refresh();
+    const onFocus = () => refresh();
+    const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      live = false;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
+  async function beginNewVisit() {
+    const current = visit;
+    let pending = 0;
+    if (current) {
+      let serverIds: string[] | null = null;
+      try {
+        const row = await fetchInspectionVisit(current.id);
+        serverIds = row.inspection_ids ?? [];
+      } catch { serverIds = null; }
+      const auth = await loadAuth();
+      const operations = auth ? await getSyncOperationsForPrincipal(auth.userId, auth.organizationId) : [];
+      pending = pendingInspectionIds(current.inspections.map((item) => item.inspectionId), operations, serverIds).length;
+    }
+    await startNewVisit(current ? { replaceOpenVisit: true } : undefined);
+    setVisit(null);
+    setVisitNote(pending ? `${visitUploadMessage(pending)} They stay in Synchronization review and were not removed.` : null);
+  }
+
+  useEffect(() => {
+    document.body.classList.add("c04-on");
+    return () => document.body.classList.remove("c04-on");
+  }, []);
 
   useEffect(() => {
     let active=true;
@@ -66,68 +128,59 @@ export function ScanPage() {
   }
 
   return (
-    <div className="app-shell">
-      <div className="top-bar">
-        <h1>Scan Opening</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <SyncBadge />
-        </div>
+    <div className="app-shell c04">
+      <div className="c04-toolbar">
+        <p className="c04-kicker">Field app</p>
+        <SyncBadge />
       </div>
       <div className="screen">
+        <h1>Scan opening</h1>
+        {visit && <div className="c04-band-green" role="status">
+          <button type="button" className="c04-visit-count" onClick={() => navigate(`/visit/${visit.id}`)}>{visitSummaryText(visit.inspections)}</button>
+          <button type="button" className="btn c04-btn-blue c04-visit-finish" onClick={() => navigate(`/visit/${visit.id}`)}>Finish visit / Send combined report</button>
+        </div>}
+        {visitNote && <p className="c04-note" role="status">{visitNote}</p>}
+        <button type="button" className="btn c04-btn-cyan" onClick={() => navigate("/choose-location?screens=1")}>Change facility</button>
+        {confirmNewVisit && visit ? <section className="c04-panel" role="dialog" aria-labelledby="start-new-visit-title">
+          <h2 id="start-new-visit-title">Start a new visit?</h2>
+          <p>Starting a new visit finishes this one. Its {openingCountText(visitCounts(visit.inspections).inspected)} {visitCounts(visit.inspections).inspected === 1 ? "stays" : "stay"} saved; no combined report is sent.</p>
+          <button type="button" className="btn c04-btn-blue" onClick={() => navigate(`/visit/${visit.id}`)}>Finish this visit first</button>
+          <button type="button" className="btn c04-visit-secondary" onClick={() => { setConfirmNewVisit(false); void beginNewVisit(); }}>Start a new visit anyway</button>
+          <button type="button" className="btn c04-choice" onClick={() => setConfirmNewVisit(false)}>Not now</button>
+        </section> : <button type="button" className="btn c04-visit-secondary" onClick={() => { if (visit) setConfirmNewVisit(true); else void beginNewVisit(); }}>Start a new visit</button>}
         <FacilitySelector />
-        <p>Opening lookup requires a connection. A QR label does not grant access.</p>
-        <div className="card" style={{ overflow: "hidden", padding: 0 }}>
-          <div id={SCANNER_ELEMENT_ID} style={{ width: "100%" }} />
+        <section className="c04-band" aria-label="Scan or enter an opening code">
+        <h2>Scan or enter an opening code</h2>
+        <div className="c04-scan">
+          <div id={SCANNER_ELEMENT_ID} />
+          <span className="c04-finder" aria-hidden="true" />
         </div>
-        {cameraError && <p className="error-text">{cameraError}</p>}
-
-        <button className="btn btn-secondary" onClick={() => navigate("/setup-opening")}>Facilities and openings</button>
-        <a className="btn btn-secondary" href="/facility-dashboard/">Facility Dashboard</a>
-        <div className="section-label" style={{ marginTop: 24 }}>Or enter the opening code</div>
+        {cameraError && <p className="c04-alert" role="alert">{cameraError}</p>}
+        <p className="c04-note">Lookup requires a connection. A QR label does not grant access.</p>
         <form onSubmit={onManualSubmit}>
           <div className="field">
-            <label htmlFor="manual-code">Opening code (from the door tag)</label>
+            <label htmlFor="manual-code">Opening code</label>
             <input
               id="manual-code"
               value={manualCode}
               onChange={(e) => setManualCode(e.target.value)}
-              placeholder="e.g. AZ-PHX-BLDG03-F02-0214"
+              placeholder="Enter the code from the door tag"
             />
           </div>
-          <button type="submit" className="btn btn-secondary">Look Up</button>
+          <button type="submit" className="btn c04-btn-blue">Look up opening</button>
         </form>
-
-        <button
-          className="btn btn-secondary"
-          style={{ marginTop: 24 }}
-          onClick={() => navigate("/my-work-orders")}
-        >
-          My Work Orders
-        </button>
-
-        <button
-          className="btn btn-secondary"
-          style={{ marginTop: 12 }}
-          onClick={() => navigate("/facility-openings")}
-        >
-          Facility Openings
-        </button>
-
-        <button type="button" className="btn btn-secondary" style={{ marginTop: 12, color: "var(--text-secondary)" }} onClick={() => navigate("/change-password")}>
-          Change Password
-        </button>
-
-        <button
-          type="button"
-          className="btn btn-secondary"
-          style={{ marginTop: 12, color: "var(--text-secondary)" }}
-          disabled={logoutPending}
-          onClick={() => logout()}
-        >
+        </section>
+        <button className="btn c04-btn-cyan" onClick={() => navigate("/setup-opening")}>Facilities and openings</button>
+        <button className="btn c04-btn-green" onClick={() => navigate("/today-route")}>Today's route</button>
+        <button className="btn c04-btn-green" onClick={() => navigate("/my-work-orders")}>My Work Orders</button>
+        <FacilityDashboardLink />
+        <Link className="btn c04-choice" to="/how-to-use">How to use</Link>
+        <button type="button" className="btn c04-choice" onClick={() => navigate("/change-password")}>Change Password</button>
+        <button type="button" className="btn c04-choice" disabled={logoutPending} onClick={() => logout()}>
           {logoutPending ? "Signing out…" : "Sign Out"}
         </button>
         {logoutPending && <p role="status">Signing out. Your saved changes remain on this device.</p>}
-        {logoutError && <p role="alert">{logoutError}</p>}
+        {logoutError && <p className="c04-alert" role="alert">{logoutError}</p>}
       </div>
     </div>
   );

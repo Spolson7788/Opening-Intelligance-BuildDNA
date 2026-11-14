@@ -1,26 +1,106 @@
-// One staging publish of commit 16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5.
+// One staging publish of the approved app commit 002fedf7480218b2074a0c65b69fb6e4bee6fa62.
+// Publisher-file commits after that pin are allowed. App changes are not.
 // Hard-locked to oi-video-workflows-staging. Refuses production. One attempt.
 // Does not print secrets. Default is a dry run; publish requires --publish-approved.
 import { createHash, randomBytes } from 'node:crypto';
+import { crc32, deflateRawSync, inflateRawSync } from 'node:zlib';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, closeSync } from 'node:fs';
 import https from 'node:https';
 import { resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
-export const PINNED_COMMIT = '16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5';
+export const PINNED_COMMIT = '002fedf7480218b2074a0c65b69fb6e4bee6fa62';
 export const STAGING_SITE_ID = 'b64bf33c-a131-4ae2-b2b0-9aec16e9f77b';
 export const STAGING_SITE_NAME = 'oi-video-workflows-staging';
 export const STAGING_URL = 'https://oi-video-workflows-staging.netlify.app';
 export const PRODUCTION_SITE_ID = 'b4e0fc62-86ce-4a26-9ebf-26d7386f4b01';
+export const MEASUREMENT_READER_KEY = 'OI_MEASUREMENT_READER';
+export const MEASUREMENT_READER_VALUE = 'anthropic';
+export const RECOGNITION_ENV_NAMES = ['OI_RECOGNITION_ENABLED', 'ANTHROPIC_API_KEY'];
+
+export function envNamesFromPayload(payload) {
+  const list = Array.isArray(payload) ? payload
+    : Array.isArray(payload?.variables) ? payload.variables
+    : Array.isArray(payload?.env) ? payload.env
+    : [];
+  const names = [];
+  for (const item of list) {
+    const key = item && typeof item.key === 'string' ? item.key : item && typeof item.name === 'string' ? item.name : '';
+    if (key) names.push(key);
+  }
+  return [...new Set(names)].sort();
+}
+
+export function recognitionEnvReport(names) {
+  const have = new Set(names);
+  return RECOGNITION_ENV_NAMES.map((name) => ({ name, present: have.has(name) }));
+}
+
+export function measurementReaderReport(names, write = false) {
+  return {
+    siteId: STAGING_SITE_ID,
+    productionRefused: true,
+    key: MEASUREMENT_READER_KEY,
+    intendedValue: MEASUREMENT_READER_VALUE,
+    present: names.includes(MEASUREMENT_READER_KEY),
+    appliesOn: 'publish-approved',
+    write,
+  };
+}
+
+export function measurementReaderEnvBody() {
+  return [{
+    key: MEASUREMENT_READER_KEY,
+    scopes: ['functions'],
+    values: [{ context: 'production', value: MEASUREMENT_READER_VALUE }],
+  }];
+}
+
+export function accountIdFromSite(site) {
+  if (!site || site.id === PRODUCTION_SITE_ID) throw fail('refusing_production');
+  if (site.id !== STAGING_SITE_ID) throw fail('refusing_site_mismatch');
+  const id = typeof site.account_id === 'string' && site.account_id.trim()
+    ? site.account_id.trim()
+    : typeof site.account_slug === 'string' && site.account_slug.trim()
+      ? site.account_slug.trim()
+      : '';
+  if (!id || id.includes('/')) throw fail('env_account_missing');
+  if (id === PRODUCTION_SITE_ID) throw fail('refusing_production');
+  return id;
+}
+
+export function accountEnvPath(accountId, { key = '' } = {}) {
+  if (typeof accountId !== 'string' || !accountId.trim() || accountId.includes('/') || accountId.includes('?')) throw fail('env_account_missing');
+  if (accountId === PRODUCTION_SITE_ID) throw fail('refusing_production');
+  const suffix = key ? `/${encodeURIComponent(key)}` : '';
+  return `/api/v1/accounts/${encodeURIComponent(accountId.trim())}/env${suffix}?site_id=${STAGING_SITE_ID}`;
+}
+
+export function measurementReaderAlreadySet(payload) {
+  const list = Array.isArray(payload) ? payload
+    : Array.isArray(payload?.variables) ? payload.variables
+    : Array.isArray(payload?.env) ? payload.env
+    : [];
+  const item = list.find((entry) => entry && (entry.key === MEASUREMENT_READER_KEY || entry.name === MEASUREMENT_READER_KEY));
+  const values = item && Array.isArray(item.values) ? item.values : [];
+  return values.some((entry) => entry && entry.value === MEASUREMENT_READER_VALUE);
+}
+
+export function siteEnvReport(names, write = false) {
+  return {
+    measurementReader: measurementReaderReport(names, write),
+    recognitionEnvPresent: recognitionEnvReport(names),
+  };
+}
 export const DEFAULT_NETLIFY_CLI_DIR = 'C:\\Users\\spols\\Documents\\Codex\\2026-10-23\\task\\.local-netlify-cli\\node_modules\\netlify-cli';
 const NETLIFY_CLI_VERSION = '27.14.2';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const packageDir = resolve(root, 'dist/staging-package-16abbf4');
-const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r11');
+const journalDir = resolve(root, 'dist/staging-publish-journal-16abbf4-r67');
 const resumePath = resolve(journalDir, 'resume-attempt.json');
-const ROLLBACK_DEPLOY_ID = '6aef3f786cc2af03c2ef1cd0';
+const ROLLBACK_DEPLOY_ID = '6af230ff9978904131f1329d';
 const rollbackDir = resolve(root, 'dist/staging-publish-journal-16abbf4-rollback');
 const rollbackAttempt = resolve(rollbackDir, 'rollback-attempt.json');
 const PRIOR_JOURNALS = [
@@ -35,6 +115,61 @@ const PRIOR_JOURNALS = [
   'dist/staging-publish-journal-16abbf4-r9/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r10/publication-attempt.json',
   'dist/staging-publish-journal-16abbf4-r11/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r12/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r13/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r14/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r15/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r16/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r17/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r18/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r19/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r20/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r21/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r22/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r23/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r24/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r25/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r26/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r27/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r28/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r29/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r30/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r31/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r32/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r33/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r34/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r35/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r36/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r37/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r38/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r39/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r40/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r41/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r42/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r43/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r44/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r45/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r46/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r47/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r48/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r49/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r50/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r51/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r52/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r53/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r54/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r55/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r56/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r57/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r58/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r59/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r60/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r61/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r62/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r63/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r64/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r65/publication-attempt.json',
+  'dist/staging-publish-journal-16abbf4-r66/publication-attempt.json',
 ];
 const failurePath = resolve(journalDir, 'failure.json');
 const attemptPath = resolve(journalDir, 'publication-attempt.json');
@@ -65,16 +200,32 @@ const PUBLISHER_FILES = new Set([
   'docs/ops/STAGING-PUBLISH-16abbf4.md',
   'scripts/artifact-publisher-staging-16abbf4.mjs',
   'scripts/artifact-publisher-staging-16abbf4.test.mjs',
+  'scripts/build-facility-dashboard.mjs',
   'scripts/build-staging-package-16abbf4.mjs',
 ]);
 
+export function packageCommitAllowed(commit, repo = root) {
+  if (typeof commit !== 'string' || !/^[0-9a-f]{40}$/.test(commit)) return false;
+  if (commit === PINNED_COMMIT) return true;
+  const ancestor = spawnSync('git', ['merge-base', '--is-ancestor', PINNED_COMMIT, commit], { cwd: repo });
+  if (ancestor.status !== 0) return false;
+  let diff;
+  try {
+    diff = execFileSync('git', ['diff', '--name-only', PINNED_COMMIT, commit], { cwd: repo, encoding: 'utf8' })
+      .split('\n').map((line) => line.trim()).filter(Boolean);
+  } catch {
+    return false;
+  }
+  return diff.every((path) => PUBLISHER_FILES.has(path));
+}
+
+export function packageChecksum(commit, files) {
+  return createHash('sha256').update(JSON.stringify({ commit, files })).digest('hex');
+}
+
 export function assertHeadCommit(repo = root) {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
-  if (head === PINNED_COMMIT) return head;
-  const ancestor = spawnSync('git', ['merge-base', '--is-ancestor', PINNED_COMMIT, head], { cwd: repo });
-  const diff = execFileSync('git', ['diff', '--name-only', PINNED_COMMIT, head], { cwd: repo, encoding: 'utf8' })
-    .split('\n').map((line) => line.trim()).filter(Boolean);
-  if (ancestor.status !== 0 || diff.some((path) => !PUBLISHER_FILES.has(path))) {
+  if (!packageCommitAllowed(head, repo)) {
     const error = new Error('refusing_commit_mismatch');
     error.code = 'refusing_commit_mismatch';
     throw error;
@@ -114,7 +265,7 @@ function readPin() {
     throw error;
   }
   const pin = JSON.parse(readFileSync(pinPath, 'utf8'));
-  if (pin.commit !== PINNED_COMMIT) {
+  if (!packageCommitAllowed(pin.commit)) {
     const error = new Error('refusing_package_commit');
     error.code = 'refusing_package_commit';
     throw error;
@@ -125,7 +276,7 @@ function readPin() {
   for (const source of ['netlify.toml', 'netlify/functions', 'plugins/function-evidence']) {
     files[`source:${source}`] = { tree: hashTree(resolve(root, source), source) };
   }
-  const packageSha256 = createHash('sha256').update(JSON.stringify({ commit: PINNED_COMMIT, files })).digest('hex');
+  const packageSha256 = packageChecksum(pin.commit, files);
   if (packageSha256 !== pin.packageSha256) {
     const error = new Error('refusing_package_checksum');
     error.code = 'refusing_package_checksum';
@@ -149,8 +300,10 @@ export function assertStagingApiPath(path, deployId) {
   if (path.includes(PRODUCTION_SITE_ID)) throw fail('refusing_production');
   const site = `/api/v1/sites/${STAGING_SITE_ID}`;
   const deploy = deployId ? `/api/v1/deploys/${deployId}` : '';
+  const accountEnv = /^\/api\/v1\/accounts\/[^/]+\/env(?:\/[^/?]+)?\?site_id=([^&]+)/.exec(path);
   const allowed = path === site || path.startsWith(`${site}/`) || path.startsWith(`${site}?`)
-    || (deploy && (path === deploy || path.startsWith(`${deploy}/`) || path.startsWith(`${deploy}?`)));
+    || (deploy && (path === deploy || path.startsWith(`${deploy}/`) || path.startsWith(`${deploy}?`)))
+    || (accountEnv && accountEnv[1] === STAGING_SITE_ID);
   if (!allowed) throw fail('refusing_site_mismatch');
   return path;
 }
@@ -173,7 +326,7 @@ async function loadDevUtils(cliDir) {
   return import(pathToFileURL(utils).href);
 }
 
-async function authorize(cliDir) {
+export async function authorize(cliDir) {
   const { getGlobalConfigStore, getAPIToken } = await loadDevUtils(cliDir);
   const store = await getGlobalConfigStore();
   const userId = store.get('userId');
@@ -220,6 +373,53 @@ function stagingRequest(method, path, token, body, contentType = 'application/js
     req.on('error', () => reject(fail('site_lookup_failed')));
     req.end(payload);
   });
+}
+
+async function stagingAccountId(token) {
+  const response = await stagingRequest('GET', `/api/v1/sites/${STAGING_SITE_ID}`, token);
+  if (response.status === 401 || response.status === 403) throw fail('auth_required');
+  if (response.status !== 200) throw fail('site_lookup_failed');
+  let site = null;
+  try { site = JSON.parse(response.body.toString('utf8')); }
+  catch { throw fail('site_lookup_failed'); }
+  assertSite({ id: site.id, name: site.name, url: site.ssl_url || site.url });
+  return accountIdFromSite(site);
+}
+
+async function fetchSiteEnvPayload(token) {
+  const accountId = await stagingAccountId(token);
+  const response = await stagingRequest('GET', accountEnvPath(accountId), token);
+  if (response.status === 401 || response.status === 403) throw fail('auth_required');
+  if (response.status !== 200) throw fail('env_lookup_failed');
+  let payload = null;
+  try { payload = JSON.parse(response.body.toString('utf8')); }
+  catch { throw fail('env_lookup_failed'); }
+  return { accountId, payload };
+}
+
+async function fetchSiteEnvNames(token) {
+  const { payload } = await fetchSiteEnvPayload(token);
+  return envNamesFromPayload(payload);
+}
+
+async function writeMeasurementReaderEnv(token) {
+  const { accountId, payload } = await fetchSiteEnvPayload(token);
+  const names = envNamesFromPayload(payload);
+  if (measurementReaderAlreadySet(payload)) {
+    const report = siteEnvReport(names, false);
+    report.measurementReader.skipped = true;
+    return report;
+  }
+  const exists = names.includes(MEASUREMENT_READER_KEY);
+  const target = accountEnvPath(accountId, { key: exists ? MEASUREMENT_READER_KEY : '' });
+  const body = exists ? measurementReaderEnvBody()[0] : measurementReaderEnvBody();
+  const response = await stagingRequest(exists ? 'PATCH' : 'POST', target, token, JSON.stringify(body));
+  if (response.status === 401 || response.status === 403) throw fail('auth_required');
+  if (response.status < 200 || response.status >= 300) {
+    saveFailure('env_write_failed', { status: response.status, body: Buffer.from('') });
+    throw fail('env_write_failed');
+  }
+  return siteEnvReport([...names, MEASUREMENT_READER_KEY], true);
 }
 
 function sanitize(value) {
@@ -511,7 +711,7 @@ export function checkLocalLookups(fileMap, functionMap) {
   return missing;
 }
 
-async function bundleFunctions(cliDir) {
+export async function bundleFunctions(cliDir) {
   try {
     return await bundleFunctionsUncaught(cliDir);
   } catch (error) {
@@ -580,6 +780,295 @@ export function listZipEntryNames(buffer) {
   return names;
 }
 
+export function readZipEntry(buffer, wanted) {
+  let eocd = -1;
+  const maxBack = Math.min(buffer.length, 22 + 65535);
+  for (let offset = buffer.length - 22; offset >= buffer.length - maxBack; offset -= 1) {
+    if (offset < 0) break;
+    if (buffer.readUInt32LE(offset) !== 0x06054b50) continue;
+    const commentLength = buffer.readUInt16LE(offset + 20);
+    if (offset + 22 + commentLength === buffer.length) { eocd = offset; break; }
+  }
+  if (eocd < 0) throw new Error('zip end of central directory not found');
+  const count = buffer.readUInt16LE(eocd + 10);
+  let cursor = buffer.readUInt32LE(eocd + 16);
+  for (let index = 0; index < count; index += 1) {
+    if (buffer.readUInt32LE(cursor) !== 0x02014b50) throw new Error('zip central directory is truncated');
+    const method = buffer.readUInt16LE(cursor + 10);
+    const compressedSize = buffer.readUInt32LE(cursor + 20);
+    const nameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const commentLength = buffer.readUInt16LE(cursor + 32);
+    const localOffset = buffer.readUInt32LE(cursor + 42);
+    const name = buffer.subarray(cursor + 46, cursor + 46 + nameLength).toString('utf8');
+    if (name === wanted) {
+      const localName = buffer.readUInt16LE(localOffset + 26);
+      const localExtra = buffer.readUInt16LE(localOffset + 28);
+      const start = localOffset + 30 + localName + localExtra;
+      const data = buffer.subarray(start, start + compressedSize);
+      if (method === 0) return data;
+      if (method === 8) return inflateRawSync(data);
+      throw new Error(`zip method ${method} is not read by this check`);
+    }
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  throw new Error(`zip entry ${wanted} was not found`);
+}
+
+const EAGER_NATIVE_REQUIRE = /require\(\s*["'](sharp|@img\/sharp-[^"']+)["']\s*\)/g;
+
+export function eagerNativePackagingProblems(source, entryNames) {
+  const problems = [];
+  const modules = new Set([...String(source).matchAll(EAGER_NATIVE_REQUIRE)].map((match) => match[1]));
+  for (const mod of modules) {
+    const linuxNative = entryNames.some((name) => name.endsWith('.node') && /linux/.test(name) && name.includes('sharp'));
+    if (!linuxNative) problems.push(`api bundle eagerly requires ${mod}, and the zip has no linux sharp native`);
+  }
+  return problems;
+}
+
+export function apiBundleEntryNames(entryNames) {
+  const list = entryNames || [];
+  const bundles = list.filter((name) => /(^|\/)api\.(cjs|js|mjs)$/.test(String(name).replace(/\\/g, '/')));
+  if (bundles.length) return bundles;
+  return list.filter((name) => {
+    const normalized = String(name).replace(/\\/g, '/');
+    return !normalized.includes('node_modules/') && /\.(cjs|js|mjs)$/.test(normalized);
+  });
+}
+
+export function eagerNativeProblemsForZip(buffer, entryNames) {
+  const bundles = apiBundleEntryNames(entryNames);
+  const problems = [];
+  if (!bundles.length) problems.push('api zip has no function bundle to scan for eager native requires');
+  for (const name of bundles) {
+    let source;
+    try { source = readZipEntry(buffer, name).toString('utf8'); }
+    catch (error) { problems.push(`api bundle ${name} could not be read: ${error.message}`); continue; }
+    problems.push(...eagerNativePackagingProblems(source, entryNames));
+  }
+  problems.push(...linuxSharpPackagingProblems(entryNames));
+  return problems;
+}
+
+export const API_ZIP_MAX_UNZIPPED_BYTES = 250 * 1024 * 1024;
+export const LINUX_SHARP_ZIP_PACKAGES = [
+  'sharp',
+  'detect-libc',
+  'semver',
+  '@img/colour',
+  '@img/sharp-linux-x64',
+  '@img/sharp-libvips-linux-x64',
+];
+
+export function linuxSharpVersions(sharpPackage) {
+  const sharp = sharpPackage?.version;
+  const libvips = sharpPackage?.optionalDependencies?.['@img/sharp-libvips-linux-x64'];
+  if (!sharp || !libvips) throw new Error('installed sharp package has no linux-x64 libvips version');
+  return { sharp, libvips };
+}
+
+export function linuxSharpPackagingProblems(entryNames) {
+  const names = (entryNames || []).map((name) => String(name).replace(/\\/g, '/'));
+  const problems = [];
+  const node = names.some((name) => name.includes('@img/sharp-linux-x64/') && name.endsWith('.node'));
+  const libvips = names.some((name) => name.includes('@img/sharp-libvips-linux-x64/') && name.includes('libvips-cpp.so'));
+  if (!node) problems.push('api zip is missing the glibc linux-x64 sharp native (@img/sharp-linux-x64 .node)');
+  if (!libvips) problems.push('api zip is missing @img/sharp-libvips-linux-x64');
+  return problems;
+}
+
+function readPackageVersion(path) {
+  try { return JSON.parse(readFileSync(path, 'utf8')).version; }
+  catch { return null; }
+}
+
+function copyInstalledPackage(repoRoot, nodeModulesDir, name) {
+  const from = resolve(repoRoot, 'node_modules', ...name.split('/'));
+  if (!existsSync(resolve(from, 'package.json'))) throw new Error(`missing ${name} in ${resolve(repoRoot, 'node_modules')}`);
+  placePackage(from, nodeModulesDir, name);
+}
+
+function placePackage(from, nodeModulesDir, name) {
+  const to = resolve(nodeModulesDir, ...name.split('/'));
+  if (resolve(from) === resolve(to)) return;
+  mkdirSync(resolve(to, '..'), { recursive: true });
+  cpSync(from, to, { recursive: true, dereference: true });
+}
+
+function locatePackage(root, name) {
+  const parts = name.split('/');
+  const direct = resolve(root, 'node_modules', ...parts);
+  if (existsSync(resolve(direct, 'package.json'))) return direct;
+  const nodeModules = resolve(root, 'node_modules');
+  if (!existsSync(nodeModules)) return null;
+  for (const entry of readdirSync(nodeModules, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const nested = resolve(nodeModules, entry.name, 'node_modules', ...parts);
+    if (existsSync(resolve(nested, 'package.json'))) return nested;
+  }
+  return null;
+}
+
+function installLinuxSharp(destination, versions) {
+  writeFileSync(resolve(destination, 'package.json'), JSON.stringify({ private: true, name: 'oi-linux-sharp' }));
+  execFileSync('npm', [
+    'install', '--no-save', '--no-package-lock', '--omit=dev',
+    '--os=linux', '--cpu=x64', '--libc=glibc',
+    `sharp@${versions.sharp}`,
+  ], {
+    cwd: destination,
+    env: { ...process.env, npm_config_os: 'linux', npm_config_cpu: 'x64', npm_config_libc: 'glibc' },
+    stdio: 'pipe',
+  });
+}
+
+export function stageLinuxSharp(repoRoot, destination) {
+  const sharpPackage = JSON.parse(readFileSync(resolve(repoRoot, 'node_modules/sharp/package.json'), 'utf8'));
+  const versions = linuxSharpVersions(sharpPackage);
+  const nodeModulesDir = resolve(destination, 'node_modules');
+  mkdirSync(resolve(nodeModulesDir, '@img'), { recursive: true });
+  const nativeVersion = readPackageVersion(resolve(repoRoot, 'node_modules/@img/sharp-linux-x64/package.json'));
+  const libvipsVersion = readPackageVersion(resolve(repoRoot, 'node_modules/@img/sharp-libvips-linux-x64/package.json'));
+  if (nativeVersion === versions.sharp && libvipsVersion === versions.libvips) {
+    for (const name of LINUX_SHARP_ZIP_PACKAGES) copyInstalledPackage(repoRoot, nodeModulesDir, name);
+  } else {
+    installLinuxSharp(destination, versions);
+    for (const name of LINUX_SHARP_ZIP_PACKAGES) {
+      const found = locatePackage(destination, name);
+      if (!found) throw new Error(`npm install did not provide ${name} for linux-x64`);
+      placePackage(found, nodeModulesDir, name);
+    }
+  }
+  const win32 = resolve(repoRoot, 'node_modules/@img/sharp-win32-x64/package.json');
+  if (existsSync(win32)) copyInstalledPackage(repoRoot, nodeModulesDir, '@img/sharp-win32-x64');
+  const stagedNative = readPackageVersion(resolve(nodeModulesDir, '@img/sharp-linux-x64/package.json'));
+  const stagedLibvips = readPackageVersion(resolve(nodeModulesDir, '@img/sharp-libvips-linux-x64/package.json'));
+  if (stagedNative !== versions.sharp || stagedLibvips !== versions.libvips) {
+    throw new Error(`linux sharp ${stagedNative || 'missing'} / libvips ${stagedLibvips || 'missing'} does not match sharp ${versions.sharp} / ${versions.libvips}`);
+  }
+  return nodeModulesDir;
+}
+
+export function linuxSharpZipEntries(nodeModulesDir) {
+  const packages = [...LINUX_SHARP_ZIP_PACKAGES];
+  if (existsSync(resolve(nodeModulesDir, '@img/sharp-win32-x64/package.json'))) packages.push('@img/sharp-win32-x64');
+  const files = [];
+  const walk = (dir, prefix) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === 'node_modules') continue;
+      const path = resolve(dir, entry.name);
+      const name = `${prefix}${entry.name}`;
+      if (entry.isDirectory()) walk(path, `${name}/`);
+      else if (entry.isFile()) files.push({ name: `node_modules/${name}`.replace(/\\/g, '/'), data: readFileSync(path) });
+    }
+  };
+  for (const name of packages) {
+    const dir = resolve(nodeModulesDir, ...name.split('/'));
+    if (!existsSync(dir)) throw new Error(`staged sharp package ${name} is missing`);
+    walk(dir, `${name}/`);
+  }
+  return files;
+}
+
+export function zipUnzippedBytes(buffer) {
+  const maxBack = Math.min(buffer.length, 22 + 65535);
+  let eocd = -1;
+  for (let offset = buffer.length - 22; offset >= buffer.length - maxBack; offset -= 1) {
+    if (offset < 0) break;
+    if (buffer.readUInt32LE(offset) !== 0x06054b50) continue;
+    const commentLength = buffer.readUInt16LE(offset + 20);
+    if (offset + 22 + commentLength === buffer.length) { eocd = offset; break; }
+  }
+  if (eocd < 0) throw new Error('zip end of central directory not found');
+  const count = buffer.readUInt16LE(eocd + 10);
+  let cursor = buffer.readUInt32LE(eocd + 16);
+  if (cursor === 0xffffffff) throw new Error('zip64 central directory is not measured by this check');
+  let total = 0;
+  for (let index = 0; index < count; index += 1) {
+    if (buffer.readUInt32LE(cursor) !== 0x02014b50) throw new Error('zip central directory is truncated');
+    const uncompressed = buffer.readUInt32LE(cursor + 24);
+    if (uncompressed === 0xffffffff) throw new Error('zip64 entry is not measured by this check');
+    total += uncompressed;
+    const nameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const commentLength = buffer.readUInt16LE(cursor + 32);
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  return total;
+}
+
+export function appendZipEntries(buffer, files) {
+  const existing = new Set(listZipEntryNames(buffer));
+  const additions = files.filter((file) => file?.name && !existing.has(file.name));
+  if (!additions.length) return buffer;
+  const maxBack = Math.min(buffer.length, 22 + 65535);
+  let eocd = -1;
+  for (let offset = buffer.length - 22; offset >= buffer.length - maxBack; offset -= 1) {
+    if (offset < 0) break;
+    if (buffer.readUInt32LE(offset) !== 0x06054b50) continue;
+    const commentLength = buffer.readUInt16LE(offset + 20);
+    if (offset + 22 + commentLength === buffer.length) { eocd = offset; break; }
+  }
+  if (eocd < 0) throw new Error('zip end of central directory not found');
+  const count = buffer.readUInt16LE(eocd + 10);
+  const centralSize = buffer.readUInt32LE(eocd + 12);
+  const centralOffset = buffer.readUInt32LE(eocd + 16);
+  if (centralOffset === 0xffffffff || centralSize === 0xffffffff) throw new Error('zip64 archives are not extended by this check');
+  const locals = [];
+  const centrals = [];
+  let offset = centralOffset;
+  for (const file of additions) {
+    const name = Buffer.from(file.name);
+    const data = Buffer.isBuffer(file.data) ? file.data : Buffer.from(file.data);
+    const compressed = deflateRawSync(data);
+    const method = compressed.length < data.length ? 8 : 0;
+    const payload = method === 8 ? compressed : data;
+    const sum = crc32(data) >>> 0;
+    const local = Buffer.alloc(30 + name.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(sum, 14);
+    local.writeUInt32LE(payload.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    name.copy(local, 30);
+    locals.push(Buffer.concat([local, payload]));
+    const central = Buffer.alloc(46 + name.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(method, 10);
+    central.writeUInt32LE(sum, 16);
+    central.writeUInt32LE(payload.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    name.copy(central, 46);
+    centrals.push(central);
+    offset += local.length + payload.length;
+  }
+  const nextCentral = Buffer.concat([buffer.subarray(centralOffset, centralOffset + centralSize), ...centrals]);
+  const nextEocd = Buffer.alloc(22);
+  nextEocd.writeUInt32LE(0x06054b50, 0);
+  nextEocd.writeUInt16LE(count + additions.length, 8);
+  nextEocd.writeUInt16LE(count + additions.length, 10);
+  nextEocd.writeUInt32LE(nextCentral.length, 12);
+  nextEocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([buffer.subarray(0, centralOffset), ...locals, nextCentral, nextEocd]);
+}
+
+export function extractZip(buffer, destination) {
+  mkdirSync(destination, { recursive: true });
+  for (const name of listZipEntryNames(buffer)) {
+    if (name.endsWith('/') || name.split('/').includes('..')) continue;
+    const path = resolve(destination, name);
+    mkdirSync(resolve(path, '..'), { recursive: true });
+    writeFileSync(path, readZipEntry(buffer, name));
+  }
+}
+
 export function functionZipProblems(name, byteLength, entryNames) {
   const problems = [];
   if (name === 'api' && byteLength < API_ZIP_MIN_BYTES) problems.push(`api zip is ${byteLength} bytes, under ${API_ZIP_MIN_BYTES}`);
@@ -613,6 +1102,18 @@ async function bundleFunctionsUncaught(cliDir) {
   const functionsDir = stageFunctionSources(root, stamp);
   const zipConfig = functionsZipConfig(readFileSync(resolve(root, 'netlify.toml'), 'utf8'));
   const built = await zipFunctions([functionsDir], tmp, { basePath: root, repositoryRoot: root, config: zipConfig });
+  const sharpStage = mkdtempSync(resolve(root, 'dist/linux-sharp-'));
+  try {
+    const sharpModules = stageLinuxSharp(root, sharpStage);
+    const sharpFiles = linuxSharpZipEntries(sharpModules);
+    for (const fn of built) {
+      if (fn.name !== 'api') continue;
+      const next = appendZipEntries(readFileSync(fn.path), sharpFiles);
+      writeFileSync(fn.path, next);
+    }
+  } finally {
+    rmSync(sharpStage, { recursive: true, force: true });
+  }
   const functions = {};
   const byHash = {};
   for (const fn of built) {
@@ -680,10 +1181,15 @@ export function functionsZipConfig(tomlText) {
   const bundler = /node_bundler\s*=\s*"([^"]+)"/.exec(body)?.[1];
   const external = /external_node_modules\s*=\s*\[([^\]]*)\]/.exec(body)?.[1] || '';
   const modules = [...external.matchAll(/"([^"]+)"/g)].map((item) => item[1]);
+  const included = /included_files\s*=\s*\[([^\]]*)\]/.exec(body)?.[1] || '';
+  const includedFiles = [...included.matchAll(/"([^"]+)"/g)].map((item) => item[1]);
+  const timeout = Number(/^\s*timeout\s*=\s*(\d+)/m.exec(body)?.[1]);
   return {
     '*': {
       ...(modules.length ? { externalNodeModules: modules } : {}),
+      ...(includedFiles.length ? { includedFiles } : {}),
       ...(bundler === 'esbuild' ? { nodeBundler: 'esbuild_zisi' } : bundler ? { nodeBundler: bundler } : {}),
+      ...(Number.isInteger(timeout) && timeout > 0 ? { timeout } : {}),
       processDynamicNodeImports: true,
       zipGo: true,
     },
@@ -975,7 +1481,7 @@ async function uploadOutstanding(token, deployId, diff, fileMap, functionMap, jo
   }
 }
 
-function deployFiles() {
+export function deployFiles() {
   return includeNetlifyToml(digestFiles(resolve(packageDir, 'publish')), resolve(root, 'netlify.toml'));
 }
 
@@ -1008,6 +1514,10 @@ async function ensurePublishingLocked(token, journal) {
 
 async function uploadDigestDeploy(token, fileMap, functionMap, journal) {
   if (!fileMap.files['/netlify.toml'] || !apiRoutesOk(functionMap)) throw fail('refusing_missing_routes');
+  const envReport = await writeMeasurementReaderEnv(token);
+  journal.measurementReader = envReport.measurementReader;
+  journal.recognitionEnvPresent = envReport.recognitionEnvPresent;
+  writeJson(attemptPath, journal);
   await ensurePublishingLocked(token, journal);
   const createBody = productionDeployBody({
     files: fileMap.files,
@@ -1153,6 +1663,13 @@ async function uploadCheck() {
     try { names = listZipEntryNames(bytes); }
     catch (error) { zipProblems.push(`${name} zip could not be listed: ${error.message}`); }
     zipProblems.push(...functionZipProblems(name, bytes.length, names));
+    if (name === 'api') {
+      try {
+        const unzipped = zipUnzippedBytes(bytes);
+        if (unzipped > API_ZIP_MAX_UNZIPPED_BYTES) zipProblems.push(`api zip unpacks to ${unzipped} bytes, over ${API_ZIP_MAX_UNZIPPED_BYTES}`);
+      } catch (error) { zipProblems.push(`api zip size could not be measured: ${error.message}`); }
+      zipProblems.push(...eagerNativeProblemsForZip(bytes, names));
+    }
   }
   const routesOk = apiRoutesOk(functionMap);
   const apiInvocationMode = functionMap.functionsConfig?.api?.invocation_mode || null;
@@ -1478,6 +1995,10 @@ async function diagnoseDeploy(deployId) {
     if (summary.available) break;
   }
   const publishedDeployId = siteResponse.body.published_deploy?.id || null;
+  let siteEnv = null;
+  let envError = null;
+  try { siteEnv = siteEnvReport(await fetchSiteEnvNames(token), false); }
+  catch (error) { envError = error.code || 'env_lookup_failed'; }
   const record = scrubDeployValue({
     state: 'diagnose',
     readsOnly: true,
@@ -1492,6 +2013,9 @@ async function diagnoseDeploy(deployId) {
     differences: compareFunctionLists(knownGood.functions, candidate.functions),
     functionListStatus: candidate.listStatus,
     apiLogs: logs,
+    measurementReader: siteEnv?.measurementReader || null,
+    recognitionEnvPresent: siteEnv?.recognitionEnvPresent || null,
+    envError,
   });
   mkdirSync(journalDir, { recursive: true });
   writeJson(resolve(journalDir, `diagnose-${deployId}.json`), record);
@@ -1550,6 +2074,10 @@ async function main() {
       catch (error) { rollbackError = error.code || 'cli_login_required'; }
     }
     mkdirSync(journalDir, { recursive: true });
+    let siteEnv = null;
+    let envError = null;
+    try { siteEnv = siteEnvReport(await fetchSiteEnvNames(await authorize(netlifyCliDir())), false); }
+    catch (error) { envError = error.code || 'env_lookup_failed'; }
     const record = {
       state: 'dry-run',
       commit: assertHeadCommit(root),
@@ -1562,6 +2090,9 @@ async function main() {
       liveDeployId: rollback?.liveDeployId || null,
       rollbackError,
       productionRefused: true,
+      measurementReader: siteEnv?.measurementReader || measurementReaderReport([], false),
+      recognitionEnvPresent: siteEnv?.recognitionEnvPresent || recognitionEnvReport([]),
+      envError,
       createdAt: new Date().toISOString(),
     };
     writeJson(dryRunPath, record);

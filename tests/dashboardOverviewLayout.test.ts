@@ -14,10 +14,14 @@ const api = vi.hoisted(() => ({
   fetchCapitalForecastRollup: vi.fn(),
   fetchComplianceAlerts: vi.fn(),
   platformMe: vi.fn(),
+  fetchCompanyHome: vi.fn(),
+  facilityDashboardAccess: vi.fn(),
+  switchCompany: vi.fn(),
 }));
+const auth = vi.hoisted(() => ({ adoptToken: vi.fn() }));
 vi.mock("../dashboard/src/lib/api", () => api);
 vi.mock("../dashboard/src/lib/AuthContext", () => ({
-  useAuth: () => ({ auth: { role: "admin", userId: "u", organizationId: "org-1" }, logout: () => {} }),
+  useAuth: () => ({ auth: { role: "admin", userId: "u", organizationId: "org-1" }, logout: () => {}, adoptToken: auth.adoptToken }),
 }));
 vi.mock("../dashboard/src/lib/LocationContext", () => ({
   useLocations: () => ({
@@ -48,10 +52,28 @@ beforeEach(() => {
     { id: "o1", opening_code: "A-1", building_id: "b1", floor_label: "1", location_description: "Lobby", opening_type: "door", fire_rated: true, life_safety_critical: false, is_electrified: false, health_score: 80, status: "active", opening_configuration: "single", completion_state: "complete" },
     { id: "o2", opening_code: "A-2", building_id: "b1", floor_label: null, location_description: null, opening_type: "door", fire_rated: false, life_safety_critical: false, is_electrified: false, health_score: 30, status: "active", opening_configuration: "single", completion_state: "complete" },
   ]);
-  api.listCompanies.mockResolvedValue([{ organization_id: "org-1", name: "Acme Doors", role: "admin", is_home: true }]);
+  api.listCompanies.mockResolvedValue([
+    { organization_id: "org-1", name: "OI Synthetic Acceptance A", role: "admin", is_home: true },
+    { organization_id: "provider-1", name: "TEST PD Provider", role: "facilities_manager", is_home: false },
+    { organization_id: "tech-1", name: "Field Tech Co", role: "technician", is_home: false },
+    { organization_id: "view-1", name: "View Only Co", role: "viewer", is_home: false },
+  ]);
+  api.switchCompany.mockResolvedValue({ token: "switched-token" });
+  auth.adoptToken.mockReset();
   api.fetchCapitalForecastRollup.mockResolvedValue({ properties: [{ property_id: "p1", property_name: "Main", total_openings: 2, buckets: { urgent: { label: "Urgent", total: 1, by_type: {}, needing_estimate_by_type: { door: 1 }, known_cost_total: 400 } } }] });
   api.fetchComplianceAlerts.mockResolvedValue({ total_flagged: 1, counts: { never_inspected: 1, overdue: 0, due_soon: 0 }, alerts: [{ id: "c1", opening_code: "A-2", floor_label: null, location_description: null, fire_rated: false, life_safety_critical: true, building_name: "North", property_name: "Main", property_id: "p1", last_inspection_date: null, alert_level: "never_inspected" }] });
   api.platformMe.mockResolvedValue({ staff: false });
+  api.fetchCompanyHome.mockResolvedValue({
+    company_name: "Harbor Door Service",
+    classification_note: "Facility accounts are customer sites this company has been granted.",
+    counts: { open_work_orders: 3, failed_or_overdue: 1, inspections_due_30_days: 2, quotes: 4 },
+    customers: [{
+      id: "cust-1", name: "Northwind Clinics", kind: "facility", kind_label: "Facility account",
+      opening_count: 2, attention_count: 1, attention: "1 needs attention",
+      last_visit: "2026-10-28", next_due: "2026-11-18", property_ids: ["p1"],
+    }],
+  });
+  api.facilityDashboardAccess.mockRejectedValue(new Error("denied"));
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -65,28 +87,51 @@ it("renders the overview from API data and leaves service cost unavailable", asy
   await act(async () => {
     root.render(createElement(MemoryRouter, { basename: "/dashboard/", initialEntries: ["/dashboard/"] }, createElement(DashboardPage)));
   });
-  await vi.waitFor(() => expect(host.textContent).toContain("Maricopa County"));
+  await vi.waitFor(() => expect(host.textContent).toContain("Northwind Clinics"));
   expect(host.textContent).not.toMatch(/Example data/i);
-  expect(host.textContent).toContain("Portfolio Health Score");
-  expect(host.textContent).toContain("Openings on File");
-  expect(host.textContent).toContain("Need Attention");
-  expect(host.textContent).toContain("Fire-Rated Openings");
-  expect(host.textContent).toContain("Identified Corrective Work");
-  expect(host.textContent).toContain("$400");
-  expect(host.textContent).toContain("Recorded Service This Quarter");
-  expect(host.textContent).toContain("Not available");
-  expect(host.textContent).toContain("Condition at a glance");
-  expect(host.textContent).toContain("Service & compliance");
-  expect(host.textContent).toContain("1 compliance alert on file.");
-  expect(host.textContent).toContain("Export CSV");
-  expect(host.textContent).toContain("Compliance Report (PDF)");
-  expect(host.textContent).toContain("Group by state and county");
-  const menu = host.querySelector("button[aria-controls='new-menu-panel']") as HTMLButtonElement;
-  expect(menu.getAttribute("aria-expanded")).toBe("false");
-  await act(async () => menu.click());
-  expect(menu.getAttribute("aria-expanded")).toBe("true");
-  const panel = host.querySelector("#new-menu-panel") as HTMLElement;
-  expect(panel.textContent).toContain("New Property");
-  expect(panel.textContent).toContain("New Opening");
-  expect(getComputedStyle(panel).position).not.toBe("absolute");
+  expect(host.textContent).toContain("Open work orders");
+  expect(host.textContent).toContain("Failed or overdue");
+  expect(host.textContent).toContain("Inspections due");
+  expect(host.textContent).toContain("Quotes");
+  expect(host.textContent).toContain("Saved estimates. Approval is recorded on each quote.");
+  expect(host.textContent).toContain("Facility accounts");
+  expect(host.textContent).toContain("Small accounts");
+  expect(host.textContent).toContain("Walk-in");
+  expect(host.textContent).toContain("1 needs attention");
+  const chip = (name: string) => [...host.querySelectorAll("button")].find((button) => button.textContent === name) as HTMLButtonElement;
+  expect(chip("All").className).toContain("on");
+  expect(chip("All").getAttribute("aria-pressed")).toBe("true");
+  expect(chip("Facility accounts").className).not.toContain("on");
+  expect(chip("Walk-in").className).not.toContain("on");
+  await act(async () => chip("Walk-in").click());
+  await vi.waitFor(() => expect(host.querySelector("select[aria-label='Company']")).toBeTruthy());
+  const company = host.querySelector("select[aria-label='Company']") as HTMLSelectElement;
+  expect([...company.options].map((option) => option.textContent)).toEqual(["OI Synthetic Acceptance A (home)", "TEST PD Provider"]);
+  await act(async () => {
+    company.value = "provider-1";
+    company.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(api.switchCompany).toHaveBeenCalledWith("provider-1");
+  expect(auth.adoptToken).toHaveBeenCalledWith("switched-token");
+  expect(chip("Walk-in").className).toContain("on");
+  expect(chip("All").className).not.toContain("on");
+  expect(host.textContent).toContain("No customers in this list.");
+  expect(host.textContent).not.toContain("Northwind Clinics");
+  expect(host.textContent).not.toContain("This company has no service customers yet.");
+});
+
+it("says when the company has no service customers", async () => {
+  api.fetchCompanyHome.mockResolvedValue({
+    company_name: "OI Synthetic Acceptance A",
+    classification_note: "Account kind is stored for each site.",
+    counts: { open_work_orders: 0, failed_or_overdue: 0, inspections_due_30_days: 0, quotes: 0 },
+    customers: [],
+  });
+  await act(async () => {
+    root.render(createElement(MemoryRouter, { basename: "/dashboard/", initialEntries: ["/dashboard/"] }, createElement(DashboardPage)));
+  });
+  await vi.waitFor(() => expect(host.textContent).toContain("This company has no service customers yet."));
+  const walkin = [...host.querySelectorAll("button")].find((button) => button.textContent === "Walk-in") as HTMLButtonElement;
+  expect(walkin.className).not.toContain("on");
+  expect(host.textContent).not.toContain("No customers in this list.");
 });

@@ -9,7 +9,8 @@ import {money} from '../services/estimateMath';
 import {verifiedDocument} from '../services/commercialStorage';
 import {canReadCommercialDocument} from './commercial';
 import {exactSum,reconcileCosts} from '../services/costReconciliation';
-export const sandboxFinanceRouter=Router();sandboxFinanceRouter.use(requireAuth,enforceRolePermissions);
+import {requireCustomerOffice} from '../middleware/facilityOffice';
+export const sandboxFinanceRouter=Router();sandboxFinanceRouter.use(requireAuth,enforceRolePermissions,requireCustomerOffice);
 const uuid=z.string().uuid(),date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s=>{const d=new Date(s+'T00:00:00Z');return Number.isFinite(+d)&&d.toISOString().slice(0,10)===s;});
 class Conflict extends Error{constructor(public code:string,public status=409){super(code);}}
 function endpoint(method:'get'|'post',path:string,fn:(c:any,r:AuthedRequest)=>Promise<any>){sandboxFinanceRouter[method](path,async(req:AuthedRequest,res)=>{const c = await acquireClient(res); if (!c) return;try{await c.query('BEGIN');const value=await fn(c,req);await c.query('COMMIT');res.set('Cache-Control','no-store').json(value);}catch(e:any){await c.query('ROLLBACK');if(e instanceof z.ZodError)return res.status(422).json({error:'invalid_sandbox_financial_record'});if(e instanceof Conflict)return res.status(e.status).json({error:e.code});if(['23503','23505'].includes(e.code))return res.status(409).json({error:'financial_identity_conflict'});if(['verified_private_document_required','document_object_unavailable','document_integrity_failed','amount_out_of_range'].includes(e.message))return res.status(409).json({error:e.message});console.error(e);res.status(500).json({error:'sandbox_finance_unavailable'});}finally{c.release();}});}

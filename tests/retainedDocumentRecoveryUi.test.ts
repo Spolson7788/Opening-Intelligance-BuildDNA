@@ -2,7 +2,7 @@
 import {it,expect,vi} from 'vitest';
 import {readFileSync} from 'node:fs';
 const state=vi.hoisted(()=>({api:vi.fn(),principal:{userId:'a',organizationId:'a-org',role:'admin',token:'fake'}}));
-vi.mock('../facility-dashboard/api-client.mjs',()=>({api:state.api,readFieldSession:async()=>state.principal}));
+vi.mock('../facility-dashboard/api-client.mjs',()=>({api:state.api,readFieldSession:async()=>state.principal,requireFacilityOfficePage:async()=>true}));
 it('exposes only enabled recovery, blocks duplicate clicks and removes controls on account change',async()=>{
  let sessionCheck:any;vi.spyOn(globalThis,'setInterval').mockImplementation((fn:any)=>{sessionCheck=fn;return 0 as any;});
  document.documentElement.innerHTML=readFileSync('facility-dashboard/commercial.html','utf8');history.replaceState(null,'','?opening=fixture');

@@ -4,7 +4,7 @@ import {beforeEach,afterEach,it,expect,vi} from 'vitest';
 import {MemoryRouter,Routes,Route,Navigate} from 'react-router-dom';
 const data=vi.hoisted(()=>({stored:{userId:'A',organizationId:'org-A',role:'admin',token:'FAKE'} as any,clear:vi.fn(),logout:null as any}));
 vi.mock('../field-app/src/lib/db',()=>({loadAuth:async()=>data.stored,clearAuth:()=>data.clear()}));
-vi.mock('../field-app/src/lib/api',()=>({login:vi.fn(),decodeTokenPayload:vi.fn(),fetchLabelConfig:async()=>({field_base:''})}));
+vi.mock('../field-app/src/lib/api',()=>({login:vi.fn(),decodeTokenPayload:vi.fn(),fetchLabelConfig:async()=>({field_base:''}),fetchCompanies:async()=>({companies:[{organization_id:'org-A',name:'Company A',role:'admin'}]})}));
 vi.mock('../field-app/src/lib/freshSignIn',()=>({recordFreshSignIn:vi.fn()}));
 vi.mock('../field-app/src/components/SyncBadge',()=>({SyncBadge:()=>null}));
 vi.mock('html5-qrcode',()=>({Html5Qrcode:class {start(){return Promise.resolve();}stop(){return Promise.resolve();}}}));

@@ -66,6 +66,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   display: flex;
   align-items: stretch;
   min-height: 100vh;
+  min-width: 0;
   background: #e8eef5;
 }
 
@@ -140,6 +141,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .sidebar-brand-name { display: block; color: #fff; font-weight: 700; font-size: 15px; }
 .sidebar-brand-sub { display: block; color: #8fa3bc; font-size: 11px; font-weight: 500; }
 .sidebar-nav { display: flex; flex-direction: column; }
+.sidebar-top { display: contents; }
+.sidebar-panel { display: contents; }
+.sidebar-toggle { display: none; }
+#openings { scroll-margin-top: 12px; }
 .sidebar-spacer { flex: 1; min-height: 12px; }
 .nav-group { margin-bottom: 12px; }
 .nav-label {
@@ -255,9 +260,31 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .ov-filters select { padding: 7px 10px; border: 1px solid #d5dee8; border-radius: 7px; background: #fff; }
 .ov-foot { margin-top: 12px; font-size: 12.5px; color: #5a6a7e; }
 @media (max-width: 1280px) { .ov-scores { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 981px) {
+  .sidebar-top, .sidebar-panel { display: contents; }
+  .sidebar-toggle { display: none; }
+}
 @media (max-width: 980px) {
   .app-shell { flex-direction: column; }
   .sidebar { width: 100%; min-height: auto; position: static; }
+  .sidebar-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .sidebar-brand { margin-bottom: 0; }
+  .sidebar-toggle {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: transparent;
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .sidebar-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sidebar-panel { display: none; }
+  .sidebar.is-open .sidebar-panel { display: flex; flex-direction: column; }
   .ov-split { grid-template-columns: 1fr; }
   .ov-scores { grid-template-columns: repeat(2, 1fr); }
   .main { padding: 20px 16px 40px; }
@@ -266,8 +293,57 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 
 .main {
   flex: 1;
+  min-width: 0;
+  max-width: 100%;
   padding: 28px 32px;
+  overflow-x: hidden;
+}
+
+.table-scroll {
   overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.inspection-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: var(--surface);
+}
+
+.inspection-card.is-linked {
+  border-color: #c45a1a;
+  box-shadow: 0 0 0 2px #c45a1a;
+}
+
+.inspection-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.inspection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.inspection-actions .btn {
+  width: auto;
+  min-height: 36px;
+  height: auto;
+  padding: 6px 12px;
 }
 
 .page-header {

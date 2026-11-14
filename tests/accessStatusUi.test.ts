@@ -2,7 +2,7 @@
 import {beforeEach,afterEach,it,expect,vi} from 'vitest';
 import {readFileSync} from 'node:fs';
 const state=vi.hoisted(()=>({api:vi.fn(),session:vi.fn()}));
-vi.mock('../facility-dashboard/api-client.mjs',()=>({api:state.api,readFieldSession:state.session}));
+vi.mock('../facility-dashboard/api-client.mjs',()=>({api:state.api,readFieldSession:state.session,requireFacilityOfficePage:async()=>true}));
 let interval:()=>Promise<void>;
 const principal={userId:'a',organizationId:'org-a',role:'admin',token:'synthetic-local'};
 const content=()=>document.getElementById('content') as HTMLElement;

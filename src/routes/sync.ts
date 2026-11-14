@@ -1,5 +1,6 @@
 import { acquireClient } from '../db/acquireClient';
 import { revisionConflict } from "../services/revision";
+import { hasDimension } from "../lib/inchMeasure";
 import { randomBytes } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
@@ -14,6 +15,9 @@ import {
   findSyncReceipt,
   writeSyncReceiptAndAudit,
 } from "../services/syncProtocol";
+import { prepareFireDoorChecklist, applyFireDoorFollowUp } from "../services/nfpa80Inspection";
+import { bindInspectionVisit } from "../services/inspectionVisits";
+import { generalPassCarriesChecklist } from "../services/nfpa80Checklist";
 
 export const syncRouter = Router();
 syncRouter.use(requireAuth);
@@ -191,13 +195,13 @@ const generalSyncOperation = z.object({
 });
 
 const framePayload = z.object({
-  material: z.string().optional(), frame_type: z.string().optional(), width_in: z.number().positive().optional(),
-  height_in: z.number().positive().optional(), fire_rated: z.boolean().optional(),
+  material: z.string().optional(), frame_type: z.string().optional(), width_in: z.number().positive().nullable().optional(),
+  height_in: z.number().positive().nullable().optional(), fire_rated: z.boolean().optional(),
   condition: z.enum(["good", "worn", "failed", "unverified"]).optional(), notes: z.string().optional(),
 });
 const leafPayload = z.object({
   leaf_role: z.enum(["single", "active", "inactive"]), handing: z.string().optional(), material: z.string().optional(),
-  width_in: z.number().positive().optional(), height_in: z.number().positive().optional(), thickness_in: z.number().positive().optional(),
+  width_in: z.number().positive().nullable().optional(), height_in: z.number().positive().nullable().optional(), thickness_in: z.number().positive().nullable().optional(),
   fire_rated: z.boolean().optional(), condition: z.enum(["good", "worn", "failed", "unverified"]).optional(), notes: z.string().optional(),
 });
 const servicePayload = z.object({
@@ -207,7 +211,11 @@ const servicePayload = z.object({
 const inspectionPayload = z.object({
   event_date: z.string(), inspection_type: z.enum(["general", "fire_door_nfpa80", "ada_compliance", "access_control"]),
   checklist_result: z.record(z.string(), z.unknown()).optional(), passed: z.boolean(), notes: z.string().optional(),
-  signature_data: z.string().max(500_000).optional(), signed_by_name: z.string().optional(),
+  signature_data: z.string().max(2_000_000).optional(), signed_by_name: z.string().optional(),
+  inspector_qualification: z.string().max(200).optional(),
+  inspector_license_number: z.string().max(80).optional(),
+  visit_id: z.string().uuid().optional(),
+  replace_open_visit: z.boolean().optional(),
 });
 
 syncRouter.post("/operations", async (req: AuthedRequest, res) => {
@@ -239,7 +247,9 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       if (prior.actor_user_id !== userId) { await client.query("ROLLBACK"); return res.status(409).json({ error: "idempotency_key_reused" }); }
       const replay = assertReceiptReplay(prior, { entityId: b.entity_id, payloadHash });
       await client.query("ROLLBACK");
-      return replay === "idempotency_key_reused" ? res.status(409).json({ error: replay }) : res.json({ ...prior, status: "already_applied" });
+      return replay === "idempotency_key_reused"
+        ? res.status(409).json({ error: replay, server_revision: prior.resulting_server_revision == null ? null : Number(prior.resulting_server_revision) })
+        : res.json({ ...prior, status: "already_applied" });
     }
     if (b.entity_type !== "frame" && b.entity_type !== "door_leaf" && (b.operation_type === "update" || b.base_server_revision !== null)) {
       await client.query("ROLLBACK"); return res.status(400).json({ error: "operation_entity_mismatch" });
@@ -253,16 +263,24 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       }
       const conflict = revisionConflict(permanent.rows[0], b.base_server_revision);
       if (conflict) { await client.query("ROLLBACK"); return res.status(409).json(conflict); }
+      const widthSet = hasDimension(payload, "width_in");
+      const heightSet = hasDimension(payload, "height_in");
       const result = await client.query(`INSERT INTO opening_frames
         (id,opening_id,material,frame_type,width_in,height_in,fire_rated,condition,notes,client_operation_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
         ON CONFLICT (opening_id) DO UPDATE SET material=EXCLUDED.material,frame_type=EXCLUDED.frame_type,
-        width_in=EXCLUDED.width_in,height_in=EXCLUDED.height_in,fire_rated=EXCLUDED.fire_rated,
+        width_in=CASE WHEN $12::boolean THEN $5::numeric ELSE opening_frames.width_in END,
+        height_in=CASE WHEN $13::boolean THEN $6::numeric ELSE opening_frames.height_in END,
+        fire_rated=EXCLUDED.fire_rated,
         condition=EXCLUDED.condition,notes=EXCLUDED.notes,client_operation_id=EXCLUDED.client_operation_id,
         revision=opening_frames.revision+1,updated_at=now() WHERE opening_frames.revision=$11 RETURNING *`,
-      [b.entity_id,b.opening_id,payload.material??null,payload.frame_type??null,payload.width_in??null,payload.height_in??null,
-        payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id,b.base_server_revision]); record=result.rows[0];
-      if (!record) { await client.query("ROLLBACK"); return res.status(409).json({ error: "revision_conflict" }); }
+      [b.entity_id,b.opening_id,payload.material??null,payload.frame_type??null,widthSet ? payload.width_in ?? null : null,heightSet ? payload.height_in ?? null : null,
+        payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id,b.base_server_revision,widthSet,heightSet]); record=result.rows[0];
+      if (!record) {
+        await client.query("ROLLBACK");
+        const current = await pool.query("SELECT revision FROM opening_frames WHERE opening_id=$1", [b.opening_id]);
+        return res.status(409).json({ error: "revision_conflict", server_revision: current.rows[0] ? Number(current.rows[0].revision) : null });
+      }
     } else if (b.entity_type === "door_leaf") {
       if ((opening.opening_configuration === "single") !== (payload.leaf_role === "single")) {
         await client.query("ROLLBACK"); return res.status(409).json({ error: "leaf_role_configuration_mismatch" });
@@ -276,16 +294,26 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       }
       const conflict = revisionConflict(permanent.rows[0], b.base_server_revision);
       if (conflict) { await client.query("ROLLBACK"); return res.status(409).json(conflict); }
+      const widthSet = hasDimension(payload, "width_in");
+      const heightSet = hasDimension(payload, "height_in");
+      const thicknessSet = hasDimension(payload, "thickness_in");
       const result = await client.query(`INSERT INTO door_leaves
         (id,opening_id,leaf_role,handing,material,width_in,height_in,thickness_in,fire_rated,condition,notes,client_operation_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
         ON CONFLICT (opening_id,leaf_role) DO UPDATE SET handing=EXCLUDED.handing,material=EXCLUDED.material,
-        width_in=EXCLUDED.width_in,height_in=EXCLUDED.height_in,thickness_in=EXCLUDED.thickness_in,
+        width_in=CASE WHEN $14::boolean THEN $6::numeric ELSE door_leaves.width_in END,
+        height_in=CASE WHEN $15::boolean THEN $7::numeric ELSE door_leaves.height_in END,
+        thickness_in=CASE WHEN $16::boolean THEN $8::numeric ELSE door_leaves.thickness_in END,
         fire_rated=EXCLUDED.fire_rated,condition=EXCLUDED.condition,notes=EXCLUDED.notes,
         client_operation_id=EXCLUDED.client_operation_id,revision=door_leaves.revision+1,updated_at=now() WHERE door_leaves.revision=$13 RETURNING *`,
-      [b.entity_id,b.opening_id,payload.leaf_role,payload.handing??null,payload.material??null,payload.width_in??null,
-        payload.height_in??null,payload.thickness_in??null,payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id,b.base_server_revision]); record=result.rows[0];
-      if (!record) { await client.query("ROLLBACK"); return res.status(409).json({ error: "revision_conflict" }); }
+      [b.entity_id,b.opening_id,payload.leaf_role,payload.handing??null,payload.material??null,widthSet ? payload.width_in ?? null : null,
+        heightSet ? payload.height_in ?? null : null,thicknessSet ? payload.thickness_in ?? null : null,payload.fire_rated??false,payload.condition??"unverified",payload.notes??null,b.operation_id,b.base_server_revision,
+        widthSet,heightSet,thicknessSet]); record=result.rows[0];
+      if (!record) {
+        await client.query("ROLLBACK");
+        const current = await pool.query("SELECT revision FROM door_leaves WHERE opening_id=$1 AND leaf_role=$2", [b.opening_id, payload.leaf_role]);
+        return res.status(409).json({ error: "revision_conflict", server_revision: current.rows[0] ? Number(current.rows[0].revision) : null });
+      }
     } else if (b.entity_type === "service_event") {
       if (payload.performed_by_org_id && payload.performed_by_org_id !== orgId) {
         await client.query("ROLLBACK");
@@ -302,11 +330,52 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
         payload.work_performed,payload.parts_used??[],payload.cost??null,b.operation_id]); record=result.rows[0];
       await client.query(`UPDATE openings SET last_service_date=GREATEST(COALESCE(last_service_date,$1),$1) WHERE id=$2`,[payload.event_date,b.opening_id]);
     } else if (b.entity_type === "inspection_event") {
+      const already = await client.query(
+        `SELECT * FROM inspection_events WHERE opening_id=$1 AND client_operation_id=$2`,
+        [b.opening_id, b.operation_id]);
+      if (already.rows[0]) {
+        await client.query("ROLLBACK");
+        const prior = await pool.query(
+          `SELECT * FROM sync_operation_receipts WHERE organization_id=$1 AND operation_id=$2`,
+          [orgId, b.operation_id]);
+        if (prior.rows[0]) return res.status(200).json({ ...prior.rows[0], status: "already_applied" });
+        return res.status(200).json({
+          operation_id: b.operation_id, entity_id: already.rows[0].id, entity_type: "inspection_event",
+          opening_id: already.rows[0].opening_id, organization_id: orgId,
+          resulting_server_revision: Number(already.rows[0].revision ?? 1),
+          normalized_record_hash: canonicalPayloadHash(already.rows[0]),
+          server_accepted_at: already.rows[0].created_at ?? new Date().toISOString(),
+          verified_at: new Date().toISOString(), status: "already_applied",
+        });
+      }
+      if (generalPassCarriesChecklist(payload.inspection_type, payload.passed === true, payload.checklist_result)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "inspection_type_mismatch" });
+      }
+      let checklist = payload.checklist_result ?? {};
+      let qualification: string | null = null;
+      let licenseNumber: string | null = null;
+      let preparedItems = null as ReturnType<typeof prepareFireDoorChecklist> | null;
+      if (payload.inspection_type === "fire_door_nfpa80") {
+        const prepared = prepareFireDoorChecklist(payload.checklist_result, payload.signed_by_name as string | undefined, payload.inspector_qualification as string | undefined, payload.inspector_license_number as string | undefined, payload.passed as boolean);
+        if (!prepared.ok) { await client.query("ROLLBACK"); return res.status(400).json({ error: prepared.error }); }
+        checklist = prepared.stored;
+        qualification = (payload.inspector_qualification as string).trim();
+        licenseNumber = (payload.inspector_license_number as string).trim();
+        preparedItems = prepared;
+      }
       const result=await client.query(`INSERT INTO inspection_events
-        (id,opening_id,performed_by_user_id,event_date,inspection_type,checklist_result,passed,notes,signature_data,signed_by_name,signed_at,client_operation_id)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-      [b.entity_id,b.opening_id,userId,payload.event_date,payload.inspection_type,payload.checklist_result??{},payload.passed,
-        payload.notes??null,payload.signature_data??null,payload.signed_by_name??null,payload.signature_data?new Date().toISOString():null,b.operation_id]); record=result.rows[0];
+        (id,opening_id,performed_by_user_id,event_date,inspection_type,checklist_result,passed,notes,signature_data,signed_by_name,signed_at,client_operation_id,inspector_qualification,inspector_license_number)
+        VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+      [b.entity_id,b.opening_id,userId,payload.event_date,payload.inspection_type,JSON.stringify(checklist),payload.passed,
+        payload.notes??null,payload.signature_data??null,payload.signed_by_name??null,payload.signature_data?new Date().toISOString():null,b.operation_id,qualification,licenseNumber]); record=result.rows[0];
+      if (preparedItems && preparedItems.ok) {
+        const follow = await applyFireDoorFollowUp(client, { inspectionId: record.id, openingId: b.opening_id, organizationId: orgId, userId, items: preparedItems.items });
+        if (follow.error) { await client.query("ROLLBACK"); return res.status(400).json({ error: follow.error }); }
+        const visit = await bindInspectionVisit(client, { visitId: payload.visit_id as string | undefined, inspectionId: record.id, openingId: b.opening_id, organizationId: orgId, userId, replaceOpenVisit: payload.replace_open_visit === true });
+        if (visit.error) { await client.query("ROLLBACK"); return res.status(409).json({ error: visit.error }); }
+        if (visit.visitId) record = { ...record, visit_id: visit.visitId };
+      }
     } else {
       const [frame,leaves,hardware]=await Promise.all([
         client.query("SELECT condition FROM opening_frames WHERE opening_id=$1",[b.opening_id]),
@@ -330,9 +399,29 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       resultingServerRevision:Number(record.revision??1),actorUserId:userId,deviceId:b.device_id,schemaVersion:b.schema_version,
       appVersion:b.app_version,protocolVersion:b.protocol_version,responsePayload:record,
       action:`${b.entity_type}_${b.operation_type}_offline`,changedFields:Object.keys(payload).sort() });
-    await client.query("COMMIT"); return res.status(201).json(receipt);
+    await client.query("COMMIT");
+    return res.status(201).json(record?.visit_id ? { ...receipt, visit_id: record.visit_id } : receipt);
   } catch (err:any) {
     await client.query("ROLLBACK").catch(()=>undefined);
+    if (err.code === "23505" && b.entity_type === "inspection_event") {
+      const existing = await pool.query(
+        `SELECT * FROM inspection_events WHERE opening_id=$1 AND client_operation_id=$2`,
+        [b.opening_id, b.operation_id]);
+      const prior = existing.rows[0] ? await pool.query(
+        `SELECT * FROM sync_operation_receipts WHERE organization_id=$1 AND operation_id=$2`,
+        [orgId, b.operation_id]) : null;
+      if (existing.rows[0] && prior?.rows[0]) return res.status(200).json({ ...prior.rows[0], status: "already_applied" });
+      if (existing.rows[0]) {
+        return res.status(200).json({
+          operation_id: b.operation_id, entity_id: existing.rows[0].id, entity_type: "inspection_event",
+          opening_id: existing.rows[0].opening_id, organization_id: orgId,
+          resulting_server_revision: Number(existing.rows[0].revision ?? 1),
+          normalized_record_hash: canonicalPayloadHash(existing.rows[0]),
+          server_accepted_at: existing.rows[0].created_at ?? new Date().toISOString(),
+          verified_at: new Date().toISOString(), status: "already_applied",
+        });
+      }
+    }
     if (err.code === "23505") return res.status(409).json({ error:"entity_or_operation_already_exists" });
     console.error(err); return res.status(500).json({ error:"internal_error" });
   } finally { client.release(); }

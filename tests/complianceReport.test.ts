@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
+import { failingFireDoorFields } from "./nfpa80Fixture";
 
 describe("compliance report", () => {
   it("generates a PDF for fire-rated openings by default", async () => {
@@ -72,7 +73,7 @@ describe("compliance report", () => {
         opening_id: opening.id,
         event_date: "2026-01-01",
         inspection_type: "fire_door_nfpa80",
-        passed: false,
+        ...failingFireDoorFields(),
         notes: "Gap exceeds tolerance",
       });
 

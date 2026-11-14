@@ -1,0 +1,11 @@
+{
+  "state": "template",
+  "siteId": "b4e0fc62-86ce-4a26-9ebf-26d7386f4b01",
+  "pinnedCommit": "bc7c4b975a5e7a694dbe2ad8208f7bc323eb8b71",
+  "packageCommit": "bc7c4b975a5e7a694dbe2ad8208f7bc323eb8b71",
+  "journalDir": "dist/production-publish-journal",
+  "rollbackDeployId": null,
+  "changesVisitorGate": false,
+  "writesEnv": false,
+  "note": "Template only. Do not run scripts/artifact-publisher-production.mjs. The app pin is bc7c4b975a5e7a694dbe2ad8208f7bc323eb8b71. Later publisher and schema-prep commits may sit on that pin. At a real publish, record the live production deploy id as rollbackDeployId. Do not reuse the staging rollback deploy."
+}

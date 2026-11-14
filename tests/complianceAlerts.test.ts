@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
+import { passingFireDoorFields } from "./nfpa80Fixture";
 
 function daysAgo(n: number): string {
   const d = new Date();
@@ -12,7 +13,7 @@ async function logInspection(token: string, openingId: string, eventDate: string
   await request(app)
     .post("/api/events/inspection-events")
     .set("Authorization", `Bearer ${token}`)
-    .send({ opening_id: openingId, event_date: eventDate, inspection_type: "fire_door_nfpa80", passed: true });
+    .send({ opening_id: openingId, event_date: eventDate, inspection_type: "fire_door_nfpa80", ...passingFireDoorFields() });
 }
 
 describe("compliance alerts", () => {

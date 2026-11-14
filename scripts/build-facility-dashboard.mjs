@@ -1,17 +1,51 @@
 import {readFileSync,writeFileSync,cpSync,mkdirSync} from 'node:fs';
 import {resolve} from 'node:path';
 export const PREVIEW_BANNER='<aside style="background:#fff1c8;padding:12px;text-align:center">Nonproduction preview — connected acceptance pending. <a href="opening.html">Opening review</a></aside>';
-export function buildFacilityDashboard(destination,{production=false}={}){
- const root=resolve(import.meta.dirname,'../facility-dashboard');
- let html=readFileSync(resolve(root,'portal-source.html'),'utf8');
+// Node parses this script's markers as LF. A Windows checkout can leave the HTML as CRLF.
+// Compare the text with line endings normalized, and still refuse a changed marker.
+function asLf(text){return text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');}
+export function buildFacilityDashboard(destination,{production=false,sourceRoot}={}){
+ const root=sourceRoot||resolve(import.meta.dirname,'../facility-dashboard');
+ let html=asLf(readFileSync(resolve(root,'portal-source.html'),'utf8'));
  html=html.replace('<script type="module">','<script type="module">\nimport {installLabelActions,addOpeningLabelAction} from "./labels.mjs";\nimport {addServiceRequestAction} from "./service-requests.mjs";');
- const replace=(a,b)=>{if(!html.includes(a))throw Error('Dashboard source changed: '+a.slice(0,80));html=html.replace(a,b);};
+ const replace=(a,b)=>{const needle=asLf(a);if(!html.includes(needle))throw Error('Dashboard source changed: '+needle.slice(0,80));html=html.replace(needle,asLf(b));};
  // oi-production shows no nonproduction preview banner; staging keeps it.
  if(production)replace(PREVIEW_BANNER,'');
- replace('import {url,key} from "./preview-config.mjs";', 'import {sb,refreshScope,refreshFacility,readFieldSession,api} from "./api-client.mjs";');
+ replace('import {url,key} from "./preview-config.mjs";', 'import {sb,refreshScope,refreshFacility,readFieldSession,api,downloadFacilityVisitPdf,reviewPurchasing} from "./api-client.mjs";');
  replace("import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';",'');
  replace('const SUPA_URL=url;', '');replace('const SUPA_KEY=key;','');replace('const sb=createClient(SUPA_URL,SUPA_KEY);','');
- replace('if(!session){',`if(!session){document.getElementById('loginView').innerHTML='<h2>Facility Dashboard</h2><p>Sign in with your Field App account to view your company’s facilities.</p><a href="/field/scan">Sign in to Opening Intelligence</a>';`);
+ const signIn='<a class="btn" href="/field/login?next='+encodeURIComponent('/facility-dashboard/')+'">Sign in and return here</a>';
+ replace('if(!session){',`if(!session){document.getElementById('loginView').innerHTML='<div class="login"><h1>Facility Dashboard</h1><p>Sign in to open the facility dashboard.</p>'+${JSON.stringify(signIn)}+'</div>';`);
+ replace(`async function routeByType(session){
+  try{
+    const {data:prof}=await sb.from('profiles').select('user_type').eq('id',session.user.id).maybeSingle();
+    const t=prof&&prof.user_type;
+    const page=(location.pathname.split('/').pop()||'index.html').toLowerCase();
+    // Back to the field app. Previously admin-only, which left vortex users
+    // stranded on the dashboard with no way back. 'facility' users are
+    // deliberately excluded: index.html redirects them straight here, so the
+    // link would be a loop rather than a way out.
+    if(t==='admin' || t==='vortex' || !t){
+      var _an=document.getElementById('adminNav');
+      if(_an) _an.style.display='';
+    }
+    // Provider technicians may use the Dashboard; access comes from database memberships.
+    // 'facility' and 'admin' stay here; missing profile -> stay (no lockout).
+  }catch(e){}
+  return false;
+}`, `async function routeByType(){
+  const login=document.getElementById('loginView'), app=document.getElementById('appView');
+  login.style.display='block'; app.style.display='none';
+  login.innerHTML='<h2>Facility Dashboard</h2><p role="status">Checking access for this account.</p>';
+  try {
+    const access=await api('/portfolio/facility-dashboard-access');
+    if(!access||access.allowed!==true) throw Error('denied');
+    return false;
+  } catch (e) {
+    login.innerHTML='<div class="login"><h1>Facility Dashboard</h1><p role="alert">This account cannot open the facility dashboard for the company you are signed in to. A facility administrator can open it. Opening Intelligence staff can open it when they already belong to that company as an administrator or facilities manager.</p><p>'+${JSON.stringify(signIn)}+'</p></div>';
+    return true;
+  }
+}`);
  replace("if(await routeByType(session))return;", "if(await routeByType(session))return;await refreshScope();");
  replace("const {data:ops,error}=await loadDashboardRows(sb,fac.id);", "await refreshFacility(fac.id);const {data:ops,error}=await loadDashboardRows(sb,fac.id);");
  replace("function openingScore(o){", "function openingScore(o){if(o.parts[0]&&'opening_health_score' in o.parts[0])return o.parts[0].opening_health_score;");
@@ -43,25 +77,26 @@ export function buildFacilityDashboard(destination,{production=false}={}){
  html=html.replace('Recorded from the field app. Deficiencies awaiting qualified verification are listed first — a completed repair does not close them.', 'Recorded service events from the connected Field App.');
  html=html.replaceAll('new Date(e.performed_at).toLocaleDateString()', "formatCalendarDate(String(e.performed_at).slice(0,10))");
  replace("function clearFacility(){", "function clearFacility(){document.getElementById('purchaseResult')?.replaceChildren();");
- replace("document.getElementById('detcard').innerHTML=body;", "document.getElementById('detcard').innerHTML=body;addOpeningLabelAction(document.getElementById('detcard'),{id:o.parts[0].assembly_id});addServiceRequestAction(document.getElementById('detcard'),{id:o.parts[0].assembly_id});");
+ replace("document.getElementById('detcard').innerHTML=body;", "document.getElementById('detcard').innerHTML=body;var actions=document.getElementById('detactions')||document.getElementById('detcard');addServiceRequestAction(actions,{id:o.parts[0].assembly_id});addOpeningLabelAction(actions,{id:o.parts[0].assembly_id});");
  replace("_detailInit();boot();", `document.getElementById('recoverAccount').hidden=true;
  document.getElementById('recoverLogin').hidden=true;
- const refresh=document.createElement('button');refresh.textContent='Refresh saved records';refresh.onclick=()=> (current?load(current):boot()).catch(e=>{clearFacility();document.getElementById('facSub').textContent=e.message;});document.getElementById('facPickWrap').before(refresh);
- const purchase=document.createElement('button');purchase.textContent='Review purchasing';
- const result=document.createElement('section');result.id='purchaseResult';result.setAttribute('aria-live','polite');
- document.getElementById('facPickWrap').before(purchase);document.getElementById('facPickWrap').after(result);
+ const tools=document.getElementById('officeTools');
+ const refresh=document.createElement('button');refresh.className='tool';refresh.textContent='Refresh saved records';refresh.onclick=()=> (current?load(current):boot()).catch(e=>{clearFacility();document.getElementById('facSub').textContent=e.message;});
+ const purchase=document.createElement('button');purchase.className='tool blue';purchase.textContent='Review purchasing';
+ const result=document.getElementById('purchaseResult');
+ tools.prepend(purchase);tools.prepend(refresh);
  purchase.onclick=async()=>{result.replaceChildren();const stamp=facilityEpoch,ids=[...new Set(VIEW.map(o=>o.parts[0]?.assembly_id).filter(Boolean))];
  if(!ids.length){result.textContent='No openings selected.';return;}purchase.disabled=true;
- try{const review=await api('/purchasing/review',{opening_ids:ids});if(stamp!==facilityEpoch)return;
+ try{const review=await reviewPurchasing(ids);if(stamp!==facilityEpoch)return;
  const title=document.createElement('h2');title.textContent=review.blocked?'Purchasing review: requirements unresolved':review.status==='no_replacements'?'No replacements required':'Purchasing review: eligible replacements';result.append(title);
  const notice=document.createElement('p');notice.textContent='Review only — nothing is sent or ordered.';result.append(notice);
  for(const o of review.openings.filter(o=>!o.opening_complete)){const p=document.createElement('p');const label=VIEW.find(v=>v.parts[0]?.assembly_id===o.opening_id)?.opening_no||o.opening_id;p.textContent=label+': complete, assess and review the entire opening first.';result.append(p);}
  for(const d of review.decisions){const p=document.createElement('p');const part=VIEW.flatMap(o=>o.parts).find(p=>p.id===d.component_id);p.textContent=(part?.opening_no||d.opening_id)+' · '+(part?.component_class||d.component_id)+': '+(d.eligible?(review.blocked?'Eligible item held because another requirement is unresolved':'Eligible') : d.reasons.map(r=>({condition_unverified:'Condition not verified',replacement_not_required:'Excluded — replacement not required',opening_not_complete:'Opening incomplete',component_not_reviewed:'Component not reviewed',identity_unresolved:'Replacement identity unresolved',approved_document_required:'Approved supporting document required'}[r]||r)).join('; '));result.append(p);}
  }catch(e){if(stamp===facilityEpoch)result.textContent=e.message;}finally{purchase.disabled=false;}};
  let displayedAccount=null;setInterval(async()=>{const a=await readFieldSession();const key=a?[a.userId,a.organizationId,a.token].join(':'):null;if(displayedAccount!==null&&displayedAccount!==key){clearFacility();location.reload();}displayedAccount=key;},1500);
- installLabelActions({toolbar:document.getElementById('facPickWrap'),getOpenings:()=>VIEW.map(o=>({id:o.parts[0]?.assembly_id})).filter(o=>o.id)});
+ installLabelActions({toolbar:tools,getOpenings:()=>VIEW.map(o=>({id:o.parts[0]?.assembly_id})).filter(o=>o.id)});
  _detailInit();boot().catch(e=>{clearFacility();document.getElementById('facSub').textContent=e.message;});`);
  mkdirSync(destination,{recursive:true});writeFileSync(resolve(destination,'index.html'),html);
- for(const name of ['api-client.mjs','connected.mjs','facility-search.mjs','labels.mjs','service-requests.mjs','commercial.html','commercial.mjs','planning.html','planning.mjs','finance.html','finance.mjs','history.html','history.mjs'])cpSync(resolve(root,name),resolve(destination,name));
+ for(const name of ['api-client.mjs','connected.mjs','facility-search.mjs','labels.mjs','service-requests.mjs','display.mjs','concept04.css','oi-logo.png','commercial.html','commercial.mjs','planning.html','planning.mjs','finance.html','finance.mjs','history.html','history.mjs'])cpSync(resolve(root,name),resolve(destination,name));
 }
 if(process.argv[1]&&resolve(process.argv[1])===import.meta.filename)buildFacilityDashboard(resolve(process.argv[2]||'dist/facility-dashboard'));

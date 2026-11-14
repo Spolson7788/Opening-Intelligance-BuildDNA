@@ -1,4 +1,6 @@
-import {api,readFieldSession} from './api-client.mjs';
+import {api,readFieldSession,requireFacilityOfficePage} from './api-client.mjs';
+import {note} from './display.mjs';
+if(!(await requireFacilityOfficePage())) throw Error('facility_dashboard_forbidden');
 const $=id=>document.getElementById(id),anchor=new URLSearchParams(location.search).get('opening');
 const principal=await readFieldSession();
 let epoch=0,data=null,loading=false,exporting=false,lost=false;
@@ -15,20 +17,25 @@ function reportOf(value){
 }
 function text(parent,tag,value){const el=document.createElement(tag);el.textContent=value;parent.append(el);return el;}
 function render(report){
- const root=$('content');root.replaceChildren();text(root,'p',`Facility ${report.property_id}; saved snapshot ${report.as_of}. ${report.openings.length} openings, including retired records.`);
- const list=document.createElement('ul');root.append(list);for(const note of report.limitations)text(list,'li',note);
+ const root=$('content');root.replaceChildren();
+ if($('facilityBack'))$('facilityBack').href='./?facility='+encodeURIComponent(report.property_id)+'&opening='+encodeURIComponent(anchor);
+ const kpis=document.createElement('div');kpis.className='kpis';
+ for(const [lab,val] of [['Openings',report.openings.length],['Parts',report.hardware_components.length],['Service events',report.service_events.length]]){const tile=document.createElement('article');tile.className='tile';const name=document.createElement('div');name.className='lab';name.textContent=lab;const value=document.createElement('div');value.className='val';value.textContent=String(val);tile.append(name,value);kpis.append(tile);}
+ root.append(kpis);
+ const snapshot=document.createElement('p');snapshot.className='hint page';snapshot.textContent=`Saved snapshot ${report.as_of.slice(0,10)}. ${report.openings.length===1?'1 opening':report.openings.length+' openings'}.`;root.append(snapshot);
  const grouped=new Map();for(const key of tables.filter(k=>k!=='openings')){const groups=new Map();for(const record of report[key]){if(!groups.has(record.opening_id))groups.set(record.opening_id,[]);groups.get(record.opening_id).push(record);}grouped.set(key,groups);}
- for(const opening of report.openings){const card=document.createElement('article');root.append(card);text(card,'h2',`${opening.opening_code} — ${opening.status} — ${opening.id}`);
-  text(card,'p',`Legacy installation date: ${opening.install_date??'unknown'} (unreviewed).`);
-  for(const key of tables.filter(k=>k!=='openings')){const records=grouped.get(key).get(opening.id)||[];const section=document.createElement('details');card.append(section);text(section,'summary',`${key.replaceAll('_',' ')} (${records.length})`);
+ for(const opening of report.openings){const card=document.createElement('article');card.className='card';root.append(card);const heading=text(card,'h2',`${opening.opening_code} — ${opening.status}`);heading.className='band-title';
+  text(card,'p',`Installed ${opening.install_date??'date not recorded'}.`);
+  const aboutOpening=document.createElement('details');aboutOpening.className='method';text(aboutOpening,'summary','Show details');card.append(aboutOpening);
+  for(const key of tables.filter(k=>k!=='openings')){const records=grouped.get(key).get(opening.id)||[];const section=document.createElement('details');aboutOpening.append(section);text(section,'summary',`${key.replaceAll('_',' ')} (${records.length})`);
    let rendered=false;section.addEventListener('toggle',()=>{if(!section.open||rendered)return;rendered=true;
-    for(const record of [...records].sort((a,b)=>String(a.recorded_at??a.event_date??'').localeCompare(String(b.recorded_at??b.event_date??''))||a.id.localeCompare(b.id))){text(section,'h3',record.id);if('correction_of' in record)text(section,'p',`${record.correction_of?'Correction of '+record.correction_of:'Original record'}; ${record.is_current?'not superseded':'superseded'}. Not a latest-condition score.`);text(section,'pre',JSON.stringify(record,null,2));}
+    for(const record of [...records].sort((a,b)=>String(a.recorded_at??a.event_date??'').localeCompare(String(b.recorded_at??b.event_date??''))||a.id.localeCompare(b.id))){text(section,'h3',String(record.recorded_at??record.event_date??'Record').slice(0,10));if('correction_of' in record)text(section,'p',`${record.correction_of?'Correction of '+record.correction_of:'Original record'}; ${record.is_current?'not superseded':'superseded'}. Not a latest-condition score.`);text(section,'pre',JSON.stringify(record,null,2));}
    });
   }
  }
 }
 async function load(){if(lost)return;const version=++epoch;data=null;loading=true;$('content').replaceChildren();$('error').textContent='';lock();
- try{if(!anchor||!same(await readFieldSession())){lose();return;}const value=await api('/condition-history/facility/'+encodeURIComponent(anchor),undefined,principal);if(version!==epoch||lost)return;if(!same(await readFieldSession())){lose();return;}if(version!==epoch||lost)return;data=reportOf(value);render(data);$('status').textContent='Saved evidence loaded. No records changed.';}
+ try{if(!anchor||!same(await readFieldSession())){lose();return;}const value=await api('/condition-history/facility/'+encodeURIComponent(anchor),undefined,principal);if(version!==epoch||lost)return;if(!same(await readFieldSession())){lose();return;}if(version!==epoch||lost)return;data=reportOf(value);render(data);note($('status'),'Saved evidence loaded. No records changed.');}
  catch{if(version===epoch&&!lost)$('error').textContent='Evidence unavailable. Check access and refresh; no partial report is exported.';}
  finally{if(version===epoch)loading=false;lock();}
 }

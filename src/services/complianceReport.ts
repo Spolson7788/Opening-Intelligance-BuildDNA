@@ -134,7 +134,7 @@ export function generateComplianceReportPdf(data: ComplianceReportData): Promise
             );
         } else {
           doc.fillColor(WARNING).fontSize(8.5).font("Helvetica-Bold")
-            .text("No inspection on record", PAGE_MARGIN, doc.y + 1);
+            .text("No completed NFPA 80 fire door inspection on record", PAGE_MARGIN, doc.y + 1);
         }
 
         if (o.last_inspection_passed === false && o.last_inspection_notes) {

@@ -7,9 +7,10 @@ const ACCESS_ORIGINS = [
 ] as const;
 
 export function siteAccessRenewalUrl(origin: string): string | null {
-  return ACCESS_ORIGINS.some(allowed => allowed === origin)
-    ? `https://app.netlify.com/edge-access?domain=${new URL(origin).hostname}`
-    : null;
+  if (!ACCESS_ORIGINS.some(allowed => allowed === origin)) return null;
+  const root = `${new URL(origin).origin}/`;
+  if (root.includes("?") || root.includes("#")) return null;
+  return root;
 }
 
 export const SITE_ACCESS_LOGIN_MESSAGE = "Site access could not be verified. Your app password has not been rejected. Renew access to this private preview, then sign in again.";

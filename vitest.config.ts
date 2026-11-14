@@ -4,6 +4,7 @@ const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL || "postgres://postgres:postgres@localhost:5432/opening_intel_test";
 
 export default defineConfig({
+  define: { __FIELD_BUILD_SHA__: JSON.stringify(process.env.OI_FIELD_BUILD_SHA || "test-build") },
   test: {
     environment: "node",
     globalSetup: "./tests/globalSetup.ts",

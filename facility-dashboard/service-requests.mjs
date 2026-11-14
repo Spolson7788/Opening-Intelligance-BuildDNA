@@ -2,10 +2,10 @@
 // No separate database or notification transport is introduced here.
 import {readFieldSession} from './api-client.mjs';
 export function addServiceRequestAction(container,opening){
-  const commercial=document.createElement('a');commercial.textContent='Catalog and replacement estimates';commercial.href='/facility-dashboard/commercial.html?opening='+encodeURIComponent(opening.id);container.prepend(commercial);
-
-  const history=document.createElement('a');history.textContent='Installation and service history';history.href='/field/opening/'+encodeURIComponent(opening.id)+'/lifecycle';container.prepend(history);
-  const button=document.createElement('button');button.textContent='Request service';
+  const button=document.createElement('button');button.className='tool';button.textContent='Request service';
+  const history=document.createElement('a');history.className='tool';history.textContent='Installation and service history';history.href='/field/opening/'+encodeURIComponent(opening.id)+'/lifecycle';
+  const commercial=document.createElement('a');commercial.className='tool';commercial.textContent='Catalog and replacement estimates';commercial.href='/facility-dashboard/commercial.html?opening='+encodeURIComponent(opening.id);
+  container.append(button,history,commercial);
   button.onclick=async()=>{
     document.getElementById('oi-request-dialog')?.close();
     const principal=await readFieldSession();if(!principal)return;
@@ -15,5 +15,5 @@ export function addServiceRequestAction(container,opening){
     dialog.append(close,frame);document.body.append(dialog);dialog.showModal();
     const timer=setInterval(async()=>{const current=await readFieldSession();if(!current||current.userId!==principal.userId||current.organizationId!==principal.organizationId)dialog.close();},1000);
     dialog.addEventListener('close',()=>{clearInterval(timer);dialog.remove();},{once:true});
-  };container.prepend(button);
+  };
 }

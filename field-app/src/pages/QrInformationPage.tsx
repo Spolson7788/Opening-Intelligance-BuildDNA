@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { fetchPublicOpening, QrInformationError, type QrFailureKind, type PublicOpeningSummary } from '../lib/qrLanding';
 import { siteAccessRenewalUrl } from '../lib/siteAccess';
+import { RenewPrivateSiteAccess } from '../components/RenewPrivateSiteAccess';
 
 export function QrInformationPage() {
   const { qrToken = '' } = useParams();
@@ -16,22 +17,26 @@ export function QrInformationPage() {
   }, [qrToken]);
   const current = result?.token === qrToken ? result : null;
   const renewal = current?.failed === 'site_access' ? siteAccessRenewalUrl(window.location.origin) : null;
-  return <main className="screen">
+  return <main className="app-shell c04"><div className="screen">
     <h1>Opening information</h1>
-    {!current && <p role="status">Loading opening information.</p>}
-    {current?.failed && <p role="status">{current.failed === 'site_access'
+    {!current && <p className="c04-band" role="status">Loading opening information.</p>}
+    {current?.failed && <p className="c04-alert" role="status">{current.failed === 'site_access'
       ? 'Private staging site access needs renewal. This is separate from your OI sign-in.'
       : current.failed === 'network' ? 'Opening information could not be reached. Check your connection and try again later.'
       : current.failed === 'service' ? 'Opening information is temporarily unavailable. Please try again later.'
       : 'Opening information is unavailable. Check your connection or contact the facility.'}</p>}
-    {renewal && <a className="btn btn-primary" href={renewal} target="_blank" rel="noreferrer">Renew private site access</a>}
+    {renewal && <RenewPrivateSiteAccess className="btn btn-primary">Renew private site access</RenewPrivateSiteAccess>}
     {current?.value && <>
+      <section className="c04-band">
       <dl>
         <dt>Facility</dt><dd>{current.value.facility_name}</dd>
         <dt>Building</dt><dd>{current.value.building_name}</dd>
       </dl>
+      </section>
+      <section className="c04-band-green">
       <p>The opening, photos, component details and work records require authorized sign-in.</p>
       <Link className="btn btn-primary" to={`/opening/by-qr/${encodeURIComponent(qrToken)}/details`}>Sign in for protected details</Link>
+      </section>
     </>}
-  </main>;
+  </div></main>;
 }

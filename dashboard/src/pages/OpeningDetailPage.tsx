@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
+import { formatSize, unevenPair } from "../lib/inchMeasure";
 import type { FormEvent } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl } from "../lib/api";
+import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
+import { fetchOpening, fetchPurchasingEligibility, fetchDocumentsForOpening, uploadDocumentForOpening, deleteDocument, fetchPhotoAccessUrl, fetchAuthedBlob, emailInspectionReport, inspectionReportRecipients, saveInspectionToFacilityRecords, downloadAuthedFile } from "../lib/api";
+import { useAuth } from "../lib/AuthContext";
 import type { OpeningDetail, DocumentEntry, PurchasingEligibility, HardwareComponent, OpeningPhoto } from "../lib/api";
 import { Sidebar } from "../components/Sidebar";
 import { useLocations } from "../lib/LocationContext";
 import { HealthPill } from "../components/HealthPill";
 import { carrierTrackingUrl, SHIPMENT_STATUS_LABELS } from "../lib/tracking";
+import { linkedInspectionId } from "../lib/inspectionLink";
 import { componentLabel, splitServiceHistory } from "../lib/serviceHistory";
 import type { ServiceEventRow } from "../lib/serviceHistory";
 
 function ServiceTable({ events }: { events: ServiceEventRow[] }) {
   return (
-    <table>
+    <div className="table-scroll"><table>
       <thead>
         <tr><th>Date</th><th>Work Performed</th><th>Cost</th></tr>
       </thead>
@@ -25,7 +28,7 @@ function ServiceTable({ events }: { events: ServiceEventRow[] }) {
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
   );
 }
 
@@ -48,17 +51,31 @@ function photoScopeLabel(photo: OpeningPhoto, opening: OpeningDetail) {
     return leaf ? `${leaf.leaf_role} leaf` : "Door leaf";
   }
   if (photo.frame_id) return "Frame";
+  if (photo.related_entity_type === "inspection_event") return "Inspection failure";
   return "Opening";
 }
 
 function PrivateMedia({ photo }: { photo: OpeningPhoto }) {
-  const [url, setUrl] = useState<string | null>(photo.storage_url.startsWith("private:") ? null : photo.storage_url);
+  const inline = photo.storage_url.startsWith("inline:");
+  const stored = photo.storage_url.startsWith("private:");
+  const [url, setUrl] = useState<string | null>(inline || stored ? null : photo.storage_url);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
+    let objectUrl: string | null = null;
     setFailed(false);
-    if (!photo.storage_url.startsWith("private:")) {
+    if (inline) {
+      setUrl(null);
+      fetchAuthedBlob(`/photos/${photo.id}/content`)
+        .then((blob) => {
+          objectUrl = URL.createObjectURL(blob);
+          if (active) setUrl(objectUrl);
+        })
+        .catch(() => { if (active) setFailed(true); });
+      return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    }
+    if (!stored) {
       setUrl(photo.storage_url);
       return () => { active = false; };
     }
@@ -67,14 +84,14 @@ function PrivateMedia({ photo }: { photo: OpeningPhoto }) {
       .then(({ url }) => { if (active) setUrl(url); })
       .catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
-  }, [photo.id, photo.storage_url]);
+  }, [photo.id, photo.storage_url, inline, stored]);
 
   if (failed) return <div role="status" style={{ color: "var(--danger)", fontSize: 12 }}>Photo unavailable</div>;
   if (!url) return <div style={{ aspectRatio: "1", display: "grid", placeItems: "center", fontSize: 12 }}>Loading…</div>;
   if (photo.media_type === "video") {
     return <video src={url} controls style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} />;
   }
-  return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Opening photo" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} /></a>;
+  return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={inline ? "Inspection failure photo" : "Opening photo"} onError={() => setFailed(true)} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", background: "#fff" }} /></a>;
 }
 
 function formatReason(reason: string) {
@@ -84,8 +101,15 @@ function formatReason(reason: string) {
 export function OpeningDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const linkedInspection = linkedInspectionId(location.hash);
   const loc = useLocations();
+  const { auth } = useAuth();
+  const canSaveRecords = auth?.role === "admin" || auth?.role === "facilities_manager";
   const [opening, setOpening] = useState<OpeningDetail | null>(null);
+  const [reportTo, setReportTo] = useState("");
+  const [reportMessage, setReportMessage] = useState<string | null>(null);
+  const [recordMessage, setRecordMessage] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [purchasing, setPurchasing] = useState<PurchasingEligibility | null>(null);
@@ -98,11 +122,31 @@ export function OpeningDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!opening || !linkedInspection) return;
+    document.getElementById(`inspection-${linkedInspection}`)?.scrollIntoView({ block: "start" });
+  }, [opening, linkedInspection]);
+
   function loadDocuments() {
     fetchDocumentsForOpening(id!).then(setDocuments).catch(() => {
       // Non-fatal — the rest of the opening page still works without documents loading.
     });
   }
+
+  function saveReport(inspectionId: string) {
+    saveInspectionToFacilityRecords(inspectionId).then((result) => {
+      setRecordMessage((current) => ({ ...current, [inspectionId]: result.already_saved ? "Already in facility records." : "Saved to facility records." }));
+      loadDocuments();
+    }).catch(() => {
+      setRecordMessage((current) => ({ ...current, [inspectionId]: "Could not save the report." }));
+    });
+  }
+
+  useEffect(() => {
+    const inspection = opening?.inspection_events?.find((ev: any) => ev.inspection_type === "fire_door_nfpa80" && ev.checklist_result?.status === "complete");
+    if (!inspection) return;
+    inspectionReportRecipients(inspection.id).then((row) => setReportTo(row.to.join(", "))).catch(() => {});
+  }, [opening?.id, opening?.inspection_events?.length]);
 
   useEffect(() => {
     setLoading(true);
@@ -195,12 +239,13 @@ export function OpeningDetailPage() {
               {!opening.frame ? (
                 <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No frame record has synchronized for this opening.</p>
               ) : (
-                <p><strong>Frame:</strong> {opening.frame.material || "Material not recorded"} · {opening.frame.frame_type || "Type not recorded"} · condition {opening.frame.condition}</p>
+                <p><strong>Frame:</strong> {opening.frame.material || "Material not recorded"} · {opening.frame.frame_type || "Type not recorded"} · {formatSize(opening.frame.width_in, opening.frame.height_in)} · condition {opening.frame.condition}</p>
               )}
+              {unevenPair(opening.door_leaves) && <p><strong>Uneven pair</strong></p>}
               {opening.door_leaves.length === 0 ? (
                 <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No door-leaf records have synchronized for this opening.</p>
               ) : (
-                <table>
+                <div className="table-scroll"><table>
                   <thead><tr><th>Leaf</th><th>Handing</th><th>Material</th><th>Size</th><th>Condition</th></tr></thead>
                   <tbody>
                     {opening.door_leaves.map((leaf) => (
@@ -208,19 +253,19 @@ export function OpeningDetailPage() {
                         <td style={{ textTransform: "capitalize" }}>{leaf.leaf_role}</td>
                         <td>{leaf.handing || "—"}</td>
                         <td>{leaf.material || "—"}</td>
-                        <td>{leaf.width_in && leaf.height_in ? `${leaf.width_in} × ${leaf.height_in} in` : "—"}</td>
+                        <td>{formatSize(leaf.width_in, leaf.height_in, leaf.thickness_in)}</td>
                         <td style={{ textTransform: "capitalize" }}>{leaf.condition}</td>
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
               )}
             </div>
 
             {opening.photos.length > 0 && (
               <div className="panel">
                 <h2>Photos &amp; Videos</h2>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8 }}>
+                <div className="photo-grid">
                   {opening.photos.map((p) =>
                     <div key={p.id}>
                       <PrivateMedia photo={p} />
@@ -236,7 +281,7 @@ export function OpeningDetailPage() {
               {opening.hardware_components.length === 0 ? (
                 <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No hardware recorded yet.</p>
               ) : (
-                <table>
+                <div className="table-scroll"><table>
                   <thead>
                     <tr>
                       <th>Location</th>
@@ -296,7 +341,7 @@ export function OpeningDetailPage() {
                       );
                     })}
                   </tbody>
-                </table>
+                </table></div>
               )}
             </div>
 
@@ -339,39 +384,85 @@ export function OpeningDetailPage() {
               {opening.inspection_events.length === 0 ? (
                 <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No inspections recorded yet.</p>
               ) : (
+                <div className="inspection-list">
+                  {opening.inspection_events.map((ev: any) => (
+                    <article key={ev.id} id={`inspection-${ev.id}`} className={linkedInspection === ev.id ? "inspection-card is-linked" : "inspection-card"}>
+                      <div className="inspection-card-head">
+                        <strong>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
+                        <span style={{ textTransform: "capitalize" }}>{String(ev.inspection_type).replace(/_/g, " ")}</span>
+                        <span className={`health-pill ${ev.passed ? "health-good" : "health-poor"}`}>{ev.passed ? "Passed" : "Failed"}</span>
+                      </div>
+                      <p>{ev.notes || "No notes."}</p>
+                      {ev.signed_by_name && <p>Inspector {ev.signed_by_name}{ev.inspector_qualification ? ` · ${ev.inspector_qualification}` : ""}{ev.inspector_license_number ? ` · License ${ev.inspector_license_number}` : ""}</p>}
+                      {ev.signature_data && <img src={ev.signature_data} alt={`${ev.signed_by_name || "Inspector"} signature`} style={{ height: 48, background: "#fff", border: "1px solid var(--border)", borderRadius: 4 }} />}
+                      {ev.inspection_type === "fire_door_nfpa80" && ev.checklist_result?.status === "complete" && (
+                        <div className="inspection-actions">
+                          <button className="btn btn-secondary" type="button" onClick={() => downloadAuthedFile(`/events/inspection-events/${ev.id}/report.pdf`, "fire-door-inspection.pdf").catch(() => setRecordMessage((current) => ({ ...current, [ev.id]: "Could not download the report." })))}>Download PDF</button>
+                          {canSaveRecords && <button className="btn btn-secondary" type="button" onClick={() => saveReport(ev.id)}>Save to facility records</button>}
+                          {canSaveRecords && ev.visit_id && <Link to={`/inspection-visits/${ev.visit_id}`}>Part of visit {String(ev.event_date).slice(0, 10)}</Link>}
+                          {recordMessage[ev.id] && <p role={recordMessage[ev.id].startsWith("Could not") ? "alert" : "status"}>{recordMessage[ev.id]}</p>}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="panel">
+              <h2>Sent to purchasing</h2>
+              {(opening.purchasing_sends || []).length === 0 ? (
+                <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>Nothing has been sent to purchasing for this opening.</p>
+              ) : (
                 <table>
-                  <thead>
-                    <tr><th>Date</th><th>Type</th><th>Result</th><th>Notes</th><th>Signed By</th></tr>
-                  </thead>
+                  <thead><tr><th>When</th><th>To</th><th>How</th><th>Note</th></tr></thead>
                   <tbody>
-                    {opening.inspection_events.map((ev: any) => (
-                      <tr key={ev.id}>
-                        <td>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</td>
-                        <td style={{ textTransform: "capitalize" }}>{ev.inspection_type.replace(/_/g, " ")}</td>
-                        <td>
-                          <span className={`health-pill ${ev.passed ? "health-good" : "health-poor"}`}>
-                            {ev.passed ? "Passed" : "Failed"}
-                          </span>
-                        </td>
-                        <td>{ev.notes || "—"}</td>
-                        <td>
-                          {ev.signed_by_name ? (
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span style={{ fontSize: 12.5 }}>{ev.signed_by_name}</span>
-                              {ev.signature_data && (
-                                <img
-                                  src={ev.signature_data}
-                                  alt={`${ev.signed_by_name}'s signature`}
-                                  style={{ height: 24, background: "#fff", border: "1px solid var(--border)", borderRadius: 4, padding: 2 }}
-                                />
-                              )}
-                            </div>
-                          ) : "—"}
-                        </td>
+                    {(opening.purchasing_sends || []).map((send) => (
+                      <tr key={send.id}>
+                        <td>{new Date(send.created_at).toLocaleString()}</td>
+                        <td>{send.sent_to}</td>
+                        <td>{send.delivery_mode}</td>
+                        <td>{send.note || "—"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              )}
+            </div>
+
+            <div className="panel">
+              <h2>Fire door deficiencies</h2>
+              {(opening.fire_door_deficiencies || []).length === 0 ? (
+                <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>No fire door deficiencies are on file.</p>
+              ) : (
+                <table>
+                  <thead><tr><th>Item</th><th>Status</th><th>Note</th><th>Repair</th></tr></thead>
+                  <tbody>
+                    {(opening.fire_door_deficiencies || []).map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.item_key}</td>
+                        <td>{row.status}</td>
+                        <td>{row.note}</td>
+                        <td>{row.repair_note || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {opening.inspection_events.some((ev: any) => ev.inspection_type === "fire_door_nfpa80" && ev.checklist_result?.status === "complete") && (
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const inspection = opening.inspection_events.find((ev: any) => ev.inspection_type === "fire_door_nfpa80" && ev.checklist_result?.status === "complete");
+                  if (!inspection) return;
+                  const to = reportTo.split(/[\s,;]+/).map((item) => item.trim()).filter(Boolean);
+                  emailInspectionReport(inspection.id, to).then(() => setReportMessage("Report emailed.")).catch(() => setReportMessage("Could not email the report."));
+                }} style={{ marginTop: 12 }}>
+                  <label htmlFor="report-email">Email this report</label>
+                  <textarea id="report-email" value={reportTo} onChange={(e) => setReportTo(e.target.value)} placeholder="facility contact, your email, anyone else" required />
+                  <p style={{ color: "var(--text-secondary)", fontSize: 13 }}>Starts with the facility contact, when one is on file, and the email of the person who signed. Add or remove addresses before sending.</p>
+                  <button className="btn btn-secondary" type="submit">Email this report</button>
+                  {reportMessage && <p>{reportMessage}</p>}
+                </form>
               )}
             </div>
 
@@ -426,7 +517,10 @@ export function OpeningDetailPage() {
                   <tbody>
                     {documents.map((d) => (
                       <tr key={d.id}>
-                        <td><a href={d.storage_url} target="_blank" rel="noreferrer">{d.title}</a></td>
+                        <td>{d.inspection_event_id
+                          ? <button type="button" className="btn btn-secondary" style={{ width: "auto", padding: "0 10px", height: 28, fontSize: 12 }} onClick={() => downloadAuthedFile(`/documents/${d.id}/file`, `${d.title}.pdf`).catch(() => setUploadError("Could not download the report."))}>{d.title}</button>
+                          : <a href={d.storage_url} target="_blank" rel="noreferrer">{d.title}</a>}
+                        </td>
                         <td style={{ textTransform: "capitalize" }}>{d.document_type.replace(/_/g, " ")}</td>
                         <td>{new Date(d.created_at).toLocaleDateString()}</td>
                         <td>

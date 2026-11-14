@@ -14,6 +14,8 @@ import {
   deleteObject,
 } from "../services/storage";
 
+const DOCUMENT_LIST_COLUMNS = "id, property_id, opening_id, document_type, title, storage_url, file_size_bytes, uploaded_by_user_id, created_at, inspection_event_id";
+
 export const documentsRouter = Router();
 documentsRouter.use(requireAuth);
 documentsRouter.use(enforceRolePermissions);
@@ -123,7 +125,7 @@ documentsRouter.get("/by-property/:propertyId", async (req: AuthedRequest, res) 
   try {
     if (!(await assertPropertyInOrg(propertyId, orgId)) || !(await areaAllowsProperty(req.auth!.userId, propertyId))) return res.status(403).json({ error: "forbidden" });
     const result = await pool.query(
-      "SELECT * FROM documents WHERE property_id = $1 ORDER BY created_at DESC",
+      `SELECT ${DOCUMENT_LIST_COLUMNS} FROM documents WHERE property_id = $1 ORDER BY created_at DESC`,
       [propertyId]
     );
     res.json(result.rows);
@@ -139,10 +141,38 @@ documentsRouter.get("/by-opening/:openingId", async (req: AuthedRequest, res) =>
   try {
     if (!(await assertOpeningInOrg(openingId, orgId)) || !(await areaAllowsOpening(req.auth!.userId, openingId))) return res.status(403).json({ error: "forbidden" });
     const result = await pool.query(
-      "SELECT * FROM documents WHERE opening_id = $1 ORDER BY created_at DESC",
+      `SELECT ${DOCUMENT_LIST_COLUMNS} FROM documents WHERE opening_id = $1 ORDER BY created_at DESC`,
       [openingId]
     );
     res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
+documentsRouter.get("/:id/file", async (req: AuthedRequest, res) => {
+  if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_document" });
+  try {
+    const docResult = await pool.query(
+      `SELECT id, content, content_type, title, property_id, opening_id FROM documents
+       WHERE id = $1
+         AND (
+           (property_id IS NOT NULL AND property_id IN (${propertiesForOrgSubquery(2)}))
+           OR (opening_id IS NOT NULL AND opening_id IN (${openingsForOrgSubquery(2)}))
+         )`,
+      [req.params.id, req.auth!.organizationId]
+    );
+    if (!docResult.rows.length || !docResult.rows[0].content) return res.status(404).json({ error: "not_found" });
+    const doc = docResult.rows[0];
+    const inArea = doc.property_id
+      ? await areaAllowsProperty(req.auth!.userId, doc.property_id)
+      : await areaAllowsOpening(req.auth!.userId, doc.opening_id);
+    if (!inArea) return res.status(404).json({ error: "not_found" });
+    res.set("Content-Type", doc.content_type || "application/pdf");
+    res.set("Content-Disposition", `attachment; filename="${String(doc.title).replace(/["\r\n]/g, "")}.pdf"`);
+    res.set("Cache-Control", "private, no-store");
+    res.send(doc.content);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "internal_error" });
@@ -171,12 +201,14 @@ documentsRouter.delete("/:id", async (req: AuthedRequest, res) => {
     if (!inArea) return res.status(404).json({ error: "not_found" });
     await pool.query("DELETE FROM documents WHERE id = $1", [id]);
 
-    try {
-      const url = new URL(doc.storage_url);
-      const key = url.pathname.replace(/^\//, "");
-      await deleteObject(key);
-    } catch (cleanupErr) {
-      console.error("Failed to delete underlying storage object:", cleanupErr);
+    if (typeof doc.storage_url === "string" && doc.storage_url.startsWith("https://")) {
+      try {
+        const url = new URL(doc.storage_url);
+        const key = url.pathname.replace(/^\//, "");
+        await deleteObject(key);
+      } catch (cleanupErr) {
+        console.error("Failed to delete underlying storage object:", cleanupErr);
+      }
     }
 
     res.status(204).send();

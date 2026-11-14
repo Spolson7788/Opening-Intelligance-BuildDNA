@@ -45,7 +45,7 @@ export async function loadCompanies(userId: string, homeOrgId: string, homeRole:
     const r = await pool.query(
       `SELECT a.organization_id, o.name, a.role, a.access, a.via_organization_id, (a.organization_id = u.organization_id) AS is_home
        FROM users u CROSS JOIN LATERAL user_authorized_orgs(u.id) a LEFT JOIN organizations o ON o.id = a.organization_id
-       WHERE u.id = $1 ORDER BY (a.organization_id = u.organization_id) DESC, o.name`,
+       WHERE u.id = $1 AND o.deactivated_at IS NULL ORDER BY (a.organization_id = u.organization_id) DESC, o.name`,
       [userId]
     );
     if (Array.isArray(r.rows) && r.rows.length && r.rows.every((x: any) => x && typeof x.access === "string")) return r.rows as CompanyAccess[];
@@ -209,8 +209,12 @@ authRouter.post("/login", async (req, res) => {
     const companies = await loadCompanies(user.id, user.organization_id, user.role);
     const active = companies.find((c) => c.is_home) ?? companies[0];
     if (!active) {
-      report("no_active_membership");
-      return res.status(403).json({ error: "membership_inactive", reference });
+      const closed = await pool.query("SELECT deactivated_at IS NOT NULL AS closed FROM organizations WHERE id=$1", [user.organization_id]).catch((error) => {
+        if ((error as { code?: string } | null)?.code === "42703") return { rows: [{ closed: false }] };
+        throw error;
+      });
+      report(closed.rows[0]?.closed ? "company_deactivated" : "no_active_membership");
+      return res.status(403).json({ error: closed.rows[0]?.closed ? "company_deactivated" : "membership_inactive", reference });
     }
     if (await isActivePlatformStaff(user.id)) {
       await issueStaffSignInCode(user.id, user.email);
@@ -592,6 +596,11 @@ authRouter.post("/switch-company", requireAuth, async (req: AuthedRequest, res) 
     });
     const row = r.rows[0];
     if (!row) return res.status(403).json({ error: "membership_inactive" });
+    const closed = await pool.query("SELECT deactivated_at IS NOT NULL AS closed FROM organizations WHERE id=$1", [row.organization_id]).catch((error) => {
+      if ((error as { code?: string } | null)?.code === "42703") return { rows: [{ closed: false }] };
+      throw error;
+    });
+    if (closed.rows[0]?.closed) return res.status(403).json({ error: "company_deactivated" });
     await pool.query(
       `INSERT INTO audit_log (organization_id, user_id, action, method, path, request_body, status_code) VALUES ($1,$2,'Switched company','POST','/api/auth/switch-company',$3,200)`,
       [row.organization_id, req.auth!.userId, JSON.stringify({ from_organization_id: req.auth!.organizationId, to_organization_id: row.organization_id })]

@@ -23,9 +23,18 @@ export function SyncBadge() {
   }, []);
 
   useEffect(() => { void refreshPendingCount(); }, [auth?.userId, auth?.organizationId]);
+  useEffect(() => {
+    const retry = () => { if (document.visibilityState === "visible") void refreshPendingCount(); };
+    document.addEventListener("visibilitychange", retry);
+    window.addEventListener("focus", retry);
+    return () => {
+      document.removeEventListener("visibilitychange", retry);
+      window.removeEventListener("focus", retry);
+    };
+  }, []);
   if (loading || identityChecking) return <span className="badge">Checking sync</span>;
   if (!auth) return <span className="badge">Sign in to check pending changes</span>;
-  if (syncState.checkFailed) return <span className="badge">Unable to check pending changes</span>;
+  if (syncState.checkFailed) return <Link to="/sync-issues" className="badge badge-offline" title="Open synchronization review" onClick={() => { void refreshPendingCount(); }}>Unable to check pending changes</Link>;
   if (!syncState.checked || syncState.userId !== auth.userId || syncState.organizationId !== auth.organizationId)
     return <span className="badge">Checking sync</span>;
 
@@ -37,8 +46,12 @@ export function SyncBadge() {
     );
   }
 
-  if (syncState.syncing) {
+  if (syncState.syncing && !syncState.lastError) {
     return <span className="badge">Syncing…</span>;
+  }
+
+  if (syncState.lastError && syncState.pending === 0 && syncState.failed === 0 && syncState.conflicts === 0) {
+    return <Link to="/sync-issues" className="badge badge-offline" title={syncState.lastError}>Sync failed — {syncState.lastError}</Link>;
   }
 
   if (syncState.conflicts > 0) {
@@ -46,11 +59,16 @@ export function SyncBadge() {
   }
 
   if (syncState.failed > 0) {
-    return <Link to="/sync-issues" className="badge badge-offline" title="Saved on this device; open Synchronization review to choose what happens next">{syncState.failed} need{syncState.failed === 1 ? "s" : ""} review</Link>;
+    return <Link to="/sync-issues" className="badge badge-offline" title={syncState.lastError || "Saved on this device; open Synchronization review to choose what happens next"}>{syncState.failed} need{syncState.failed === 1 ? "s" : ""} review{syncState.lastError ? ` — ${syncState.lastError}` : ""}</Link>;
   }
 
   if (syncState.pending > 0) {
-    return <span className="badge badge-offline">{syncState.pending} pending sync</span>;
+    return (
+      <span className="badge badge-offline">
+        {syncState.pending} pending sync
+        {syncState.lastError ? ` — ${syncState.lastError}` : ""}
+      </span>
+    );
   }
 
   return <span className="badge">No pending changes for this account</span>;

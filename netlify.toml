@@ -7,7 +7,14 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  external_node_modules = ["express"]
+  # sharp stays external so esbuild does not emit require("sharp") at function load.
+  # The publisher also copies the glibc linux-x64 native into the zip. Netlify's
+  # Node runtime is x64 glibc (not musl, not arm64).
+  external_node_modules = ["express", "sharp"]
+  included_files = ["node_modules/sharp/**", "node_modules/detect-libc/**", "node_modules/semver/**", "node_modules/@img/colour/**", "node_modules/@img/sharp-linux-x64/**", "node_modules/@img/sharp-libvips-linux-x64/**"]
+  # Synchronous Netlify functions accept at most 26 seconds. Background
+  # functions run longer but do not return the stored PDF to the phone.
+  timeout = 26
 [context.production.environment]
   NODE_ENV = "production"
 [[plugins]]

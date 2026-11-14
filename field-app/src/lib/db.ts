@@ -1,4 +1,5 @@
 import { openDB } from "idb";
+import { isRequestTimeout, withTimeout } from "./deadline";
 import type { DBSchema, IDBPDatabase } from "idb";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
 import type {
@@ -11,6 +12,7 @@ import type {
   SyncReceipt,
 } from "./offlineTypes";
 import { interruptedOperationIsRecoverable } from "./offlineSyncModel";
+import { DISCARDABLE_SYNC_ERRORS } from "./syncIssueMessage";
 
 interface FieldAppDB extends DBSchema {
   // Local cache of the last-seen version of each opening, so a technician can
@@ -103,11 +105,33 @@ export interface PhotoOutboxItem {
 }
 
 let dbPromise: Promise<IDBPDatabase<FieldAppDB>> | null = null;
+let lastAuth: { token: string; userId: string; organizationId: string; role: string; email?: string; signInEventId?: string; savedAt?: number } | undefined;
 
-export function getDb() {
-  if (!dbPromise) {
-    dbPromise = openDB<FieldAppDB>("opening-intel-field", OFFLINE_SCHEMA_VERSION, {
-      upgrade(db, oldVersion) {
+export const DB_OPEN_TIMEOUT_MS = 4_000;
+export const DB_REQUEST_TIMEOUT_MS = 4_000;
+
+export function withDbTimeout<T>(work: Promise<T>): Promise<T> {
+  return withTimeout(work, DB_REQUEST_TIMEOUT_MS, "IndexedDB request timed out");
+}
+
+/** Reject when another connection blocks the open, or when the open itself does not finish. */
+export function combineDatabaseOpen<T>(opened: Promise<T>, blocked: Promise<T>, timeoutMs = DB_OPEN_TIMEOUT_MS): Promise<T> {
+  return withTimeout(Promise.race([opened, blocked]), timeoutMs, "IndexedDB open timed out");
+}
+
+function openFieldDatabase(): Promise<IDBPDatabase<FieldAppDB>> {
+  let rejectBlocked: (error: DOMException) => void = () => {};
+  let acceptOpened: (db: IDBPDatabase<FieldAppDB>) => void = () => {};
+  const blocked = new Promise<IDBPDatabase<FieldAppDB>>((resolve, reject) => {
+    rejectBlocked = reject;
+    acceptOpened = resolve;
+  });
+  let abandoned = false;
+  const opened = openDB<FieldAppDB>("opening-intel-field", OFFLINE_SCHEMA_VERSION, {
+    blocked() {
+      rejectBlocked(new DOMException("IndexedDB open blocked", "AbortError"));
+    },
+    upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           db.createObjectStore("openings", { keyPath: "id" });
           db.createObjectStore("outbox", { keyPath: "id" });
@@ -145,12 +169,39 @@ export function getDb() {
           db.createObjectStore("settings", { keyPath: "key" });
         }
       },
+    }).then((db) => {
+      if (abandoned) {
+        try { db.close(); } catch { /* already closed */ }
+        throw new DOMException("IndexedDB open timed out", "TimeoutError");
+      }
+      const drop = () => { if (dbPromise) dbPromise = null; };
+      db.onclose = drop;
+      db.onversionchange = () => { db.close(); drop(); };
+      acceptOpened(db);
+      return db;
     });
-  }
+  const raced = combineDatabaseOpen(opened, blocked);
+  raced.catch(() => { abandoned = true; if (dbPromise === raced) dbPromise = null; });
+  return raced;
+}
+
+export function getDb() {
+  if (!dbPromise) dbPromise = openFieldDatabase();
   return dbPromise;
 }
 
+export async function resetFieldAppDb() {
+  const pending = dbPromise;
+  dbPromise = null;
+  if (!pending) return;
+  try {
+    const db = await withTimeout(pending, DB_OPEN_TIMEOUT_MS, "IndexedDB close timed out");
+    db.close();
+  } catch { /* the cached connection is already dropped */ }
+}
+
 export async function closeFieldAppDb() {
+  lastAuth = undefined;
   if (!dbPromise) return;
   const db = await dbPromise;
   db.close();
@@ -167,22 +218,22 @@ export async function saveEntityAndOperation(
   if (entity.organizationId !== operation.organizationId) {
     throw new Error("entity_operation_tenant_mismatch");
   }
-  assertNotWiped(); const db = await getDb();
+  assertNotWiped(); const db = await withDbTimeout(getDb());
   const tx = db.transaction(["entities", "operations"], "readwrite");
   if(operation.entityType==='service_request'){
-    const prior=await tx.objectStore('operations').get(operation.operationId);
+    const prior=await withDbTimeout(tx.objectStore('operations').get(operation.operationId));
     if(prior){
       if(prior.actorUserId!==operation.actorUserId||prior.organizationId!==operation.organizationId||prior.openingId!==operation.openingId||prior.entityId!==operation.entityId||prior.payloadHash!==operation.payloadHash){
         tx.abort();await tx.done.catch(()=>{});throw new Error('request_retry_changed');
       }
-      await tx.done;return;
+      await withDbTimeout(tx.done);return;
     }
   }
-  await Promise.all([
+  await withDbTimeout(Promise.all([
     tx.objectStore("entities").put(entity),
     tx.objectStore("operations").put(operation),
     tx.done,
-  ]);
+  ]));
 }
 
 export async function saveMediaAndOperation(media: OfflineMediaRecord, operation: SyncOperation) {
@@ -212,8 +263,8 @@ export async function getSyncOperationsForOpening(openingId: string) {
 }
 
 export async function getAllSyncOperations() {
-  const db = await getDb();
-  return db.getAll("operations");
+  const db = await withDbTimeout(getDb());
+  return withDbTimeout(db.getAll("operations"));
 }
 
 export async function getSyncOperationsForPrincipal(userId: string, organizationId: string) {
@@ -257,7 +308,9 @@ export async function claimSyncOperation(input: {
   }
   const now = Date.parse(input.nowIso);
   const staleLease = interruptedOperationIsRecoverable(operation, input.nowIso);
-  if (!["queued", "retry_wait", "blocked_dependency"].includes(operation.state) && !staleLease) {
+  const sizeRebase = operation.state === "conflict" && operation.lastErrorCode === "revision_conflict"
+    && (operation.entityType === "frame" || operation.entityType === "door_leaf");
+  if (!["queued", "retry_wait", "blocked_dependency"].includes(operation.state) && !staleLease && !sizeRebase) {
     await tx.done;
     return undefined;
   }
@@ -420,6 +473,81 @@ export async function replaceRejectedMediaWithReducedCopy(photoId: string, reduc
   return { photoId: newPhotoId, operationId: newOperationId };
 }
 
+// A permanently failed change stays on the device until the technician discards it.
+// This removes only that local operation. It does not write to the server, and it
+// refuses anything that is still queued, retrying, or already verified.
+export async function requeueFinishedVisitInspection(operationId: string, visitId: string | null) {
+  assertNotWiped();
+  const db = await getDb();
+  const tx = db.transaction(["auth", "operations", "entities"], "readwrite");
+  const auth = await tx.objectStore("auth").get("current");
+  const operation: SyncOperation | undefined = await tx.objectStore("operations").get(operationId);
+  if (!auth || !operation || operation.actorUserId !== auth.userId || operation.organizationId !== auth.organizationId) {
+    throw new Error("operation_principal_mismatch");
+  }
+  if (operation.entityType !== "inspection_event" || operation.lastErrorCode !== "visit_finished") {
+    throw new Error("operation_not_finished_visit");
+  }
+  const payload = { ...(operation.payload as Record<string, unknown>) };
+  if (visitId) payload.visit_id = visitId;
+  else delete payload.visit_id;
+  const now = new Date().toISOString();
+  await tx.objectStore("operations").put({
+    ...operation, payload, state: "queued", attemptCount: 0, lastErrorCode: undefined,
+    nextAttemptAt: undefined, lastAttemptAt: undefined, dispatchLeaseId: undefined, dispatchLeaseExpiresAt: undefined,
+  });
+  const entity = await tx.objectStore("entities").get(entityKey(operation.entityType, operation.entityId));
+  if (entity) await tx.objectStore("entities").put({ ...entity, payload, syncState: "queued", updatedAtLocal: now });
+  await tx.done;
+}
+
+export async function discardPermanentFailure(operationId: string) {
+  assertNotWiped();
+  const db = await getDb();
+  const tx = db.transaction(["auth", "operations", "entities", "media"], "readwrite");
+  const auth = await tx.objectStore("auth").get("current");
+  const operation: SyncOperation | undefined = await tx.objectStore("operations").get(operationId);
+  if (!auth || !operation || operation.actorUserId !== auth.userId || operation.organizationId !== auth.organizationId) {
+    throw new Error("operation_principal_mismatch");
+  }
+  const terminalError = Boolean(operation.lastErrorCode && DISCARDABLE_SYNC_ERRORS.has(operation.lastErrorCode));
+  const stuck = ["retry_wait", "schema_blocked", "storage_pressure"].includes(operation.state);
+  if (operation.state !== "permanent_failure" && !(terminalError && stuck)) throw new Error("operation_not_permanent_failure");
+  const operations: SyncOperation[] = await tx.objectStore("operations").getAll();
+  if (operations.some((item) => item.dependencyOperationIds.includes(operation.operationId))) {
+    throw new Error("operation_has_dependents");
+  }
+  await tx.objectStore("operations").delete(operation.operationId);
+  if (operation.entityType === "photo") {
+    await tx.objectStore("media").delete(operation.entityId);
+  } else {
+    const stillUsed = operations.some((item) => item.operationId !== operation.operationId
+      && item.entityType === operation.entityType && item.entityId === operation.entityId);
+    if (!stillUsed) await tx.objectStore("entities").delete(entityKey(operation.entityType, operation.entityId));
+  }
+  await tx.done;
+}
+
+// Removes a photo queued during a save that did not finish. A verified upload,
+// an in-flight upload, or any receipt is left untouched.
+export async function removeUnconfirmedLocalPhoto(photoId: string) {
+  assertNotWiped();
+  const db = await getDb();
+  const tx = db.transaction(["operations", "media", "syncReceipts"], "readwrite");
+  const operations: SyncOperation[] = await tx.objectStore("operations").getAll();
+  const operation = operations.find((item) => item.entityType === "photo" && item.entityId === photoId);
+  if (!operation || operation.state === "verified" || operation.state === "in_flight" || operation.state === "verifying") {
+    await tx.done;
+    return false;
+  }
+  const receipts = await tx.objectStore("syncReceipts").index("by-entity").getAll(photoId);
+  if (receipts.length) { await tx.done; return false; }
+  await tx.objectStore("operations").delete(operation.operationId);
+  await tx.objectStore("media").delete(photoId);
+  await tx.done;
+  return true;
+}
+
 export async function removeRejectedMedia(photoId: string) {
   const db = await getDb();
   const tx = db.transaction(["auth", "media", "operations"], "readwrite");
@@ -566,13 +694,13 @@ export async function putOpeningSnapshot(snapshot: OpeningSnapshot) {
 }
 
 export async function putOfflineSetting(setting: OfflineSetting) {
-  assertNotWiped(); const db = await getDb();
-  await db.put("settings", setting);
+  assertNotWiped(); const db = await withDbTimeout(getDb());
+  await withDbTimeout(db.put("settings", setting));
 }
 
 export async function getOfflineSetting(key: string) {
-  const db = await getDb();
-  return db.get("settings", key);
+  const db = await withDbTimeout(getDb());
+  return withDbTimeout(db.get("settings", key));
 }
 
 export async function cacheOpening(opening: any, principal?: {userId:string;organizationId:string}) {
@@ -580,7 +708,7 @@ export async function cacheOpening(opening: any, principal?: {userId:string;orga
   const auth = await loadAuth();
   const owner=principal||auth;
   if(!owner||!auth||auth.userId!==owner.userId||auth.organizationId!==owner.organizationId)return;
-  await db.put("openings", {...opening,_cacheUserId:owner.userId,_cacheOrganizationId:owner.organizationId});
+  await db.put("openings", {...opening,_cacheUserId:owner.userId,_cacheOrganizationId:owner.organizationId,_cachedAt:new Date().toISOString()});
 }
 
 export async function getCachedOpening(id: string) {
@@ -663,8 +791,10 @@ export async function retryOutboxItem(id: string, photo: boolean) {
 
 export async function saveAuth(auth: { token: string; userId: string; organizationId: string; role: string; email?: string; signInEventId?: string }) {
   oiDataWiped = false; // a fresh sign-in re-enables local storage after a wipe
-  const db = await getDb();
-  await db.put("auth", { ...auth, savedAt: Date.now() }, "current");
+  const stored = { ...auth, savedAt: Date.now() };
+  lastAuth = stored;
+  const db = await withDbTimeout(getDb());
+  await withDbTimeout(db.put("auth", stored, "current"));
 }
 
 // Resume operations this app stopped only because the signed-in account changed while they were in
@@ -695,13 +825,21 @@ export async function requeueAfterFreshSignIn(input: { userId: string; organizat
 }
 
 export async function loadAuth() {
-  const db = await getDb();
-  return db.get("auth", "current");
+  try {
+    const db = await withDbTimeout(getDb());
+    const auth = await withDbTimeout(db.get("auth", "current"));
+    lastAuth = auth ?? undefined;
+    return auth;
+  } catch (error) {
+    if (isRequestTimeout(error) && lastAuth) return lastAuth;
+    throw error;
+  }
 }
 
 export async function clearAuth() {
-  const db = await getDb();
-  await db.delete("auth", "current");
+  lastAuth = undefined;
+  const db = await withDbTimeout(getDb());
+  await withDbTimeout(db.delete("auth", "current"));
 }
 
 // C2 (Stephan, 2026-10-28): when the API ends this account's access (401 session_revoked or

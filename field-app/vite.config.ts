@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -7,8 +8,17 @@ const base = process.env.OI_UI_BASE || '/'
 // No user-configurable enable flag: only this exact Netlify candidate build.
 const photoIsolation = photoIsolationBuildEnabled(process.env);
 
+function fieldBuildSha() {
+  const fromEnv = process.env.OI_FIELD_BUILD_SHA?.trim()
+  if (fromEnv) return fromEnv
+  try { return execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim() } catch { return 'unknown' }
+}
+
 export default defineConfig({
-  define: {__PHOTO_ISOLATION_ENABLED__: JSON.stringify(photoIsolation)},
+  define: {
+    __PHOTO_ISOLATION_ENABLED__: JSON.stringify(photoIsolation),
+    __FIELD_BUILD_SHA__: JSON.stringify(fieldBuildSha()),
+  },
   base,
   plugins: [
     react(),
@@ -30,7 +40,7 @@ export default defineConfig({
         display: 'standalone',
         orientation: 'portrait',
         scope: base,
-        start_url: `${base}scan`,
+        start_url: `${base}${process.env.VITE_OI_TECH_TASKS === 'true' ? 'tasks/day' : 'scan'}`,
         icons: [
           { src: `${base}icon-192.png`, sizes: '192x192', type: 'image/png' },
           { src: `${base}icon-512.png`, sizes: '512x512', type: 'image/png' },

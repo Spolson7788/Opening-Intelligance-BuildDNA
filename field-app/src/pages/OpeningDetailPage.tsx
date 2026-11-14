@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
-import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchPhotoAccessUrl, serverFeatures } from "../lib/api";
+import { fetchOpening, fetchOpeningByQr, fetchOpeningByCode, deletePhoto, fetchPhotoAccessUrl, fetchPhotoContent, serverFeatures } from "../lib/api";
 import { mediaAssociationLabel } from "../lib/mediaAssociationLabel";
 import { openingLoadFailure } from "../lib/openingLoadFailure";
 import { siteAccessRenewalUrl } from "../lib/siteAccess";
+import { RenewPrivateSiteAccess } from "../components/RenewPrivateSiteAccess";
 import { getAllOfflineMedia, getSyncOperationsForOpening, loadAuth, updateCachedOpening } from "../lib/db";
 import type { OfflineMediaRecord } from "../lib/offlineTypes";
 import { onSyncStateChange, queueOpeningMutation } from "../lib/sync";
@@ -11,12 +12,13 @@ import { SyncBadge } from "../components/SyncBadge";
 import { PhotoCapture } from "../components/PhotoCapture";
 import { openingCompletionRequirements } from "../lib/openingCompletion";
 import { splitServiceHistory } from "../lib/serviceHistory";
+import { formatStoredCalendarDay } from "../lib/calendarDay";
 import type { ServiceEventRow } from "../lib/serviceHistory";
 
 function ServiceEventCard({ ev }: { ev: ServiceEventRow }) {
   return (
     <div className="card" data-service-event={ev.id}>
-      <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
+      <strong style={{ fontSize: 13 }}>{formatStoredCalendarDay(String(ev.event_date))}</strong>
       <p style={{ margin: "4px 0 0", fontSize: 14 }}>{ev.work_performed}</p>
     </div>
   );
@@ -45,13 +47,26 @@ function healthClass(score: number | null) {
 }
 
 export function SyncedMedia({ photo, label }: { photo: any; label: string }) {
-  const [url, setUrl] = useState<string | null>(photo.storage_url?.startsWith("private:") ? null : photo.storage_url);
+  const inline = typeof photo.storage_url === "string" && photo.storage_url.startsWith("inline:");
+  const stored = typeof photo.storage_url === "string" && photo.storage_url.startsWith("private:");
+  const [url, setUrl] = useState<string | null>(inline || stored ? null : photo.storage_url);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
+    let objectUrl: string | null = null;
     setFailed(false);
-    if (!photo.storage_url?.startsWith("private:")) {
+    if (inline) {
+      setUrl(null);
+      fetchPhotoContent(photo.id)
+        .then((blob) => {
+          objectUrl = URL.createObjectURL(blob);
+          if (active) setUrl(objectUrl);
+        })
+        .catch(() => { if (active) setFailed(true); });
+      return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    }
+    if (!stored) {
       setUrl(photo.storage_url || null);
       setFailed(!photo.storage_url);
       return () => { active = false; };
@@ -61,7 +76,7 @@ export function SyncedMedia({ photo, label }: { photo: any; label: string }) {
       .then(({ url }) => { if (active) { setUrl(url || null); setFailed(!url); } })
       .catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
-  }, [photo.id, photo.storage_url]);
+  }, [photo.id, photo.storage_url, inline, stored]);
 
   if (failed) return <div className="error-text" role="status">{photo.media_type === "video" ? "Video" : "Photo"} unavailable. The attachment record is retained; its media could not be loaded.</div>;
   if (!url) return <div style={{ aspectRatio: "1", display: "grid", placeItems: "center" }}>Loading…</div>;
@@ -187,22 +202,24 @@ export function OpeningDetailPage() {
 
   if (loading) {
     return (
-      <div className="app-shell">
-        <div className="top-bar"><h1>Loading…</h1></div>
+      <div className="app-shell c04">
+        <div className="c04-toolbar"><p className="c04-kicker">Field app</p><SyncBadge /></div>
+        <div className="screen"><h1>Loading…</h1></div>
       </div>
     );
   }
 
   if (!opening || (error && !error.retry)) {
     return (
-      <div className="app-shell">
-        <div className="top-bar">
-          <h1>{error?.title ?? "Opening unavailable"}</h1>
+      <div className="app-shell c04">
+        <div className="c04-toolbar">
+          <button className="btn c04-back" type="button" onClick={() => navigate("/scan")}>Back</button>
           <SyncBadge />
         </div>
         <div className="screen empty-state">
+          <h1>{error?.title ?? "Opening unavailable"}</h1>
           <p role="alert">{error?.message}</p>
-          {error?.siteAccess && renewalUrl && <a className="btn btn-primary" href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a>}
+          {error?.siteAccess && renewalUrl && <RenewPrivateSiteAccess className="btn btn-primary">Renew private site access</RenewPrivateSiteAccess>}
           {error?.signIn ? (
             <button className="btn btn-primary" onClick={() => navigate("/login", { state: { from: location.pathname } })}>Sign in again</button>
           ) : error?.retry ? (
@@ -220,11 +237,9 @@ export function OpeningDetailPage() {
   const completionBlocked = opening.completion_state !== "complete" && opening.completion_state !== "pending_sync" && completionRequirements.length > 0;
 
   return (
-    <div className="app-shell">
-      <div className="top-bar">
-        <button className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13 }} onClick={() => navigate("/scan")}>
-          ← Scan
-        </button>
+    <div className="app-shell c04">
+      <div className="c04-toolbar">
+        <button className="btn c04-back" type="button" onClick={() => navigate("/scan")}>Back</button>
         <SyncBadge />
       </div>
 
@@ -232,10 +247,11 @@ export function OpeningDetailPage() {
         <div>
           {error?.retry && <div role="alert">
             <p>{error.message}</p>
-            {error.siteAccess && renewalUrl && <a className="btn btn-primary" href={renewalUrl} target="_blank" rel="noreferrer">Renew private site access</a>}
+            {error.siteAccess && renewalUrl && <RenewPrivateSiteAccess className="btn btn-primary">Renew private site access</RenewPrivateSiteAccess>}
             <button className="btn btn-secondary" onClick={() => reload()}>Check access again</button>
           </div>}
         </div>
+        <section className="c04-band-green">
         <div className="asset-plate" style={{ marginBottom: 10 }}>{opening.opening_code}</div>
         {fromCache && (
           <p className="error-text" style={{ marginTop: 0 }}>Showing last-saved data — no connection right now.</p>
@@ -258,7 +274,9 @@ export function OpeningDetailPage() {
           </div>
           {opening.fire_rated && <span className="badge" style={{ marginTop: 8 }}>Fire Rated</span>}
         </div>
+        </section>
 
+        <section className="c04-band">
         <Link className="btn btn-secondary" to={`/opening/${opening.id}/lifecycle`}>Installation and service history</Link><Link className="btn btn-secondary" to={`/opening/${opening.id}/schedules`}>Facility schedules</Link>
         {retired?<p role="status">This opening is retired. Its records remain available for review; new requests and labels are unavailable.</p>:<Link className="btn btn-secondary" to={`/opening/${opening.id}/request-service`}>Request service</Link>}
         <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
@@ -269,7 +287,9 @@ export function OpeningDetailPage() {
             Log Inspection
           </Link>
         </div>
+        </section>
 
+        <section className="c04-band-blue">
         <div className="section-label">Opening Structure</div>
         <div className="card">
           <strong>{opening.opening_configuration === "pair" ? "Door pair" : "Single door"}</strong>
@@ -281,7 +301,7 @@ export function OpeningDetailPage() {
           </Link>
           {!retired && opening.completion_state === "complete" && !fromCache && <Link className="btn btn-secondary" to={`/opening/${opening.id}/label`}>Print / save label</Link>}
           {completionBlocked && (
-            <div role="status" className="error-text" style={{ marginTop: 10 }}>
+            <div role="status" className="c04-notice-amber" style={{ marginTop: 10 }}>
               <strong>Before finishing:</strong>
               <ul style={{ margin: "4px 0 0", paddingLeft: 20 }}>
                 {completionRequirements.map((item) => <li key={item}>{item}</li>)}
@@ -293,7 +313,9 @@ export function OpeningDetailPage() {
             {opening.completion_state === "complete" ? "Opening complete" : opening.completion_state === "pending_sync" ? "Completion pending sync" : "Finish the opening"}
           </button>
         </div>
+        </section>
 
+        <section className="c04-band">
         <div className="section-label" style={{ marginTop: 20 }}>Photos &amp; Videos</div>
         {((opening.photos && opening.photos.length > 0) || queuedPhotos.length > 0) && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 10 }}>
@@ -345,25 +367,26 @@ export function OpeningDetailPage() {
         <PhotoCapture openingId={opening.id} onQueued={loadQueuedPhotos} />
 
         {photoToDelete && (
-          <div role="dialog" aria-modal="true" aria-labelledby="delete-photo-title" className="card"
-            style={{ borderColor: "var(--danger)", marginTop: 10 }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="delete-photo-title" className="c04-alert">
             <strong id="delete-photo-title">Delete photo?</strong>
-            <p style={{ margin: "6px 0 10px", fontSize: 14 }}>
+            <p>
               {photoToDelete.name} will be removed from this opening. This cannot be undone in the field app.
             </p>
             {deleteError && <p role="alert" className="error-text">{deleteError}</p>}
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className="c04-row">
               <button className="btn btn-secondary" disabled={deletingPhoto} onClick={() => { setPhotoToDelete(null); setDeleteError(null); }}>Cancel</button>
-              <button className="btn btn-primary" disabled={deletingPhoto} onClick={handleDeletePhoto}>
+              <button className="btn c04-danger-fill" disabled={deletingPhoto} onClick={handleDeletePhoto}>
                 {deletingPhoto ? "Deleting…" : "Delete photo"}
               </button>
             </div>
           </div>
         )}
+        </section>
 
         {opening.hardware_components && opening.hardware_components.length > 0 && (
           <>
             <div className="section-label">Hardware</div>
+            <div className="c04-band-green">
             {opening.hardware_components.map((hw: any) => (
               <div key={hw.id} className="card">
               <Link to={`/opening/${opening.id}/edit-hardware/${hw.id}`} state={{ hardware: hw }} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
@@ -412,6 +435,7 @@ export function OpeningDetailPage() {
               </div>
               </div>
             ))}
+            </div>
           </>
         )}
         {!retired && <IdentifyHardwareEntry openingId={opening.id} />}
@@ -435,9 +459,9 @@ export function OpeningDetailPage() {
           <>
             <div className="section-label" style={{ marginTop: 20 }}>Recent Inspections</div>
             {opening.inspection_events.slice(0, 5).map((ev: any) => (
-              <div className="card" key={ev.id}>
+              <Link className="card" key={ev.id} to={`/opening/${opening.id}/inspection/${ev.id}`} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <strong style={{ fontSize: 13 }}>{new Date(ev.event_date).toLocaleDateString(undefined, { timeZone: "UTC" })}</strong>
+                  <strong style={{ fontSize: 13 }}>{formatStoredCalendarDay(String(ev.event_date))}</strong>
                   <span
                     className="badge"
                     style={{ color: ev.passed ? "var(--success)" : "var(--danger)", borderColor: ev.passed ? "var(--success)" : "var(--danger)" }}
@@ -445,8 +469,9 @@ export function OpeningDetailPage() {
                     {ev.passed ? "Passed" : "Failed"}
                   </span>
                 </div>
+                <p style={{ margin: "4px 0 0", fontSize: 14, textTransform: "capitalize" }}>{String(ev.inspection_type || "general").replace(/_/g, " ")}</p>
                 {ev.notes && <p style={{ margin: "4px 0 0", fontSize: 14 }}>{ev.notes}</p>}
-              </div>
+              </Link>
             ))}
           </>
         )}

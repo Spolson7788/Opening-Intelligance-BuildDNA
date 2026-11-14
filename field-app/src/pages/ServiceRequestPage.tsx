@@ -71,17 +71,17 @@ function ServiceRequestForm(){
     }catch(e){setError(e instanceof Error?e.message:'Could not refresh assigned providers.');}
     finally{setSaving(false);}
   }
-  return <div className="app-shell"><div className="top-bar"><h1>Request service</h1><SyncBadge/></div><div className="screen">
-    <Link to={`/opening/${id}`}>Opening record</Link>
+  return <div className="app-shell c04"><div className="top-bar"><h1>Request service</h1><SyncBadge/></div><div className="screen">
+    <section className="c04-band-green"><Link to={`/opening/${id}`}>Opening record</Link>
     <p>A request records a problem for review. It does not record completed work, change condition, or authorize purchasing.</p>
-    <p>Provider notifications are disabled in this release.</p>
+    <p>Provider notifications are disabled in this release.</p></section>
     {!canSubmit&&<p>Your account can view requests but cannot submit them.</p>}
-    {error&&<p role="alert">{error}</p>}
+    {error&&<p className="c04-alert" role="alert">{error}</p>}
     {offline&&<p>Using previously loaded details. Access and provider assignment will be checked again when this request synchronizes.</p>}
     {operation?<><p role="status">{status}</p><Link to="/sync-issues">View synchronization issues</Link><p>Starting a separate request retains this request and its synchronization history.</p><button className="btn btn-secondary" disabled={saving||!canSubmit} onClick={startSeparateRequest}>Start a separate request</button></>:context&&<>
       <h2>{context.opening_code}</h2>
       {context.status==='decommissioned'?<p>This opening is retired. New requests are unavailable.</p>:<>
-      {!review?<form onSubmit={e=>{e.preventDefault();if(valid)setReview(true);}}>
+      {!review?<form className="c04-band-blue" onSubmit={e=>{e.preventDefault();if(valid)setReview(true);}}>
         <fieldset><legend>Which parts need service?</legend>
           <label><input type="checkbox" checked={uncertain} onChange={e=>{setUncertain(e.target.checked);setSelected([]);setPhotos([]);}}/> Unsure — opening-level review</label>
           {choices.map(c=><label key={c.type+c.id} style={{display:'block'}}><input type="checkbox" disabled={uncertain} checked={selected.includes(c.type+':'+c.id)} onChange={e=>{setSelected(v=>e.target.checked?[...v,c.type+':'+c.id]:v.filter(k=>k!==c.type+':'+c.id));setPhotos([]);}}/>{c.label}</label>)}
@@ -95,7 +95,7 @@ function ServiceRequestForm(){
           {allowedPhotos.map((p:any)=><label key={p.id} style={{display:'block'}}><input type="checkbox" checked={photos.includes(p.id)} onChange={e=>setPhotos(v=>e.target.checked?[...v,p.id]:v.filter(k=>k!==p.id))}/>{p.related_entity_type==='opening'?'Opening':choices.find(c=>c.id===p.related_entity_id)?.label} — photo {p.id.slice(0,8)}</label>)}
           {!allowedPhotos.length&&<p>No verified photographs available for these targets.</p>}
         </fieldset><button className="btn btn-primary" disabled={!valid}>Review request</button>
-      </form>:<section><h3>Review before submitting</h3><p>{uncertain?'Opening-level review; component uncertain':targets.map(t=>t.label).join('; ')}</p><p>{symptom}</p><p>Impact: {impact||'Not supplied'}</p><p>Priority: {priority}</p><p>Provider: {context.providers.find((p:any)=>p.id===provider)?.name}</p><p>{photos.length} verified photograph(s)</p><button className="btn btn-secondary" disabled={saving} onClick={()=>setReview(false)}>Edit request</button><button className="btn btn-primary" disabled={saving||!valid} onClick={save}>{saving?'Saving…':'Submit request'}</button></section>}
+      </form>:<section className="c04-band-green"><h3>Review before submitting</h3><p>{uncertain?'Opening-level review; component uncertain':targets.map(t=>t.label).join('; ')}</p><p>{symptom}</p><p>Impact: {impact||'Not supplied'}</p><p>Priority: {priority}</p><p>Provider: {context.providers.find((p:any)=>p.id===provider)?.name}</p><p>{photos.length} verified photograph(s)</p><button className="btn btn-secondary" disabled={saving} onClick={()=>setReview(false)}>Edit request</button><button className="btn btn-primary" disabled={saving||!valid} onClick={save}>{saving?'Saving…':'Submit request'}</button></section>}
       </>}
       <h3>Recorded requests</h3>{context.requests.length?context.requests.map((r:any)=><p key={r.id}>{r.symptom} — {r.status}; notification disabled</p>):<p>No recorded requests available.</p>}
     </>}

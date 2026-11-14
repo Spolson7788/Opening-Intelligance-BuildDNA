@@ -35,10 +35,11 @@ export function ChangePasswordPage() {
   }
 
   return (
-    <div className="screen">
+    <div className="app-shell c04"><div className="screen">
+      <p className="c04-kicker">Field app</p>
       <h1>{forced ? "Choose a new password" : "Change password"}</h1>
       <p>{forced ? "Your admin gave you a temporary password. Choose your own before continuing." : "You'll sign in again with the new password."}</p>
-      <form onSubmit={onSubmit}>
+      <form className="c04-band" onSubmit={onSubmit}>
         <label htmlFor="cp-current">{forced ? "Temporary password" : "Current password"}</label>
         <input id="cp-current" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
         <label htmlFor="cp-new">New password (12 to 72 characters)</label>
@@ -51,6 +52,6 @@ export function ChangePasswordPage() {
       <button type="button" className="btn btn-secondary" style={{ marginTop: 12 }} onClick={() => (forced ? void logout() : navigate("/scan"))}>
         {forced ? "Sign Out" : "Cancel"}
       </button>
-    </div>
+    </div></div>
   );
 }

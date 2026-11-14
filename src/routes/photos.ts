@@ -4,7 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { pool } from "../db/pool";
-import { requireAuth, AuthedRequest } from "../middleware/auth";
+import { requireAuth, AuthedRequest, isMissingSchema } from "../middleware/auth";
 import { enforceRolePermissions } from "../middleware/permissions";
 import { auditLog } from "../middleware/auditLog";
 import { openingsForOrgSubquery, photoVisibleSql } from "../db/tenantScope";
@@ -429,6 +429,24 @@ photosRouter.post("/offline/confirm", databaseRoute(async (req: AuthedRequest, r
   }
 }));
 
+photosRouter.get("/:id/content", async (req: AuthedRequest, res) => {
+  if (!z.string().uuid().safeParse(req.params.id).success) return res.status(400).json({ error: "invalid_photo" });
+  try {
+    const photo = await pool.query(
+      `SELECT p.content_type, p.inline_bytes FROM photos p
+       WHERE p.id=$1 AND p.opening_id IN (${openingsForOrgSubquery(2)}) AND ${photoVisibleSql("p", 2)}`,
+      [req.params.id, req.auth!.organizationId],
+    );
+    const row = photo.rows[0];
+    if (!row?.inline_bytes) return res.status(404).json({ error: "not_found" });
+    const type = typeof row.content_type === "string" && row.content_type.startsWith("image/") ? row.content_type : "application/octet-stream";
+    res.set("Content-Type", type).set("Cache-Control", "private, no-store").send(row.inline_bytes);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "internal_error" });
+  }
+});
+
 photosRouter.get("/:id/access", databaseRoute(async (req: AuthedRequest, res) => {
   const photo = await pool.query(
     `SELECT p.* FROM photos p WHERE p.id=$1 AND p.opening_id IN (${openingsForOrgSubquery(2)}) AND ${photoVisibleSql("p", 2)}`,
@@ -659,6 +677,15 @@ photosRouter.delete("/:id", async (req: AuthedRequest, res) => {
       [id, orgId]
     );
     if (photoResult.rows.length === 0) return res.status(404).json({ error: "not_found" });
+    try {
+      const held = await pool.query(
+        "SELECT 1 FROM fire_door_deficiencies WHERE photo_id=$1 AND created_at > now() - interval '3 years' LIMIT 1",
+        [id],
+      );
+      if (held.rowCount) return res.status(409).json({ error: "retained_for_three_years" });
+    } catch (error) {
+      if (!isMissingSchema(error)) throw error;
+    }
 
     const photo = photoResult.rows[0];
     const key = photo.storage_object_key as string | null;

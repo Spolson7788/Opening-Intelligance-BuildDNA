@@ -140,7 +140,7 @@ export function ComplianceAlertsPage() {
                           <td>{a.property_name}</td>
                           <td>{a.building_name}</td>
                           <td>{a.location_description || `Floor ${a.floor_label || "—"}`}</td>
-                          <td>{a.last_inspection_date ? new Date(a.last_inspection_date).toLocaleDateString() : "Never"}</td>
+                          <td>{a.last_inspection_date ? new Date(a.last_inspection_date).toLocaleDateString(undefined, { timeZone: "UTC" }) : "Never"}</td>
                         </tr>
                       );
                     })}

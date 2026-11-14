@@ -180,6 +180,7 @@ export interface DocumentEntry {
   storage_url: string;
   file_size_bytes: number | null;
   created_at: string;
+  inspection_event_id?: string | null;
 }
 
 export async function fetchDocumentsForOpening(openingId: string): Promise<DocumentEntry[]> {
@@ -574,6 +575,8 @@ export interface OpeningDetail extends Opening {
   service_events: any[];
   inspection_events: any[];
   photos: OpeningPhoto[];
+  purchasing_sends?: Array<{ id: string; sent_to: string; note: string | null; delivery_mode: string; created_at: string }>;
+  fire_door_deficiencies?: Array<{ id: string; item_key: string; note: string; status: string; repair_note: string | null }>;
 }
 
 export interface OpeningFrame {
@@ -592,6 +595,7 @@ export interface DoorLeaf {
   material: string | null;
   width_in: number | null;
   height_in: number | null;
+  thickness_in: number | null;
   condition: string;
 }
 
@@ -624,6 +628,7 @@ export interface OpeningPhoto {
   media_type: "photo" | "video";
   storage_url: string;
   entity_type: string;
+  related_entity_type?: string | null;
   frame_id: string | null;
   door_leaf_id: string | null;
   hardware_component_id: string | null;
@@ -923,7 +928,7 @@ export async function getLocations(): Promise<LocationsResponse> {
 // ---- M5: OI staff tools (the server re-checks staff status on every request) ----
 export interface PlatformFacility { property_id: string; property_name: string; state: string | null; owner_organization_id: string; owner_name: string; top_organization_id: string | null; active_provider_ids: string[]; building_count: number; opening_count: number }
 export interface PlatformProvider { provider_organization_id: string; provider_name: string; active_facility_count: number; active_property_ids: string[] }
-export interface PlatformOrganization { id: string; name: string; org_type: "customer" | "service_partner" | "internal"; parent_organization_id: string | null; active_users: number }
+export interface PlatformOrganization { id: string; name: string; org_type: "customer" | "service_partner" | "internal"; parent_organization_id: string | null; active_users: number; deactivated_at?: string | null }
 export interface PlatformOrgUser { id: string; email: string; full_name: string; role: string; is_active: boolean; is_home: boolean }
 export interface ProviderRequest { id: string; property_id: string; property_name: string; provider_organization_id: string; provider_name: string; action: "assign" | "unassign"; reason: string; status: string; requested_at: string; requested_by_user_id: string; requested_by_name?: string; facility_organization_name?: string; reviewed_at?: string | null; review_note?: string | null }
 export interface PlatformStaffRow { user_id: string; email: string; full_name: string; granted_at: string; grant_reason: string; revoked_at: string | null; revoke_reason: string | null; active: boolean }
@@ -939,6 +944,7 @@ export const platformFacilities = (): Promise<PlatformFacility[]> => authedFetch
 export const platformProviders = (): Promise<PlatformProvider[]> => authedFetch("/platform/providers");
 export const platformOrganizations = (): Promise<PlatformOrganization[]> => authedFetch("/platform/organizations");
 export const platformOrgUsers = (orgId: string): Promise<PlatformOrgUser[]> => authedFetch(`/platform/organizations/${orgId}/users`);
+export const setCompanyActive = (orgId: string, active: boolean, reason: string) => post(`/platform/organizations/${orgId}/${active ? "reactivate" : "deactivate"}`, { reason });
 export const setOrganizationParent = (orgId: string, body: { parent_organization_id: string | null; reason: string; confirm_provider_link?: true }):
   Promise<{ id: string; parent_organization_id: string | null; tree: PlatformOrganization[] }> => post(`/platform/organizations/${orgId}/parent`, body, "PUT");
 export const platformProviderRequests = (status = "pending"): Promise<ProviderRequest[]> => authedFetch(`/platform/provider-requests?status=${encodeURIComponent(status)}`);
@@ -967,3 +973,104 @@ export const platformUsageSettings = (): Promise<{ settings: UsageSettings; caps
 export const updateUsageSettings = (change: Partial<Omit<UsageSettings, "updated_at" | "updated_reason">> & { reason: string }): Promise<{ settings: UsageSettings }> => post("/platform/recognition-usage/settings", change, "PUT");
 export const setSafetyCap = (orgId: string, monthly_photo_cap: number | null, reason: string): Promise<unknown> => post(`/platform/recognition-usage/caps/${orgId}`, { monthly_photo_cap, reason }, "PUT");
 export const createProviderFacility = (providerId: string, name: string, reason: string): Promise<{ facility: { id: string; name: string } }> => post(`/platform/providers/${providerId}/facilities`, { name, reason });
+
+export const fetchPurchasingEmail = (): Promise<{ purchasing_email: string | null }> => authedFetch("/purchasing/company-email");
+export const savePurchasingEmail = (purchasing_email: string | null): Promise<{ purchasing_email: string | null }> => post("/purchasing/company-email", { purchasing_email }, "PUT");
+export const fetchPurchasingBranchEmails = (): Promise<{ branches: Array<{ id: string; name: string; purchasing_email: string | null }> }> => authedFetch("/purchasing/branch-emails");
+export const savePurchasingBranchEmail = (id: string, purchasing_email: string | null) => post(`/purchasing/branches/${id}/email`, { purchasing_email }, "PUT");
+export const fetchBranches = (): Promise<{ branches: Array<{ id: string; name: string; default_state: string; default_territory: string | null; is_active: boolean; purchasing_email: string | null }> }> => authedFetch("/branches");
+export const saveBranch = (id: string, body: { name: string; default_state: string; default_territory: string | null; is_active: boolean; purchasing_email: string | null }) => post(`/branches/${id}`, body, "PUT");
+export const inspectionReportRecipients = (id: string): Promise<{ to: string[]; facility_contact_email: string | null; inspector_email: string }> => authedFetch(`/events/inspection-events/${id}/email-defaults`);
+export const emailInspectionReport = (id: string, to: string[]): Promise<{ sent: boolean; delivery_mode: string }> => post(`/events/inspection-events/${id}/email`, { to });
+export interface InspectionVisitRow { id: string; property_id: string; facility_name: string; visit_date: string; inspector_name: string; report_sent: boolean; inspected: number; passed: number; failed: number }
+export const fetchInspectionVisits = (propertyId?: string): Promise<{ visits: InspectionVisitRow[] }> => authedFetch(`/portfolio/inspection-visits${propertyId ? `?property_id=${propertyId}` : ""}`);
+export const fetchInspectionVisit = (id: string): Promise<{ id: string; facility_name: string; event_date: string; inspector_name: string | null; summary: string; inspected: number; passed: number; failed: number; report_sent: boolean; report_stored: boolean; doors: Array<{ opening_id: string; opening_code: string; location: string | null; passed: boolean; notes: string | null; repeat_note?: string | null; deficiencies: Array<{ section: string; description: string; note: string }> }> }> => authedFetch(`/portfolio/inspection-visits/${id}`);
+export const saveInspectionToFacilityRecords = (id: string): Promise<{ document: { id: string; title: string }; already_saved: boolean }> => post(`/events/inspection-events/${id}/facility-record`, {});
+
+export async function fetchAuthedBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (res.status === 401) {
+    handleUnauthorized(typeof localStorage !== "undefined" ? localStorage : null,
+      typeof window !== "undefined" ? { pathname: window.location.pathname, assign: (u) => window.location.assign(u) } : null,
+      import.meta.env.BASE_URL || "/");
+  }
+  if (!res.ok) throw new ApiError(res.status, "download_failed");
+  return res.blob();
+}
+
+export interface CompanyCounts { open_work_orders: number; failed_or_overdue: number; inspections_due_30_days: number; quotes: number }
+export interface CompanyCustomer {
+  id: string; name: string; kind: "facility" | "small" | "walkin"; kind_label: string;
+  opening_count: number; attention_count: number; attention: string;
+  last_visit: string | null; next_due: string | null; property_ids: string[];
+}
+export interface CompanyHome { company_name: string; classification_note: string; counts: CompanyCounts; customers: CompanyCustomer[] }
+export interface CompanyCustomerDetail {
+  id: string; name: string; kind: CompanyCustomer["kind"]; kind_label: string; classification_note: string;
+  sites: Array<{ id: string; name: string; address: string; opening_count: number; attention: string; last_visit: string | null; next_due: string | null }>;
+}
+export interface CompanySite {
+  id: string; name: string; address: string; kind: CompanyCustomer["kind"]; kind_label: string;
+  customer_id: string; customer_name: string;
+  openings: Array<{ id: string; opening_code: string; location_description: string | null; opening_type: string; fire_rated: boolean; health_score: number | null; building_name: string; needs_attention: boolean }>;
+  visits: Array<{ id: string; visit_date: string; report_stored: boolean }>;
+  work_orders: Array<{ id: string; title: string; status: string; due_date: string | null; opening_code: string }>;
+  quotes: Array<{ id: string; opening_id: string; opening_code: string; total_minor: number | null; approval_status: string }>;
+}
+export interface CompanyOpening {
+  id: string; opening_code: string; location_description: string | null; opening_type: string; fire_rated: boolean;
+  health_score: number | null; needs_attention: boolean; building_name: string; property_id: string; property_name: string;
+  address: string; kind: CompanyCustomer["kind"]; kind_label: string; customer_id: string; customer_name: string;
+  work_records: Array<{ id: string; kind: string; label: string; performed_on: string | null; advised_on: string | null }>;
+  quotes: Array<{ id: string; total_minor: number | null; approval_status: string }>;
+}
+export const setQuoteApproval = (id: string, approval_status: "awaiting_approval" | "approved" | "declined") =>
+  post(`/company-dashboard/quotes/${id}/approval`, { approval_status });
+export const fetchCompanyHome = (): Promise<CompanyHome> => authedFetch("/company-dashboard");
+export const fetchCompanyCustomer = (id: string): Promise<CompanyCustomerDetail> => authedFetch(`/company-dashboard/customers/${encodeURIComponent(id)}`);
+export const fetchCompanySite = (id: string): Promise<CompanySite> => authedFetch(`/company-dashboard/sites/${id}`);
+export const fetchCompanyOpening = (id: string): Promise<CompanyOpening> => authedFetch(`/company-dashboard/openings/${id}`);
+export const facilityDashboardAccess = (): Promise<{ allowed: boolean }> => authedFetch("/portfolio/facility-dashboard-access");
+
+export interface RouteCandidate {
+  work_id: string; work_kind: string; summary: string; opening_code: string | null; property_id: string;
+  property_name: string; address: string; due_date: string | null; latitude: number | null; longitude: number | null;
+}
+export interface RouteStop {
+  id: string; position: number; status: string; work_kind: string; work_id: string; summary: string;
+  opening_code: string | null; property_name: string; address: string; time_window: string | null;
+  drive_minutes: number | null; done: boolean;
+}
+export interface ServiceRoute {
+  id: string; service_date: string; assigned_user_id: string; assignee_name: string | null;
+  total_minutes: number; stops: RouteStop[];
+}
+export const fetchRouteAssignees = (): Promise<{ people: Array<{ id: string; full_name: string; role: string }> }> =>
+  authedFetch("/company-dashboard/routes/assignees");
+export const fetchRouteCandidates = (date: string): Promise<{ candidates: RouteCandidate[] }> =>
+  authedFetch(`/company-dashboard/routes/candidates?date=${encodeURIComponent(date)}`);
+export const fetchServiceRoutes = (date: string): Promise<{ routes: ServiceRoute[]; drive_label?: string }> =>
+  authedFetch(`/company-dashboard/routes?date=${encodeURIComponent(date)}`);
+export const buildServiceRoute = (body: { service_date: string; assigned_user_id: string; stops: Array<{ work_kind: string; work_id: string; time_window?: string }> }) =>
+  post("/company-dashboard/routes", body) as Promise<{ route: ServiceRoute; drive_source: string; drive_label: string; total_minutes: number }>;
+export const decideRouteStop = (id: string, decision: "approve" | "decline") =>
+  post(`/company-dashboard/routes/stops/${id}/decision`, { decision }) as Promise<{ route: ServiceRoute }>;
+
+export async function downloadAuthedFile(path: string, filename: string) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (res.status === 401) {
+    handleUnauthorized(typeof localStorage !== "undefined" ? localStorage : null,
+      typeof window !== "undefined" ? { pathname: window.location.pathname, assign: (u) => window.location.assign(u) } : null,
+      import.meta.env.BASE_URL || "/");
+  }
+  if (!res.ok) throw new ApiError(res.status, "download_failed");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}

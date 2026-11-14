@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { app, signupTestOrg, createPortfolioHierarchy, createTestOpening } from "./helpers";
+import { passingFireDoorFields } from "./nfpa80Fixture";
 
 async function inviteAndLogin(adminToken: string, role: string) {
   const email = `role-${role}-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
@@ -173,7 +174,7 @@ describe("role-based permissions", () => {
       const res = await request(app)
         .post("/api/events/inspection-events")
         .set("Authorization", `Bearer ${inspectorToken}`)
-        .send({ opening_id: opening.id, event_date: "2026-01-01", inspection_type: "fire_door_nfpa80", passed: true });
+        .send({ opening_id: opening.id, event_date: "2026-01-01", inspection_type: "fire_door_nfpa80", ...passingFireDoorFields() });
 
       expect(res.status).toBe(201);
     });

@@ -65,6 +65,7 @@ exportRouter.get("/compliance-report.pdf", async (req: AuthedRequest, res) => {
        LEFT JOIN LATERAL (
          SELECT event_date, passed, notes, inspection_type, signed_by_name
          FROM inspection_events WHERE opening_id = o.id
+           AND inspection_type = 'fire_door_nfpa80' AND checklist_result->>'status' = 'complete'
          ORDER BY event_date DESC LIMIT 1
        ) li ON true
        LEFT JOIN LATERAL (

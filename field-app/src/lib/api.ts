@@ -1,5 +1,6 @@
 import { loadAuth, cacheOpening, getCachedOpening, wipeAllOiData, clearAuth } from "./db";
-import { isNetlifyAccessResponse, SITE_ACCESS_REQUIRED } from "./siteAccess";
+import { isRequestTimeout, withTimeout } from "./deadline";
+import { isNetlifyAccessResponse, redirectToFieldLogin, SITE_ACCESS_REQUIRED } from "./siteAccess";
 import {diagnosticActor,diagnosticAvailable,PROBES,readBoundedProbe,runPhotoProbes} from './photoDiagnostic';
 import type {Principal,ProbeResponse} from './photoDiagnostic';
 import { assertSyncDispatchAllowed } from './syncNavigation';
@@ -55,6 +56,8 @@ export async function listOpeningPhotos(openingId: string): Promise<StoredPhoto[
 export class ApiError extends Error {
   status: number;
   reference?: string;
+  missing?: string[];
+  serverRevision?: number;
   constructor(status: number, message: string, reference?: string) {
     super(message);
     this.status = status;
@@ -98,7 +101,16 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
   if (auth?.token) headers["Authorization"] = `Bearer ${auth.token}`;
 
   if (expectedPrincipal && options.method && !['GET','HEAD'].includes(options.method.toUpperCase())) assertSyncDispatchAllowed();
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const signal = options.signal ?? AbortSignal.timeout(20_000);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal });
+  } catch (error) {
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+      throw new DOMException("request timed out", "TimeoutError");
+    }
+    throw error;
+  }
   if(diagnostic){
     const response=await readBoundedProbe(res);
     const current=await loadAuth();
@@ -106,6 +118,7 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
     return response;
   }
   if (!res.ok) {
+    if (res.status === 413) throw new ApiError(413, "media_too_large");
     if ((res.headers.get("content-type") || "").toLowerCase().startsWith("text/html")) {
       const text = await res.text();
       throw new ApiError(res.status, isNetlifyAccessResponse(res.status, res.headers.get("content-type") || "", text)
@@ -117,7 +130,7 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
       const now = await loadAuth();
       if (auth && now && now.userId === auth.userId && now.organizationId === auth.organizationId && now.token === auth.token) await clearAuth();
     }
-    if (endedReference && ((res.status === 401 && body.error === "session_revoked") || (res.status === 403 && body.error === "account_deactivated"))) {
+    if (endedReference && ((res.status === 401 && body.error === "session_revoked") || (res.status === 403 && (body.error === "account_deactivated" || body.error === "company_deactivated")))) {
       // C2: the API ended this account's access. Wipe all OI data on this device, but only while the
       // same account is still the one signed in here (never another person's data).
       const now = await loadAuth();
@@ -126,12 +139,31 @@ async function authedFetch(path: string, options: RequestInit = {}, expectedPrin
         throw new SessionEndedError(res.status, body.error, endedReference);
       }
     }
-    throw new ApiError(res.status, body.error || `request_failed_${res.status}`, typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
+    if (res.status === 401 && body.error !== "session_revoked") {
+      const now = await loadAuth();
+      if (!auth || (now && now.userId === auth.userId && now.organizationId === auth.organizationId && now.token === auth.token)) {
+        await clearAuth();
+      }
+      if (typeof window !== "undefined") {
+        redirectToFieldLogin(import.meta.env.BASE_URL || "/field/", window.location.pathname, (url) => window.location.assign(url));
+      }
+    }
+    const failure = new ApiError(res.status, typeof body.error === "string" ? body.error : `request_failed_${res.status}`, typeof body.reference === "string" && /^[0-9a-f-]{36}$/.test(body.reference) ? body.reference : undefined);
+    if (typeof body.server_revision === "number") failure.serverRevision = body.server_revision;
+    if (Array.isArray(body.missing)) failure.missing = body.missing.filter((name: unknown) => typeof name === "string" && /^[A-Z][A-Z0-9_]+$/.test(name));
+    throw failure;
   }
   const current=await loadAuth();
   if(!auth||!current||current.userId!==auth.userId||current.organizationId!==auth.organizationId)throw new PrincipalChangedError();
   if (res.status === 204) return null; // DELETE endpoints return no body
-  return res.json();
+  try {
+    return await withTimeout(res.json(), 15_000, "response body timed out");
+  } catch (error) {
+    if (!isRequestTimeout(error)) throw error;
+    const timed = new DOMException("response body timed out", "TimeoutError") as DOMException & { sentToServer?: boolean };
+    timed.sentToServer = true;
+    throw timed;
+  }
 }
 
 // Only the candidate diagnostic imports this export. No new auth mechanism.
@@ -178,6 +210,18 @@ export function resendStaffSignInCode(mfaToken: string): Promise<{ sent: true; r
 
 export function verifyStaffMfa(mfaToken: string, body: { code: string }): Promise<{ token: string }> {
   return staffMfaFetch(mfaToken, "/auth/mfa/verify", body);
+}
+
+/** True only when this signed-in staff session may open the facility dashboard for the selected company. */
+export async function facilityDashboardMenuVisible(): Promise<boolean> {
+  try {
+    const me = await authedFetch("/platform/me") as { staff?: boolean };
+    if (me?.staff !== true) return false;
+    const access = await authedFetch("/portfolio/facility-dashboard-access") as { allowed?: boolean };
+    return access?.allowed === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function requestPasswordReset(email: string): Promise<void> {
@@ -254,6 +298,25 @@ export async function fetchOpeningByCode(openingCode: string) {
   return { opening, fromCache: false };
 }
 
+export type MeasurementSuggestion = {
+  field: "frame_width" | "frame_height" | "active_width" | "active_height" | "inactive_width" | "inactive_height";
+  inches: number;
+  confidence: number;
+  bounds: string;
+};
+
+export async function readMeasurementPhoto(openingId: string, contentType: string, imageBase64: string): Promise<{ provider: string; suggestions: MeasurementSuggestion[]; written: false }> {
+  return authedFetch(`/openings/${openingId}/measurement-reading`, {
+    method: "POST",
+    body: JSON.stringify({ content_type: contentType, image_base64: imageBase64 }),
+    signal: AbortSignal.timeout(45_000),
+  });
+}
+
+export async function setOpeningConfiguration(openingId: string, opening_configuration: "single" | "pair") {
+  return authedFetch(`/openings/${openingId}/configuration`, { method: "POST", body: JSON.stringify({ opening_configuration }) });
+}
+
 export async function fetchOpening(id: string) {
   const principal=await loadAuth();
   if(!principal)throw new ApiError(401,"missing_token");
@@ -303,6 +366,21 @@ export async function deletePhoto(id: string) {
 
 export async function fetchPhotoAccessUrl(id: string): Promise<{ url: string; expires_in_seconds: number }> {
   return authedFetch(`/photos/${id}/access`);
+}
+
+export async function fetchPhotoContent(id: string): Promise<Blob> {
+  const auth = await loadAuth();
+  if (!auth?.token) throw new ApiError(401, "missing_token");
+  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(id)}/content`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+    cache: "no-store",
+  });
+  const current = await loadAuth();
+  if (!current || current.userId !== auth.userId || current.organizationId !== auth.organizationId || current.token !== auth.token) {
+    throw new PrincipalChangedError();
+  }
+  if (!res.ok) throw new ApiError(res.status, "photo_unavailable");
+  return res.blob();
 }
 
 // Uploads directly to storage using the presigned URL - bypasses our own API
@@ -357,7 +435,7 @@ export async function uploadPrivatePhoto(
   checksum: string,
   photoId: string,
 ) {
-  const res = await fetch(uploadUrl, {
+  const res = await withTimeout(fetch(uploadUrl, {
     method: "PUT",
     headers: {
       "Content-Type": contentType,
@@ -365,7 +443,8 @@ export async function uploadPrivatePhoto(
       "x-amz-meta-oi-photo-id": photoId,
     },
     body: blob,
-  });
+    signal: AbortSignal.timeout(20_000),
+  }), 20_000, "photo upload timed out");
   if (!res.ok) throw new Error(`upload_failed_${res.status}`);
 }
 
@@ -399,6 +478,36 @@ export async function deleteHardwareComponent(id: string, principal?: ExpectedPr
   return authedFetch(`/hardware/${id}`, { method: "DELETE" }, principal);
 }
 
+export async function listOpeningDocuments(openingId: string, principal?: ExpectedPrincipal) {
+  return authedFetch(`/documents/by-opening/${openingId}`, {}, principal);
+}
+
+export type PurchasingDestination = {
+  ready: boolean;
+  error?: string;
+  to?: string;
+  source?: "branch" | "company";
+  branch?: { id: string; name: string } | null;
+  choices?: { id: string; name: string }[];
+};
+
+export function purchasingDestination(openingId: string, branchId?: string, principal?: ExpectedPrincipal) {
+  const query = new URLSearchParams({ opening_id: openingId });
+  if (branchId) query.set("branch_id", branchId);
+  return authedFetch(`/purchasing/destination?${query}`, {}, principal) as Promise<PurchasingDestination>;
+}
+
+export async function sendHardwareToPurchasing(payload: {
+  opening_id: string;
+  hardware_component_id: string;
+  note?: string;
+  document_ids?: string[];
+  uploads?: { filename: string; content_base64: string }[];
+  branch_id?: string;
+}, principal?: ExpectedPrincipal) {
+  return authedFetch("/purchasing/send", { method: "POST", body: JSON.stringify(payload) }, principal);
+}
+
 export function fetchLabelConfig(principal: ExpectedPrincipal) { return authedFetch('/labels/config', {}, principal); }
 export function fetchServiceRequestContext(id: string, principal: ExpectedPrincipal) { return authedFetch(`/service-requests/context/${id}`, {}, principal); }
 export function submitServiceRequest(payload: Record<string, unknown>, principal: ExpectedPrincipal) {
@@ -427,6 +536,57 @@ export async function submitServiceEvent(payload: any) {
 
 export async function submitInspectionEvent(payload: any) {
   return authedFetch("/events/inspection-events", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function inspectionReportRecipients(id: string): Promise<{ to: string[]; facility_contact_email: string | null; inspector_email: string }> {
+  return authedFetch(`/events/inspection-events/${id}/email-defaults`);
+}
+
+export function emailInspectionReport(id: string, to: string[]): Promise<{ sent: boolean; delivery_mode: string }> {
+  return authedFetch(`/events/inspection-events/${id}/email`, { method: "POST", body: JSON.stringify({ to }) });
+}
+
+export function inspectionVisitRecipients(id: string): Promise<{ to: string[]; facility_contact_email: string | null; inspector_email: string }> {
+  return authedFetch(`/events/inspection-visits/${id}/email-defaults`);
+}
+
+export interface VisitDoorRow {
+  opening_id: string;
+  inspection_id: string | null;
+  opening_code: string;
+  opening_type: string | null;
+  location: string | null;
+  passed: boolean;
+  inspected_at: string | null;
+}
+
+export function fetchInspectionVisit(id: string): Promise<{ inspected: number; inspection_ids: string[]; status?: string; report_sent?: boolean; facility_name?: string; doors?: VisitDoorRow[] }> {
+  return authedFetch(`/events/inspection-visits/${id}`);
+}
+
+export function fetchOpenInspectionVisit(propertyId: string): Promise<{ id: string; inspections: { inspectionId: string; openingId: string; passed: boolean }[] } | null> {
+  return authedFetch(`/events/inspection-visits/open?property_id=${encodeURIComponent(propertyId)}`).then((body: { visit?: { id: string; inspections?: { inspectionId: string; openingId: string; passed: boolean }[] } | null }) => {
+    if (!body?.visit?.id) return null;
+    return { id: body.visit.id, inspections: Array.isArray(body.visit.inspections) ? body.visit.inspections : [] };
+  });
+}
+
+const VISIT_REPORT_TIMEOUT_MS = 25_000;
+
+function visitReportSignal(): AbortSignal | undefined {
+  return typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(VISIT_REPORT_TIMEOUT_MS) : undefined;
+}
+
+export function storeInspectionVisitPdf(id: string, expectedInspectionIds: string[]): Promise<{ stored: boolean; reused: boolean; bytes: number }> {
+  return authedFetch(`/events/inspection-visits/${id}/official-pdf`, {
+    method: "POST", body: JSON.stringify({ expected_inspection_ids: expectedInspectionIds }), signal: visitReportSignal(),
+  });
+}
+
+export function emailInspectionVisit(id: string, to: string[], expectedInspectionIds: string[]): Promise<{ sent: boolean; delivery_mode: string }> {
+  return authedFetch(`/events/inspection-visits/${id}/email`, {
+    method: "POST", body: JSON.stringify({ to, expected_inspection_ids: expectedInspectionIds }), signal: visitReportSignal(),
+  });
 }
 
 export async function recomputeHealthScore(openingId: string) {

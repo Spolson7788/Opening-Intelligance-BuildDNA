@@ -57,8 +57,8 @@ export async function showLabelPreview(openings) {
 }
 
 export function installLabelActions({getOpenings,toolbar}) {
-  const button=element('button','Print selected QR labels');button.onclick=()=>showLabelPreview(getOpenings());toolbar.before(button);
+  const button=element('button','Print selected QR labels');button.className='tool';button.onclick=()=>showLabelPreview(getOpenings());toolbar.append(button);
 }
 export function addOpeningLabelAction(container,opening) {
-  const button=element('button','Print / reprint QR label');button.onclick=()=>showLabelPreview([opening]);container.prepend(button);
+  const button=element('button','Print / reprint QR label');button.className='tool';button.onclick=()=>showLabelPreview([opening]);container.append(button);
 }

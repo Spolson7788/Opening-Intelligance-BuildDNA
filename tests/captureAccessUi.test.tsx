@@ -3,7 +3,7 @@ import {createRoot,Root} from 'react-dom/client';
 import {MemoryRouter,Routes,Route} from 'react-router-dom';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({listener:(_:any)=>{},media:[] as any[],operations:[] as any[]}));
-vi.mock('../field-app/src/lib/api',()=>({fetchOpening:vi.fn(),fetchOpeningByQr:vi.fn(),fetchOpeningByCode:vi.fn(),deletePhoto:vi.fn(),fetchPhotoAccessUrl:vi.fn()}));
+vi.mock('../field-app/src/lib/api',()=>({fetchOpening:vi.fn(),fetchOpeningByQr:vi.fn(),fetchOpeningByCode:vi.fn(),deletePhoto:vi.fn(),fetchPhotoAccessUrl:vi.fn(),serverFeatures:async()=>({recognition:false}),inspectionReportRecipients:vi.fn(),emailInspectionReport:vi.fn()}));
 vi.mock('../field-app/src/lib/db',()=>({
   getAllOfflineMedia:vi.fn(async()=>state.media),getSyncOperationsForOpening:vi.fn(async()=>state.operations),updateCachedOpening:vi.fn(),
   loadAuth:vi.fn(async()=>({userId:'a',organizationId:'ca'})),getAllSyncOperations:vi.fn(async()=>state.operations),
@@ -56,7 +56,7 @@ it('retains the queued photo and picker across site-gate failure and access rech
   vi.mocked(fetchOpening).mockRejectedValueOnce(Object.assign(new Error('site_access_required'),{status:401}));
   await completeSync();expect(input()).toBe(node);
   expect(host.textContent).toContain('Renew access to this private preview');
-  const link=host.querySelector('a[href^="https://app.netlify.com/edge-access"]')!;expect(link.getAttribute('target')).toBe('_blank');
+  const link=host.querySelector('a[href="https://oi-connected-release-candidate.netlify.app/"]')!;expect(link.getAttribute('target')).toBeNull();expect(link.getAttribute('href')).not.toContain('?');
   const check=Array.from(host.querySelectorAll('button')).find(b=>b.textContent==='Check access again')!;
   await act(async()=>check.click());expect(state.media[0].photoId).toBe(photoId);expect(state.media).toHaveLength(1);expect(state.operations).toHaveLength(1);expect(saveMediaAndOperation).toHaveBeenCalledTimes(1);expect(input()).toBe(node);
 });

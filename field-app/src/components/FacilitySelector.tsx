@@ -1,10 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { fetchMe, fetchOpening, listFieldProperties, listOpenings, searchFieldFacilities } from "../lib/api";
+import { isAppSessionFailure } from "../lib/siteAccess";
 import { ALL_AREAS, areaFilterKey, defaultAreaFilter, filterFacilitiesByArea, type AreaFilter, type AreaPreferences } from "../lib/facilityArea";
-import { getOfflineSetting, putOfflineSetting } from "../lib/db";
+import { getCachedOpening, getOfflineSetting, putOfflineSetting } from "../lib/db";
 import { useAuth } from "../lib/AuthContext";
 import type { FacilityProperty } from "../lib/facilityOpenings";
-import { chooseFacility, describeSync, facilitySyncKey, retryFailedOpenings, selectedFacilityKey, shouldRefresh, syncFacility, type FacilitySyncProgress, type FacilitySyncResult } from "../lib/facilitySync";
+import { chooseFacility, describeSync, facilityDownloadHeld, facilitySyncKey, OPENING_CACHE_TTL_MS, retryFailedOpenings, selectedFacilityKey, shouldRefresh, subscribeFacilityDownloadHold, syncFacility, type FacilitySyncProgress, type FacilitySyncResult } from "../lib/facilitySync";
 
 interface FacilitySyncValue {
   properties: FacilityProperty[] | null; selectedId: string | null; progress: FacilitySyncProgress | null; result: FacilitySyncResult | null;
@@ -31,18 +32,21 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
   const [area, setAreaState] = useState<AreaFilter>(ALL_AREAS);
   const [home, setHome] = useState<AreaFilter>(ALL_AREAS);
   const abortRef = useRef<AbortController | null>(null);
+  const resumeAfterSave = useRef<string | null>(null);
   const resultRef = useRef<FacilitySyncResult | null>(null); resultRef.current = result;
   const deps = { listOpenings: (b: string) => listOpenings({ building_id: b }), fetchOpening: (id: string) => fetchOpening(id),
+    cachedOpening: (id: string) => getCachedOpening(id),
     putSetting: (key: string, value: unknown) => putOfflineSetting({ key, value, updatedAt: new Date().toISOString() }) as Promise<void> };
 
-  const run = useCallback((id: string) => {
+  const run = useCallback((id: string, full = false) => {
     if (!principal || !properties) return;
+    if (facilityDownloadHeld()) { resumeAfterSave.current = id; return; }
     const property = properties.find((p) => p.id === id); if (!property) return;
     abortRef.current?.abort(); const ac = new AbortController(); abortRef.current = ac;
     setRunning(true); setError(null);
-    syncFacility(deps, principal, property, { signal: ac.signal, onProgress: (p) => { if (!ac.signal.aborted) setProgress(p); } })
+    syncFacility(deps, principal, property, { signal: ac.signal, full, onProgress: (p) => { if (!ac.signal.aborted) setProgress(p); } })
       .then((r) => { if (!ac.signal.aborted) { setResult(r); setProgress(null); } })
-      .catch(() => { if (!ac.signal.aborted) setError("Download failed. Retry when you have a connection."); })
+      .catch((error) => { if (!ac.signal.aborted && !isAppSessionFailure(error)) setError("Download failed. Retry when you have a connection."); })
       .finally(() => { if (abortRef.current === ac) setRunning(false); });
   }, [pkey, properties]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -55,7 +59,7 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
       const stored = await getOfflineSetting(selectedFacilityKey(principal)).catch(() => null);
       let list: FacilityProperty[] | null = null;
       try { list = await listFieldProperties(); await putOfflineSetting({ key: `facilities:${principal.userId}:${principal.organizationId}`, value: list, updatedAt: new Date().toISOString() }); }
-      catch { const c = await getOfflineSetting(`facilities:${principal.userId}:${principal.organizationId}`).catch(() => null); list = (c?.value as FacilityProperty[]) ?? null; if (!list) setError("Couldn't load your facilities. Check your connection."); }
+      catch (error) { const c = await getOfflineSetting(`facilities:${principal.userId}:${principal.organizationId}`).catch(() => null); list = (c?.value as FacilityProperty[]) ?? null; if (!list && !isAppSessionFailure(error)) setError("Couldn't load your facilities. Check your connection."); }
       if (stop || !list) return;
       setProperties(list);
       let prefs: AreaPreferences | null = null;
@@ -76,15 +80,27 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
     return () => { stop = true; abortRef.current?.abort(); };
   }, [enabled, pkey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Download on selection (including the restored or auto-selected one after sign-in).
-  useEffect(() => { if (selectedId && properties && navigator.onLine !== false) run(selectedId); }, [selectedId, properties, run]);
+  // A Save aborts the download immediately and the same facility resumes when the save finishes.
+  useEffect(() => subscribeFacilityDownloadHold(() => {
+    if (facilityDownloadHeld()) {
+      if (selectedId) resumeAfterSave.current = selectedId;
+      abortRef.current?.abort();
+      return;
+    }
+    const id = resumeAfterSave.current;
+    resumeAfterSave.current = null;
+    if (id && navigator.onLine !== false) run(id, false);
+  }), [selectedId, run]);
 
-  // Refresh on app resume or reconnect.
+  // Check the selected facility without pulling openings that are already cached.
+  useEffect(() => { if (selectedId && properties && navigator.onLine !== false) run(selectedId, false); }, [selectedId, properties, run]);
+
+  // A restore or reconnect checks again only after the cache TTL. It does not block Scan.
   useEffect(() => {
     if (!enabled) return;
     const onResume = () => {
       if (document.visibilityState !== "visible" || !selectedId || running) return;
-      if (shouldRefresh(resultRef.current?.finishedAt, Date.now())) run(selectedId); };
+      if (shouldRefresh(resultRef.current?.finishedAt, Date.now(), OPENING_CACHE_TTL_MS)) run(selectedId, false); };
     document.addEventListener("visibilitychange", onResume); window.addEventListener("online", onResume);
     return () => { document.removeEventListener("visibilitychange", onResume); window.removeEventListener("online", onResume); };
   }, [enabled, selectedId, running, run]);
@@ -93,7 +109,7 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
     if (!principal) return;
     void putOfflineSetting({ key: selectedFacilityKey(principal), value: id, updatedAt: new Date().toISOString() });
     setResult(null);
-    if (id === selectedId) run(id); else setSelectedId(id);
+    if (id === selectedId) run(id, false); else setSelectedId(id);
   };
   const setArea = (a: AreaFilter) => {
     setAreaState(a);
@@ -106,7 +122,7 @@ export function FacilitySyncProvider({ enabled, children }: { enabled: boolean; 
     retryFailedOpenings(deps, principal, result, { onProgress: (d, t) => setProgress({ phase: "downloading", buildingsDone: 0, buildingsTotal: 0, openingsDone: d, openingsTotal: t, failed: 0, attempt: 2 }) })
       .then((r) => { setResult(r); setProgress(null); }).finally(() => setRunning(false));
   };
-  return <Ctx.Provider value={{ properties, selectedId, progress, result, running, error, select, refresh: () => selectedId && run(selectedId), retryFailed, area, home, setArea }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ properties, selectedId, progress, result, running, error, select, refresh: () => selectedId && run(selectedId, true), retryFailed, area, home, setArea }}>{children}</Ctx.Provider>;
 }
 
 /** Facility selection step and download status (shown on the home screen after sign-in). */
@@ -121,27 +137,35 @@ export function FacilitySelector() {
     return map;
   }, new Map<string, NonNullable<typeof properties>>())].sort((a, b) => a[0].localeCompare(b[0]));
   return (
-    <section className="card" aria-label="Facilities by state and county" style={{ marginBottom: 12 }}>
+    <section className="c04-facilities" aria-label="Facilities by state and county">
       {properties === null && !error && <p>Loading your facilities...</p>}
       {properties && properties.length === 0 && <p>No facilities are assigned to your account yet.</p>}
       {needsChoice && <p><strong>Select your facility to download its openings</strong></p>}
       {groups.map(([label, facilities]) => (
         <div key={label}>
           <div className="section-label">{label}</div>
-          {facilities.map((facility) => (
-            <button key={facility.id} type="button" className="btn btn-secondary" style={{ textAlign: "left", marginBottom: 8 }}
-              onClick={() => s.select(facility.id)} aria-current={facility.id === selectedId ? "true" : undefined}>
-              {facility.name}{facility.city ? `, ${facility.city}` : ""}
-            </button>
-          ))}
+          {facilities.map((facility) => {
+            const selected = facility.id === selectedId;
+            const place = [facility.city, label].filter(Boolean).join(" · ");
+            return (
+              <button key={facility.id} type="button" className={selected ? "c04-facility" : "btn c04-choice"}
+                onClick={() => s.select(facility.id)} aria-current={selected ? "true" : undefined}>
+                {selected ? <>
+                  <span className="c04-eyebrow">Facility</span>
+                  <strong>{facility.name}</strong>
+                  {place && <span>{place}</span>}
+                </> : <>{facility.name}{facility.city ? `, ${facility.city}` : ""}</>}
+              </button>
+            );
+          })}
         </div>
       ))}
-      {error && <p role="alert">{error}</p>}
-      {(progress || result) && <p role="status">{describeSync(progress, result)}</p>}
+      {error && <p className="c04-alert" role="alert">{error}</p>}
+      {(progress || result) && <p role="status" className={!progress && result?.upToDate ? "c04-note" : undefined}>{describeSync(progress, result)}</p>}
       {progress && progress.openingsTotal > 0 && <progress max={progress.openingsTotal} value={progress.openingsDone} style={{ width: "100%" }} />}
-      {selectedId && !running && <div style={{ display: "flex", gap: 8 }}>
-        <button type="button" className="btn btn-secondary" onClick={() => s.refresh()}>Refresh download</button>
-        {result && result.status !== "complete" && result.status !== "cancelled" && <button type="button" className="btn btn-secondary" onClick={() => s.retryFailed()}>Retry failed</button>}
+      {selectedId && !running && <div className="c04-actions">
+        <button type="button" className="btn c04-btn-cyan" onClick={() => s.refresh()}>Refresh download</button>
+        {result && result.status !== "complete" && result.status !== "cancelled" && <button type="button" className="btn c04-choice" onClick={() => s.retryFailed()}>Retry failed</button>}
       </div>}
     </section>
   );

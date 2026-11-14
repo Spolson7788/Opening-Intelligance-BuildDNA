@@ -2,7 +2,7 @@
 import {beforeEach,afterEach,it,expect,vi} from 'vitest';
 import {readFileSync} from 'node:fs';
 const state=vi.hoisted(()=>({api:vi.fn(),session:vi.fn()}));
-vi.mock('../facility-dashboard/api-client.mjs',()=>({api:state.api,readFieldSession:state.session}));
+vi.mock('../facility-dashboard/api-client.mjs',()=>({api:state.api,readFieldSession:state.session,requireFacilityOfficePage:async()=>true}));
 const principal={userId:'a',organizationId:'org-a',role:'admin',token:'synthetic-secret-not-for-export'};
 let interval:()=>Promise<void>,blobs:Blob[],downloads:string[];
 const projection=()=>({opening_id:'opening-a',opening_code:'A / unsafe filename',as_of:'2026-10-26T12:00:00Z',sandbox_enabled:false,configuration_gaps:['named_approver_and_authority_limits'],condition:{method:'recorded-condition-v1',threshold:12,excluded_manufacturer_count:1,cohorts:[{manufacturer:'Synthetic',model:'A',component_type:'closer',installed:2,assessed:1,worn_failed:1,unverified:1,rate:null,rate_withheld:true}]},lifecycle:{current_component_count:2,installation_unknown_count:1,recorded_replacements:1,service_event_count:1,service_event_ids:['event-source'],replacement_ids:['replacement-source'],exposure_component_years:null,downtime:{}},versions:[{plan_id:'plan',version:1,is_current:true,snapshot_hash:'synthetic-hash',snapshot:{label:'Draft',kind:'scenario',estimate_version_id:'estimate-source',fiscal_period:'2027',assumptions:'Inspect before replacing; missing labor',estimate:{totals:{total_minor:null,missing:['labor']},currency:'USD',minor_unit_digits:2}},review_requested:false,estimate_expired:true}],events:[],financial:{approved_reservation_minor:null,issued_commitment_minor:null,recognized_actual_minor:null,combined_total_minor:null,status:'unavailable'}});

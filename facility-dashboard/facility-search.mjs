@@ -37,32 +37,32 @@ export async function loadTerritoryContext(sb,rows){
   // Keep the default even with no facilities: never silently widen an empty service area.
   return {rows:mapped,homeTerritory:defaults.length===1?defaults[0]:'',homeTerritoryName:defaults.length===1?JSON.parse(defaults[0])[1]:''};
 }
-export function mountFacilitySearch(container,rows,onSelect,{homeState='',homeTerritory='',homeTerritoryName=''}={}){
+export function mountFacilitySearch(container,rows,onSelect){
   const doc=container.ownerDocument;
-  const label=(text,control)=>{const el=doc.createElement('label');el.textContent=text+' ';control.setAttribute('aria-label',text);el.append(control);return el;};
-  const territory=doc.createElement('select'),state=doc.createElement('select'),search=doc.createElement('input'),select=doc.createElement('select'),status=doc.createElement('span');
+  const select=doc.createElement('select');
+  select.setAttribute('aria-label','Facility');
+  const label=doc.createElement('label');
+  label.append('Facility ',select);
   const option=(value,text)=>{const o=doc.createElement('option');o.value=value;o.textContent=text;return o;};
-  territory.append(option('','All authorized territories'));
-  const areas=new Map(rows.flatMap(f=>(f.territories||[]).map(t=>[t.key,t.name])));
-  if(homeTerritory)areas.set(homeTerritory,homeTerritoryName);
-  [...areas].sort((a,b)=>a[1].localeCompare(b[1])).forEach(([k,n])=>territory.append(option(k,n)));
-  territory.value=homeTerritory;
-  state.append(option('','All authorized states'));
-  const states=new Set(rows.map(f=>String(f.state||'').trim().toUpperCase()).filter(Boolean));
-  if(homeState)states.add(homeState);
-  [...states].sort().forEach(s=>state.append(option(s,s)));
-  state.value=homeState;search.type='search';search.placeholder='Name, address, city or ZIP';
-  status.setAttribute('role','status');
-  container.replaceChildren(label('My Territory',territory),label('State',state),label('Find facility',search),label('Facility',select),status);
-  const render=()=>{
-    const before=select.value,filtered=filterFacilities(rows,{state:state.value,query:search.value,territory:territory.value});
-    select.replaceChildren(...filtered.map(f=>option(f.id,[f.name,f.city,f.state].filter(Boolean).join(' — '))));
-    if(filtered.some(f=>f.id===before))select.value=before;
-    select.disabled=!filtered.length;status.textContent=filtered.length+' authorized facilities';
-    // No hidden selection when filters yield zero results.
-    onSelect(filtered.find(f=>f.id===select.value)||null);
-  };
-  select.onchange=()=>onSelect(rows.find(f=>f.id===select.value)||null);
-  territory.onchange=render;state.onchange=render;search.oninput=render;render();
-  return {territory,state,search,select};
+  const named=[...rows].sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))||String(a.id).localeCompare(String(b.id)));
+  container.replaceChildren(label);
+  if(!named.length){
+    select.append(option('','No authorized facilities'));
+    select.disabled=true;
+    onSelect(null);
+    return {select};
+  }
+  if(named.length===1){
+    select.append(option(named[0].id,named[0].name));
+    select.value=named[0].id;
+    select.onchange=()=>onSelect(named[0]);
+    onSelect(named[0]);
+    return {select};
+  }
+  select.append(option('','Choose a facility'));
+  named.forEach(f=>select.append(option(f.id,f.name)));
+  select.value='';
+  select.onchange=()=>onSelect(named.find(f=>f.id===select.value)||null);
+  onSelect(null);
+  return {select};
 }

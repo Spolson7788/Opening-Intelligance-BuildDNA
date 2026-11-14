@@ -39,6 +39,7 @@ const INSPECTOR_DENIED: Row[] = [
   ['DELETE', '/api/photos/p1'], ['DELETE', '/api/documents/d1'],
   ['POST', '/api/documents', { document_type: 'warranty' }],
   ['POST', '/api/events/service-events'],
+  ['POST', '/api/events/inspection-events/insp-1/facility-record'],
   ['POST', '/api/facility-schedules/presign'], ['POST', '/api/facility-schedules'],
 ];
 
@@ -59,6 +60,7 @@ const TECH_ALLOWED: Row[] = [
 ];
 const TECH_DENIED: Row[] = [
   ['POST', '/api/openings/bulk-import'], ['POST', '/api/portfolio/portfolios'],
+  ['POST', '/api/events/inspection-events/insp-1/facility-record'],
   ['PATCH', '/api/openings/o1'], ['POST', '/api/work-orders'],
 ];
 

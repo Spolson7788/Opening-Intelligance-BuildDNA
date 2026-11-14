@@ -1,10 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
-import { rmSync } from 'node:fs';
+import { deflateRawSync } from 'node:zlib';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
-import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, functionsFromDeploy, missingBundledModules, stageFunctionSources, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT } from './artifact-publisher-staging-16abbf4.mjs';
+import { buildFacilityDashboard } from './build-facility-dashboard.mjs';
+import { apiFunctionView, apiRoutesOk, assertPublishableDeploy, assertSite, assertStagingApiPath, checkLocalLookups, classifyUploadResponse, compareDeploySnapshots, diffReady, fileDigestKey, fileUploadPath, functionConfigFromBuild, functionInvocationMode, functionUploadHeaders, functionUploadQuery, functionsZipConfig, includeNetlifyToml, functionShasToUpload, invocationStampComment, loginProbeReached, needsPublishingLock, productionDeployBody, publishBlocker, publishReadyDeploy, publishWithoutUpload, readyPublishSteps, rollbackTarget, scrubDeployValue, selectPublishSnapshot, selectUploadSnapshot, snapshotFromResponses, compareFunctionLists, functionZipProblems, eagerNativePackagingProblems, eagerNativeProblemsForZip, linuxSharpPackagingProblems, linuxSharpVersions, stageLinuxSharp, linuxSharpZipEntries, appendZipEntries, extractZip, zipUnzippedBytes, API_ZIP_MAX_UNZIPPED_BYTES, listZipEntryNames, readZipEntry, functionsFromDeploy, missingBundledModules, stageFunctionSources, packageCommitAllowed, packageChecksum, PRODUCTION_SITE_ID, STAGING_SITE_ID, STAGING_SITE_NAME, STAGING_URL, PINNED_COMMIT, envNamesFromPayload, recognitionEnvReport, measurementReaderReport, measurementReaderEnvBody, siteEnvReport, MEASUREMENT_READER_KEY, accountIdFromSite, accountEnvPath, measurementReaderAlreadySet } from './artifact-publisher-staging-16abbf4.mjs';
 
 test('diagnose compares function metadata without keeping secrets', () => {
   const knownGood = functionsFromDeploy({ available_functions: [{ n: 'api', d: 'sha-good', runtime: 'nodejs22.x', im: 'stream', ro: [], a: 100 }] });
@@ -29,7 +32,14 @@ test('staging site is the only accepted target', () => {
 test('production and any other site are refused', () => {
   assert.throws(() => assertSite({ id: PRODUCTION_SITE_ID, name: 'oi-production', url: 'https://oi-production.netlify.app' }), /refusing_production/);
   assert.throws(() => assertSite({ id: '80fbbee8-b9d3-4b16-b93f-d2d8396591ec', name: 'oi-connected-release-candidate', url: 'https://oi-connected-release-candidate.netlify.app' }), /refusing_site_mismatch/);
-  assert.equal(PINNED_COMMIT, '16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5');
+  assert.equal(PINNED_COMMIT, '002fedf7480218b2074a0c65b69fb6e4bee6fa62');
+  assert.equal(packageCommitAllowed(PINNED_COMMIT), true);
+  assert.equal(packageCommitAllowed('16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5'), false);
+  assert.equal(packageCommitAllowed('9c0256e1b92182a55246bc7e6460ab456098a48d'), false);
+  const files = { 'publish/index.html': { sha256: 'abc', bytes: 3 } };
+  const recorded = packageChecksum(PINNED_COMMIT, files);
+  assert.equal(packageChecksum(PINNED_COMMIT, files), recorded);
+  assert.notEqual(packageChecksum('16abbf48967b17d6cddf8acfcf77eecbc8d2f2a5', files), recorded);
   assert.equal(assertStagingApiPath(`/api/v1/sites/${STAGING_SITE_ID}`), `/api/v1/sites/${STAGING_SITE_ID}`);
   assert.throws(() => assertStagingApiPath(`/api/v1/sites/${PRODUCTION_SITE_ID}`), /refusing_production/);
   assert.throws(() => assertStagingApiPath('/api/v1/deploys/other/files/index.html', 'ours'), /refusing_site_mismatch/);
@@ -137,7 +147,8 @@ test('a preparing deploy is not uploaded, and a function retry keeps the same to
   assert.equal(loginProbeReached(404), false);
   assert.equal(loginProbeReached(400), true);
   assert.equal(loginProbeReached({ status: 401, contentType: 'text/html', body: '<!doctype html><html>Login</html>' }), false);
-  assert.equal(rollbackTarget().rollbackDeployId, '6aef3f786cc2af03c2ef1cd0');
+  assert.equal(rollbackTarget().rollbackDeployId, '6af230ff9978904131f1329d');
+  assert.equal(rollbackTarget().rollbackPermalink, 'https://6af230ff9978904131f1329d--oi-video-workflows-staging.netlify.app');
   assert.equal(needsPublishingLock({ id: '6aef3f786cc2af03c2ef1cd0', locked: false }), true);
   assert.equal(needsPublishingLock({ id: '6aef3f786cc2af03c2ef1cd0', locked: true }), false);
   assert.deepEqual(functionShasToUpload([], { abc: [{ routes: [{ pattern: '/api/*' }] }] }), ['abc']);
@@ -156,8 +167,167 @@ test('a preparing deploy is not uploaded, and a function retry keeps the same to
   );
   assert.equal(functionConfigFromBuild({ name: 'api', routes: [{ pattern: '/health' }, { pattern: '/api/*' }] }).invocation_mode, 'stream');
   const zipConfig = functionsZipConfig('[functions]\n  directory = "netlify/functions"\n  node_bundler = "esbuild"\n  external_node_modules = ["express"]\n');
+  assert.equal(functionsZipConfig('[functions]\n  timeout = 26\n  node_bundler = "esbuild"\n  external_node_modules = ["express"]\n')['*'].timeout, 26);
   assert.equal(zipConfig['*'].nodeBundler, 'esbuild_zisi');
   assert.deepEqual(zipConfig['*'].externalNodeModules, ['express']);
+  const repoToml = functionsZipConfig(readFileSync(resolve(fileURLToPath(new URL('..', import.meta.url)), 'netlify.toml'), 'utf8'));
+  assert.ok(repoToml['*'].externalNodeModules.includes('express'));
+  assert.ok(repoToml['*'].externalNodeModules.includes('sharp'));
+  assert.ok(repoToml['*'].includedFiles.some((item) => item.includes('@img/sharp-linux-x64')));
+  assert.ok(repoToml['*'].includedFiles.some((item) => item.includes('@img/sharp-libvips-linux-x64')));
+  assert.equal(repoToml['*'].timeout, 26);
+});
+
+function zipEntries(files) {
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  for (const file of files) {
+    const name = Buffer.from(file.name);
+    const method = file.method || 0;
+    const payload = method === 8 ? deflateRawSync(file.data) : file.data;
+    const local = Buffer.alloc(30 + name.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(payload.length, 18);
+    local.writeUInt32LE(file.data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    name.copy(local, 30);
+    locals.push(Buffer.concat([local, payload]));
+    const central = Buffer.alloc(46 + name.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(method, 10);
+    central.writeUInt32LE(payload.length, 20);
+    central.writeUInt32LE(file.data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    name.copy(central, 46);
+    centrals.push(central);
+    offset += local.length + payload.length;
+  }
+  const centralBuf = Buffer.concat(centrals);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(files.length, 8);
+  eocd.writeUInt16LE(files.length, 10);
+  eocd.writeUInt32LE(centralBuf.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, centralBuf, eocd]);
+}
+
+test('upload-check refuses an api bundle that eagerly requires a native the zip did not build for linux', () => {
+  const win32 = ['api.cjs', 'node_modules/@img/sharp-win32-x64/sharp-win32-x64.node'];
+  const eager = 'var import_sharp = __toESM(require("sharp"));';
+  assert.ok(eagerNativePackagingProblems(eager, win32).some((problem) => problem.includes('eagerly requires sharp')));
+  assert.deepEqual(eagerNativePackagingProblems(eager, [...win32, 'node_modules/@img/sharp-linux-x64/sharp-linux-x64.node']), []);
+  assert.deepEqual(eagerNativePackagingProblems('const name = "sharp"; await import(name);', win32), []);
+  const zip = zipEntries([
+    { name: 'api.cjs', data: Buffer.from(eager), method: 8 },
+    { name: 'node_modules/@img/sharp-win32-x64/sharp-win32-x64.node', data: Buffer.from('win32') },
+  ]);
+  assert.equal(readZipEntry(zip, 'api.cjs').toString('utf8'), eager);
+  assert.ok(eagerNativeProblemsForZip(zip, win32).some((problem) => problem.includes('no linux sharp native')));
+  assert.ok(linuxSharpPackagingProblems(win32).some((problem) => problem.includes('sharp-linux-x64')));
+  assert.ok(linuxSharpPackagingProblems(['api.cjs', 'node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64.node']).some((problem) => problem.includes('libvips')));
+  const packaged = ['api.cjs', 'node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64.node', 'node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.7'];
+  assert.deepEqual(linuxSharpPackagingProblems(packaged), []);
+  assert.deepEqual(eagerNativePackagingProblems('const name = "sharp"; await import(name);', packaged), []);
+  const safe = zipEntries([{ name: 'api.cjs', data: Buffer.from('const name = "sharp"; await import(name);') }]);
+  assert.ok(eagerNativeProblemsForZip(safe, ['api.cjs']).some((problem) => problem.includes('sharp-linux-x64')));
+  assert.deepEqual(linuxSharpVersions({ version: '0.35.5', optionalDependencies: { '@img/sharp-libvips-linux-x64': '1.3.4' } }), { sharp: '0.35.5', libvips: '1.3.4' });
+});
+
+test('packaged linux sharp loads from the api zip and shrinks a large photo', { timeout: 120000 }, async () => {
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  const stage = mkdtempSync(resolve(tmpdir(), 'oi-sharp-stage-'));
+  const extract = mkdtempSync(resolve(tmpdir(), 'oi-sharp-zip-'));
+  try {
+    const modules = stageLinuxSharp(repo, stage);
+    const esbuild = await import('esbuild');
+    const bundled = await esbuild.build({
+      entryPoints: [resolve(repo, 'netlify/functions/api.ts')],
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      packages: 'external',
+      write: false,
+      logLevel: 'silent',
+      absWorkingDir: repo,
+    });
+    const api = Buffer.from(bundled.outputFiles[0].text);
+    assert.equal(/require\(\s*["']sharp["']\s*\)/.test(api.toString('utf8')), false);
+    let zip = zipEntries([{ name: 'api.cjs', data: api }]);
+    zip = appendZipEntries(zip, linuxSharpZipEntries(modules));
+    const names = listZipEntryNames(zip);
+    assert.deepEqual(linuxSharpPackagingProblems(names), []);
+    assert.deepEqual(eagerNativeProblemsForZip(zip, names), []);
+    const unzipped = zipUnzippedBytes(zip);
+    assert.ok(unzipped < API_ZIP_MAX_UNZIPPED_BYTES);
+    const natives = names.filter((name) => name.endsWith('.node') || name.includes('libvips-cpp.so'));
+    console.log(JSON.stringify({ event: 'linux_sharp_zip', zipBytes: zip.length, unzippedBytes: unzipped, natives }));
+    extractZip(zip, extract);
+    const nativeOnDisk = readFileSync(resolve(extract, 'node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.5.node'));
+    const packagedNative = readZipEntry(zip, 'node_modules/@img/sharp-linux-x64/lib/sharp-linux-x64-0.35.5.node');
+    assert.equal(nativeOnDisk.equals(packagedNative), true);
+    writeFileSync(resolve(extract, 'resize.mjs'), `
+      import { createRequire } from 'node:module';
+      import { writeFileSync } from 'node:fs';
+      const require = createRequire(new URL('./api.cjs', import.meta.url));
+      const sharp = require('sharp');
+      const native = require.resolve('@img/sharp-linux-x64/sharp.node');
+      const libvips = require.resolve('@img/sharp-libvips-linux-x64/binary');
+      const root = ${JSON.stringify(extract)};
+      if (!native.startsWith(root) || !libvips.startsWith(root)) {
+        console.error(JSON.stringify({ native, libvips, root }));
+        process.exit(1);
+      }
+      const pixels = Buffer.alloc(1800 * 1400 * 3);
+      for (let i = 0; i < pixels.length; i += 1) pixels[i] = (i * 17) % 251;
+      const raw = await sharp(pixels, { raw: { width: 1800, height: 1400, channels: 3 } }).jpeg({ quality: 95 }).toBuffer();
+      const prepared = await sharp(raw, { failOn: 'none' }).rotate().resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer();
+      const meta = await sharp(prepared).metadata();
+      const measure = { raw: raw.length, prepared: prepared.length, width: meta.width, height: meta.height, native, libvips };
+      writeFileSync(new URL('./measure.json', import.meta.url), JSON.stringify(measure));
+      console.log(JSON.stringify(measure));
+    `);
+    const env = { ...process.env, NODE_PATH: '' };
+    delete env.NODE_OPTIONS;
+    execFileSync(process.execPath, ['resize.mjs'], { cwd: extract, env, stdio: 'inherit' });
+    const measure = JSON.parse(readFileSync(resolve(extract, 'measure.json'), 'utf8'));
+    assert.ok(measure.raw > 600 * 1024);
+    assert.ok(measure.prepared < measure.raw / 2);
+    assert.ok(Math.max(measure.width, measure.height) <= 1200);
+    assert.ok(measure.native.startsWith(extract));
+    assert.ok(measure.libvips.startsWith(extract));
+  } finally {
+    rmSync(stage, { recursive: true, force: true });
+    rmSync(extract, { recursive: true, force: true });
+  }
+});
+
+test('the api bundle does not eagerly require sharp', async () => {
+  const esbuild = await import('esbuild');
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  const source = readFileSync(resolve(repo, 'src/services/nfpa80Report.ts'), 'utf8');
+  assert.equal(/from\s+["']sharp["']/.test(source), false);
+  const result = await esbuild.build({
+    entryPoints: [resolve(repo, 'netlify/functions/api.ts')],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    packages: 'external',
+    write: false,
+    logLevel: 'silent',
+    absWorkingDir: repo,
+  });
+  const text = result.outputFiles[0].text;
+  assert.equal(/require\(\s*["']sharp["']\s*\)/.test(text), false);
+  assert.equal(/require\(\s*["']@img\/sharp-/.test(text), false);
+  assert.equal(/from\s+["']sharp["']/.test(text), false);
+  assert.match(text, /import\s*\(\s*name\s*\)/);
 });
 
 test('upload-check refuses a small api zip that is missing dependencies', () => {
@@ -247,4 +417,82 @@ test('a production deploy includes netlify.toml and refuses any other context', 
   assert.equal(assertPublishableDeploy(ready).context, 'production');
   assert.throws(() => assertPublishableDeploy({ ...ready, context: 'deploy-preview' }), /refusing_deploy_context/);
   assert.throws(() => assertPublishableDeploy({ context: 'production', available_functions: [{ n: 'api', im: null, ro: [] }] }), /refusing_invocation_mode/);
+});
+
+test('facility dashboard packaging accepts CRLF checkout and still refuses a changed marker', () => {
+  const repo = fileURLToPath(new URL('..', import.meta.url));
+  const source = resolve(repo, 'facility-dashboard');
+  const stage = (transform) => {
+    const dir = mkdtempSync(resolve(tmpdir(), 'oi-dash-src-'));
+    cpSync(source, dir, { recursive: true });
+    const htmlPath = resolve(dir, 'portal-source.html');
+    writeFileSync(htmlPath, transform(readFileSync(htmlPath, 'utf8')));
+    return dir;
+  };
+  const expectGuarded = (sourceRoot) => {
+    const dest = mkdtempSync(resolve(tmpdir(), 'oi-dash-out-'));
+    buildFacilityDashboard(dest, { sourceRoot });
+    const html = readFileSync(resolve(dest, 'index.html'), 'utf8');
+    assert.equal(html.includes('\r'), false);
+    assert.match(html, /Checking access for this account/);
+    assert.match(html, /api\('\/portfolio\/facility-dashboard-access'\)/);
+    assert.match(html, /This account cannot open the facility dashboard for the company you are signed in to/);
+    assert.match(html, /\/field\/login\?next=%2Ffacility-dashboard%2F/);
+    for (const name of ['commercial.html', 'planning.html', 'finance.html', 'history.html', 'concept04.css', 'display.mjs']) {
+      assert.equal(existsSync(resolve(dest, name)), true, name);
+    }
+    assert.equal(html.includes('missing profile -> stay'), false);
+    rmSync(dest, { recursive: true, force: true });
+    rmSync(sourceRoot, { recursive: true, force: true });
+  };
+  const lf = readFileSync(resolve(source, 'portal-source.html'), 'utf8').replace(/\r\n/g, '\n');
+  expectGuarded(stage(() => lf));
+  expectGuarded(stage(() => lf.replace(/\n/g, '\r\n')));
+  const brokenRoot = stage((html) => html.replace('missing profile -> stay (no lockout).', 'marker removed'));
+  const brokenDest = mkdtempSync(resolve(tmpdir(), 'oi-dash-broken-'));
+  assert.throws(() => buildFacilityDashboard(brokenDest, { sourceRoot: brokenRoot }), /Dashboard source changed: async function routeByType/);
+  assert.equal(existsSync(resolve(brokenDest, 'index.html')), false);
+  rmSync(brokenRoot, { recursive: true, force: true });
+  rmSync(brokenDest, { recursive: true, force: true });
+});
+
+test('staging env report names the measurement setting and keeps secret values out', () => {
+  const secret = 'sk-ant-this-value-must-not-appear';
+  const names = envNamesFromPayload([
+    { key: 'ANTHROPIC_API_KEY', values: [{ value: secret, context: 'all' }] },
+    { key: 'OI_RECOGNITION_ENABLED', values: [{ value: 'true', context: 'all' }] },
+    { name: 'OTHER', value: secret },
+  ]);
+  const report = siteEnvReport(names, false);
+  const text = JSON.stringify(report);
+  assert.equal(text.includes(secret), false);
+  assert.deepEqual(report.recognitionEnvPresent, [
+    { name: 'OI_RECOGNITION_ENABLED', present: true },
+    { name: 'ANTHROPIC_API_KEY', present: true },
+  ]);
+  assert.equal(report.measurementReader.write, false);
+  assert.equal(report.measurementReader.present, false);
+  assert.equal(report.measurementReader.intendedValue, 'anthropic');
+  assert.equal(report.measurementReader.siteId, STAGING_SITE_ID);
+  const body = measurementReaderEnvBody();
+  assert.equal(Array.isArray(body), true);
+  assert.equal(body[0].key, MEASUREMENT_READER_KEY);
+  assert.deepEqual(body[0].scopes, ['functions']);
+  assert.deepEqual(body[0].values, [{ context: 'production', value: 'anthropic' }]);
+  const createPath = accountEnvPath('account-1');
+  const patchPath = accountEnvPath('account-1', { key: MEASUREMENT_READER_KEY });
+  assert.equal(createPath, `/api/v1/accounts/account-1/env?site_id=${STAGING_SITE_ID}`);
+  assert.equal(patchPath, `/api/v1/accounts/account-1/env/${MEASUREMENT_READER_KEY}?site_id=${STAGING_SITE_ID}`);
+  assert.equal(assertStagingApiPath(createPath), createPath);
+  assert.equal(assertStagingApiPath(patchPath), patchPath);
+  assert.throws(() => assertStagingApiPath(`/api/v1/accounts/account-1/env?site_id=${PRODUCTION_SITE_ID}`), /refusing_production/);
+  assert.throws(() => accountIdFromSite({ id: PRODUCTION_SITE_ID, account_id: 'account-1' }), /refusing_production/);
+  assert.equal(accountIdFromSite({ id: STAGING_SITE_ID, account_id: 'account-uuid', account_slug: 'slug' }), 'account-uuid');
+  assert.equal(accountIdFromSite({ id: STAGING_SITE_ID, account_slug: 'slug' }), 'slug');
+  assert.equal(measurementReaderAlreadySet([{ key: MEASUREMENT_READER_KEY, values: [{ context: 'production', value: 'anthropic' }] }]), true);
+  assert.equal(measurementReaderAlreadySet([{ key: MEASUREMENT_READER_KEY, values: [{ context: 'production', value: secret }] }]), false);
+  assert.equal(String(measurementReaderAlreadySet([{ key: 'ANTHROPIC_API_KEY', values: [{ value: secret }] }])).includes(secret), false);
+  assert.equal(JSON.stringify(scrubDeployValue(report)).includes(secret), false);
+  assert.equal(recognitionEnvReport([])[1].present, false);
+  assert.equal(measurementReaderReport(names, true).write, true);
 });

@@ -4,19 +4,25 @@ import {CompanySwitcher} from "./components/CompanySwitcher";
 import {AccountScope} from "./components/AccountScope";
 import {BranchesPage} from "./pages/BranchesPage";
 import { lazy, Suspense, useEffect, useLayoutEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { scrollPageToTop } from "./lib/scrollPage";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/AuthContext";
 import { initSync } from "./lib/sync";
+import { FieldBrand } from "./components/FieldBrand";
 import { LoginPage } from "./pages/LoginPage";
+import { HowToUsePage } from "./pages/HowToUsePage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ScanPage } from "./pages/ScanPage";
 import { OpeningDetailPage } from "./pages/OpeningDetailPage";
 import { LogServiceEventPage } from "./pages/LogServiceEventPage";
 import { LogInspectionEventPage } from "./pages/LogInspectionEventPage";
+import { VisitReportPage } from "./pages/VisitReportPage";
+import { InspectionDetailPage } from "./pages/InspectionDetailPage";
 import { LogHardwarePage } from "./pages/LogHardwarePage";
 import { IdentifyHardwarePage } from "./pages/IdentifyHardwarePage";
 import { EditHardwarePage } from "./pages/EditHardwarePage";
 import { MyWorkOrdersPage } from "./pages/MyWorkOrdersPage";
+import { TodayRoutePage } from "./pages/TodayRoutePage";
 import { FacilityOpeningsPage } from "./pages/FacilityOpeningsPage";
 import { FacilitySyncProvider } from "./components/FacilitySelector";
 import { OpeningStructurePage } from "./pages/OpeningStructurePage";
@@ -30,8 +36,52 @@ import { SyncIssuesPage } from "./pages/SyncIssuesPage";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { QrInformationPage } from './pages/QrInformationPage';
 import { isQrLandingPath, isQrLogin, isQrDetailsPath } from './lib/qrLanding';
+import { scanNeedsChooser } from './lib/locationChoice';
+import { techHome, techTasksEnabled } from './lib/techTasks';
+import { StartMyDayPage } from './pages/StartMyDayPage';
+import { InspectDoorPage } from './pages/InspectDoorPage';
+import { FixDoorPage } from './pages/FixDoorPage';
+import { FinishVisitPage } from './pages/FinishVisitPage';
+import { SiteDoorsPage } from './pages/SiteDoorsPage';
+import { YesterdayVisitPage } from './pages/YesterdayVisitPage';
+import { ChooseLocationPage } from './pages/ChooseLocationPage';
 import { setSyncReadOnly } from './lib/syncNavigation';
 const PhotoIsolationPage=__PHOTO_ISOLATION_ENABLED__?lazy(()=>import('./pages/PhotoIsolationPage')):null;
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useLayoutEffect(() => { scrollPageToTop(); }, [pathname]);
+  return null;
+}
+
+function RequireLocation({ children }: { children: React.ReactElement }) {
+  const { auth } = useAuth();
+  const storage = typeof sessionStorage === "undefined" ? null : sessionStorage;
+  if (scanNeedsChooser(auth, storage)) return <Navigate to="/choose-location" replace />;
+  return children;
+}
+
+function openedFromCurrentScreens(): boolean {
+  const [params] = useSearchParams();
+  return params.get("screens") === "1";
+}
+
+function ScanOrDay() {
+  const fromScreens = openedFromCurrentScreens();
+  if (techTasksEnabled() && !fromScreens) return <Navigate to="/tasks/day" replace />;
+  return <RequireLocation><ScanPage /></RequireLocation>;
+}
+
+function LocationOrDay() {
+  const fromScreens = openedFromCurrentScreens();
+  if (techTasksEnabled() && !fromScreens) return <Navigate to="/tasks/day" replace />;
+  return <ChooseLocationPage />;
+}
+
+function TaskGate({ children }: { children: React.ReactElement }) {
+  if (!techTasksEnabled()) return <Navigate to="/scan" replace />;
+  return children;
+}
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { auth, loading } = useAuth();
@@ -61,6 +111,7 @@ function AppRoutes() {
     <Routes>
       {PhotoIsolationPage&&<Route path="/diagnostics/photo-isolation" element={<RequireAuth><Suspense fallback={<p>Loading check.</p>}><PhotoIsolationPage/></Suspense></RequireAuth>}/>}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/how-to-use" element={<HowToUsePage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/account-recovery" element={<AccountRecoveryPage />} />
       <Route path="/change-password" element={<RequireAuth><ChangePasswordPage /></RequireAuth>} />
@@ -70,8 +121,17 @@ function AppRoutes() {
       <Route path="/opening/:id/request-service" element={<RequireAuth><ServiceRequestPage /></RequireAuth>} /><Route path="/opening/:id/schedules" element={<RequireAuth><FacilitySchedulesPage /></RequireAuth>} />
       <Route path="/opening/:id/lifecycle" element={<RequireAuth><InstallationLifecyclePage /></RequireAuth>} />
       <Route path="/opening/:id/lifecycle-records" element={<RequireAuth><LifecycleOperationsPage /></RequireAuth>} />
-      <Route path="/scan" element={<RequireAuth><ScanPage /></RequireAuth>} />
+      <Route path="/choose-location" element={<RequireAuth><LocationOrDay /></RequireAuth>} />
+      <Route path="/scan" element={<RequireAuth><ScanOrDay /></RequireAuth>} />
+      <Route path="/tasks/day" element={<RequireAuth><TaskGate><StartMyDayPage /></TaskGate></RequireAuth>} />
+      <Route path="/tasks/yesterday/:id" element={<RequireAuth><TaskGate><YesterdayVisitPage /></TaskGate></RequireAuth>} />
+      <Route path="/tasks/site" element={<RequireAuth><RequireLocation><TaskGate><SiteDoorsPage /></TaskGate></RequireLocation></RequireAuth>} />
+      <Route path="/tasks/inspect" element={<RequireAuth><RequireLocation><TaskGate><InspectDoorPage /></TaskGate></RequireLocation></RequireAuth>} />
+      <Route path="/tasks/inspect/:id" element={<RequireAuth><RequireLocation><TaskGate><InspectDoorPage /></TaskGate></RequireLocation></RequireAuth>} />
+      <Route path="/tasks/fix/:id" element={<RequireAuth><RequireLocation><TaskGate><FixDoorPage /></TaskGate></RequireLocation></RequireAuth>} />
+      <Route path="/tasks/finish" element={<RequireAuth><RequireLocation><TaskGate><FinishVisitPage /></TaskGate></RequireLocation></RequireAuth>} />
       <Route path="/my-work-orders" element={<RequireAuth><MyWorkOrdersPage /></RequireAuth>} />
+      <Route path="/today-route" element={<RequireAuth><TodayRoutePage /></RequireAuth>} />
       <Route path="/facility-openings" element={<RequireAuth><FacilityOpeningsPage /></RequireAuth>} />
       <Route path="/sync-issues" element={<RequireAuth><SyncIssuesPage /></RequireAuth>} />
       <Route path="/opening/by-qr/:qrToken/details" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />
@@ -79,11 +139,13 @@ function AppRoutes() {
       <Route path="/opening/:id" element={<RequireAuth><OpeningDetailPage /></RequireAuth>} />
       <Route path="/opening/:id/log-service" element={<RequireAuth><LogServiceEventPage /></RequireAuth>} />
       <Route path="/opening/:id/log-inspection" element={<RequireAuth><LogInspectionEventPage /></RequireAuth>} />
+      <Route path="/visit/:id" element={<RequireAuth><VisitReportPage /></RequireAuth>} />
+      <Route path="/opening/:id/inspection/:eventId" element={<RequireAuth><InspectionDetailPage /></RequireAuth>} />
       <Route path="/opening/:id/add-hardware" element={<RequireAuth><LogHardwarePage /></RequireAuth>} />
       <Route path="/opening/:id/identify-hardware" element={<RequireAuth><IdentifyHardwarePage /></RequireAuth>} />
       <Route path="/opening/:id/structure" element={<RequireAuth><OpeningStructurePage /></RequireAuth>} />
       <Route path="/opening/:id/edit-hardware/:hardwareId" element={<RequireAuth><EditHardwarePage /></RequireAuth>} />
-      <Route path="*" element={<Navigate to="/scan" replace />} />
+      <Route path="*" element={<Navigate to={techHome()} replace />} />
     </Routes>
     </FacilitySyncProvider>
   );
@@ -94,21 +156,29 @@ export function FieldApplication() {
   const readOnly = isQrLandingPath(location.pathname) || isQrDetailsPath(location.pathname)
     || isQrLogin(location.pathname, location.state?.from);
   useLayoutEffect(() => { setSyncReadOnly(readOnly); return () => setSyncReadOnly(false); }, [readOnly]);
+  useEffect(() => {
+    document.body.classList.add("c04-on");
+    return () => document.body.classList.remove("c04-on");
+  }, []);
   // Public landing is outside auth/identity and sync lifecycles, including when
   // the device already has a signed-in account and a retained offline queue.
-  if (isQrLandingPath(location.pathname)) return <Routes>
+  if (isQrLandingPath(location.pathname)) return <><div className="no-print"><FieldBrand /></div><Routes>
     <Route path="/opening/by-qr/:qrToken" element={<QrInformationPage />} />
     <Route path="*" element={<QrInformationPage />} />
-  </Routes>;
+    </Routes></>;
+  const tasks = techTasksEnabled() && location.pathname.startsWith("/tasks");
   return (
     <AuthProvider>
-        <AccountIdentity />
-        <CompanySwitcher />
+        <header className="c04-header no-print">
+          <FieldBrand />
+          {!tasks && <AccountIdentity />}
+          {!tasks && <CompanySwitcher />}
+        </header>
         <AppRoutes />
     </AuthProvider>
   );
 }
 
 export default function App() {
-  return <BrowserRouter basename={import.meta.env.BASE_URL}><FieldApplication /></BrowserRouter>;
+  return <BrowserRouter basename={import.meta.env.BASE_URL}><ScrollToTop /><FieldApplication /></BrowserRouter>;
 }

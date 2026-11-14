@@ -27,6 +27,8 @@ import { membersRouter, invitesPublicRouter } from "./routes/members";
 import { hardwareRouter } from "./routes/hardware";
 import { photosRouter } from "./routes/photos";
 import { portfolioRouter } from "./routes/portfolio";
+import { companyDashboardRouter } from "./routes/companyDashboard";
+import { companyServiceRoutesRouter, fieldServiceRoutesRouter } from "./routes/serviceRoutes";
 import { platformRouter } from "./routes/platform";
 import { providerRequestsRouter } from "./routes/providerRequests";
 import { locationsRouter } from "./routes/locations";
@@ -88,10 +90,11 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   app.locals.commercialInputsEnabled=options.commercialInputsEnabled===true;
   app.locals.facilityBudgetEnabled=options.facilityBudgetEnabled===true;
   app.locals.planningSandboxEnabled=options.planningSandboxEnabled===true;
-  // Recognition, reference library and recognition usage/billing need tables that
-  // production does not have. Default on keeps existing local/test behavior; the
-  // Netlify entry point turns them on only for the known staging sites.
+  // Default on keeps existing local/test behavior. The Netlify entry turns the
+  // routes on for the two staging sites, and for production only while the
+  // recognition and Measure flags are set. Other site ids stay off.
   const recognitionFeaturesEnabled=options.recognitionFeaturesEnabled!==false;
+  app.locals.recognitionFeaturesEnabled=recognitionFeaturesEnabled;
   const allowedOrigins = corsOriginsFromEnv();
 
   app.use(
@@ -147,6 +150,9 @@ export function createApp(options: { retainedDocumentRecoveryAllowed?: ()=>boole
   app.use("/api/hardware", hardwareRouter);
   app.use("/api/photos", photosRouter);
   app.use("/api/portfolio", portfolioRouter);
+  app.use("/api/company-dashboard/routes", companyServiceRoutesRouter);
+  app.use("/api/company-dashboard", companyDashboardRouter);
+  app.use("/api/field-routes", fieldServiceRoutesRouter);
   app.use("/api/platform", platformRouter);
   app.use("/api/provider-requests", providerRequestsRouter);
   app.use("/api/export", exportRouter);

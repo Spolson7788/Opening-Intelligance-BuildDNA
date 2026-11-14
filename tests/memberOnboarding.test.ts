@@ -15,7 +15,7 @@ vi.mock('../src/db/pool', () => ({ pool: {
 } }));
 import { authRouter } from '../src/routes/auth';
 import { membersRouter, invitesPublicRouter } from '../src/routes/members';
-import { setEmailProviderForTests, emailSettings, resendProvider, OutboundEmail } from '../src/services/email';
+import { setEmailProviderForTests, emailSettings, getEmailProvider, reportEmailBlockers, reportLinkBase, resendProvider, OutboundEmail } from '../src/services/email';
 import { acceptInviteUrl, inviteEmail } from '../src/services/inviteEmail';
 import { canCreateRole, passwordProblem } from '../src/services/memberRules';
 const app = express(); app.use(express.json());
@@ -219,6 +219,14 @@ describe('email provider and template', () => {
     const s = emailSettings({ EMAIL_PROVIDER: 'resend', EMAIL_PROVIDER_API_KEY: 'k-synthetic', EMAIL_FROM: 'OI <i@example.com>', APP_BASE_URL: 'https://example.netlify.app/' });
     expect(s.configured).toBe(true); expect(s.baseUrl).toBe('https://example.netlify.app'); expect(JSON.stringify(s)).not.toContain('k-synthetic');
     expect(emailSettings({ EMAIL_PROVIDER: 'resend', EMAIL_PROVIDER_API_KEY: 'k', EMAIL_FROM: 'i@example.com', APP_BASE_URL: 'http://evil.example' }).configured).toBe(false);
+    setEmailProviderForTests(null);
+    const fallback = { RESEND_API_KEY: 'k-synthetic', PASSWORD_RESET_FROM_EMAIL: 'OI <i@example.com>', PASSWORD_RESET_PUBLIC_URL: 'https://oi-video-workflows-staging.netlify.app/' };
+    expect(getEmailProvider(fallback).name).toBe('resend');
+    expect(reportLinkBase(fallback)).toBe('https://oi-video-workflows-staging.netlify.app');
+    expect(reportEmailBlockers(fallback)).toEqual([]);
+    const missing = reportEmailBlockers({});
+    expect(missing).toEqual(['EMAIL_PROVIDER', 'EMAIL_PROVIDER_API_KEY', 'EMAIL_FROM', 'APP_BASE_URL', 'RESEND_API_KEY', 'PASSWORD_RESET_FROM_EMAIL', 'PASSWORD_RESET_PUBLIC_URL']);
+    expect(JSON.stringify(missing)).not.toContain('k-synthetic');
   });
   it('posts to Resend over HTTPS and reports failures without the body', async () => {
     const calls: any[] = []; logs.length = 0;

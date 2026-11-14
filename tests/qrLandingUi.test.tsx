@@ -70,7 +70,7 @@ it('recognizes the gate without mounting auth/sync or retrying',async()=>{
  expect(host.textContent).toContain('Private staging site access needs renewal');
  expect(fetch).toHaveBeenCalledTimes(1);expect(state.sync).not.toHaveBeenCalled();expect(state.provider).not.toHaveBeenCalled();
  // Renewal uses the fixed trusted current origin, never a response-supplied URL.
- expect(host.querySelector('a')?.href).toBe('https://app.netlify.com/edge-access?domain=oi-video-workflows-staging.netlify.app');expect(host.querySelector('a')?.target).toBe('_blank');expect(()=>assertSyncDispatchAllowed()).toThrow('sync_navigation_paused');
+ expect(host.querySelector('a')?.getAttribute('href')).toBe('https://oi-video-workflows-staging.netlify.app/');expect(host.querySelector('a')?.getAttribute('target')).toBeNull();expect(host.querySelector('a')?.getAttribute('href')).not.toContain('?');expect(()=>assertSyncDispatchAllowed()).toThrow('sync_navigation_paused');
 });
 it.each([
  gateHtml.replace('app.netlify.com','app.netlify.com.evil.invalid'),
