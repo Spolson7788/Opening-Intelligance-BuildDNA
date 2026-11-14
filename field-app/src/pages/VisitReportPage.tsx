@@ -21,14 +21,27 @@ export function VisitReportPage() {
   const [noticeRole, setNoticeRole] = useState<"status" | "alert">("status");
   const [serverCount, setServerCount] = useState<number | null>(null);
   const [doors, setDoors] = useState<VisitDoorRow[] | null>(null);
+  const [reportBlocked, setReportBlocked] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
     void readVisitById(id).then(setVisit);
     void fetchInspectionVisit(id).then((row) => {
+      if (row.status === "finished" || row.report_sent) {
+        setReportBlocked("This visit is already finished. No report was sent.");
+        setReady(false);
+      }
       setServerCount(row.inspection_ids?.length ?? row.inspected);
       setDoors(Array.isArray(row.doors) ? row.doors : []);
-    }).catch(() => { setServerCount(null); setDoors(null); });
+    }).catch((error: unknown) => {
+      setServerCount(null);
+      setDoors(null);
+      const missing = !!error && typeof error === "object" && "status" in error && (error as { status?: number }).status === 404;
+      if (missing) {
+        setReportBlocked("This visit is not open on the server. No report was sent.");
+        setReady(false);
+      }
+    });
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       setNotice("Emailing this report needs a connection. The visit stays on this device.");
       setNoticeRole("alert");
@@ -45,7 +58,10 @@ export function VisitReportPage() {
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!id) return;
+    if (!id || reportBlocked) {
+      if (reportBlocked) { setNotice(reportBlocked); setNoticeRole("alert"); }
+      return;
+    }
     const localIds = visit?.inspections.map((inspection) => inspection.inspectionId) ?? [];
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       setNotice(visitUploadMessage(Math.max(localIds.length, 1)));
@@ -66,12 +82,27 @@ export function VisitReportPage() {
       let serverIds: string[] | null = null;
       try {
         const row = await fetchInspectionVisit(id);
+        if (row.status === "finished" || row.report_sent) {
+          const blocked = "This visit is already finished. No report was sent.";
+          setReportBlocked(blocked);
+          setNotice(blocked);
+          setNoticeRole("alert");
+          return;
+        }
         serverIds = row.inspection_ids ?? [];
         setServerCount(serverIds.length);
         if (Array.isArray(row.doors)) setDoors(row.doors);
-      } catch {
+      } catch (error) {
         serverIds = null;
         setServerCount(null);
+        const missing = !!error && typeof error === "object" && "status" in error && (error as { status?: number }).status === 404;
+        if (missing) {
+          const blocked = "This visit is not open on the server. No report was sent.";
+          setReportBlocked(blocked);
+          setNotice(blocked);
+          setNoticeRole("alert");
+          return;
+        }
       }
       const pending = pendingInspectionIds(localIds, operations, serverIds);
       if (pending.length) {
@@ -128,14 +159,14 @@ export function VisitReportPage() {
             ))}
           </ul>}
         </section>
-        <form className="c04-band" onSubmit={onSubmit}>
+        {reportBlocked ? <p className="c04-alert" role="alert">{reportBlocked}</p> : <form className="c04-band" onSubmit={onSubmit}>
           <h2>Finish visit / Send combined report</h2>
           <label htmlFor="visit-report-email">Email this combined report</label>
           <textarea id="visit-report-email" value={to} onChange={(event) => setTo(event.target.value)} placeholder="facility contact, your email, anyone else" disabled={!ready || sending} />
           <p className="c04-note">Starts with the facility contact, when one is on file, and the email of the person who signed. Add or remove addresses before sending.</p>
           <button className="btn c04-btn-blue" type="submit" disabled={!ready || sending}>{sending ? "Sending…" : "Send combined report"}</button>
           {notice && <p role={noticeRole}>{notice}</p>}
-        </form>
+        </form>}
       </div>
     </div>
   );

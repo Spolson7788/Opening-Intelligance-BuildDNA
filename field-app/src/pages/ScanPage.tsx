@@ -42,8 +42,19 @@ export function ScanPage() {
   const [confirmNewVisit, setConfirmNewVisit] = useState(false);
   useEffect(() => {
     let live = true;
-    void reconcileOpenVisit((id) => fetchInspectionVisit(id), fetchOpenInspectionVisit).then((open) => { if (live) setVisit(open); });
-    return () => { live = false; };
+    const refresh = () => {
+      void reconcileOpenVisit((id) => fetchInspectionVisit(id), fetchOpenInspectionVisit).then((open) => { if (live) setVisit(open); });
+    };
+    refresh();
+    const onFocus = () => refresh();
+    const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      live = false;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   async function beginNewVisit() {

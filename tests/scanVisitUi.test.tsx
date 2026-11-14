@@ -9,6 +9,7 @@ const store = vi.hoisted(() => ({
   operations: [] as { entityId: string; entityType: string; state: string }[],
   server: { status: "open", report_sent: false, inspection_ids: ["insp-1"] } as { status: string; report_sent: boolean; inspection_ids: string[] } | null,
   openVisit: null as { id: string; inspections: { inspectionId: string; openingId: string; passed: boolean }[] } | null,
+  missingIds: new Set<string>(),
 }));
 vi.mock("html5-qrcode", () => ({
   Html5Qrcode: class { start() { return Promise.reject(new Error("no camera")); } stop() { return Promise.resolve(); } },
@@ -18,7 +19,8 @@ vi.mock("../field-app/src/components/FacilitySelector", () => ({ FacilitySelecto
 vi.mock("../field-app/src/lib/AuthContext", () => ({ useAuth: () => ({ logout: () => {}, auth: { userId: "u", organizationId: "org" }, logoutPending: false, logoutError: null }) }));
 vi.mock("../field-app/src/lib/api", () => ({
   fetchLabelConfig: async () => ({ field_base: "https://example.invalid/field/" }),
-  fetchInspectionVisit: async () => {
+  fetchInspectionVisit: async (id: string) => {
+    if (store.missingIds.has(id)) throw Object.assign(new Error("not_found"), { status: 404 });
     if (!store.server) throw new Error("offline");
     return store.server;
   },
@@ -44,6 +46,7 @@ beforeEach(() => {
   store.operations = [];
   store.server = { status: "open", report_sent: false, inspection_ids: ["insp-1"] };
   store.openVisit = null;
+  store.missingIds = new Set();
   store.settings.set("selected-facility:u:org", "facility-1");
   host = document.createElement("div");
   document.body.append(host);
@@ -117,6 +120,52 @@ it("says 1 opening when the visit has one door", async () => {
   await act(async () => root.render(<MemoryRouter><ScanPage /></MemoryRouter>));
   await act(async () => {});
   expect(host.querySelector(".c04-band-green")?.textContent).toContain("This visit: 1 opening (1 passed, 0 failed)");
+});
+
+it("replaces a finished local visit with the server open visit and its counts", async () => {
+  const stale = "26c7b67d-28bc-4b44-8654-80fb9833f32a";
+  const current = "191f5a79-1534-49fb-b486-c4bff94195b7";
+  store.settings.set(`inspection-visit:${stale}`, {
+    id: stale, organizationId: "org", userId: "u", facilityId: "facility-1", status: "open",
+    inspections: [{ inspectionId: "insp-710", openingId: "door-710", passed: true }],
+  });
+  store.settings.set("inspection-visit-open:u:org:facility-1", stale);
+  store.missingIds = new Set([stale]);
+  store.openVisit = {
+    id: current,
+    inspections: [
+      { inspectionId: "insp-510", openingId: "door-510", passed: true },
+      { inspectionId: "insp-610", openingId: "door-610", passed: true },
+      { inspectionId: "insp-710", openingId: "door-710", passed: true },
+    ],
+  };
+  await act(async () => root.render(<MemoryRouter><ScanPage /></MemoryRouter>));
+  await act(async () => {});
+  expect(host.textContent).toContain("This visit: 3 openings (3 passed, 0 failed)");
+  expect(host.textContent).not.toContain("This visit: 1 opening");
+  expect(store.settings.get("inspection-visit-open:u:org:facility-1")).toBe(current);
+});
+
+it("refreshes the same open visit from the server when the phone regains focus", async () => {
+  openVisit();
+  store.openVisit = {
+    id: visitId,
+    inspections: [
+      { inspectionId: "insp-1", openingId: "door-1", passed: true },
+      { inspectionId: "insp-2", openingId: "door-2", passed: true },
+      { inspectionId: "insp-3", openingId: "door-3", passed: true },
+    ],
+  };
+  await act(async () => root.render(<MemoryRouter><ScanPage /></MemoryRouter>));
+  await act(async () => {});
+  expect(host.textContent).toContain("This visit: 3 openings (3 passed, 0 failed)");
+  store.openVisit = {
+    id: visitId,
+    inspections: [{ inspectionId: "insp-1", openingId: "door-1", passed: false }],
+  };
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  await act(async () => {});
+  expect(host.textContent).toContain("This visit: 1 opening (0 passed, 1 failed)");
 });
 
 it("shows the open server visit when this phone has no pointer", async () => {

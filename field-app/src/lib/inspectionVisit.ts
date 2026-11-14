@@ -176,37 +176,63 @@ export function serverVisitIsClosed(server: { status?: string | null; report_sen
   return server.status === "finished" || server.report_sent === true;
 }
 
-/** Clear the open pointer when the server has finished this visit. A failed lookup leaves the local visit in place. */
+function serverInspections(inspections: VisitInspection[] | undefined): VisitInspection[] {
+  return (inspections ?? []).map((item) => ({
+    inspectionId: item.inspectionId,
+    openingId: item.openingId,
+    passed: item.passed === true,
+  }));
+}
+
+function missingOnServer(error: unknown): boolean {
+  return !!error && typeof error === "object" && "status" in error && (error as { status?: number }).status === 404;
+}
+
+/** On Scan load and focus, follow the server's open visit when this phone is online. */
 export async function reconcileOpenVisit(
   fetchServer: (id: string) => Promise<{ status?: string | null; report_sent?: boolean | null } | null>,
   lookup?: OpenVisitLookup,
 ): Promise<InspectionVisit | null> {
-  let open = await readOpenVisit();
-  if (!open && lookup) {
+  const local = await readOpenVisit();
+  if (local?.replaceOpenVisit && local.inspections.length === 0) return local;
+  const auth = await loadAuth();
+  const facilityId = await currentFacilityId();
+  if (!auth || !facilityId) return local;
+  let serverOpen: { id: string; inspections?: VisitInspection[] } | null = null;
+  if (lookup) {
     try {
-      const auth = await loadAuth();
-      const facilityId = await currentFacilityId();
-      const found = auth && facilityId ? await withTimeout(lookup(facilityId), 4_000, "open visit lookup timed out") : null;
-      if (auth && facilityId && found?.id) {
-        open = {
-          id: found.id, organizationId: auth.organizationId, userId: auth.userId, facilityId, status: "open",
-          inspections: Array.isArray(found.inspections) ? found.inspections : [],
-        };
-        await rememberVisit(open);
-      }
+      serverOpen = await withTimeout(lookup(facilityId), 4_000, "open visit lookup timed out");
     } catch {
-      open = await readOpenVisit();
+      return local;
     }
   }
-  if (!open) return null;
-  try {
-    const server = await fetchServer(open.id);
-    if (!serverVisitIsClosed(server)) return open;
-    await finishVisit(open.id);
-    return null;
-  } catch {
-    return open;
+  let dropLocal = false;
+  if (local) {
+    try {
+      const row = await fetchServer(local.id);
+      dropLocal = serverVisitIsClosed(row) || !row;
+    } catch (error) {
+      if (!missingOnServer(error)) return local;
+      dropLocal = true;
+    }
   }
+  const serverId = serverOpen?.id;
+  if (local && !dropLocal && (!serverId || serverId === local.id)) {
+    if (serverId === local.id) {
+      const refreshed = { ...local, status: "open" as const, inspections: serverInspections(serverOpen?.inspections) };
+      await rememberVisit(refreshed);
+      return refreshed;
+    }
+    return local;
+  }
+  if (local) await finishVisit(local.id);
+  if (!serverId) return null;
+  const adopted: InspectionVisit = {
+    id: serverId, organizationId: auth.organizationId, userId: auth.userId, facilityId, status: "open",
+    inspections: serverInspections(serverOpen?.inspections),
+  };
+  await rememberVisit(adopted);
+  return adopted;
 }
 
 export async function readOpenVisit(): Promise<InspectionVisit | null> {

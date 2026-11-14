@@ -6,6 +6,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   fetchInspectionVisit: vi.fn(),
+  emailInspectionVisit: vi.fn(),
+  storeInspectionVisitPdf: vi.fn(),
   inspectionVisitRecipients: vi.fn(async () => ({ to: ["a@example.com"], facility_contact_email: null, inspector_email: "a@example.com" })),
   fetchOpening: vi.fn(),
   fetchOpenInspectionVisit: vi.fn(),
@@ -16,10 +18,8 @@ const api = vi.hoisted(() => ({
 vi.mock("../field-app/src/lib/api", () => ({
   ApiError: class ApiError extends Error {},
   ...api,
-  emailInspectionVisit: vi.fn(),
   emailInspectionReport: vi.fn(),
   inspectionReportRecipients: vi.fn(async () => ({ to: [], facility_contact_email: null, inspector_email: "" })),
-  storeInspectionVisitPdf: vi.fn(),
   fetchOpeningByQr: vi.fn(),
   fetchOpeningByCode: vi.fn(),
   deletePhoto: vi.fn(),
@@ -106,6 +106,33 @@ it("lists each server opening in the visit and opens its inspection", async () =
   const failed = [...host.querySelectorAll("button")].find((button) => button.textContent?.includes("610A"));
   await act(async () => failed!.click());
   expect(host.textContent).toContain("Inspection summary");
+});
+
+it("does not email a report when the visit is already finished", async () => {
+  api.emailInspectionVisit.mockClear();
+  api.fetchInspectionVisit.mockResolvedValue({ status: "finished", report_sent: false, inspected: 0, inspection_ids: [], doors: [] });
+  await act(async () => root.render(
+    <MemoryRouter initialEntries={["/visit/stale"]}>
+      <Routes><Route path="/visit/:id" element={<VisitReportPage />} /></Routes>
+    </MemoryRouter>,
+  ));
+  await act(async () => {});
+  expect(host.textContent).toContain("This visit is already finished. No report was sent.");
+  expect(host.textContent).not.toContain("Send combined report");
+  expect(api.emailInspectionVisit).not.toHaveBeenCalled();
+});
+
+it("does not email a report when the visit is missing on the server", async () => {
+  api.emailInspectionVisit.mockClear();
+  api.fetchInspectionVisit.mockRejectedValue(Object.assign(new Error("not_found"), { status: 404 }));
+  await act(async () => root.render(
+    <MemoryRouter initialEntries={["/visit/missing"]}>
+      <Routes><Route path="/visit/:id" element={<VisitReportPage />} /></Routes>
+    </MemoryRouter>,
+  ));
+  await act(async () => {});
+  expect(host.textContent).toContain("This visit is not open on the server. No report was sent.");
+  expect(api.emailInspectionVisit).not.toHaveBeenCalled();
 });
 
 it("marks openings inspected in the open visit without replacing the survey label", async () => {
