@@ -140,7 +140,7 @@ export function ScanPage() {
           <button type="button" className="btn c04-btn-blue c04-visit-finish" onClick={() => navigate(`/visit/${visit.id}`)}>Finish visit / Send combined report</button>
         </div>}
         {visitNote && <p className="c04-note" role="status">{visitNote}</p>}
-        <button type="button" className="btn c04-btn-cyan" onClick={() => navigate("/choose-location")}>Change facility</button>
+        <button type="button" className="btn c04-btn-cyan" onClick={() => navigate("/choose-location?screens=1")}>Change facility</button>
         {confirmNewVisit && visit ? <section className="c04-panel" role="dialog" aria-labelledby="start-new-visit-title">
           <h2 id="start-new-visit-title">Start a new visit?</h2>
           <p>Starting a new visit finishes this one. Its {openingCountText(visitCounts(visit.inspections).inspected)} {visitCounts(visit.inspections).inspected === 1 ? "stays" : "stay"} saved; no combined report is sent.</p>

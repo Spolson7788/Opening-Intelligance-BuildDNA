@@ -14,6 +14,7 @@ const calls = vi.hoisted(() => ({
   email: vi.fn(async () => ({ sent: true, delivery_mode: "attachments" })),
   pdf: vi.fn(async () => ({ stored: true, reused: false, bytes: 10 })),
   route: null as null | { stops: unknown[] },
+  routeError: "" as string,
   hardware: [] as { id: string; component_type?: string; manufacturer?: string; model_number?: string }[],
   properties: [] as { id: string; name: string; buildings?: { id: string; name: string }[] }[],
   openings: [] as { id: string; opening_code: string; location_description?: string }[],
@@ -54,7 +55,10 @@ vi.mock("../field-app/src/lib/db", () => ({
   putOfflineSetting: async (setting: { key: string; value: unknown }) => { settings.values.set(setting.key, setting.value); },
 }));
 vi.mock("../field-app/src/lib/fieldRoutes", () => ({
-  fetchFieldRoute: async () => ({ route: calls.route, apple_maps: false }),
+  fetchFieldRoute: async () => {
+    if (calls.routeError) throw new Error(calls.routeError);
+    return { route: calls.route, apple_maps: false };
+  },
 }));
 vi.mock("../field-app/src/components/SignaturePad", () => ({
   SignaturePad: React.forwardRef((_props: unknown, ref: React.Ref<{ getDataUrl: () => string; clear: () => void }>) => {
@@ -79,6 +83,7 @@ beforeEach(() => {
   calls.email.mockClear();
   calls.pdf.mockClear();
   calls.route = null;
+  calls.routeError = "";
   calls.hardware = [];
   calls.properties = [];
   calls.openings = [];
@@ -150,6 +155,14 @@ it("opens the site door list when a stop is tapped", async () => {
   expect(host.textContent).toContain("610A");
   expect(host.textContent).toContain("Finish the visit");
   expect(host.textContent).toContain("Tap a door to inspect it.");
+});
+
+it("shows a route failure in words instead of staying on loading", async () => {
+  calls.routeError = "route_unavailable";
+  await render(<StartMyDayPage />);
+  await act(async () => {});
+  expect(host.textContent).toContain("Today's route is not available right now.");
+  expect(host.textContent).not.toContain("Loading today's route");
 });
 
 it("tells the tech to check with the manager when no stops are scheduled", async () => {

@@ -60,10 +60,21 @@ function RequireLocation({ children }: { children: React.ReactElement }) {
   return children;
 }
 
-function ScanOrDay() {
+function openedFromCurrentScreens(): boolean {
   const [params] = useSearchParams();
-  if (techTasksEnabled() && params.get("screens") !== "1") return <Navigate to="/tasks/day" replace />;
+  return params.get("screens") === "1";
+}
+
+function ScanOrDay() {
+  const fromScreens = openedFromCurrentScreens();
+  if (techTasksEnabled() && !fromScreens) return <Navigate to="/tasks/day" replace />;
   return <RequireLocation><ScanPage /></RequireLocation>;
+}
+
+function LocationOrDay() {
+  const fromScreens = openedFromCurrentScreens();
+  if (techTasksEnabled() && !fromScreens) return <Navigate to="/tasks/day" replace />;
+  return <ChooseLocationPage />;
 }
 
 function TaskGate({ children }: { children: React.ReactElement }) {
@@ -109,7 +120,7 @@ function AppRoutes() {
       <Route path="/opening/:id/request-service" element={<RequireAuth><ServiceRequestPage /></RequireAuth>} /><Route path="/opening/:id/schedules" element={<RequireAuth><FacilitySchedulesPage /></RequireAuth>} />
       <Route path="/opening/:id/lifecycle" element={<RequireAuth><InstallationLifecyclePage /></RequireAuth>} />
       <Route path="/opening/:id/lifecycle-records" element={<RequireAuth><LifecycleOperationsPage /></RequireAuth>} />
-      <Route path="/choose-location" element={<RequireAuth><ChooseLocationPage /></RequireAuth>} />
+      <Route path="/choose-location" element={<RequireAuth><LocationOrDay /></RequireAuth>} />
       <Route path="/scan" element={<RequireAuth><ScanOrDay /></RequireAuth>} />
       <Route path="/tasks/day" element={<RequireAuth><TaskGate><StartMyDayPage /></TaskGate></RequireAuth>} />
       <Route path="/tasks/site" element={<RequireAuth><RequireLocation><TaskGate><SiteDoorsPage /></TaskGate></RequireLocation></RequireAuth>} />

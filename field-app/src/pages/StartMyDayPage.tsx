@@ -65,7 +65,13 @@ export function StartMyDayPage() {
     }).catch((err) => {
       if (!live) return;
       setRoute(null);
-      setError(err instanceof Error ? err.message : "Could not load today's route.");
+      const code = err instanceof Error ? err.message : "";
+      const timedOut = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+      const plain = timedOut ? "Today's route did not answer. Check your connection."
+        : code === "route_unavailable" ? "Today's route is not available right now."
+        : code === "missing_token" || code === "unauthorized" ? "Sign in again to see today's route."
+        : code || "Could not load today's route.";
+      setError(plain);
     });
     return () => { live = false; };
   }, []);
@@ -106,7 +112,7 @@ export function StartMyDayPage() {
           </section>
         );
       })}
-      {(route === null || (route !== undefined && sites.length === 0)) && <p>No stops scheduled today. Check with your manager.</p>}
+      {!error && (route === null || (route !== undefined && sites.length === 0)) && <p>No stops scheduled today. Check with your manager.</p>}
     </TaskChrome>
   );
 }

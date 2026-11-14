@@ -43,7 +43,8 @@ async function fieldFetch(path: string, options: RequestInit = {}) {
   const auth = await loadAuth();
   const headers: Record<string, string> = { "Content-Type": "application/json", ...(options.headers as Record<string, string> | undefined) };
   if (auth?.token) headers.Authorization = `Bearer ${auth.token}`;
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const signal = options.signal ?? (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(12_000) : undefined);
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers, signal });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.message || body.error || "Could not reach the route.");
   return body;

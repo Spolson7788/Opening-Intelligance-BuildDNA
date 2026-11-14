@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
+import { techTasksEnabled } from "../lib/techTasks";
 import { fetchCompanies } from "../lib/api";
 import { showCompanySwitcher } from "../lib/companySwitch";
 import { companyOptionLabel } from "../lib/accountLine";
@@ -8,6 +10,7 @@ import type { CompanyOption } from "../lib/companySwitch";
 /** M4: shown only when the person belongs to more than one company. */
 export function CompanySwitcher() {
   const { auth, switchCompany } = useAuth();
+  const navigate = useNavigate();
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -25,7 +28,8 @@ export function CompanySwitcher() {
     try {
       let result = await switchCompany(orgId, false);
       if (result.kind === "confirm" && window.confirm(result.message)) result = await switchCompany(orgId, true);
-      if (result.kind === "wait" || result.kind === "failed") setNotice(result.message);
+      if (result.kind === "switched" && techTasksEnabled()) navigate("/tasks/day", { replace: true });
+      else if (result.kind === "wait" || result.kind === "failed") setNotice(result.message);
     } finally { setBusy(false); }
   }
 

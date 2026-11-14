@@ -105,13 +105,15 @@ export function scanNeedsChooser(principal: { userId: string; organizationId: st
   return !readLocationConfirmation(storage, principal);
 }
 
-/** Scan is the normal landing and needs a confirmed location. With tech tasks on, sign-in opens Start my day even when no site is stored. An explicit opening target is unchanged. */
-export function postAuthLanding(from: unknown, confirmed: boolean): string {
+/** Where sign-in goes. Tech tasks skip Choose a location. A specific door link is unchanged. */
+export function homeAfterSignIn(tasksOn: boolean, from: unknown, confirmed: boolean): string {
   const path = loginReturnPath(from);
   if (isDirectOpeningPath(path)) return path;
-  if (path === "/scan" || path === "/tasks/day") {
-    if (techTasksEnabled()) return "/tasks/day";
-    return confirmed ? "/scan" : "/choose-location";
-  }
+  if (tasksOn && (path === "/scan" || path === "/tasks/day" || path === "/choose-location")) return "/tasks/day";
+  if (path === "/scan" || path === "/tasks/day") return confirmed ? "/scan" : "/choose-location";
   return path;
+}
+
+export function postAuthLanding(from: unknown, confirmed: boolean): string {
+  return homeAfterSignIn(techTasksEnabled(), from, confirmed);
 }

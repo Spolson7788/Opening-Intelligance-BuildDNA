@@ -3,7 +3,7 @@ import type { FacilityProperty } from "../field-app/src/lib/facilityOpenings";
 import { chooseFacility, selectedFacilityKey } from "../field-app/src/lib/facilitySync";
 import {
   confirmationKey, countiesFrom, describeLocation, facilitiesFrom, initialDraft, isDirectOpeningPath,
-  narrowDraft, postAuthLanding, readLocationConfirmation, statesFrom, writeLocationConfirmation,
+  homeAfterSignIn, narrowDraft, postAuthLanding, readLocationConfirmation, statesFrom, writeLocationConfirmation,
 } from "../field-app/src/lib/locationChoice";
 import { loginReturnPath } from "../field-app/src/lib/qrPayload";
 
@@ -54,6 +54,10 @@ describe("sign-in landing", () => {
     expect(postAuthLanding("//evil.example", false)).toBe("/choose-location");
     expect(loginReturnPath("//evil.example")).toBe("/scan");
     expect(postAuthLanding("/opening/test?next=//evil", false)).toBe("/choose-location");
+    expect(homeAfterSignIn(true, undefined, false)).toBe("/tasks/day");
+    expect(homeAfterSignIn(true, "/choose-location", true)).toBe("/tasks/day");
+    expect(homeAfterSignIn(true, "/scan", false)).toBe("/tasks/day");
+    expect(homeAfterSignIn(true, qr, false)).toBe(qr);
   });
   it("does not treat another account's confirmation as this account's", () => {
     const storage = new Map<string, string>();
