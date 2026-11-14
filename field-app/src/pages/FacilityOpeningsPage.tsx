@@ -1,16 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listFieldProperties, listOpenings } from "../lib/api";
+import { fetchOpenInspectionVisit, listFieldProperties, listOpenings } from "../lib/api";
 import { isAppSessionFailure } from "../lib/siteAccess";
 import { FacilitySelector, useFacilitySync } from "../components/FacilitySelector";
 import { getOfflineSetting, putOfflineSetting } from "../lib/db";
 import { useAuth } from "../lib/AuthContext";
 import { SyncBadge } from "../components/SyncBadge";
+import { readOpenVisit } from "../lib/inspectionVisit";
 import { COMPARISON_REPORT_ROLES, comparisonReportHref, type FacilityOpening, type FacilityProperty, facilityOpeningsCacheKey, filterFacilityOpenings, sortFacilityOpenings } from "../lib/facilityOpenings";
 
 // M4 v2: a technician picks a facility and building they can reach and gets every opening
 // in it, including openings created by a confirmed schedule import. Browsing only: the
 // offline download happens when the facility is selected (FacilitySelector).
+function orderedPropertyId(properties: FacilityProperty[] | null, buildingId: string, selectedId: string): string {
+  const match = (properties ?? []).find((property) => (property.buildings ?? []).some((building) => building.id === buildingId));
+  return match?.id || selectedId;
+}
+
 export function FacilityOpeningsPage() {
   const navigate = useNavigate();
   const { auth } = useAuth();
@@ -23,6 +29,7 @@ export function FacilityOpeningsPage() {
   const [onlyToSurvey, setOnlyToSurvey] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [visitOpeningIds, setVisitOpeningIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     document.body.classList.add("c04-on");
     return () => document.body.classList.remove("c04-on");
@@ -48,6 +55,23 @@ export function FacilityOpeningsPage() {
     return () => { stop = true; };
   }, [buildingId, auth?.userId, auth?.organizationId]); // eslint-disable-line react-hooks/exhaustive-deps
   const shown = useMemo(() => (openings ? sortFacilityOpenings(filterFacilityOpenings(openings, q, onlyToSurvey)) : []), [openings, q, onlyToSurvey]);
+  const propertyId = orderedPropertyId(sync?.properties ?? properties, buildingId, sync?.selectedId ?? "");
+  useEffect(() => {
+    if (!propertyId) { setVisitOpeningIds(new Set()); return; }
+    let stop = false;
+    Promise.all([
+      fetchOpenInspectionVisit(propertyId).catch(() => null),
+      readOpenVisit().catch(() => null),
+    ]).then(([server, local]) => {
+      if (stop) return;
+      const ids = new Set((server?.inspections ?? []).map((item) => item.openingId).filter(Boolean));
+      if (local && local.facilityId === propertyId && local.status === "open") {
+        for (const item of local.inspections) if (item.openingId) ids.add(item.openingId);
+      }
+      setVisitOpeningIds(ids);
+    });
+    return () => { stop = true; };
+  }, [propertyId]);
   // The selected facility (downloaded for offline use on selection) is listed first.
   const ordered = [...(sync?.properties ?? properties ?? [])].sort((a, b) => Number(b.id === sync?.selectedId) - Number(a.id === sync?.selectedId));
   const buildings = ordered.flatMap((p) => (p.buildings ?? []).map((b) => ({ id: b.id, label: `${p.name} - ${b.name}` })));
@@ -89,6 +113,7 @@ export function FacilityOpeningsPage() {
               <button type="button" className="c04-opening" onClick={() => navigate(`/opening/${o.id}`)}>
                 <span>
                   <strong>{o.schedule_door_mark ?? o.opening_code}</strong>
+                  {visitOpeningIds.has(o.id) && <span className="c04-visit-done">Done With This Visit</span>}
                   <span>{o.schedule_door_mark ? o.opening_code : "Opening details"}{o.floor_label ? ` · floor ${o.floor_label}` : ""} · {o.completion_state === "complete" ? "complete" : "to survey"}</span>
                 </span>
                 <span aria-hidden="true">›</span>

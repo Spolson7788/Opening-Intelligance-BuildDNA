@@ -1,7 +1,7 @@
 import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { NFPA80_ITEMS } from "../src/services/nfpa80Checklist";
-import { openingCountText, orderVisitDoors, visitReportOutline, visitSummaryText, type VisitDoor } from "../src/services/inspectionVisits";
+import { openingCountText, orderVisitDoors, visitDoorListItem, visitReportOutline, visitSummaryText, type VisitDoor } from "../src/services/inspectionVisits";
 import { CONCEPT, drawablePhoto, generateNfpaVisitPdf, pdfRgb, prepareReportPhoto, setReportImageLoaderForTests } from "../src/services/nfpa80Report";
 
 function door(code: string, passed: boolean, note?: string): VisitDoor {
@@ -17,6 +17,19 @@ function door(code: string, passed: boolean, note?: string): VisitDoor {
 }
 
 describe("combined fire door visit report", () => {
+  it("lists one inspected opening with its inspection id and type", () => {
+    const item = visitDoorListItem({
+      ...door("610A", false),
+      inspectionId: "insp-610",
+      openingType: "single_swing",
+      inspectedAt: "2026-11-09T14:57:00.000Z",
+    });
+    expect(item).toMatchObject({
+      opening_code: "610A", inspection_id: "insp-610", opening_type: "single_swing",
+      passed: false, inspected_at: "2026-11-09T14:57:00.000Z",
+    });
+  });
+
   it("says 1 opening when a visit has one door", () => {
     expect(openingCountText(0)).toBe("0 openings");
     expect(openingCountText(1)).toBe("1 opening");

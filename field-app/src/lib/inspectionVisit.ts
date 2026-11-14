@@ -65,6 +65,15 @@ export function pendingInspectionIds(
   });
 }
 
+export function formatVisitDoorTime(value: string | null | undefined): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  }).format(date);
+}
+
 export function openingCountText(count: number): string {
   return `${count} ${count === 1 ? "opening" : "openings"}`;
 }

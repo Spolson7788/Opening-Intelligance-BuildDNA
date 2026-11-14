@@ -550,7 +550,17 @@ export function inspectionVisitRecipients(id: string): Promise<{ to: string[]; f
   return authedFetch(`/events/inspection-visits/${id}/email-defaults`);
 }
 
-export function fetchInspectionVisit(id: string): Promise<{ inspected: number; inspection_ids: string[]; status?: string; report_sent?: boolean }> {
+export interface VisitDoorRow {
+  opening_id: string;
+  inspection_id: string | null;
+  opening_code: string;
+  opening_type: string | null;
+  location: string | null;
+  passed: boolean;
+  inspected_at: string | null;
+}
+
+export function fetchInspectionVisit(id: string): Promise<{ inspected: number; inspection_ids: string[]; status?: string; report_sent?: boolean; doors?: VisitDoorRow[] }> {
   return authedFetch(`/events/inspection-visits/${id}`);
 }
 

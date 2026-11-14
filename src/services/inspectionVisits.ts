@@ -17,8 +17,23 @@ export interface VisitDoor {
   inspectedAt?: string | null;
   displayLabel?: string | null;
   repeatNote?: string | null;
+  inspectionId?: string | null;
+  openingType?: string | null;
   deficiencies: VisitDeficiency[];
   checklist: { section: string; result: string; note: string | null }[];
+}
+
+/** One inspected opening for the field visit list. Uses columns that already exist. */
+export function visitDoorListItem(door: VisitDoor) {
+  return {
+    opening_id: door.openingId,
+    inspection_id: door.inspectionId ?? null,
+    opening_code: door.openingCode,
+    opening_type: door.openingType ?? null,
+    location: door.location,
+    passed: door.passed,
+    inspected_at: door.inspectedAt ?? null,
+  };
 }
 
 export interface VisitReportData {

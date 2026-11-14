@@ -10,5 +10,5 @@ export default defineConfig({
       react: resolve("field-app/node_modules/react"),
     },
   },
-  test: { environment: "jsdom", include: ["tests/emailInspectionReportField.test.tsx", "tests/purchasingDestinationField.test.tsx", "tests/howToUse.test.tsx", "tests/inspectionVisitUi.test.tsx", "tests/scanVisitUi.test.tsx"] },
+  test: { environment: "jsdom", include: ["tests/emailInspectionReportField.test.tsx", "tests/purchasingDestinationField.test.tsx", "tests/howToUse.test.tsx", "tests/inspectionVisitUi.test.tsx", "tests/scanVisitUi.test.tsx", "tests/fieldVisitScreens.test.tsx"] },
 });

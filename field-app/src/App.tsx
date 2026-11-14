@@ -132,9 +132,11 @@ export function FieldApplication() {
     </Routes></>;
   return (
     <AuthProvider>
-        <div className="no-print"><FieldBrand /></div>
-        <AccountIdentity />
-        <CompanySwitcher />
+        <header className="c04-header no-print">
+          <FieldBrand />
+          <AccountIdentity />
+          <CompanySwitcher />
+        </header>
         <AppRoutes />
     </AuthProvider>
   );

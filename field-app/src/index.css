@@ -250,6 +250,50 @@ a.badge { cursor: pointer; text-decoration: underline; }
   padding: 10px 12px;
   margin: 8px 0 12px;
 }
+.c04-notice-amber {
+  color: #7A4E00;
+  background: #FFF4E5;
+  border: 2px solid #E0A72E;
+  border-radius: 10px;
+  font-size: 16px;
+  padding: 10px 12px;
+  margin: 8px 0 12px;
+}
+.c04-result-passed { color: #1F7A32; font-weight: 700; }
+.c04-result-failed {
+  color: #7A4E00;
+  background: #FFF4E5;
+  border: 1px solid #E0A72E;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 700;
+}
+.c04-visit-done {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  background: #A8D978;
+  color: #142C3C;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.c04 .c04-visit-count {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  margin: 0 0 8px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: #142C3C;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
 
 .empty-state {
   text-align: center;
@@ -304,6 +348,21 @@ body.c04-on {
   background: #D7F1FA;
   color: #142C3C;
 }
+.c04-header {
+  background: #fff;
+  color: #142C3C;
+}
+.c04-header .c04-brand,
+body.c04-on .c04-header aside[aria-label="Current account"],
+body.c04-on .c04-header .company-switch {
+  max-width: 480px;
+  margin: 0 auto;
+  background: transparent;
+  color: #142C3C;
+}
+.c04-header .c04-brand { padding: 8px 16px 0; }
+body.c04-on .c04-header aside[aria-label="Current account"] { padding: 4px 16px 0; }
+body.c04-on .c04-header .company-switch { padding: 4px 16px 12px; }
 body.c04-on aside[aria-label="Current account"],
 body.c04-on .company-switch {
   max-width: 480px;

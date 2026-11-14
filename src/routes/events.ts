@@ -12,7 +12,7 @@ import { generalPassCarriesChecklist } from "../services/nfpa80Checklist";
 import { generateNfpaInspectionPdf, generateNfpaVisitPdf } from "../services/nfpa80Report";
 import { officialVisitPdf } from "../services/officialVisitPdf";
 import { getObjectBytes } from "../services/storage";
-import { bindInspectionVisit, visitCounts, visitInspectionsShortfall, visitSummaryText } from "../services/inspectionVisits";
+import { bindInspectionVisit, visitCounts, visitDoorListItem, visitInspectionsShortfall, visitSummaryText } from "../services/inspectionVisits";
 import { loadInspectionVisit } from "../services/loadInspectionVisit";
 import { sendEmail, reportEmailBlockers, reportLinkBase } from "../services/email";
 import { dashboardInspectionLink } from "../services/inspectionReportLink";
@@ -339,7 +339,7 @@ eventsRouter.get("/inspection-visits/:id", async (req: AuthedRequest, res) => {
       inspection_ids: result.loaded.inspectionIds,
       status: result.loaded.status,
       report_sent: result.loaded.reportSent,
-      doors: result.loaded.doors.map((door) => ({ opening_code: door.openingCode, location: door.location, passed: door.passed })),
+      doors: result.loaded.doors.map(visitDoorListItem),
     });
   } catch (err) { console.error(err); res.status(500).json({ error: "internal_error" }); }
 });

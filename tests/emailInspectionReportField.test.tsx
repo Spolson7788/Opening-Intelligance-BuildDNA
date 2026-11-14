@@ -18,6 +18,7 @@ vi.mock("../field-app/src/lib/api", () => ({
   emailInspectionReport: (...args: unknown[]) => api.send(...args),
   recomputeHealthScore: (...args: unknown[]) => api.recompute(...args),
   fetchOpening: (...args: unknown[]) => api.fetchOpening(...args),
+  fetchOpenInspectionVisit: vi.fn(async () => null),
   fetchOpeningByQr: (...args: unknown[]) => api.fetchOpening(...args),
   fetchOpeningByCode: (...args: unknown[]) => api.fetchOpening(...args),
   deletePhoto: vi.fn(),

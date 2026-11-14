@@ -6,8 +6,9 @@ import { emailFailureText, reportRecipientList } from "../components/EmailInspec
 import { ApiError, emailInspectionVisit, fetchInspectionVisit, inspectionVisitRecipients, storeInspectionVisitPdf } from "../lib/api";
 import { flushOutbox, noteSyncDiagnostic } from "../lib/sync";
 import { getSyncOperationsForPrincipal, loadAuth } from "../lib/db";
-import { finishVisit, pendingInspectionIds, readVisitById, visitSummaryText, visitUploadMessage } from "../lib/inspectionVisit";
+import { finishVisit, formatVisitDoorTime, openingCountText, pendingInspectionIds, readVisitById, visitSummaryText, visitUploadMessage } from "../lib/inspectionVisit";
 import type { InspectionVisit } from "../lib/inspectionVisit";
+import type { VisitDoorRow } from "../lib/api";
 
 export function VisitReportPage() {
   const { id } = useParams();
@@ -19,11 +20,15 @@ export function VisitReportPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeRole, setNoticeRole] = useState<"status" | "alert">("status");
   const [serverCount, setServerCount] = useState<number | null>(null);
+  const [doors, setDoors] = useState<VisitDoorRow[] | null>(null);
 
   useEffect(() => {
     if (!id) return;
     void readVisitById(id).then(setVisit);
-    void fetchInspectionVisit(id).then((row) => setServerCount(row.inspection_ids?.length ?? row.inspected)).catch(() => setServerCount(null));
+    void fetchInspectionVisit(id).then((row) => {
+      setServerCount(row.inspection_ids?.length ?? row.inspected);
+      setDoors(Array.isArray(row.doors) ? row.doors : []);
+    }).catch(() => { setServerCount(null); setDoors(null); });
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       setNotice("Emailing this report needs a connection. The visit stays on this device.");
       setNoticeRole("alert");
@@ -63,6 +68,7 @@ export function VisitReportPage() {
         const row = await fetchInspectionVisit(id);
         serverIds = row.inspection_ids ?? [];
         setServerCount(serverIds.length);
+        if (Array.isArray(row.doors)) setDoors(row.doors);
       } catch {
         serverIds = null;
         setServerCount(null);
@@ -94,13 +100,34 @@ export function VisitReportPage() {
 
   return (
     <div className="app-shell c04">
-      <div className="top-bar">
-        <button type="button" className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13 }} onClick={() => navigate("/scan")}>← Scan</button>
+      <div className="c04-toolbar">
+        <button type="button" className="btn c04-back" onClick={() => navigate("/scan")}>Back</button>
         <SyncBadge />
       </div>
       <div className="screen">
+        <p className="c04-kicker">Field app</p>
         <h1>Inspection visit</h1>
-        {visit ? <div className="c04-band-green" role="status"><p>{visitSummaryText(visit.inspections)}</p><p>On this device: {visit.inspections.length}. On the server: {serverCount === null ? "not confirmed" : serverCount}.</p></div> : <p>This visit is not on this device.</p>}
+        {visit || (doors && doors.length > 0) ? <div className="c04-band-green" role="status"><p>{doors && doors.length > 0 ? `This visit: ${openingCountText(doors.length)} (${doors.filter((door) => door.passed).length} passed, ${doors.filter((door) => !door.passed).length} failed)` : visitSummaryText(visit!.inspections)}</p>{visit && <p>On this device: {visit.inspections.length}. On the server: {serverCount === null ? "not confirmed" : serverCount}.</p>}</div> : doors === null ? <p role="status">Loading the openings in this visit.</p> : <p>This visit is not on this device.</p>}
+        <section aria-label="Openings in this visit">
+          <h2>Openings in this visit</h2>
+          {doors === null && <p role="status">Loading the openings in this visit.</p>}
+          {doors && doors.length === 0 && <p>No openings in this visit are on the server yet.</p>}
+          {doors && doors.length > 0 && <ul className="c04-openings">
+            {[...doors].sort((a, b) => a.opening_code.localeCompare(b.opening_code, undefined, { numeric: true })).map((door) => (
+              <li key={door.inspection_id || door.opening_id}>
+                <button type="button" className="c04-opening" onClick={() => { if (door.inspection_id) navigate(`/opening/${door.opening_id}/inspection/${door.inspection_id}`); }}>
+                  <span>
+                    <strong>{door.opening_code}</strong>
+                    <span>{(door.opening_type || "Opening").replace(/_/g, " ")}</span>
+                    <span className={door.passed ? "c04-result-passed" : "c04-result-failed"}>{door.passed ? "Passed" : "Failed"}</span>
+                    <span>{formatVisitDoorTime(door.inspected_at)}</span>
+                  </span>
+                  <span aria-hidden="true">›</span>
+                </button>
+              </li>
+            ))}
+          </ul>}
+        </section>
         <form className="c04-band" onSubmit={onSubmit}>
           <h2>Finish visit / Send combined report</h2>
           <label htmlFor="visit-report-email">Email this combined report</label>

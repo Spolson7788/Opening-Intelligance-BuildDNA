@@ -78,7 +78,7 @@ export async function loadInspectionVisit(visitId: string, organizationId: strin
   if (!visit.rows[0]) return null;
   const inspections = await pool.query(
     `SELECT i.id, i.passed, i.notes, i.event_date, i.created_at, i.signed_by_name, i.inspector_qualification, i.inspector_license_number,
-            i.signature_data, i.checklist_result, o.opening_code, o.location_description, o.id AS opening_id
+            i.signature_data, i.checklist_result, o.opening_code, o.opening_type, o.location_description, o.id AS opening_id
      FROM inspection_events i
      JOIN openings o ON o.id = i.opening_id
      WHERE i.visit_id = $1 AND i.inspection_type = 'fire_door_nfpa80' AND i.checklist_result->>'status' = 'complete'`,
@@ -133,7 +133,9 @@ export async function loadInspectionVisit(visitId: string, organizationId: strin
     }
     doors.push({
       openingId: row.opening_id,
+      inspectionId: row.id,
       openingCode: row.opening_code,
+      openingType: row.opening_type,
       location: row.location_description,
       passed: row.passed === true,
       notes: row.notes,

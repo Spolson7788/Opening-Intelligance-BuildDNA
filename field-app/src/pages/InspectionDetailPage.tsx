@@ -28,10 +28,8 @@ export function InspectionDetailPage() {
 
   return (
     <div className="app-shell c04">
-      <div className="top-bar">
-        <button className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13 }} onClick={() => navigate(`/opening/${id}`)}>
-          ← Opening
-        </button>
+      <div className="c04-toolbar">
+        <button className="btn c04-back" type="button" onClick={() => navigate(`/opening/${id}`)}>Back</button>
         <SyncBadge />
       </div>
       <div className="screen">

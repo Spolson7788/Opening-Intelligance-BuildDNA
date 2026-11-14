@@ -124,8 +124,8 @@ export function ScanPage() {
       </div>
       <div className="screen">
         <h1>Scan opening</h1>
-        {visit && <div className="c04-band-green">
-          <p role="status">{visitSummaryText(visit.inspections)}</p>
+        {visit && <div className="c04-band-green" role="status">
+          <button type="button" className="c04-visit-count" onClick={() => navigate(`/visit/${visit.id}`)}>{visitSummaryText(visit.inspections)}</button>
           <button type="button" className="btn c04-btn-blue c04-visit-finish" onClick={() => navigate(`/visit/${visit.id}`)}>Finish visit / Send combined report</button>
         </div>}
         {visitNote && <p className="c04-note" role="status">{visitNote}</p>}

@@ -203,7 +203,8 @@ export function OpeningDetailPage() {
   if (loading) {
     return (
       <div className="app-shell c04">
-        <div className="top-bar"><h1>Loading…</h1></div>
+        <div className="c04-toolbar"><p className="c04-kicker">Field app</p><SyncBadge /></div>
+        <div className="screen"><h1>Loading…</h1></div>
       </div>
     );
   }
@@ -211,11 +212,12 @@ export function OpeningDetailPage() {
   if (!opening || (error && !error.retry)) {
     return (
       <div className="app-shell c04">
-        <div className="top-bar">
-          <h1>{error?.title ?? "Opening unavailable"}</h1>
+        <div className="c04-toolbar">
+          <button className="btn c04-back" type="button" onClick={() => navigate("/scan")}>Back</button>
           <SyncBadge />
         </div>
         <div className="screen empty-state">
+          <h1>{error?.title ?? "Opening unavailable"}</h1>
           <p role="alert">{error?.message}</p>
           {error?.siteAccess && renewalUrl && <RenewPrivateSiteAccess className="btn btn-primary">Renew private site access</RenewPrivateSiteAccess>}
           {error?.signIn ? (
@@ -236,10 +238,8 @@ export function OpeningDetailPage() {
 
   return (
     <div className="app-shell c04">
-      <div className="top-bar">
-        <button className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13 }} onClick={() => navigate("/scan")}>
-          ← Scan
-        </button>
+      <div className="c04-toolbar">
+        <button className="btn c04-back" type="button" onClick={() => navigate("/scan")}>Back</button>
         <SyncBadge />
       </div>
 
@@ -301,7 +301,7 @@ export function OpeningDetailPage() {
           </Link>
           {!retired && opening.completion_state === "complete" && !fromCache && <Link className="btn btn-secondary" to={`/opening/${opening.id}/label`}>Print / save label</Link>}
           {completionBlocked && (
-            <div role="status" className="error-text" style={{ marginTop: 10 }}>
+            <div role="status" className="c04-notice-amber" style={{ marginTop: 10 }}>
               <strong>Before finishing:</strong>
               <ul style={{ margin: "4px 0 0", paddingLeft: 20 }}>
                 {completionRequirements.map((item) => <li key={item}>{item}</li>)}

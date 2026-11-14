@@ -89,13 +89,13 @@ it("keeps the green band to the current visit and puts a new visit below Change 
   await act(async () => root.render(<MemoryRouter><ScanPage /></MemoryRouter>));
   await act(async () => {});
   const band = host.querySelector(".c04-band-green")!;
-  const finish = band.querySelector("button")!;
-  expect(band.textContent).toContain("This visit: 3 openings (2 passed, 1 failed)");
-  expect(finish.textContent).toBe("Finish visit / Send combined report");
+  const count = band.querySelector(".c04-visit-count")!;
+  const finish = [...band.querySelectorAll("button")].find((item) => item.textContent === "Finish visit / Send combined report")!;
+  expect(count.textContent).toBe("This visit: 3 openings (2 passed, 1 failed)");
   expect(finish.className).toContain("c04-btn-blue");
   expect(finish.className).toContain("c04-visit-finish");
   expect(band.textContent).not.toContain("Start a new visit");
-  expect([...band.querySelectorAll("button")]).toHaveLength(1);
+  expect([...band.querySelectorAll("button")]).toHaveLength(2);
   const labels = [...host.querySelectorAll("button")].map((item) => item.textContent);
   expect(labels.indexOf("Start a new visit")).toBeGreaterThan(labels.indexOf("Change facility"));
   const start = buttonNamed("Start a new visit")!;
