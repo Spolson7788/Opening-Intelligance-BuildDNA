@@ -560,7 +560,7 @@ export interface VisitDoorRow {
   inspected_at: string | null;
 }
 
-export function fetchInspectionVisit(id: string): Promise<{ inspected: number; inspection_ids: string[]; status?: string; report_sent?: boolean; doors?: VisitDoorRow[] }> {
+export function fetchInspectionVisit(id: string): Promise<{ inspected: number; inspection_ids: string[]; status?: string; report_sent?: boolean; facility_name?: string; doors?: VisitDoorRow[] }> {
   return authedFetch(`/events/inspection-visits/${id}`);
 }
 

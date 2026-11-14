@@ -10,6 +10,15 @@ export function formatStoredCalendarDay(value: string): string {
 }
 
 /** The calendar day in `timeZone`, or on this device when the zone is omitted. */
+/** The calendar day before a YYYY-MM-DD, without shifting through a local timezone. */
+export function previousCalendarDay(day: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!match) return day;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
 export function localCalendarDay(now = new Date(), timeZone?: string): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone, year: "numeric", month: "2-digit", day: "2-digit",

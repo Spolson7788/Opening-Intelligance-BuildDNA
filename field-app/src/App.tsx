@@ -43,6 +43,7 @@ import { InspectDoorPage } from './pages/InspectDoorPage';
 import { FixDoorPage } from './pages/FixDoorPage';
 import { FinishVisitPage } from './pages/FinishVisitPage';
 import { SiteDoorsPage } from './pages/SiteDoorsPage';
+import { YesterdayVisitPage } from './pages/YesterdayVisitPage';
 import { ChooseLocationPage } from './pages/ChooseLocationPage';
 import { setSyncReadOnly } from './lib/syncNavigation';
 const PhotoIsolationPage=__PHOTO_ISOLATION_ENABLED__?lazy(()=>import('./pages/PhotoIsolationPage')):null;
@@ -123,6 +124,7 @@ function AppRoutes() {
       <Route path="/choose-location" element={<RequireAuth><LocationOrDay /></RequireAuth>} />
       <Route path="/scan" element={<RequireAuth><ScanOrDay /></RequireAuth>} />
       <Route path="/tasks/day" element={<RequireAuth><TaskGate><StartMyDayPage /></TaskGate></RequireAuth>} />
+      <Route path="/tasks/yesterday/:id" element={<RequireAuth><TaskGate><YesterdayVisitPage /></TaskGate></RequireAuth>} />
       <Route path="/tasks/site" element={<RequireAuth><RequireLocation><TaskGate><SiteDoorsPage /></TaskGate></RequireLocation></RequireAuth>} />
       <Route path="/tasks/inspect" element={<RequireAuth><RequireLocation><TaskGate><InspectDoorPage /></TaskGate></RequireLocation></RequireAuth>} />
       <Route path="/tasks/inspect/:id" element={<RequireAuth><RequireLocation><TaskGate><InspectDoorPage /></TaskGate></RequireLocation></RequireAuth>} />

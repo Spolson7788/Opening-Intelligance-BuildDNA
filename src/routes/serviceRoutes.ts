@@ -6,6 +6,7 @@ import { requireAuth, AuthedRequest, isMissingSchema } from "../middleware/auth"
 import { auditLog } from "../middleware/auditLog";
 import { mayOpenCompanyDashboard, COMPANY_DASHBOARD_REFUSAL } from "../services/companyDashboard";
 import { planDrive, mapsLink, prefersAppleMaps, haversineMiles, type StopPoint } from "../services/driveTime";
+import { finishedSitesInRouteOrder } from "../services/finishedRoute";
 
 const NEARBY_MILES = 15;
 const workKind = z.enum(["work_order", "inspection", "advised_repair"]);
@@ -363,6 +364,42 @@ fieldServiceRoutesRouter.get("/today", async (req: AuthedRequest, res) => {
   } catch (error) {
     if (isMissingSchema(error)) return res.status(503).json({ error: "route_unavailable" });
     console.error("Field route read failed", error);
+    res.status(503).json({ error: "route_unavailable" });
+  }
+});
+
+fieldServiceRoutesRouter.get("/finished", async (req: AuthedRequest, res) => {
+  const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(String(req.query.date || ""));
+  if (!date.success) return res.status(400).json({ error: "invalid_date" });
+  try {
+    const found = await pool.query(
+      `SELECT id FROM service_routes
+       WHERE provider_organization_id = $1 AND assigned_user_id = $2 AND service_date = $3::date
+       ORDER BY created_at DESC LIMIT 1`,
+      [req.auth!.organizationId, req.auth!.userId, date.data],
+    );
+    if (!found.rows[0]) return res.json({ sites: [] });
+    const route = await loadRoute(req.auth!.organizationId, found.rows[0].id);
+    if (!route) return res.json({ sites: [] });
+    const visits = await pool.query(
+      `SELECT DISTINCT ON (v.property_id) v.id AS visit_id, v.property_id, v.finished_at,
+              (SELECT count(DISTINCT COALESCE(e.opening_id::text, e.id::text))::int FROM inspection_events e WHERE e.visit_id = v.id) AS doors_done
+       FROM inspection_visits v
+       WHERE v.organization_id = $1 AND v.inspector_user_id = $2 AND v.status = 'finished' AND v.finished_at IS NOT NULL
+         AND (v.finished_at AT TIME ZONE 'America/Phoenix')::date = $3::date
+       ORDER BY v.property_id, v.finished_at DESC`,
+      [req.auth!.organizationId, req.auth!.userId, date.data],
+    );
+    const sites = finishedSitesInRouteOrder(route.stops, visits.rows.map((row) => ({
+      property_id: row.property_id,
+      visit_id: row.visit_id,
+      finished_at: row.finished_at instanceof Date ? row.finished_at.toISOString() : String(row.finished_at),
+      doors_done: Number(row.doors_done) || 0,
+    })));
+    res.set("Cache-Control", "no-store").json({ sites });
+  } catch (error) {
+    if (isMissingSchema(error)) return res.status(503).json({ error: "route_unavailable" });
+    console.error("Finished route read failed", error);
     res.status(503).json({ error: "route_unavailable" });
   }
 });

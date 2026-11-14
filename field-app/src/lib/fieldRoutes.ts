@@ -54,6 +54,19 @@ export function fetchFieldRoute(date: string): Promise<{ route: FieldRoute | nul
   return fieldFetch(`/field-routes/today?date=${encodeURIComponent(date)}`);
 }
 
+export interface FinishedSiteRow {
+  property_id: string;
+  property_name: string;
+  address: string;
+  doors_done: number;
+  finished_at: string;
+  visit_id: string;
+}
+
+export function fetchFinishedStops(date: string): Promise<{ sites: FinishedSiteRow[] }> {
+  return fieldFetch(`/field-routes/finished?date=${encodeURIComponent(date)}`);
+}
+
 export function markFieldStopDone(id: string) {
   return fieldFetch(`/field-routes/stops/${id}/done`, { method: "POST", body: "{}" });
 }

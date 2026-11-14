@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { writeInspectDraft } from "../field-app/src/lib/inspectionDraft";
+import { finishedSitesInRouteOrder } from "../src/services/finishedRoute";
 import { techTasksEnabled } from "../field-app/src/lib/techTasks";
 
 const auth = vi.hoisted(() => ({ role: "technician" }));
@@ -15,6 +16,7 @@ const calls = vi.hoisted(() => ({
   pdf: vi.fn(async () => ({ stored: true, reused: false, bytes: 10 })),
   route: null as null | { stops: unknown[] },
   routeError: "" as string,
+  yesterday: [] as { property_id: string; property_name: string; address: string; doors_done: number; finished_at: string; visit_id: string }[],
   hardware: [] as { id: string; component_type?: string; manufacturer?: string; model_number?: string }[],
   properties: [] as { id: string; name: string; buildings?: { id: string; name: string }[] }[],
   openings: [] as { id: string; opening_code: string; location_description?: string }[],
@@ -59,6 +61,7 @@ vi.mock("../field-app/src/lib/fieldRoutes", () => ({
     if (calls.routeError) throw new Error(calls.routeError);
     return { route: calls.route, apple_maps: false };
   },
+  fetchFinishedStops: async () => ({ sites: calls.yesterday }),
 }));
 vi.mock("../field-app/src/components/SignaturePad", () => ({
   SignaturePad: React.forwardRef((_props: unknown, ref: React.Ref<{ getDataUrl: () => string; clear: () => void }>) => {
@@ -84,6 +87,7 @@ beforeEach(() => {
   calls.pdf.mockClear();
   calls.route = null;
   calls.routeError = "";
+  calls.yesterday = [];
   calls.hardware = [];
   calls.properties = [];
   calls.openings = [];
@@ -165,6 +169,57 @@ it("shows a route failure in words instead of staying on loading", async () => {
   expect(host.textContent).not.toContain("Loading today's route");
 });
 
+it("keeps yesterday's finished sites in route order and skips sites that were not finished", () => {
+  const sites = finishedSitesInRouteOrder([
+    { position: 2, status: "approved", property_id: "b", property_name: "Site B", address: "2 Main" },
+    { position: 1, status: "approved", property_id: "a", property_name: "Site A", address: "1 Main" },
+    { position: 3, status: "approved", property_id: "a", property_name: "Site A", address: "1 Main" },
+    { position: 4, status: "requested", property_id: "c", property_name: "Site C", address: "3 Main" },
+  ], [
+    { property_id: "a", visit_id: "visit-a", finished_at: "2026-11-13T20:00:00.000Z", doors_done: 2 },
+    { property_id: "c", visit_id: "visit-c", finished_at: "2026-11-13T21:00:00.000Z", doors_done: 1 },
+  ]);
+  expect(sites.map((site) => site.property_id)).toEqual(["a"]);
+  expect(sites[0].doors_done).toBe(2);
+});
+
+it("shows yesterday under an empty day and hides it when nothing was finished", async () => {
+  calls.route = null;
+  calls.yesterday = [{ property_id: "facility-1", property_name: "SYNTHETIC Facility A", address: "1 Main St", doors_done: 2, finished_at: "2026-11-13T20:30:00.000Z", visit_id: "visit-y" }];
+  await render(<StartMyDayPage />);
+  await act(async () => {});
+  expect(host.textContent).toContain("No stops scheduled today. Check with your manager.");
+  expect(host.textContent).toContain("Yesterday");
+  expect(host.textContent).toContain("SYNTHETIC Facility A");
+  expect(host.textContent).toContain("2 doors done");
+  expect(host.textContent).not.toContain("Pick a site");
+});
+
+it("opens a finished visit as a summary with no send button", async () => {
+  calls.route = null;
+  calls.yesterday = [{ property_id: "facility-1", property_name: "SYNTHETIC Facility A", address: "1 Main St", doors_done: 1, finished_at: "2026-11-13T20:30:00.000Z", visit_id: "visit-y" }];
+  calls.visit = { status: "finished", report_sent: true, facility_name: "SYNTHETIC Facility A", doors: [{ opening_id: "d1", inspection_id: "i1", opening_code: "510A", passed: true, inspected_at: "2026-11-13T19:00:00.000Z" }] };
+  const { YesterdayVisitPage } = await import("../field-app/src/pages/YesterdayVisitPage");
+  await act(async () => {
+    root.render(
+      <MemoryRouter initialEntries={[{ pathname: "/", state: null }]}>
+        <Routes>
+          <Route path="/" element={<StartMyDayPage />} />
+          <Route path="/tasks/yesterday/:id" element={<YesterdayVisitPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  });
+  await act(async () => {});
+  const row = [...host.querySelectorAll("button")].find((button) => button.textContent?.includes("SYNTHETIC Facility A"));
+  await act(async () => { row?.click(); });
+  await act(async () => {});
+  expect(host.textContent).toContain("510A");
+  expect(host.textContent).toContain("Nothing here can be changed.");
+  expect(host.textContent).not.toContain("Send one report");
+  expect(host.textContent).not.toContain("Email");
+});
+
 it("tells the tech to check with the manager when no stops are scheduled", async () => {
   calls.route = null;
   await render(<StartMyDayPage />);
@@ -172,6 +227,7 @@ it("tells the tech to check with the manager when no stops are scheduled", async
   expect(host.textContent).toContain("No stops scheduled today. Check with your manager.");
   expect(host.textContent).not.toContain("Pick a site");
   expect(host.textContent).not.toContain("Today's doors, in the order your manager set.");
+  expect(host.textContent).not.toContain("Yesterday");
   expect(host.textContent).toContain("Current screens");
   expect(host.textContent).not.toContain("Facility Dashboard");
 });

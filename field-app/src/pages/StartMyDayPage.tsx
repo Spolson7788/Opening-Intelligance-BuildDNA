@@ -2,11 +2,20 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TaskChrome } from "../components/TaskChrome";
 import { useFacilitySync } from "../components/FacilitySelector";
-import { fetchFieldRoute, type FieldRoute, type FieldStop } from "../lib/fieldRoutes";
+import { fetchFieldRoute, fetchFinishedStops, type FieldRoute, type FieldStop, type FinishedSiteRow } from "../lib/fieldRoutes";
 import { googleStopUrl } from "../lib/navigateStops";
 import { selectTaskSite } from "../lib/taskSite";
+import { localCalendarDay, previousCalendarDay } from "../lib/calendarDay";
+import { formatVisitDoorTime } from "../lib/inspectionVisit";
 
-function today() { return new Date().toISOString().slice(0, 10); }
+const FIELD_DAY_ZONE = "America/Phoenix";
+
+function today() { return localCalendarDay(new Date(), FIELD_DAY_ZONE); }
+function yesterday() { return previousCalendarDay(today()); }
+
+function doorsDoneText(count: number) {
+  return `${count} ${count === 1 ? "door" : "doors"} done`;
+}
 
 type SiteStop = {
   propertyId: string;
@@ -56,6 +65,8 @@ export function StartMyDayPage() {
   const [apple, setApple] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
+  const [yesterdaySites, setYesterdaySites] = useState<FinishedSiteRow[]>([]);
+  const [yesterdayNote, setYesterdayNote] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     fetchFieldRoute(today()).then((day) => {
@@ -75,6 +86,15 @@ export function StartMyDayPage() {
     });
     return () => { live = false; };
   }, []);
+  const emptyToday = !error && (route === null || (route !== undefined && groupStopsBySite(route.stops ?? []).length === 0));
+  useEffect(() => {
+    if (!emptyToday) { setYesterdaySites([]); setYesterdayNote(null); return; }
+    let live = true;
+    fetchFinishedStops(yesterday()).then((row) => {
+      if (live) setYesterdaySites(Array.isArray(row.sites) ? row.sites : []);
+    }).catch(() => { if (live) setYesterdayNote("Yesterday's stops could not be loaded."); });
+    return () => { live = false; };
+  }, [emptyToday]);
   const sites = groupStopsBySite(route?.stops ?? []);
   const next = sites.find((site) => site.left > 0);
   const scheduled = route != null && sites.length > 0;
@@ -112,7 +132,20 @@ export function StartMyDayPage() {
           </section>
         );
       })}
-      {!error && (route === null || (route !== undefined && sites.length === 0)) && <p>No stops scheduled today. Check with your manager.</p>}
+      {emptyToday && <p>No stops scheduled today. Check with your manager.</p>}
+      {emptyToday && yesterdayNote && <p className="c04-note" role="status">{yesterdayNote}</p>}
+      {emptyToday && yesterdaySites.length > 0 && (
+        <section aria-label="Yesterday">
+          <p className="c04-eyebrow">Yesterday</p>
+          {yesterdaySites.map((site) => (
+            <button type="button" className="c04-facility" key={site.visit_id} onClick={() => navigate(`/tasks/yesterday/${site.visit_id}`, { state: site })}>
+              <strong>{site.property_name}</strong>
+              <span>{site.address}</span>
+              <span>{doorsDoneText(site.doors_done)} · Finished {formatVisitDoorTime(site.finished_at)}</span>
+            </button>
+          ))}
+        </section>
+      )}
     </TaskChrome>
   );
 }
