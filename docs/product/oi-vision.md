@@ -106,7 +106,7 @@ No new tables are required for the four tech pages. Routes, visits, inspections,
 
 ## Build plan
 
-Stephan wants this before production launch. Build it behind a staging switch so today's screens stay available until the new path is the one a tech walks. Proposed flag: `OI_TECH_TASKS`. Off unless set. On for staging first. Production stays off until the four tech pages pass a real day on staging. The switch does not change the server.
+Stephan wants this before production launch. Build it behind a staging switch so today's screens stay available until the new path is the one a tech walks. Flag: `OI_TECH_TASKS`, read in the field app as `VITE_OI_TECH_TASKS=true`. Off unless that variable is set at field-app build time. The staging package build (`scripts/build-staging-package-16abbf4.mjs`) sets it for the field app only. Production builds do not set it, and it is not a hosted environment variable. The switch does not change the server.
 
 | Step | What ships | Beside today's screens |
 |---|---|---|

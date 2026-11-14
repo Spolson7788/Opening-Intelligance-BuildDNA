@@ -448,6 +448,7 @@ body.c04-on .company-switch select {
   width: 100%;
 }
 .c04 .btn, .c04-purchasing .btn { margin-bottom: 10px; }
+.c04 a.btn { text-decoration: none; }
 .c04 .c04-back { width: auto; margin: 0; }
 .c04-back {
   width: auto;
@@ -703,6 +704,21 @@ body.c04-on :focus, body.c04-on :focus-visible {
 .c04-row { display: flex; gap: 10px; }
 .c04-row .btn { flex: 1; width: auto; }
 .c04-editor .c04-purchasing { background: transparent; border: 0; padding: 0; }
+.c04-taskbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.c04-syncdot { display: inline-flex; align-items: center; gap: 6px; color: #3A4E5C; font-size: 13px; font-weight: 700; text-decoration: none; }
+.c04-syncdot::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: #1F7A32; }
+.c04-syncdot-wait::before { background: #E0A72E; }
+.c04-taskbar .c04-syncdot:first-child { margin-left: auto; }
+a.c04-syncdot[href="/sync-issues"] { color: #3A4E5C; }
+.c04-account-mark { width: 36px; height: 36px; border-radius: 50%; border: 1px solid #B7C9D4; background: #fff; color: #142C3C; font-weight: 700; }
+.c04-account-menu, .c04-details {
+  position: sticky; bottom: 0; margin: 12px -16px -32px; padding: 12px 16px 24px;
+  background: #fff; border-radius: 16px 16px 0 0; box-shadow: 0 -8px 24px rgba(20, 44, 60, .12);
+}
+.c04-account-menu a, .c04-account-menu button, .c04-account-menu p {
+  display: block; width: 100%; margin: 0; padding: 12px 14px; text-align: left;
+  background: transparent; border: 0; border-bottom: 1px solid #D5E3EA; color: #142C3C; font: inherit; font-weight: 700;
+}
 @media (min-width: 800px) {
   .c04.app-shell { max-width: 480px; }
 }
