@@ -27,7 +27,7 @@ export function TaskChrome({ title, hint, backTo, children }: { title: string; h
           <button type="button" className="c04-account-mark" aria-label="Account" onClick={() => setOpen(true)}>A</button>
         </div>
         <h1>{title}</h1>
-        <p className="c04-note">{hint}</p>
+        {hint ? <p className="c04-note">{hint}</p> : null}
         {children}
         <p><Link className="c04-link" to="/scan">Current screens</Link></p>
         {open && <AccountMenu onClose={() => setOpen(false)} />}

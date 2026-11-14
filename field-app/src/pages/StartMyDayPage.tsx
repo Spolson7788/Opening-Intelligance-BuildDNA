@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { TaskChrome } from "../components/TaskChrome";
 import { useFacilitySync } from "../components/FacilitySelector";
 import { fetchFieldRoute, type FieldRoute, type FieldStop } from "../lib/fieldRoutes";
@@ -8,9 +8,45 @@ import { selectTaskSite } from "../lib/taskSite";
 
 function today() { return new Date().toISOString().slice(0, 10); }
 
-function doorLine(stop: FieldStop) {
-  if (!stop.opening_code) return stop.summary || "No door on this stop";
-  return stop.done ? "1 door · 1 done · 0 left" : "1 door · 0 done · 1 left";
+type SiteStop = {
+  propertyId: string;
+  propertyName: string;
+  windows: string[];
+  doors: { code: string; done: boolean }[];
+  done: number;
+  left: number;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  maps: { apple?: string; google?: string } | null;
+};
+
+/** One manager stop is one site. Doors at that site stay on the same stop. */
+export function groupStopsBySite(stops: FieldStop[]): SiteStop[] {
+  const sites: SiteStop[] = [];
+  for (const stop of stops) {
+    const propertyId = stop.property_id || stop.property_name;
+    let site = sites.find((item) => item.propertyId === propertyId);
+    if (!site) {
+      site = {
+        propertyId: stop.property_id, propertyName: stop.property_name, windows: [], doors: [], done: 0, left: 0,
+        address: stop.navigation_address, latitude: stop.latitude, longitude: stop.longitude, maps: stop.maps,
+      };
+      sites.push(site);
+    }
+    if (stop.time_window && !site.windows.includes(stop.time_window)) site.windows.push(stop.time_window);
+    if (stop.opening_code) {
+      site.doors.push({ code: stop.opening_code, done: stop.done });
+      if (stop.done) site.done += 1;
+      else site.left += 1;
+    }
+  }
+  return sites;
+}
+
+function doorCount(site: SiteStop) {
+  const doors = site.doors.length === 1 ? "1 door" : `${site.doors.length} doors`;
+  return `${doors} · ${site.done} done · ${site.left} left`;
 }
 
 export function StartMyDayPage() {
@@ -33,19 +69,17 @@ export function StartMyDayPage() {
     });
     return () => { live = false; };
   }, []);
-  const stops = route?.stops ?? [];
-  const next = stops.find((stop) => !stop.done);
+  const sites = groupStopsBySite(route?.stops ?? []);
+  const next = sites.find((site) => site.left > 0);
+  const scheduled = route != null && sites.length > 0;
 
-  async function pick(stop: FieldStop) {
-    if (!stop.property_id || opening) {
-      setError("This stop has no site to open.");
-      return;
-    }
+  async function pick(site: SiteStop) {
+    if (!site.propertyId || opening) return;
     setOpening(true);
     setError(null);
     try {
-      await selectTaskSite(stop.property_id);
-      sync?.select(stop.property_id);
+      await selectTaskSite(site.propertyId);
+      sync?.select(site.propertyId);
       navigate("/tasks/site");
     } catch (err) {
       setError(err instanceof Error ? err.message : "This site could not be opened.");
@@ -54,29 +88,25 @@ export function StartMyDayPage() {
   }
 
   return (
-    <TaskChrome title="Start my day" hint="Today's doors, in the order your manager set.">
+    <TaskChrome title="Start my day" hint={scheduled ? "Today's doors, in the order your manager set." : ""}>
       {error && <p className="c04-alert" role="alert">{error}</p>}
       {route === undefined && <p role="status">Loading today's route.</p>}
-      {route && stops.map((stop, index) => {
-        const maps = apple ? stop.maps?.apple : stop.maps?.google;
-        const fallback = googleStopUrl({ address: stop.navigation_address, latitude: stop.latitude, longitude: stop.longitude });
+      {scheduled && sites.map((site, index) => {
+        const maps = apple ? site.maps?.apple : site.maps?.google;
+        const fallback = googleStopUrl({ address: site.address, latitude: site.latitude, longitude: site.longitude });
         const href = maps || fallback;
-        const isNext = next?.id === stop.id;
         return (
-          <section key={stop.id} aria-label={`Stop ${index + 1}`}>
-            <button type="button" className="c04-facility" disabled={opening} onClick={() => void pick(stop)}>
-              <strong>{index + 1}. {stop.property_name}</strong>
-              <span>{stop.time_window || "No time window"}{stop.opening_code ? ` · ${stop.opening_code}` : ""}</span>
-              <span>{doorLine(stop)}</span>
+          <section key={site.propertyId || site.propertyName} aria-label={`Stop ${index + 1}`}>
+            <button type="button" className="c04-facility" disabled={opening} onClick={() => void pick(site)}>
+              <strong>{index + 1}. {site.propertyName}</strong>
+              <span>{site.windows.join(" · ") || "No time window"}{site.doors.length ? ` · ${site.doors.map((door) => door.code).join(", ")}` : ""}</span>
+              <span>{doorCount(site)}</span>
             </button>
-            {isNext && href && <a className="btn c04-btn-blue" href={href}>Open in Maps</a>}
+            {next?.propertyId === site.propertyId && href && <a className="btn c04-btn-blue" href={href}>Open in Maps</a>}
           </section>
         );
       })}
-      {route === null && <>
-        <p className="c04-note">No route today. Pick a site instead.</p>
-        <Link className="btn c04-btn-blue" to="/choose-location">Pick a site</Link>
-      </>}
+      {route === null && <p>No stops scheduled today. Check with your manager.</p>}
     </TaskChrome>
   );
 }

@@ -52,7 +52,7 @@ flowchart TD
   more -->|No| finish
 ```
 
-**Start my day.** The route the manager set: stops in order, a time window, and doors done and left on that stop. Open in Maps is only for the next stop. Tapping a stop picks that site, opens its door list, and starts or continues the one open visit for that person at that site. If there is no route, the button is Pick a site and leads to the same door list. Inspect and Finish the visit are on that door list, not on this page.
+**Start my day.** The manager's route only. One stop is one site, with that site's doors, time windows, and doors done and left. Open in Maps is only for the next site that still has a door left. Tapping a stop opens that site's door list and continues the one open visit there. A tech does not pick a site. If nothing is scheduled, the page says to check with the manager. A nearby stop is a request until a manager approves it, and it is not on this page. Inspect and Finish the visit are on the site door list.
 
 **Inspect this door.** Scan or type the door. Show the last result in one line. Checklist, photos, sign, Save. If something failed, one line offers Fix this door and returns here afterward. Details holds history, schedules, hardware, door and frame, and request service.
 

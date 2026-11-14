@@ -21,7 +21,7 @@ export function SiteDoorsPage() {
       if (!auth) { if (live) setError("Sign in again before opening a site."); return; }
       const stored = await getOfflineSetting(selectedFacilityKey(auth));
       const propertyId = typeof stored?.value === "string" ? stored.value : "";
-      if (!propertyId) { if (live) setError("Pick a site before the door list opens."); return; }
+      if (!propertyId) { if (live) setError("No stop is open. Check with your manager."); return; }
       try { await selectTaskSite(propertyId); } catch { /* the list still opens; the visit is joined on the next save */ }
       const properties = await listFieldProperties() as FacilityProperty[];
       const property = (Array.isArray(properties) ? properties : []).find((item) => item.id === propertyId);

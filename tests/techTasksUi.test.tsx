@@ -108,20 +108,22 @@ it("keeps the task switch off unless the staging field build sets it", () => {
   expect(staging).toContain("const tasks = app === 'field-app' ? { VITE_OI_TECH_TASKS: 'true' } : {}");
 });
 
-it("shows only the route on Start my day", async () => {
+it("shows only the route on Start my day, with one site's doors on one stop", async () => {
   calls.route = { stops: [
     { id: "s1", property_id: "facility-1", property_name: "SYNTHETIC Facility A", opening_code: "510A", time_window: "8:00", done: true, navigation_address: "1 Main", latitude: null, longitude: null, maps: { apple: "https://maps.apple.com", google: "https://maps.google.com" } },
-    { id: "s2", property_id: "facility-9", property_name: "SYNTHETIC Facility B", opening_code: "610A", time_window: "9:00", done: false, navigation_address: "2 Main", latitude: null, longitude: null, maps: { apple: "https://maps.apple.com", google: "https://maps.google.com" } },
+    { id: "s2", property_id: "facility-1", property_name: "SYNTHETIC Facility A", opening_code: "610A", time_window: "8:00", done: false, navigation_address: "1 Main", latitude: null, longitude: null, maps: { apple: "https://maps.apple.com", google: "https://maps.google.com" } },
   ] };
   await render(<StartMyDayPage />);
   await act(async () => {});
   expect(host.textContent).toContain("Start my day");
-  expect(host.textContent).toContain("1 door · 1 done · 0 left");
-  expect(host.textContent).toContain("1 door · 0 done · 1 left");
+  expect(host.textContent).toContain("510A, 610A");
+  expect(host.textContent).toContain("2 doors · 1 done · 1 left");
   expect(host.textContent).toContain("Open in Maps");
+  expect(host.textContent?.match(/Open in Maps/g)).toHaveLength(1);
   expect(host.textContent).not.toContain("Inspect the next door");
   expect(host.textContent).not.toContain("Nearby work");
   expect(host.textContent).not.toContain("Finish the visit");
+  expect(host.textContent).not.toContain("Pick a site");
   expect(host.textContent).toContain("Current screens");
 });
 
@@ -150,11 +152,14 @@ it("opens the site door list when a stop is tapped", async () => {
   expect(host.textContent).toContain("Tap a door to inspect it.");
 });
 
-it("offers pick a site when the manager has no route", async () => {
+it("tells the tech to check with the manager when no stops are scheduled", async () => {
   calls.route = null;
   await render(<StartMyDayPage />);
   await act(async () => {});
-  expect(host.textContent).toContain("Pick a site");
+  expect(host.textContent).toContain("No stops scheduled today. Check with your manager.");
+  expect(host.textContent).not.toContain("Pick a site");
+  expect(host.textContent).not.toContain("Today's doors, in the order your manager set.");
+  expect(host.textContent).toContain("Current screens");
   expect(host.textContent).not.toContain("Facility Dashboard");
 });
 
