@@ -1,6 +1,6 @@
 import type { FacilityProperty } from "./facilityOpenings";
 import { loginReturnPath } from "./qrPayload";
-import { techHome } from "./techTasks";
+import { techTasksEnabled } from "./techTasks";
 
 export interface AreaOption { key: string; label: string }
 export interface LocationDraft { stateKey: string | null; countyKey: string | null; facilityId: string }
@@ -105,10 +105,13 @@ export function scanNeedsChooser(principal: { userId: string; organizationId: st
   return !readLocationConfirmation(storage, principal);
 }
 
-/** Scan is the normal landing and needs a confirmed location. An explicit opening target is unchanged. */
+/** Scan is the normal landing and needs a confirmed location. With tech tasks on, sign-in opens Start my day even when no site is stored. An explicit opening target is unchanged. */
 export function postAuthLanding(from: unknown, confirmed: boolean): string {
   const path = loginReturnPath(from);
   if (isDirectOpeningPath(path)) return path;
-  if (path === "/scan" || path === "/tasks/day") return confirmed ? techHome() : "/choose-location";
+  if (path === "/scan" || path === "/tasks/day") {
+    if (techTasksEnabled()) return "/tasks/day";
+    return confirmed ? "/scan" : "/choose-location";
+  }
   return path;
 }

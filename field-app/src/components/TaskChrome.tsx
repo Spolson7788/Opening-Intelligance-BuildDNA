@@ -29,7 +29,7 @@ export function TaskChrome({ title, hint, backTo, children }: { title: string; h
         <h1>{title}</h1>
         {hint ? <p className="c04-note">{hint}</p> : null}
         {children}
-        <p><Link className="c04-link" to="/scan">Current screens</Link></p>
+        <p><Link className="c04-link" to="/scan?screens=1">Current screens</Link></p>
         {open && <AccountMenu onClose={() => setOpen(false)} />}
       </div>
     </div>

@@ -7,6 +7,7 @@ import { clearPendingStaffSignIn, readPendingStaffSignIn, savePendingStaffSignIn
 import { readLoginForm } from "../lib/loginForm";
 import { loginFailureMessage } from "../lib/authResponse";
 import { postAuthLanding, readLocationConfirmation } from "../lib/locationChoice";
+import { techTasksEnabled } from "../lib/techTasks";
 import { facilityDashboardReturn } from "../lib/facilityDashboardReturn";
 import { isQrDetailsPath } from '../lib/qrLanding';
 import { siteAccessRenewalUrl } from '../lib/siteAccess';
@@ -156,7 +157,7 @@ export function LoginPage() {
     <p>Signed in as {auth.email || `Account ${auth.userId}`}</p>
     <p>This sign-in page does not switch accounts. To use a different account, go to Scan and sign out first. Saved changes remain associated with their original account.</p>
     <button type="button" className="btn btn-primary" onClick={() => leave(!!readLocationConfirmation(browserSession(), auth))}>Continue with this account</button>
-    <button type="button" className="btn c04-choice" onClick={() => navigate(postAuthLanding("/scan", !!readLocationConfirmation(browserSession(), auth)), { replace: true })}>Go to Scan</button>
+    <button type="button" className="btn c04-choice" onClick={() => navigate(postAuthLanding("/scan", !!readLocationConfirmation(browserSession(), auth)), { replace: true })}>{techTasksEnabled() ? "Start my day" : "Go to Scan"}</button>
   </div></div>;
 
   return (

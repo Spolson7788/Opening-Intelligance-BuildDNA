@@ -106,7 +106,7 @@ export function StartMyDayPage() {
           </section>
         );
       })}
-      {route === null && <p>No stops scheduled today. Check with your manager.</p>}
+      {(route === null || (route !== undefined && sites.length === 0)) && <p>No stops scheduled today. Check with your manager.</p>}
     </TaskChrome>
   );
 }

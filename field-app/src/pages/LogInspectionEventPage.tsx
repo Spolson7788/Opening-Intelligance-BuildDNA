@@ -450,7 +450,7 @@ export function LogInspectionEventPage({ taskMode = false }: { taskMode?: boolea
             </>}
           </form>
         )}
-        {taskMode && <p><Link className="c04-link" to="/scan">Current screens</Link></p>}
+        {taskMode && <p><Link className="c04-link" to="/scan?screens=1">Current screens</Link></p>}
         {taskMode && details && id && <DetailsDrawer openingId={id} onClose={() => setDetails(false)} />}
         {taskMode && account && <AccountMenu onClose={() => setAccount(false)} />}
       </div>

@@ -5,7 +5,7 @@ import {AccountScope} from "./components/AccountScope";
 import {BranchesPage} from "./pages/BranchesPage";
 import { lazy, Suspense, useEffect, useLayoutEffect } from "react";
 import { scrollPageToTop } from "./lib/scrollPage";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/AuthContext";
 import { initSync } from "./lib/sync";
 import { FieldBrand } from "./components/FieldBrand";
@@ -37,7 +37,7 @@ import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { QrInformationPage } from './pages/QrInformationPage';
 import { isQrLandingPath, isQrLogin, isQrDetailsPath } from './lib/qrLanding';
 import { scanNeedsChooser } from './lib/locationChoice';
-import { techTasksEnabled } from './lib/techTasks';
+import { techHome, techTasksEnabled } from './lib/techTasks';
 import { StartMyDayPage } from './pages/StartMyDayPage';
 import { InspectDoorPage } from './pages/InspectDoorPage';
 import { FixDoorPage } from './pages/FixDoorPage';
@@ -58,6 +58,12 @@ function RequireLocation({ children }: { children: React.ReactElement }) {
   const storage = typeof sessionStorage === "undefined" ? null : sessionStorage;
   if (scanNeedsChooser(auth, storage)) return <Navigate to="/choose-location" replace />;
   return children;
+}
+
+function ScanOrDay() {
+  const [params] = useSearchParams();
+  if (techTasksEnabled() && params.get("screens") !== "1") return <Navigate to="/tasks/day" replace />;
+  return <RequireLocation><ScanPage /></RequireLocation>;
 }
 
 function TaskGate({ children }: { children: React.ReactElement }) {
@@ -104,8 +110,8 @@ function AppRoutes() {
       <Route path="/opening/:id/lifecycle" element={<RequireAuth><InstallationLifecyclePage /></RequireAuth>} />
       <Route path="/opening/:id/lifecycle-records" element={<RequireAuth><LifecycleOperationsPage /></RequireAuth>} />
       <Route path="/choose-location" element={<RequireAuth><ChooseLocationPage /></RequireAuth>} />
-      <Route path="/scan" element={<RequireAuth><RequireLocation><ScanPage /></RequireLocation></RequireAuth>} />
-      <Route path="/tasks/day" element={<RequireAuth><RequireLocation><TaskGate><StartMyDayPage /></TaskGate></RequireLocation></RequireAuth>} />
+      <Route path="/scan" element={<RequireAuth><ScanOrDay /></RequireAuth>} />
+      <Route path="/tasks/day" element={<RequireAuth><TaskGate><StartMyDayPage /></TaskGate></RequireAuth>} />
       <Route path="/tasks/site" element={<RequireAuth><RequireLocation><TaskGate><SiteDoorsPage /></TaskGate></RequireLocation></RequireAuth>} />
       <Route path="/tasks/inspect" element={<RequireAuth><RequireLocation><TaskGate><InspectDoorPage /></TaskGate></RequireLocation></RequireAuth>} />
       <Route path="/tasks/inspect/:id" element={<RequireAuth><RequireLocation><TaskGate><InspectDoorPage /></TaskGate></RequireLocation></RequireAuth>} />
@@ -126,7 +132,7 @@ function AppRoutes() {
       <Route path="/opening/:id/identify-hardware" element={<RequireAuth><IdentifyHardwarePage /></RequireAuth>} />
       <Route path="/opening/:id/structure" element={<RequireAuth><OpeningStructurePage /></RequireAuth>} />
       <Route path="/opening/:id/edit-hardware/:hardwareId" element={<RequireAuth><EditHardwarePage /></RequireAuth>} />
-      <Route path="*" element={<Navigate to="/scan" replace />} />
+      <Route path="*" element={<Navigate to={techHome()} replace />} />
     </Routes>
     </FacilitySyncProvider>
   );
