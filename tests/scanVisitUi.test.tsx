@@ -133,7 +133,7 @@ it("asks before leaving an open visit and can keep it", async () => {
   await act(async () => {});
   await act(async () => buttonNamed("Start a new visit")!.click());
   const confirm = host.querySelector("[role='dialog']")!;
-  expect(confirm.textContent).toContain("This visit has 3 openings and stays open and unfinished. Nothing is discarded.");
+  expect(confirm.textContent).toContain("This visit has 3 openings. Starting a new visit marks this one finished. The inspections stay. Nothing is discarded.");
   expect(confirm.textContent).toContain("Finish this visit first");
   expect(confirm.textContent).toContain("Start a new visit anyway");
   expect(host.querySelector(".c04-band-green")?.textContent).not.toContain("Start a new visit");
@@ -156,7 +156,9 @@ it("starts a new visit without dropping an inspection that is not on the server"
   expect(host.textContent).toContain("were not removed");
   expect(host.textContent).not.toContain("This visit: 3 openings");
   expect(store.operations).toHaveLength(1);
-  expect(store.settings.get("inspection-visit-open:u:org:facility-1")).not.toBe(visitId);
+  const nextId = store.settings.get("inspection-visit-open:u:org:facility-1");
+  expect(nextId).not.toBe(visitId);
+  expect((store.settings.get(`inspection-visit:${nextId}`) as { replaceOpenVisit?: boolean }).replaceOpenVisit).toBe(true);
   expect((store.settings.get(`inspection-visit:${visitId}`) as { status: string; inspections: unknown[] }).status).toBe("open");
   expect((store.settings.get(`inspection-visit:${visitId}`) as { inspections: unknown[] }).inspections).toHaveLength(3);
 });

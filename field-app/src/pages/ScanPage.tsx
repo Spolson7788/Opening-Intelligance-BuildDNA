@@ -59,7 +59,7 @@ export function ScanPage() {
       const operations = auth ? await getSyncOperationsForPrincipal(auth.userId, auth.organizationId) : [];
       pending = pendingInspectionIds(current.inspections.map((item) => item.inspectionId), operations, serverIds).length;
     }
-    await startNewVisit();
+    await startNewVisit(current ? { replaceOpenVisit: true } : undefined);
     setVisit(null);
     setVisitNote(pending ? `${visitUploadMessage(pending)} They stay in Synchronization review and were not removed.` : null);
   }
@@ -132,7 +132,7 @@ export function ScanPage() {
         <button type="button" className="btn c04-btn-cyan" onClick={() => navigate("/choose-location")}>Change facility</button>
         {confirmNewVisit && visit ? <section className="c04-panel" role="dialog" aria-labelledby="start-new-visit-title">
           <h2 id="start-new-visit-title">Start a new visit?</h2>
-          <p>This visit has {openingCountText(visitCounts(visit.inspections).inspected)} and stays open and unfinished. Nothing is discarded.</p>
+          <p>This visit has {openingCountText(visitCounts(visit.inspections).inspected)}. Starting a new visit marks this one finished. The inspections stay. Nothing is discarded.</p>
           <button type="button" className="btn c04-btn-blue" onClick={() => navigate(`/visit/${visit.id}`)}>Finish this visit first</button>
           <button type="button" className="btn c04-visit-secondary" onClick={() => { setConfirmNewVisit(false); void beginNewVisit(); }}>Start a new visit anyway</button>
           <button type="button" className="btn c04-choice" onClick={() => setConfirmNewVisit(false)}>Not now</button>

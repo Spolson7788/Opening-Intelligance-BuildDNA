@@ -349,8 +349,12 @@ body.c04-on {
   color: #142C3C;
 }
 .c04-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   background: #fff;
   color: #142C3C;
+  padding-top: env(safe-area-inset-top);
 }
 .c04-header .c04-brand,
 body.c04-on .c04-header aside[aria-label="Current account"],

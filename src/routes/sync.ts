@@ -215,6 +215,7 @@ const inspectionPayload = z.object({
   inspector_qualification: z.string().max(200).optional(),
   inspector_license_number: z.string().max(80).optional(),
   visit_id: z.string().uuid().optional(),
+  replace_open_visit: z.boolean().optional(),
 });
 
 syncRouter.post("/operations", async (req: AuthedRequest, res) => {
@@ -371,8 +372,9 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       if (preparedItems && preparedItems.ok) {
         const follow = await applyFireDoorFollowUp(client, { inspectionId: record.id, openingId: b.opening_id, organizationId: orgId, userId, items: preparedItems.items });
         if (follow.error) { await client.query("ROLLBACK"); return res.status(400).json({ error: follow.error }); }
-        const visit = await bindInspectionVisit(client, { visitId: payload.visit_id as string | undefined, inspectionId: record.id, openingId: b.opening_id, organizationId: orgId, userId });
+        const visit = await bindInspectionVisit(client, { visitId: payload.visit_id as string | undefined, inspectionId: record.id, openingId: b.opening_id, organizationId: orgId, userId, replaceOpenVisit: payload.replace_open_visit === true });
         if (visit.error) { await client.query("ROLLBACK"); return res.status(409).json({ error: visit.error }); }
+        if (visit.visitId) record = { ...record, visit_id: visit.visitId };
       }
     } else {
       const [frame,leaves,hardware]=await Promise.all([
@@ -397,7 +399,8 @@ syncRouter.post("/operations", async (req: AuthedRequest, res) => {
       resultingServerRevision:Number(record.revision??1),actorUserId:userId,deviceId:b.device_id,schemaVersion:b.schema_version,
       appVersion:b.app_version,protocolVersion:b.protocol_version,responsePayload:record,
       action:`${b.entity_type}_${b.operation_type}_offline`,changedFields:Object.keys(payload).sort() });
-    await client.query("COMMIT"); return res.status(201).json(receipt);
+    await client.query("COMMIT");
+    return res.status(201).json(record?.visit_id ? { ...receipt, visit_id: record.visit_id } : receipt);
   } catch (err:any) {
     await client.query("ROLLBACK").catch(()=>undefined);
     if (err.code === "23505" && b.entity_type === "inspection_event") {

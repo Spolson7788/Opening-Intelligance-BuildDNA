@@ -59,6 +59,7 @@ import { VisitReportPage } from "../field-app/src/pages/VisitReportPage";
 import { FacilityOpeningsPage } from "../field-app/src/pages/FacilityOpeningsPage";
 import { OpeningDetailPage } from "../field-app/src/pages/OpeningDetailPage";
 import { InspectionDetailPage } from "../field-app/src/pages/InspectionDetailPage";
+import { readFileSync } from "node:fs";
 import { formatVisitDoorTime } from "../field-app/src/lib/inspectionVisit";
 
 let host: HTMLDivElement;
@@ -100,6 +101,7 @@ it("lists each server opening in the visit and opens its inspection", async () =
   expect(host.textContent).toContain("pair");
   expect(host.querySelector(".c04-result-failed")?.textContent).toBe("Failed");
   expect(host.querySelector(".c04-result-passed")?.textContent).toBe("Passed");
+  expect(formatVisitDoorTime("2026-11-12T19:30:23.000Z")).toBe("Nov 12, 12:30 PM");
   expect(host.textContent).toContain(formatVisitDoorTime("2026-11-09T14:57:00.000Z"));
   const failed = [...host.querySelectorAll("button")].find((button) => button.textContent?.includes("610A"));
   await act(async () => failed!.click());
@@ -145,6 +147,14 @@ it("uses an amber before-finishing note and the Scan toolbar on an opening", asy
   expect(note?.className).not.toContain("error-text");
   expect(host.querySelector(".c04-toolbar .c04-back")?.textContent).toBe("Back");
   expect(host.querySelector(".top-bar")).toBeNull();
+});
+
+it("keeps the white header below the iPhone status bar", () => {
+  const html = readFileSync("field-app/index.html", "utf8");
+  const css = readFileSync("field-app/src/index.css", "utf8");
+  expect(html).toContain("viewport-fit=cover");
+  expect(css).toContain("padding-top: env(safe-area-inset-top)");
+  expect(css).toMatch(/\.c04-header\s*\{[^}]*position:\s*sticky/s);
 });
 
 it("uses the Scan toolbar on the inspection summary", async () => {

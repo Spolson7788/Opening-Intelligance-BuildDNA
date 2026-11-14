@@ -16,6 +16,7 @@ export interface InspectionVisit {
   facilityId: string;
   status: "open" | "finished";
   inspections: VisitInspection[];
+  replaceOpenVisit?: boolean;
 }
 
 export function visitKey(id: string) { return `inspection-visit:${id}`; }
@@ -65,12 +66,14 @@ export function pendingInspectionIds(
   });
 }
 
-export function formatVisitDoorTime(value: string | null | undefined): string {
+export const VISIT_TIME_ZONE = "America/Phoenix";
+
+export function formatVisitDoorTime(value: string | null | undefined, timeZone = VISIT_TIME_ZONE): string {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("en-US", {
-    timeZone: "UTC", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+    timeZone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
   }).format(date);
 }
 
@@ -225,7 +228,20 @@ export async function readVisitById(id: string): Promise<InspectionVisit | null>
   try { return await readVisit(id); } catch { return null; }
 }
 
-export async function startNewVisit(): Promise<InspectionVisit | null> {
+export async function adoptBoundVisit(visitId: string, inspection?: VisitInspection): Promise<void> {
+  const auth = await loadAuth();
+  const facilityId = await currentFacilityId();
+  if (!auth || !facilityId || !visitId) return;
+  const existing = await readVisit(visitId);
+  let visit: InspectionVisit = existing?.status === "open" ? existing : {
+    id: visitId, organizationId: auth.organizationId, userId: auth.userId, facilityId, status: "open",
+    inspections: existing?.inspections ?? [],
+  };
+  if (inspection) visit = withInspection(visit, inspection);
+  await rememberVisit(visit);
+}
+
+export async function startNewVisit(options?: { replaceOpenVisit?: boolean }): Promise<InspectionVisit | null> {
   try {
     const auth = await loadAuth();
     const facilityId = await currentFacilityId();
@@ -233,6 +249,7 @@ export async function startNewVisit(): Promise<InspectionVisit | null> {
     const created: InspectionVisit = {
       id: crypto.randomUUID(), organizationId: auth.organizationId, userId: auth.userId,
       facilityId, status: "open", inspections: [],
+      replaceOpenVisit: options?.replaceOpenVisit === true,
     };
     const now = new Date().toISOString();
     await putOfflineSetting({ key: visitKey(created.id), value: created, updatedAt: now });

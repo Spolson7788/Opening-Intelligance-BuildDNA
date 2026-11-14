@@ -149,10 +149,24 @@ export function visitReportOutline(data: VisitReportData): string[] {
 
 type Queryable = { query: PoolClient["query"] };
 
+const VISIT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function newestOpenVisit(db: Queryable, organizationId: string, propertyId: string, userId: string): Promise<string | undefined> {
+  const open = await db.query(
+    `SELECT id FROM inspection_visits
+     WHERE organization_id = $1 AND property_id = $2 AND inspector_user_id = $3 AND status = 'open'
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1`,
+    [organizationId, propertyId, userId],
+  );
+  return open.rows[0]?.id as string | undefined;
+}
+
+/** One open visit per inspector per facility. A new id joins the open visit unless the phone explicitly replaced it. */
 export async function bindInspectionVisit(
   db: Queryable,
-  input: { visitId: string | null | undefined; inspectionId: string; openingId: string; organizationId: string; userId: string },
-): Promise<{ error?: string }> {
+  input: { visitId: string | null | undefined; inspectionId: string; openingId: string; organizationId: string; userId: string; replaceOpenVisit?: boolean },
+): Promise<{ error?: string; visitId?: string }> {
   const place = await db.query(
     `SELECT p.id AS property_id FROM openings o
      JOIN buildings b ON b.id = o.building_id
@@ -162,20 +176,26 @@ export async function bindInspectionVisit(
   );
   const propertyId = place.rows[0]?.property_id as string | undefined;
   if (!propertyId) return { error: "visit_facility_mismatch" };
+  await db.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [`${input.organizationId}:${propertyId}:${input.userId}`]);
   let visitId = input.visitId || undefined;
-  if (!visitId) {
-    const open = await db.query(
-      `SELECT id FROM inspection_visits
-       WHERE organization_id = $1 AND property_id = $2 AND inspector_user_id = $3 AND status = 'open'
-       ORDER BY created_at DESC LIMIT 1`,
-      [input.organizationId, propertyId, input.userId],
+  if (visitId && !VISIT_ID.test(visitId)) return { error: "invalid_visit" };
+  const openId = await newestOpenVisit(db, input.organizationId, propertyId, input.userId);
+  if (input.replaceOpenVisit) {
+    if (!visitId) return { error: "invalid_visit" };
+    await db.query(
+      `UPDATE inspection_visits
+       SET status = 'finished', finished_at = COALESCE(finished_at, now())
+       WHERE organization_id = $1 AND property_id = $2 AND inspector_user_id = $3 AND status = 'open' AND id <> $4`,
+      [input.organizationId, propertyId, input.userId, visitId],
     );
-    visitId = open.rows[0]?.id as string | undefined;
+  } else if (!visitId) {
+    visitId = openId;
     if (!visitId) return {};
+  } else if (visitId !== openId) {
+    const existing = await db.query("SELECT id, status FROM inspection_visits WHERE id = $1", [visitId]);
+    if (!existing.rows[0] && openId) visitId = openId;
   }
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(visitId)) {
-    return { error: "invalid_visit" };
-  }
+  if (!visitId) return {};
   const existing = await db.query("SELECT organization_id, property_id, inspector_user_id, status FROM inspection_visits WHERE id = $1", [visitId]);
   if (!existing.rows[0]) {
     await db.query(
@@ -190,5 +210,5 @@ export async function bindInspectionVisit(
     return { error: "visit_finished" };
   }
   await db.query("UPDATE inspection_events SET visit_id = $1 WHERE id = $2", [visitId, input.inspectionId]);
-  return {};
+  return { visitId };
 }

@@ -2,6 +2,7 @@ import { claimSyncOperation, DB_REQUEST_TIMEOUT_MS, getAllSyncOperations, getOff
 import { isRequestTimeout, withTimeout } from "./deadline";
 import { isDeviceStorageError, storageDiagnostic } from "./storageErrors";
 import { confirmOfflinePhoto, recoverOfflinePhotoReservation, reserveOfflinePhoto, submitOfflineComponent, submitOfflineOperation, submitServiceRequest, uploadPrivatePhoto, ApiError, PrincipalChangedError, isClientPrincipalChange, isSessionEnded } from "./api";
+import { adoptBoundVisit } from "./inspectionVisit";
 import { entityKey, OFFLINE_SCHEMA_VERSION, SYNC_PROTOCOL_VERSION } from "./offlineTypes";
 import type { OfflineEntityEnvelope, OfflineEntityType, SyncConflict, SyncOperation, SyncOperationState, SyncReceipt } from "./offlineTypes";
 import { readyOperations, retryDelayMs } from "./offlineSyncModel";
@@ -140,7 +141,8 @@ const INSPECTION_POST_TIMEOUT_MS = 12_000;
 async function postInspectionOnline(operation: SyncOperation, auth: Principal, cause: unknown): Promise<string> {
   if (isRequestTimeout(cause)) await resetFieldAppDb().catch(() => undefined);
   try {
-    await withTimeout(submitGeneralOperation(operation, auth), INSPECTION_POST_TIMEOUT_MS, "inspection post timed out");
+    const row = await withTimeout(submitGeneralOperation(operation, auth), INSPECTION_POST_TIMEOUT_MS, "inspection post timed out");
+    await rememberBoundVisit(row, operation);
   } catch (serverError) {
     noteSyncDiagnostic(serverError, true);
     if (isRequestTimeout(serverError)) throw markSent(serverError);
@@ -262,6 +264,13 @@ export function dependencyIdsForOperation(
   }
   return [...ids];
 }
+async function rememberBoundVisit(row: { visit_id?: unknown }, operation: SyncOperation) {
+  const bound = typeof row?.visit_id === "string" ? row.visit_id : "";
+  if (!bound) return;
+  const passed = (operation.payload as { passed?: unknown }).passed === true;
+  await adoptBoundVisit(bound, { inspectionId: operation.entityId, openingId: operation.openingId, passed }).catch(() => undefined);
+}
+
 function receiptFromApi(row: any): SyncReceipt {
   return { operationId: row.operation_id, entityId: row.entity_id, entityType: row.entity_type,
     openingId: row.opening_id, organizationId: row.organization_id, serverRevision: Number(row.resulting_server_revision),
@@ -425,6 +434,7 @@ export async function flushVersionedOperations(run: FlushRun = { stop: false }) 
         : operation.entityType === "component" ? await submitComponent(operation, principal)
           : await submitGeneralOperation(operation, principal);
       if (run.stop) return;
+      if (operation.entityType === "inspection_event") await rememberBoundVisit(row, operation);
       await withDbTimeout(putSyncReceipt(receiptFromApi(row)));
     }
     catch (error) {

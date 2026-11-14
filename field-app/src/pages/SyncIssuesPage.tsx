@@ -61,7 +61,7 @@ export function SyncIssuesPage() {
   async function keepFinishedVisitInspection(issue: SyncIssueView, mode: "standalone" | "new") {
     setBusy(issue.id);
     try {
-      const visitId = mode === "new" ? (await startNewVisit())?.id ?? null : null;
+      const visitId = mode === "new" ? (await startNewVisit({ replaceOpenVisit: true }))?.id ?? null : null;
       if (mode === "new" && !visitId) {
         note(issue.id, "Choose a facility before starting a new visit. This inspection is still on this device.");
         return;

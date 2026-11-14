@@ -92,6 +92,7 @@ const inspectionEventSchema = z.object({
   inspector_qualification: z.string().max(200).optional(),
   inspector_license_number: z.string().max(80).optional(),
   visit_id: z.string().uuid().optional(),
+  replace_open_visit: z.boolean().optional(),
 });
 
 eventsRouter.post("/inspection-events", async (req: AuthedRequest, res) => {
@@ -143,11 +144,11 @@ eventsRouter.post("/inspection-events", async (req: AuthedRequest, res) => {
         inspectionId: result.rows[0].id, openingId: b.opening_id, organizationId: orgId, userId, items: prepared.items,
       });
       if (follow.error) { await client.query("ROLLBACK"); return res.status(400).json({ error: follow.error }); }
-      const visit = await bindInspectionVisit(client, { visitId: b.visit_id, inspectionId: result.rows[0].id, openingId: b.opening_id, organizationId: orgId, userId });
+      const visit = await bindInspectionVisit(client, { visitId: b.visit_id, inspectionId: result.rows[0].id, openingId: b.opening_id, organizationId: orgId, userId, replaceOpenVisit: b.replace_open_visit === true });
       if (visit.error) { await client.query("ROLLBACK"); return res.status(409).json({ error: visit.error }); }
       await client.query("COMMIT");
       const fresh = await pool.query("SELECT * FROM inspection_events WHERE id=$1", [result.rows[0].id]);
-      return res.status(201).json(fresh.rows[0]);
+      return res.status(201).json({ ...fresh.rows[0], visit_id: visit.visitId ?? fresh.rows[0].visit_id });
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;

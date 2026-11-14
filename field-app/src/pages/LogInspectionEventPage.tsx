@@ -164,12 +164,17 @@ export function LogInspectionEventPage() {
 
     let inspectionId: string | undefined;
     let visitId: string | undefined;
+    let replaceOpenVisit = false;
     if (!inspectionAttemptId.current) inspectionAttemptId.current = crypto.randomUUID();
     const attemptId = inspectionAttemptId.current;
     const sentToServer = (error: unknown) => error instanceof Error && (error as { sentToServer?: boolean }).sentToServer === true;
     try {
     if (type === "fire_door_nfpa80") {
-      try { visitId = (await ensureOpenVisit(fetchOpenInspectionVisit))?.id; }
+      try {
+        const open = await ensureOpenVisit(fetchOpenInspectionVisit);
+        visitId = open?.id;
+        replaceOpenVisit = open?.replaceOpenVisit === true;
+      }
       catch (error) { if (!isRequestTimeout(error)) throw error; }
     }
     inspectionId = await queueOpeningMutation("inspection_event", id!, {
@@ -184,6 +189,7 @@ export function LogInspectionEventPage() {
         inspector_license_number: type === "fire_door_nfpa80" ? licenseNumber.trim() : undefined,
         checklist_result: type === "fire_door_nfpa80" ? checklist : undefined,
         visit_id: visitId,
+        replace_open_visit: replaceOpenVisit || undefined,
     }, attemptId);
 
     setSaved(true);
