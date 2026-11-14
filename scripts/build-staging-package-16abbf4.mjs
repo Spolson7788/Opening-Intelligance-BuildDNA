@@ -26,8 +26,7 @@ for (const app of ['field-app', 'dashboard']) {
   const dir = resolve(root, app);
   run(['ci', '--include=dev'], dir);
   const base = app === 'field-app' ? '/field/' : '/dashboard/';
-  const tasks = app === 'field-app' ? { VITE_OI_TECH_TASKS: 'true' } : {};
-  run(['run', 'build', '--', '--base', base], dir, { OI_UI_BASE: base, VITE_API_BASE_URL: '/api', ...tasks });
+  run(['run', 'build', '--', '--base', base], dir, { OI_UI_BASE: base, VITE_API_BASE_URL: '/api' });
 }
 
 const output = resolve(root, 'dist/staging-package-16abbf4');

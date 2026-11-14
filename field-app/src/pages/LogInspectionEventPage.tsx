@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
-import { flushOutbox, onSyncStateChange, queueOpeningMutation, refreshPendingCount } from "../lib/sync";
+import { useParams, useNavigate } from "react-router-dom";
+import { flushOutbox, queueOpeningMutation } from "../lib/sync";
 import { recomputeHealthScore } from "../lib/api";
 import { SyncBadge } from "../components/SyncBadge";
 import { SignaturePad } from "../components/SignaturePad";
@@ -13,11 +13,7 @@ import { holdFacilityDownload } from "../lib/facilitySync";
 import { noteSyncDiagnostic } from "../lib/sync";
 import { awaitInspectionSynced } from "../lib/sync";
 import { scrollPageToTop } from "../lib/scrollPage";
-import { fetchOpenInspectionVisit, fetchOpening } from "../lib/api";
-import { clearInspectDraft, inspectPhoto, readInspectDraft, rememberInspectPhoto, writeInspectDraft } from "../lib/inspectionDraft";
-import { formatVisitDoorTime } from "../lib/inspectionVisit";
-import { DetailsDrawer } from "../components/DetailsDrawer";
-import { AccountMenu } from "../components/AccountMenu";
+import { fetchOpenInspectionVisit } from "../lib/api";
 import { ensureOpenVisit, recordVisitInspection, visitSummaryText } from "../lib/inspectionVisit";
 import { isRequestTimeout } from "../lib/deadline";
 import { localCalendarDay } from "../lib/calendarDay";
@@ -32,31 +28,17 @@ const INSPECTION_TYPES = [
   { value: "access_control", label: "Access Control" },
 ];
 
-function seededAnswers(openingId: string | undefined): Record<string, ItemAnswer> {
-  if (!openingId) return {};
-  const draft = readInspectDraft(openingId);
-  const next: Record<string, ItemAnswer> = {};
-  for (const [item, value] of Object.entries(draft)) {
-    next[item] = { result: value.result, note: value.note || "", photo: inspectPhoto(openingId, item) };
-  }
-  return next;
-}
-
-export function LogInspectionEventPage({ taskMode = false }: { taskMode?: boolean }) {
+export function LogInspectionEventPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [inspectionType, setInspectionType] = useState(() => checklistStarted(taskMode ? seededAnswers(id) : {}) ? "fire_door_nfpa80" : "general");
+  const [inspectionType, setInspectionType] = useState("general");
   const [eventDate, setEventDate] = useState(() => localCalendarDay());
   const [passed, setPassed] = useState<"pass" | "fail" | null>(null);
   const [notes, setNotes] = useState("");
   const [signedByName, setSignedByName] = useState("");
   const [qualification, setQualification] = useState("");
   const [licenseNumber, setLicenseNumber] = useState("");
-  const [answers, setAnswers] = useState<Record<string, ItemAnswer>>(() => taskMode ? seededAnswers(id) : {});
-  const [details, setDetails] = useState(false);
-  const [account, setAccount] = useState(false);
-  const [waiting, setWaiting] = useState(0);
-  const [lastHint, setLastHint] = useState("Work the checklist. Save keeps this inspection.");
+  const [answers, setAnswers] = useState<Record<string, ItemAnswer>>({});
   const [signatureError, setSignatureError] = useState<string | null>(null);
   const signaturePadRef = useRef<SignaturePadHandle>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -74,34 +56,6 @@ export function LogInspectionEventPage({ taskMode = false }: { taskMode?: boolea
     if (!saved) return;
     scrollPageToTop();
   }, [saved]);
-
-  useEffect(() => {
-    if (!taskMode || !id) return;
-    for (const [item, answer] of Object.entries(answers)) {
-      if (answer.photo) rememberInspectPhoto(id, item, answer.photo);
-    }
-    writeInspectDraft(id, answers);
-  }, [answers, id, taskMode]);
-
-  useEffect(() => {
-    if (!taskMode) return;
-    void refreshPendingCount();
-    return onSyncStateChange((state) => setWaiting((state.pending || 0) + (state.failed || 0) + (state.conflicts || 0)));
-  }, [taskMode]);
-
-  useEffect(() => {
-    if (!taskMode || !id) return;
-    let live = true;
-    fetchOpening(id).then(({ opening }) => {
-      if (!live) return;
-      const events = Array.isArray(opening.inspection_events) ? opening.inspection_events : [];
-      const newest = events[0] as { passed?: boolean; created_at?: string; event_date?: string } | undefined;
-      const code = opening.opening_code || "this door";
-      if (!newest) setLastHint(`Door ${code} · no result on file yet.`);
-      else setLastHint(`Door ${code} · last result ${newest.passed === true ? "Passed" : "Failed"}${newest.created_at || newest.event_date ? `, ${formatVisitDoorTime(newest.created_at || newest.event_date || "")}` : ""}.`);
-    }).catch(() => { if (live) setLastHint("This door could not be loaded. Your checklist is still on this phone."); });
-    return () => { live = false; };
-  }, [taskMode, id]);
 
   useEffect(() => {
     if (!savedInspectionId) return;
@@ -238,7 +192,6 @@ export function LogInspectionEventPage({ taskMode = false }: { taskMode?: boolea
         replace_open_visit: replaceOpenVisit || undefined,
     }, attemptId);
 
-    if (taskMode && id) clearInspectDraft(id);
     setSaved(true);
     setSubmitting(false);
     savingRef.current = false;
@@ -260,7 +213,6 @@ export function LogInspectionEventPage({ taskMode = false }: { taskMode?: boolea
     } catch (error) {
       noteSyncDiagnostic(error, true);
       if (sentToServer(error)) {
-        if (taskMode && id) clearInspectDraft(id);
         setSaved(true);
         setSavedInspectionId(inspectionId ?? attemptId);
         if (visitId) setVisit(await recordVisitInspection(visitId, { inspectionId: inspectionId ?? attemptId, openingId: id!, passed: resultPassed }).catch(() => null));
@@ -277,24 +229,16 @@ export function LogInspectionEventPage({ taskMode = false }: { taskMode?: boolea
 
   return (
     <div className="app-shell c04">
-      {taskMode ? (
-        <div className="c04-taskbar">
-          <button type="button" className="btn c04-back" onClick={() => navigate("/tasks/day")}>Back</button>
-          <Link className={waiting > 0 ? "c04-syncdot c04-syncdot-wait" : "c04-syncdot"} to="/sync-issues">{waiting > 0 ? `${waiting} waiting` : "Saved"}</Link>
-          <button type="button" className="c04-account-mark" aria-label="Account" onClick={() => setAccount(true)}>A</button>
-        </div>
-      ) : (
-        <div className="top-bar">
-          <button className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13 }} onClick={() => navigate(-1)}>
-            ← Back
-          </button>
-          <SyncBadge />
-        </div>
-      )}
+      <div className="top-bar">
+        <button className="btn btn-secondary" style={{ width: "auto", minHeight: "auto", padding: "6px 10px", fontSize: 13 }} onClick={() => navigate(-1)}>
+          ← Back
+        </button>
+        <SyncBadge />
+      </div>
       <div className="screen">
-        {taskMode ? <h1>Inspect this door</h1> : <h2 style={{ marginBottom: 4 }}>Log Inspection</h2>}
-        <p className={taskMode ? "c04-note" : undefined} style={taskMode ? undefined : { color: "var(--text-secondary)", fontSize: 14, marginBottom: 20 }}>
-          {taskMode ? lastHint : "Saved locally the moment you tap Save — this works with no signal."}
+        <h2 style={{ marginBottom: 4 }}>Log Inspection</h2>
+        <p style={{ color: "var(--text-secondary)", fontSize: 14, marginBottom: 20 }}>
+          Saved locally the moment you tap Save — this works with no signal.
         </p>
 
         {saved ? (
@@ -303,10 +247,10 @@ export function LogInspectionEventPage({ taskMode = false }: { taskMode?: boolea
             {signatureError && <p role="status">{signatureError}</p>}
             {visit && <p className="c04-band-green" role="status">{visitSummaryText(visit.inspections)}</p>}
             {savedInspectionId && visit && <>
-              <button type="button" className="btn c04-btn-blue" onClick={() => navigate(taskMode ? "/tasks/inspect" : "/scan")}>Add an Additional Opening</button>
-              <button type="button" className="btn c04-btn-green" onClick={() => navigate(taskMode ? "/tasks/finish" : `/visit/${visit.id}`)}>Finish visit / Send combined report</button>
+              <button type="button" className="btn c04-btn-blue" onClick={() => navigate("/scan")}>Add an Additional Opening</button>
+              <button type="button" className="btn c04-btn-green" onClick={() => navigate(`/visit/${visit.id}`)}>Finish visit / Send combined report</button>
             </>}
-            {savedInspectionId && !taskMode && <EmailInspectionReport inspectionId={savedInspectionId} syncStatus={emailSync} syncReason={emailReason} />}
+            {savedInspectionId && <EmailInspectionReport inspectionId={savedInspectionId} syncStatus={emailSync} syncReason={emailReason} />}
             {!savedInspectionId && <p style={{ textAlign: "center" }}>Returning to the opening…</p>}
             <button type="button" className="btn btn-secondary" onClick={() => navigate(`/opening/${id}`)}>Back to the opening</button>
           </div>
@@ -431,19 +375,11 @@ export function LogInspectionEventPage({ taskMode = false }: { taskMode?: boolea
             </div>
             {signatureError && <p className="error-text">{signatureError}</p>}
 
-            <button type="submit" className={taskMode ? "btn c04-btn-blue" : "btn btn-primary"} disabled={submitting || (chosenType !== "fire_door_nfpa80" && passed === null)}>
+            <button type="submit" className="btn btn-primary" disabled={submitting || (chosenType !== "fire_door_nfpa80" && passed === null)}>
               {submitting ? "Saving…" : "Save"}
             </button>
-            {taskMode && id && <>
-              <p className="c04-note">Problem found? Fix this door. You come back here.</p>
-              <Link className="btn c04-choice" to={`/tasks/fix/${id}`}>Fix this door</Link>
-              <button type="button" className="btn c04-choice" onClick={() => setDetails(true)}>Details</button>
-            </>}
           </form>
         )}
-        {taskMode && <p><Link className="c04-link" to="/scan">Current screens</Link></p>}
-        {taskMode && details && id && <DetailsDrawer openingId={id} onClose={() => setDetails(false)} />}
-        {taskMode && account && <AccountMenu onClose={() => setAccount(false)} />}
       </div>
     </div>
   );
