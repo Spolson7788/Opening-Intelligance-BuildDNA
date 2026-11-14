@@ -104,6 +104,14 @@ it("keeps the green band to the current visit and puts a new visit below Change 
   expect(store.settings.get("inspection-visit-open:u:org:facility-1")).toBe(visitId);
 });
 
+it("says one saved opening on the new-visit confirm card", async () => {
+  store.openVisit = { id: visitId, inspections: [{ inspectionId: "insp-1", openingId: "door-1", passed: true }] };
+  await act(async () => root.render(<MemoryRouter><ScanPage /></MemoryRouter>));
+  await act(async () => {});
+  await act(async () => buttonNamed("Start a new visit")!.click());
+  expect(host.querySelector("[role='dialog']")?.textContent).toContain("Starting a new visit finishes this one. Its 1 opening stays saved; no combined report is sent.");
+});
+
 it("says 1 opening when the visit has one door", async () => {
   store.openVisit = { id: visitId, inspections: [{ inspectionId: "insp-1", openingId: "door-1", passed: true }] };
   await act(async () => root.render(<MemoryRouter><ScanPage /></MemoryRouter>));
@@ -133,9 +141,13 @@ it("asks before leaving an open visit and can keep it", async () => {
   await act(async () => {});
   await act(async () => buttonNamed("Start a new visit")!.click());
   const confirm = host.querySelector("[role='dialog']")!;
-  expect(confirm.textContent).toContain("This visit has 3 openings. Starting a new visit marks this one finished. The inspections stay. Nothing is discarded.");
-  expect(confirm.textContent).toContain("Finish this visit first");
-  expect(confirm.textContent).toContain("Start a new visit anyway");
+  expect(confirm.textContent).toContain("Starting a new visit finishes this one. Its 3 openings stay saved; no combined report is sent.");
+  expect(confirm.textContent).not.toContain("stays open");
+  expect([...confirm.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+    "Finish this visit first",
+    "Start a new visit anyway",
+    "Not now",
+  ]);
   expect(host.querySelector(".c04-band-green")?.textContent).not.toContain("Start a new visit");
   await act(async () => buttonNamed("Not now")!.click());
   expect(host.querySelector("[role='dialog']")).toBeNull();

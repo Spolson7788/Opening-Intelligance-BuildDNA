@@ -12,10 +12,13 @@ const freshVisit = "33333333-3333-4333-8333-333333333333";
 function database(openIds: string[]) {
   const visits = new Map(openIds.map((id) => [id, { id, organization_id: org, property_id: property, inspector_user_id: user, status: "open" }]));
   const bound: { visitId: string; inspectionId: string }[] = [];
+  const sqlLog: string[] = [];
   return {
     bound,
     visits,
+    sqlLog,
     async query(sql: string, params: unknown[] = []) {
+      sqlLog.push(sql);
       if (sql.includes("pg_advisory_xact_lock")) return { rows: [] };
       if (sql.includes("FROM openings")) return { rows: [{ property_id: property }] };
       if (sql.includes("status = 'open'") && sql.startsWith("SELECT id")) {
@@ -64,4 +67,7 @@ it("finishes the open visit when the phone starts a new one", async () => {
   expect(db.visits.get(openVisit)?.status).toBe("finished");
   expect(db.visits.get(freshVisit)?.status).toBe("open");
   expect([...db.visits.values()].filter((visit) => visit.status === "open")).toHaveLength(1);
+  const finish = db.sqlLog.find((sql) => sql.includes("SET status = 'finished'"));
+  expect(finish).toContain("finished_at");
+  expect(finish).not.toMatch(/report_sent|email/i);
 });
